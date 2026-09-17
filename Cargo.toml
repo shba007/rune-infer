@@ -1,0 +1,16 @@
+[package]
+name = "crane-mvp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crane = { git = "https://github.com/lucasjinreal/Crane.git", version = "0.1.0" }
+crane-core = { git = "https://github.com/lucasjinreal/Crane.git", version = "0.1.0" }
+anyhow = "1"
+
+[features]
+default = []
+accelerate = ["crane/accelerate", "crane-core/accelerate"]
+cuda = ["crane/cuda", "crane-core/cuda"]
+metal = ["crane/metal", "crane-core/metal"]
+rocm = ["crane/rocm", "crane-core/rocm"]
