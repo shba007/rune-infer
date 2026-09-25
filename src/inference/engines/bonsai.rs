@@ -1,5 +1,6 @@
 use crate::inference::traits::InferenceEngine;
-use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
+use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
+use crate::types::Usage;
 use std::error::Error;
 use std::io::BufRead;
 use std::net::TcpListener;
@@ -83,7 +84,6 @@ impl BonsaiEngine {
 
         let guard = ProcessGuard(child);
 
-        // Wait for the server to load weights and report healthy
         Self::wait_for_server(port, &guard)?;
 
         println!("[BonsaiEngine] Managed llama-server is ready and healthy.");
@@ -100,7 +100,6 @@ impl BonsaiEngine {
         Ok(listener.local_addr()?.port())
     }
 
-    /// Detect the maximum CUDA version supported by the installed NVIDIA display driver
     fn detect_host_cuda_version() -> Option<(u32, u32)> {
         let output = Command::new("nvidia-smi").output().ok()?;
         if !output.status.success() {
@@ -377,7 +376,7 @@ impl InferenceEngine for BonsaiEngine {
         &self,
         task: &InferenceTaskRequest,
         mut on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<InferenceTaskResponse, Box<dyn Error>> {
+    ) -> Result<InferenceOutput, Box<dyn Error>> {
         match task {
             InferenceTaskRequest::ToolCall {
                 prompt,
@@ -389,7 +388,6 @@ impl InferenceEngine for BonsaiEngine {
                     .timeout(Duration::from_secs(300))
                     .build()?;
 
-                // Modern llama-server (libmtmd) processes vision via /v1/chat/completions
                 let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
                 let stream_mode = on_token.is_some();
 
@@ -484,6 +482,8 @@ impl InferenceEngine for BonsaiEngine {
 
                 let mut full_output = String::new();
                 let mut is_thinking = false;
+                let mut streamed_tokens = 0u32;
+                let mut server_usage: Option<Usage> = None;
 
                 if stream_mode {
                     let reader = std::io::BufReader::new(resp);
@@ -494,7 +494,20 @@ impl InferenceEngine for BonsaiEngine {
                                 break;
                             }
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
-                                // 1. Capture isolated reasoning/thinking tokens (OpenAI reasoning_content format)
+                                if let Some(u) = v.get("usage") {
+                                    let pt = u
+                                        .get("prompt_tokens")
+                                        .and_then(|x| x.as_u64())
+                                        .unwrap_or(0)
+                                        as u32;
+                                    let ct = u
+                                        .get("completion_tokens")
+                                        .and_then(|x| x.as_u64())
+                                        .unwrap_or(0)
+                                        as u32;
+                                    server_usage = Some(Usage::new(pt, ct));
+                                }
+
                                 let reasoning_opt = v["choices"][0]["delta"]["reasoning_content"]
                                     .as_str()
                                     .or_else(|| v["choices"][0]["delta"]["reasoning"].as_str())
@@ -502,6 +515,7 @@ impl InferenceEngine for BonsaiEngine {
 
                                 if let Some(reasoning) = reasoning_opt {
                                     if !reasoning.is_empty() {
+                                        streamed_tokens += 1;
                                         if !is_thinking {
                                             is_thinking = true;
                                             full_output.push_str("<think>\n");
@@ -520,13 +534,13 @@ impl InferenceEngine for BonsaiEngine {
                                     }
                                 }
 
-                                // 2. Capture regular content tokens
                                 let content_opt = v["choices"][0]["delta"]["content"]
                                     .as_str()
                                     .or_else(|| v["content"].as_str());
 
                                 if let Some(content) = content_opt {
                                     if !content.is_empty() {
+                                        streamed_tokens += 1;
                                         if is_thinking {
                                             is_thinking = false;
                                             full_output.push_str("\n</think>\n\n");
@@ -571,6 +585,16 @@ impl InferenceEngine for BonsaiEngine {
                     }
                 } else {
                     let result: serde_json::Value = resp.json()?;
+                    if let Some(u) = result.get("usage") {
+                        let pt =
+                            u.get("prompt_tokens").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+                        let ct = u
+                            .get("completion_tokens")
+                            .and_then(|x| x.as_u64())
+                            .unwrap_or(0) as u32;
+                        server_usage = Some(Usage::new(pt, ct));
+                    }
+
                     let choice = &result["choices"][0];
                     let content = choice["message"]["content"]
                         .as_str()
@@ -590,6 +614,16 @@ impl InferenceEngine for BonsaiEngine {
                     }
                 }
 
+                let final_usage = server_usage.unwrap_or_else(|| {
+                    let est_prompt = (prompt.len() / 4).max(1) as u32;
+                    let est_completion = if stream_mode {
+                        streamed_tokens
+                    } else {
+                        (full_output.len() / 4).max(1) as u32
+                    };
+                    Usage::new(est_prompt, est_completion)
+                });
+
                 let has_tools = match schema {
                     serde_json::Value::Object(o) => !o.is_empty(),
                     serde_json::Value::Array(a) => !a.is_empty(),
@@ -599,11 +633,17 @@ impl InferenceEngine for BonsaiEngine {
                 if has_tools && full_output.contains("<tool_call>") {
                     let clean_json = Self::extract_tool_call_json(&full_output);
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&clean_json) {
-                        return Ok(InferenceTaskResponse::ToolCall(parsed));
+                        return Ok(InferenceOutput {
+                            response: InferenceTaskResponse::ToolCall(parsed),
+                            usage: final_usage,
+                        });
                     }
                 }
 
-                Ok(InferenceTaskResponse::Text(full_output.trim().to_string()))
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Text(full_output.trim().to_string()),
+                    usage: final_usage,
+                })
             }
         }
     }

@@ -243,7 +243,7 @@ impl ModelRegistry {
         let gpu_layers = model.runtime.as_ref().map(|r| r.gpu_layers);
 
         let engine: Arc<dyn InferenceEngine> = match model.architecture.as_str() {
-            "needle" | "cactus-needle" | "cactus-needle-3" => {
+            "cactus-needle-3" => {
                 let engine = crate::inference::engines::needle::NeedleEngine::new(
                     model.id.clone(),
                     model_path,

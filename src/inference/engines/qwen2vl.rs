@@ -1,6 +1,7 @@
 use crate::inference::engines::shared_backend;
 use crate::inference::traits::InferenceEngine;
-use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
+use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
+use crate::types::Usage;
 use llama_cpp_2::LogOptions;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -169,7 +170,7 @@ impl Qwen2VlEngine {
         &self,
         prompt: &str,
         mut on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<String, Box<dyn Error>> {
+    ) -> Result<(String, Usage), Box<dyn Error>> {
         let mut ctx = self
             .model
             .new_context(&self.backend, self.context_params.clone())
@@ -179,6 +180,8 @@ impl Qwen2VlEngine {
             .model
             .str_to_token(prompt, AddBos::Always)
             .map_err(|e| format!("Failed to tokenize: {:?}", e))?;
+
+        let prompt_tokens = tokens.len() as u32;
 
         let mut batch = llama_cpp_2::llama_batch::LlamaBatch::new(self.n_ctx as usize, 1);
         let last_index = (tokens.len() - 1) as i32;
@@ -194,6 +197,7 @@ impl Qwen2VlEngine {
         let mut decoder = encoding_rs::UTF_8.new_decoder();
         let mut n_cur = tokens.len() as i32;
         let max_tokens = n_cur + 2048;
+        let mut completion_tokens = 0u32;
 
         while n_cur < max_tokens {
             let token = sampler.sample(&ctx, -1);
@@ -204,6 +208,7 @@ impl Qwen2VlEngine {
             }
 
             let piece = self.model.token_to_piece(token, &mut decoder, true, None)?;
+            completion_tokens += 1;
 
             if piece.contains("</tool_call>") || piece.contains("<|im_end|>") {
                 break;
@@ -223,7 +228,8 @@ impl Qwen2VlEngine {
             n_cur += 1;
         }
 
-        Ok(Self::post_process(&output_str))
+        let usage = Usage::new(prompt_tokens, completion_tokens);
+        Ok((Self::post_process(&output_str), usage))
     }
 
     fn generate_vision(
@@ -231,15 +237,15 @@ impl Qwen2VlEngine {
         prompt: &str,
         images: &[Vec<u8>],
         mut on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<String, Box<dyn Error>> {
+    ) -> Result<(String, Usage), Box<dyn Error>> {
+        if images.is_empty() {
+            return self.generate_text(prompt, on_token);
+        }
+
         let mut ctx = self
             .model
             .new_context(&self.backend, self.context_params.clone())
             .map_err(|e| format!("Failed to create context: {:?}", e))?;
-
-        if images.is_empty() {
-            return self.generate_text(prompt, on_token);
-        }
 
         let bitmaps: Vec<MtmdBitmap> = images
             .iter()
@@ -257,6 +263,7 @@ impl Qwen2VlEngine {
         )?;
 
         let n_past = chunks.eval_chunks(&self.mtmd_ctx, &ctx, 0, 0, 8192, true)? as i32;
+        let prompt_tokens = n_past as u32;
 
         let mut sampler =
             LlamaSampler::chain_simple([LlamaSampler::temp(0.7), LlamaSampler::greedy()]);
@@ -265,6 +272,7 @@ impl Qwen2VlEngine {
         let mut decoder = encoding_rs::UTF_8.new_decoder();
         let mut n_cur = n_past;
         let max_tokens = n_cur + 2048;
+        let mut completion_tokens = 0u32;
 
         let mut batch = llama_cpp_2::llama_batch::LlamaBatch::new(self.n_ctx as usize, 1);
         while n_cur < max_tokens {
@@ -276,6 +284,7 @@ impl Qwen2VlEngine {
             }
 
             let piece = self.model.token_to_piece(token, &mut decoder, true, None)?;
+            completion_tokens += 1;
 
             if piece.contains("</tool_call>") || piece.contains("<|im_end|>") {
                 break;
@@ -295,14 +304,15 @@ impl Qwen2VlEngine {
             n_cur += 1;
         }
 
-        Ok(Self::post_process(&output_str))
+        let usage = Usage::new(prompt_tokens, completion_tokens);
+        Ok((Self::post_process(&output_str), usage))
     }
 
     fn dispatch(
         &self,
         task: &InferenceTaskRequest,
         on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<InferenceTaskResponse, Box<dyn Error>> {
+    ) -> Result<InferenceOutput, Box<dyn Error>> {
         match task {
             InferenceTaskRequest::ToolCall {
                 prompt,
@@ -324,7 +334,7 @@ impl Qwen2VlEngine {
                 };
                 let formatted_prompt = Self::format_qwen_tool_prompt(prompt, &schema_str);
 
-                let raw = match self.generate_vision(&formatted_prompt, images, on_token) {
+                let (raw, usage) = match self.generate_vision(&formatted_prompt, images, on_token) {
                     Ok(v) => v,
                     Err(e) => return Err(e),
                 };
@@ -338,13 +348,19 @@ impl Qwen2VlEngine {
                             _ => false,
                         };
                         if is_non_empty {
-                            return Ok(InferenceTaskResponse::ToolCall(parsed));
+                            return Ok(InferenceOutput {
+                                response: InferenceTaskResponse::ToolCall(parsed),
+                                usage,
+                            });
                         }
                     }
                 }
-                Ok(InferenceTaskResponse::Text(
-                    Self::post_process(&raw).trim().to_string(),
-                ))
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Text(
+                        Self::post_process(&raw).trim().to_string(),
+                    ),
+                    usage,
+                })
             }
         }
     }
@@ -359,7 +375,7 @@ impl InferenceEngine for Qwen2VlEngine {
         &self,
         task: &InferenceTaskRequest,
         on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<InferenceTaskResponse, Box<dyn Error>> {
+    ) -> Result<InferenceOutput, Box<dyn Error>> {
         self.dispatch(task, on_token)
     }
 }

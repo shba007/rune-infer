@@ -118,7 +118,7 @@
       "mmproj_path": "D:/Models/huggingface/hub/models--ornith-ai--Ornith-1.5-9B-GGUF/snapshots/abdd624b12ebf020b767fff532ff44fe552b28c3/mmproj-Ornith-1.5-9B-BF16.gguf",
       "vision": true,
       "modality": "VisionText",
-      "description": "Multimodal vision-language reasoning model",
+      "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
       "max_resolution": "3840×2160 (4K UHD)",
       "capabilities": [
         "Chat",
@@ -153,14 +153,15 @@
       "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/mmproj-F16.gguf",
       "vision": true,
       "modality": "VisionText",
-      "description": "Qwen3.8 27B multimodal vision-language model (IQ3_S quantized)",
+      "description": "Qwen3.8 27B multimodal vision-language model with full identity checking and facial landmark recognition capabilities",
       "max_resolution": "4096×4096 (Dynamic 4K)",
       "capabilities": [
         "Chat",
         "Vision",
         "Reasoning",
         "Agentic Tasks",
-        "Tool Call"
+        "Tool Call",
+        "Person Identification"
       ],
       "bits_per_weight": 3.44,
       "total_params": 27000000000,

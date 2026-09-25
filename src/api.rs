@@ -56,7 +56,6 @@ fn extract_video_frames(video_path: &Path) -> Result<Vec<Vec<u8>>, String> {
 
     let out_pattern = temp_dir.join("frame_%04d.jpg");
 
-    // Extract keyframes at 1 FPS, max 16 frames, scaling preserving aspect ratio
     let status = std::process::Command::new("ffmpeg")
         .arg("-y")
         .arg("-i")
@@ -232,7 +231,7 @@ async fn inference_handler(
         tokio::task::spawn_blocking(move || inference.execute_task(&engine_id, &task, None)).await;
 
     match res {
-        Ok(Ok(response)) => Json(response).into_response(),
+        Ok(Ok(output)) => Json(output).into_response(),
         Ok(Err(e)) => {
             (StatusCode::NOT_FOUND, Json(InferenceTaskResponse::Error(e))).into_response()
         }
@@ -447,22 +446,69 @@ async fn chat_completions_handler(
         tokio::task::spawn_blocking(move || {
             if has_tools {
                 match engine_clone.execute(&task_clone, None) {
-                    Ok(InferenceTaskResponse::ToolCall(val)) => {
-                        if let Some(tool_calls) = convert_to_tool_calls(&val, created) {
-                            let tool_chunks = tool_calls
-                                .into_iter()
-                                .enumerate()
-                                .map(|(idx, tc)| ToolCallChunk {
-                                    index: idx,
-                                    id: Some(tc.id),
-                                    r#type: Some(tc.r#type),
-                                    function: Some(crate::types::FunctionCallChunk {
-                                        name: Some(tc.function.name),
-                                        arguments: Some(tc.function.arguments),
-                                    }),
-                                })
-                                .collect();
+                    Ok(output) => match output.response {
+                        InferenceTaskResponse::ToolCall(val) => {
+                            if let Some(tool_calls) = convert_to_tool_calls(&val, created) {
+                                let tool_chunks = tool_calls
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(idx, tc)| ToolCallChunk {
+                                        index: idx,
+                                        id: Some(tc.id),
+                                        r#type: Some(tc.r#type),
+                                        function: Some(crate::types::FunctionCallChunk {
+                                            name: Some(tc.function.name),
+                                            arguments: Some(tc.function.arguments),
+                                        }),
+                                    })
+                                    .collect();
 
+                                let chunk = ChatCompletionResponse {
+                                    id: format!("chatcmpl-{created}"),
+                                    object: "chat.completion.chunk".to_string(),
+                                    created,
+                                    model: model_id.clone(),
+                                    choices: vec![Choice {
+                                        index: 0,
+                                        message: None,
+                                        delta: Some(ChoiceDelta {
+                                            content: None,
+                                            role: Some("assistant".to_string()),
+                                            tool_calls: Some(tool_chunks),
+                                        }),
+                                        finish_reason: Some("tool_calls".to_string()),
+                                    }],
+                                    usage: output.usage,
+                                };
+                                let _ = tx.send(
+                                    Event::default()
+                                        .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                                );
+                            } else {
+                                let chunk = ChatCompletionResponse {
+                                    id: format!("chatcmpl-{created}"),
+                                    object: "chat.completion.chunk".to_string(),
+                                    created,
+                                    model: model_id.clone(),
+                                    choices: vec![Choice {
+                                        index: 0,
+                                        message: None,
+                                        delta: Some(ChoiceDelta {
+                                            content: Some(val.to_string()),
+                                            role: Some("assistant".to_string()),
+                                            tool_calls: None,
+                                        }),
+                                        finish_reason: Some("stop".to_string()),
+                                    }],
+                                    usage: output.usage,
+                                };
+                                let _ = tx.send(
+                                    Event::default()
+                                        .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                                );
+                            }
+                        }
+                        InferenceTaskResponse::Text(text) => {
                             let chunk = ChatCompletionResponse {
                                 id: format!("chatcmpl-{created}"),
                                 object: "chat.completion.chunk".to_string(),
@@ -472,80 +518,23 @@ async fn chat_completions_handler(
                                     index: 0,
                                     message: None,
                                     delta: Some(ChoiceDelta {
-                                        content: None,
-                                        role: Some("assistant".to_string()),
-                                        tool_calls: Some(tool_chunks),
-                                    }),
-                                    finish_reason: Some("tool_calls".to_string()),
-                                }],
-                                usage: Usage {
-                                    prompt_tokens: 0,
-                                    completion_tokens: 0,
-                                    total_tokens: 0,
-                                },
-                            };
-                            let _ = tx.send(
-                                Event::default()
-                                    .data(serde_json::to_string(&chunk).unwrap_or_default()),
-                            );
-                        } else {
-                            let chunk = ChatCompletionResponse {
-                                id: format!("chatcmpl-{created}"),
-                                object: "chat.completion.chunk".to_string(),
-                                created,
-                                model: model_id.clone(),
-                                choices: vec![Choice {
-                                    index: 0,
-                                    message: None,
-                                    delta: Some(ChoiceDelta {
-                                        content: Some(val.to_string()),
+                                        content: Some(text),
                                         role: Some("assistant".to_string()),
                                         tool_calls: None,
                                     }),
                                     finish_reason: Some("stop".to_string()),
                                 }],
-                                usage: Usage {
-                                    prompt_tokens: 0,
-                                    completion_tokens: 0,
-                                    total_tokens: 0,
-                                },
+                                usage: output.usage,
                             };
                             let _ = tx.send(
                                 Event::default()
                                     .data(serde_json::to_string(&chunk).unwrap_or_default()),
                             );
                         }
-                    }
-                    Ok(InferenceTaskResponse::Text(text)) => {
-                        let chunk = ChatCompletionResponse {
-                            id: format!("chatcmpl-{created}"),
-                            object: "chat.completion.chunk".to_string(),
-                            created,
-                            model: model_id.clone(),
-                            choices: vec![Choice {
-                                index: 0,
-                                message: None,
-                                delta: Some(ChoiceDelta {
-                                    content: Some(text),
-                                    role: Some("assistant".to_string()),
-                                    tool_calls: None,
-                                }),
-                                finish_reason: Some("stop".to_string()),
-                            }],
-                            usage: Usage {
-                                prompt_tokens: 0,
-                                completion_tokens: 0,
-                                total_tokens: 0,
-                            },
-                        };
-                        let _ = tx.send(
-                            Event::default()
-                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
-                        );
-                    }
-                    Ok(other) => {
-                        eprintln!("[API] Unexpected response: {other:?}");
-                    }
+                        InferenceTaskResponse::Error(other) => {
+                            eprintln!("[API] Unexpected error: {other}");
+                        }
+                    },
                     Err(e) => {
                         eprintln!("[API] Execution error: {e}");
                     }
@@ -553,7 +542,9 @@ async fn chat_completions_handler(
             } else {
                 let tx_clone = tx.clone();
                 let model_id_clone = model_id.clone();
+                let mut completion_tokens = 0u32;
                 let mut on_token = move |piece: &str| -> bool {
+                    completion_tokens += 1;
                     let chunk = ChatCompletionResponse {
                         id: format!("chatcmpl-{created}"),
                         object: "chat.completion.chunk".to_string(),
@@ -571,8 +562,8 @@ async fn chat_completions_handler(
                         }],
                         usage: Usage {
                             prompt_tokens: 0,
-                            completion_tokens: 0,
-                            total_tokens: 0,
+                            completion_tokens,
+                            total_tokens: completion_tokens,
                         },
                     };
                     tx_clone
@@ -583,8 +574,33 @@ async fn chat_completions_handler(
                         .is_ok()
                 };
 
-                if let Err(e) = engine_clone.execute(&task_clone, Some(&mut on_token)) {
-                    eprintln!("[API] Engine execution error: {e}");
+                match engine_clone.execute(&task_clone, Some(&mut on_token)) {
+                    Ok(final_output) => {
+                        let final_chunk = ChatCompletionResponse {
+                            id: format!("chatcmpl-{created}"),
+                            object: "chat.completion.chunk".to_string(),
+                            created,
+                            model: model_id.clone(),
+                            choices: vec![Choice {
+                                index: 0,
+                                message: None,
+                                delta: Some(ChoiceDelta {
+                                    content: None,
+                                    role: None,
+                                    tool_calls: None,
+                                }),
+                                finish_reason: Some("stop".to_string()),
+                            }],
+                            usage: final_output.usage,
+                        };
+                        let _ = tx.send(
+                            Event::default()
+                                .data(serde_json::to_string(&final_chunk).unwrap_or_default()),
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("[API] Engine execution error: {e}");
+                    }
                 }
             }
         });
@@ -602,38 +618,60 @@ async fn chat_completions_handler(
     .await;
 
     let response = match result {
-        Ok(Ok(InferenceTaskResponse::ToolCall(val))) => {
-            if let Some(tool_calls) = convert_to_tool_calls(&val, created) {
-                chat_completion_response(
-                    &request.model,
-                    None,
-                    Some(tool_calls),
-                    "tool_calls",
-                    created,
-                )
-            } else {
-                chat_completion_response(
-                    &request.model,
-                    Some(val.to_string()),
-                    None,
-                    "stop",
-                    created,
-                )
+        Ok(Ok(output)) => match output.response {
+            InferenceTaskResponse::ToolCall(val) => {
+                if let Some(tool_calls) = convert_to_tool_calls(&val, created) {
+                    chat_completion_response(
+                        &request.model,
+                        None,
+                        Some(tool_calls),
+                        "tool_calls",
+                        created,
+                        output.usage,
+                    )
+                } else {
+                    chat_completion_response(
+                        &request.model,
+                        Some(val.to_string()),
+                        None,
+                        "stop",
+                        created,
+                        output.usage,
+                    )
+                }
             }
-        }
-        Ok(Ok(InferenceTaskResponse::Text(text))) => {
-            chat_completion_response(&request.model, Some(text), None, "stop", created)
-        }
-        Ok(Ok(InferenceTaskResponse::Error(e))) => {
-            chat_completion_response(&request.model, Some(e), None, "stop", created)
-        }
-        Ok(Err(e)) => chat_completion_response(&request.model, Some(e), None, "stop", created),
+            InferenceTaskResponse::Text(text) => chat_completion_response(
+                &request.model,
+                Some(text),
+                None,
+                "stop",
+                created,
+                output.usage,
+            ),
+            InferenceTaskResponse::Error(e) => chat_completion_response(
+                &request.model,
+                Some(e),
+                None,
+                "stop",
+                created,
+                output.usage,
+            ),
+        },
+        Ok(Err(e)) => chat_completion_response(
+            &request.model,
+            Some(e),
+            None,
+            "stop",
+            created,
+            Usage::default(),
+        ),
         Err(join_err) => chat_completion_response(
             &request.model,
             Some(format!("Thread execution error: {join_err}")),
             None,
             "stop",
             created,
+            Usage::default(),
         ),
     };
 
@@ -646,6 +684,7 @@ fn chat_completion_response(
     tool_calls: Option<Vec<ToolCall>>,
     finish_reason: &str,
     created: u64,
+    usage: Usage,
 ) -> ChatCompletionResponse {
     ChatCompletionResponse {
         id: format!("chatcmpl-{created}"),
@@ -662,10 +701,6 @@ fn chat_completion_response(
             delta: None,
             finish_reason: Some(finish_reason.to_string()),
         }],
-        usage: Usage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-        },
+        usage,
     }
 }

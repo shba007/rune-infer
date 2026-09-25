@@ -1,6 +1,7 @@
 use crate::inference::engines::shared_backend;
 use crate::inference::traits::InferenceEngine;
-use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
+use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
+use crate::types::Usage;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::model::params::LlamaModelParams;
@@ -116,7 +117,7 @@ impl InferenceEngine for QwenEngine {
         &self,
         task: &InferenceTaskRequest,
         mut on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<InferenceTaskResponse, Box<dyn Error>> {
+    ) -> Result<InferenceOutput, Box<dyn Error>> {
         match task {
             InferenceTaskRequest::ToolCall { prompt, schema, .. } => {
                 let _guard = self.infer_lock.lock().map_err(|e| e.to_string())?;
@@ -134,6 +135,8 @@ impl InferenceEngine for QwenEngine {
                     .str_to_token(&formatted_prompt, AddBos::Always)
                     .map_err(|e| format!("Failed to tokenize: {:?}", e))?;
 
+                let prompt_tokens = tokens.len() as u32;
+
                 let mut batch = llama_cpp_2::llama_batch::LlamaBatch::new(self.n_ctx as usize, 1);
                 let last_index = (tokens.len() - 1) as i32;
                 for (i, token) in tokens.iter().enumerate() {
@@ -148,6 +151,7 @@ impl InferenceEngine for QwenEngine {
                 let mut decoder = encoding_rs::UTF_8.new_decoder();
                 let mut n_cur = tokens.len() as i32;
                 let max_tokens = n_cur + 2048;
+                let mut completion_tokens = 0u32;
 
                 while n_cur < max_tokens {
                     let token = sampler.sample(&ctx, batch.n_tokens() - 1);
@@ -158,6 +162,7 @@ impl InferenceEngine for QwenEngine {
                     }
 
                     let piece = self.model.token_to_piece(token, &mut decoder, true, None)?;
+                    completion_tokens += 1;
 
                     if piece.contains("</tool_call>") || piece.contains("<|im_end|>") {
                         break;
@@ -178,8 +183,21 @@ impl InferenceEngine for QwenEngine {
                 }
 
                 let clean_json = Self::extract_tool_call_json(&output_str);
-                let parsed: serde_json::Value = serde_json::from_str(&clean_json)?;
-                Ok(InferenceTaskResponse::ToolCall(parsed))
+                let response =
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&clean_json) {
+                        if parsed.is_object() || parsed.is_array() {
+                            InferenceTaskResponse::ToolCall(parsed)
+                        } else {
+                            InferenceTaskResponse::Text(output_str.trim().to_string())
+                        }
+                    } else {
+                        InferenceTaskResponse::Text(output_str.trim().to_string())
+                    };
+
+                Ok(InferenceOutput {
+                    response,
+                    usage: Usage::new(prompt_tokens, completion_tokens),
+                })
             }
         }
     }

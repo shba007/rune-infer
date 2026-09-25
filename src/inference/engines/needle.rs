@@ -1,5 +1,6 @@
 use crate::inference::traits::InferenceEngine;
-use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
+use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
+use crate::types::Usage;
 use needle_infer::v3_engine::V3Engine;
 use std::error::Error;
 use std::path::Path;
@@ -61,7 +62,7 @@ impl InferenceEngine for NeedleEngine {
         &self,
         task: &InferenceTaskRequest,
         _on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<InferenceTaskResponse, Box<dyn Error>> {
+    ) -> Result<InferenceOutput, Box<dyn Error>> {
         match task {
             InferenceTaskRequest::ToolCall { prompt, schema, .. } => {
                 let engine = self
@@ -70,11 +71,18 @@ impl InferenceEngine for NeedleEngine {
                     .map_err(|e| format!("Lock error: {}", e))?;
                 let schema_str = schema.to_string();
 
+                let prompt_tokens = ((prompt.len() + schema_str.len()) / 4).max(1) as u32;
                 let raw_output = engine.run(prompt, &schema_str);
                 let clean_json = Self::extract_tool_call_json(&raw_output);
+                let completion_tokens = (clean_json.len() / 4).max(1) as u32;
 
-                let parsed: serde_json::Value = serde_json::from_str(&clean_json)?;
-                Ok(InferenceTaskResponse::ToolCall(parsed))
+                let parsed: serde_json::Value = serde_json::from_str(&clean_json)
+                    .unwrap_or_else(|_| serde_json::Value::String(clean_json));
+
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::ToolCall(parsed),
+                    usage: Usage::new(prompt_tokens, completion_tokens),
+                })
             }
         }
     }

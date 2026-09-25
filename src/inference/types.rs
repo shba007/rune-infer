@@ -1,4 +1,4 @@
-use crate::types::ChatMessage;
+use crate::types::{ChatMessage, Usage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,4 +20,10 @@ pub enum InferenceTaskResponse {
     ToolCall(serde_json::Value),
     Text(String),
     Error(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InferenceOutput {
+    pub response: InferenceTaskResponse,
+    pub usage: Usage,
 }

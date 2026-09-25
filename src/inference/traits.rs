@@ -1,4 +1,4 @@
-use super::types::{InferenceTaskRequest, InferenceTaskResponse};
+use super::types::{InferenceOutput, InferenceTaskRequest};
 use std::error::Error;
 
 pub trait InferenceEngine: Send + Sync {
@@ -7,5 +7,5 @@ pub trait InferenceEngine: Send + Sync {
         &self,
         task: &InferenceTaskRequest,
         on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<InferenceTaskResponse, Box<dyn Error>>;
+    ) -> Result<InferenceOutput, Box<dyn Error>>;
 }

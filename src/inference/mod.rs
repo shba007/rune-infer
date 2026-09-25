@@ -6,7 +6,7 @@ pub mod types;
 use std::sync::Arc;
 use std::sync::Mutex;
 use traits::InferenceEngine;
-use types::{InferenceTaskRequest, InferenceTaskResponse};
+use types::{InferenceOutput, InferenceTaskRequest};
 
 pub struct AppState {
     pub registry: Mutex<registry::ModelRegistry>,
@@ -40,7 +40,7 @@ impl AppState {
         engine_id: &str,
         task: &InferenceTaskRequest,
         on_token: Option<&mut dyn FnMut(&str) -> bool>,
-    ) -> Result<InferenceTaskResponse, String> {
+    ) -> Result<InferenceOutput, String> {
         let engine = self.get_engine(engine_id)?;
         engine.execute(task, on_token).map_err(|e| e.to_string())
     }
