@@ -181,7 +181,6 @@ impl InferenceEngine for QwenEngine {
                 let parsed: serde_json::Value = serde_json::from_str(&clean_json)?;
                 Ok(InferenceTaskResponse::ToolCall(parsed))
             }
-            _ => Err("QwenEngine task not supported".into()),
         }
     }
 }

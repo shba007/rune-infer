@@ -17,7 +17,7 @@ use crate::config::ModelRegistry;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{
     ApiError, ChatCompletionRequest, ChatCompletionResponse, Choice, ChoiceDelta, ErrorResponse,
-    HealthResponse, ModelInfo, ModelsResponse, Usage,
+    HealthResponse, ModelInfo, ModelsResponse, ResponseMessage, ToolCall, ToolCallChunk, Usage,
 };
 
 #[derive(Clone)]
@@ -138,6 +138,44 @@ async fn inference_handler(
     }
 }
 
+fn parse_single_tool_call(val: &serde_json::Value, id: String) -> Option<ToolCall> {
+    let obj = val.as_object()?;
+    let name = obj.get("name")?.as_str()?.to_string();
+    let args = match obj.get("arguments") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(other) => serde_json::to_string(other).unwrap_or_else(|_| "{}".to_string()),
+        None => "{}".to_string(),
+    };
+    Some(ToolCall {
+        id,
+        r#type: "function".to_string(),
+        function: crate::types::FunctionCall {
+            name,
+            arguments: args,
+        },
+    })
+}
+
+fn convert_to_tool_calls(value: &serde_json::Value, created: u64) -> Option<Vec<ToolCall>> {
+    match value {
+        serde_json::Value::Array(arr) if !arr.is_empty() => {
+            let mut calls = Vec::new();
+            for (idx, item) in arr.iter().enumerate() {
+                if let Some(call) =
+                    parse_single_tool_call(item, format!("call_{}_{}", created, idx))
+                {
+                    calls.push(call);
+                }
+            }
+            if calls.is_empty() { None } else { Some(calls) }
+        }
+        serde_json::Value::Object(_) => {
+            parse_single_tool_call(value, format!("call_{}_0", created)).map(|c| vec![c])
+        }
+        _ => None,
+    }
+}
+
 #[axum::debug_handler]
 async fn chat_completions_handler(
     State(state): State<Arc<AppState>>,
@@ -184,27 +222,103 @@ async fn chat_completions_handler(
         }
     };
 
+    let tools_value = request.tools.clone().unwrap_or(serde_json::Value::Null);
+    let has_tools = match &tools_value {
+        serde_json::Value::Array(a) => !a.is_empty(),
+        serde_json::Value::Object(o) => !o.is_empty(),
+        _ => false,
+    };
+    let default_tool_system = if has_tools {
+        let tools_json = serde_json::to_string_pretty(&tools_value).unwrap_or_default();
+        format!(
+            "You are a helpful assistant with access to tools.\n\
+            When calling a tool, reply ONLY with a <tool_call> block containing a JSON array:\n\
+            <tool_call>\n\
+            [{{\"name\": \"tool_name\", \"arguments\": {{...}}}}]\n\
+            </tool_call>\n\n\
+            Available Tools:\n\
+            {}",
+            tools_json
+        )
+    } else {
+        "You are a helpful assistant.".to_string()
+    };
+
     let (prompt, images) = {
         let mut prompt = String::new();
         let mut images = Vec::new();
+
+        let has_system = request.messages.iter().any(|m| m.role == "system");
+        if !has_system {
+            prompt.push_str(&format!(
+                "<|im_start|>system\n{}<|im_end|>\n",
+                default_tool_system
+            ));
+        }
+
         for msg in &request.messages {
-            let (text, img_urls) = msg.split_text_and_images();
-            prompt.push_str(&text);
-            for url in img_urls {
-                prompt.push_str("<__media__>");
-                match decode_image(&url) {
-                    Ok(bytes) => images.push(bytes),
+            let (mut text, img_urls) = msg.split_text_and_images();
+            let role = if msg.role.trim().is_empty() {
+                "user"
+            } else {
+                msg.role.trim()
+            };
+
+            if role == "system" && has_tools {
+                text = format!("{}\n\n{}", text, default_tool_system);
+            }
+
+            let mut decoded_in_msg = 0;
+            for url in &img_urls {
+                match decode_image(url) {
+                    Ok(bytes) => {
+                        images.push(bytes);
+                        decoded_in_msg += 1;
+                    }
                     Err(e) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
                 }
             }
-            prompt.push_str("\n\n");
+
+            let existing_markers = text.matches("<__media__>").count();
+            if existing_markers > 0 {
+                let mut kept = 0;
+                let mut cleaned = String::new();
+                let parts: Vec<&str> = text.split("<__media__>").collect();
+                for (i, part) in parts.iter().enumerate() {
+                    cleaned.push_str(part);
+                    if i < parts.len() - 1 {
+                        if kept < decoded_in_msg {
+                            cleaned.push_str("<__media__>");
+                            kept += 1;
+                        } else {
+                            cleaned.push_str("[media]");
+                        }
+                    }
+                }
+                text = cleaned;
+                while kept < decoded_in_msg {
+                    text.push_str("\n<__media__>");
+                    kept += 1;
+                }
+            } else {
+                for _ in 0..decoded_in_msg {
+                    text.push_str("\n<__media__>");
+                }
+            }
+
+            prompt.push_str(&format!("<|im_start|>{role}\n{}<|im_end|>\n", text.trim()));
         }
+        prompt.push_str("<|im_start|>assistant\n");
         (prompt, images)
     };
 
     let task = InferenceTaskRequest::ToolCall {
         prompt,
-        schema: serde_json::Value::Object(Default::default()),
+        schema: if has_tools {
+            tools_value
+        } else {
+            serde_json::json!({})
+        },
         images,
     };
 
@@ -214,64 +328,214 @@ async fn chat_completions_handler(
         .unwrap_or(0);
 
     if request.stream {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
         let task_clone = task.clone();
         let engine_clone = engine.clone();
+        let model_id = request.model.clone();
 
         tokio::task::spawn_blocking(move || {
-            let mut on_token = |piece: &str| -> bool { tx.send(piece.to_string()).is_ok() };
-            let _ = engine_clone.execute(&task_clone, Some(&mut on_token));
+            if has_tools {
+                match engine_clone.execute(&task_clone, None) {
+                    Ok(InferenceTaskResponse::ToolCall(val)) => {
+                        if let Some(tool_calls) = convert_to_tool_calls(&val, created) {
+                            let tool_chunks = tool_calls
+                                .into_iter()
+                                .enumerate()
+                                .map(|(idx, tc)| ToolCallChunk {
+                                    index: idx,
+                                    id: Some(tc.id),
+                                    r#type: Some(tc.r#type),
+                                    function: Some(crate::types::FunctionCallChunk {
+                                        name: Some(tc.function.name),
+                                        arguments: Some(tc.function.arguments),
+                                    }),
+                                })
+                                .collect();
+
+                            let chunk = ChatCompletionResponse {
+                                id: format!("chatcmpl-{created}"),
+                                object: "chat.completion.chunk".to_string(),
+                                created,
+                                model: model_id.clone(),
+                                choices: vec![Choice {
+                                    index: 0,
+                                    message: None,
+                                    delta: Some(ChoiceDelta {
+                                        content: None,
+                                        role: Some("assistant".to_string()),
+                                        tool_calls: Some(tool_chunks),
+                                    }),
+                                    finish_reason: Some("tool_calls".to_string()),
+                                }],
+                                usage: Usage {
+                                    prompt_tokens: 0,
+                                    completion_tokens: 0,
+                                    total_tokens: 0,
+                                },
+                            };
+                            let _ = tx.send(
+                                Event::default()
+                                    .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                            );
+                        } else {
+                            let chunk = ChatCompletionResponse {
+                                id: format!("chatcmpl-{created}"),
+                                object: "chat.completion.chunk".to_string(),
+                                created,
+                                model: model_id.clone(),
+                                choices: vec![Choice {
+                                    index: 0,
+                                    message: None,
+                                    delta: Some(ChoiceDelta {
+                                        content: Some(val.to_string()),
+                                        role: Some("assistant".to_string()),
+                                        tool_calls: None,
+                                    }),
+                                    finish_reason: Some("stop".to_string()),
+                                }],
+                                usage: Usage {
+                                    prompt_tokens: 0,
+                                    completion_tokens: 0,
+                                    total_tokens: 0,
+                                },
+                            };
+                            let _ = tx.send(
+                                Event::default()
+                                    .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                            );
+                        }
+                    }
+                    Ok(InferenceTaskResponse::Text(text)) => {
+                        let chunk = ChatCompletionResponse {
+                            id: format!("chatcmpl-{created}"),
+                            object: "chat.completion.chunk".to_string(),
+                            created,
+                            model: model_id.clone(),
+                            choices: vec![Choice {
+                                index: 0,
+                                message: None,
+                                delta: Some(ChoiceDelta {
+                                    content: Some(text),
+                                    role: Some("assistant".to_string()),
+                                    tool_calls: None,
+                                }),
+                                finish_reason: Some("stop".to_string()),
+                            }],
+                            usage: Usage {
+                                prompt_tokens: 0,
+                                completion_tokens: 0,
+                                total_tokens: 0,
+                            },
+                        };
+                        let _ = tx.send(
+                            Event::default()
+                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                        );
+                    }
+                    Ok(other) => {
+                        eprintln!("[API] Unexpected response: {other:?}");
+                    }
+                    Err(e) => {
+                        eprintln!("[API] Execution error: {e}");
+                    }
+                }
+            } else {
+                let tx_clone = tx.clone();
+                let model_id_clone = model_id.clone();
+                let mut on_token = move |piece: &str| -> bool {
+                    let chunk = ChatCompletionResponse {
+                        id: format!("chatcmpl-{created}"),
+                        object: "chat.completion.chunk".to_string(),
+                        created,
+                        model: model_id_clone.clone(),
+                        choices: vec![Choice {
+                            index: 0,
+                            message: None,
+                            delta: Some(ChoiceDelta {
+                                content: Some(piece.to_string()),
+                                role: Some("assistant".to_string()),
+                                tool_calls: None,
+                            }),
+                            finish_reason: None,
+                        }],
+                        usage: Usage {
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                            total_tokens: 0,
+                        },
+                    };
+                    tx_clone
+                        .send(
+                            Event::default()
+                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                        )
+                        .is_ok()
+                };
+
+                if let Err(e) = engine_clone.execute(&task_clone, Some(&mut on_token)) {
+                    eprintln!("[API] Engine execution error: {e}");
+                }
+            }
         });
 
-        let model_id = request.model.clone();
-        let stream = UnboundedReceiverStream::new(rx).map(move |token_piece| {
-            let chunk = ChatCompletionResponse {
-                id: format!("chatcmpl-{created}"),
-                object: "chat.completion.chunk".to_string(),
-                created,
-                model: model_id.clone(),
-                choices: vec![Choice {
-                    index: 0,
-                    delta: ChoiceDelta {
-                        content: Some(token_piece),
-                        role: Some("assistant".to_string()),
-                    },
-                    finish_reason: None,
-                }],
-                usage: Usage {
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                    total_tokens: 0,
-                },
-            };
-            let json = serde_json::to_string(&chunk).unwrap_or_default();
-            Ok::<_, Infallible>(Event::default().data(json))
-        });
-
+        let stream = UnboundedReceiverStream::new(rx);
         let done_stream = tokio_stream::once(Ok::<_, Infallible>(Event::default().data("[DONE]")));
-
-        let sse_stream = stream.chain(done_stream);
+        let sse_stream = stream.map(Ok::<_, Infallible>).chain(done_stream);
         return Sse::new(sse_stream).into_response();
     }
 
     let task_clone = task.clone();
-    let content = match tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         engine.execute(&task_clone, None).map_err(|e| e.to_string())
     })
-    .await
-    {
-        Ok(Ok(InferenceTaskResponse::Text(text))) => text,
-        Ok(Ok(InferenceTaskResponse::ToolCall(value))) => value.to_string(),
-        Ok(Ok(InferenceTaskResponse::Error(e))) => e,
-        Ok(Ok(other)) => format!("{other:?}"),
-        Ok(Err(e)) => e,
-        Err(join_err) => format!("Thread execution error: {join_err}"),
+    .await;
+
+    let response = match result {
+        Ok(Ok(InferenceTaskResponse::ToolCall(val))) => {
+            if let Some(tool_calls) = convert_to_tool_calls(&val, created) {
+                chat_completion_response(
+                    &request.model,
+                    None,
+                    Some(tool_calls),
+                    "tool_calls",
+                    created,
+                )
+            } else {
+                chat_completion_response(
+                    &request.model,
+                    Some(val.to_string()),
+                    None,
+                    "stop",
+                    created,
+                )
+            }
+        }
+        Ok(Ok(InferenceTaskResponse::Text(text))) => {
+            chat_completion_response(&request.model, Some(text), None, "stop", created)
+        }
+        Ok(Ok(InferenceTaskResponse::Error(e))) => {
+            chat_completion_response(&request.model, Some(e), None, "stop", created)
+        }
+        Ok(Err(e)) => chat_completion_response(&request.model, Some(e), None, "stop", created),
+        Err(join_err) => chat_completion_response(
+            &request.model,
+            Some(format!("Thread execution error: {join_err}")),
+            None,
+            "stop",
+            created,
+        ),
     };
 
-    Json(chat_completion(&request.model, &content, created)).into_response()
+    Json(response).into_response()
 }
 
-fn chat_completion(model: &str, content: &str, created: u64) -> ChatCompletionResponse {
+fn chat_completion_response(
+    model: &str,
+    content: Option<String>,
+    tool_calls: Option<Vec<ToolCall>>,
+    finish_reason: &str,
+    created: u64,
+) -> ChatCompletionResponse {
     ChatCompletionResponse {
         id: format!("chatcmpl-{created}"),
         object: "chat.completion".to_string(),
@@ -279,11 +543,13 @@ fn chat_completion(model: &str, content: &str, created: u64) -> ChatCompletionRe
         model: model.to_string(),
         choices: vec![Choice {
             index: 0,
-            delta: ChoiceDelta {
-                content: Some(content.to_string()),
-                role: Some("assistant".to_string()),
-            },
-            finish_reason: Some("stop".to_string()),
+            message: Some(ResponseMessage {
+                role: "assistant".to_string(),
+                content,
+                tool_calls,
+            }),
+            delta: None,
+            finish_reason: Some(finish_reason.to_string()),
         }],
         usage: Usage {
             prompt_tokens: 0,

@@ -86,7 +86,11 @@ impl Qwen2VlEngine {
     }
 
     fn format_qwen_tool_prompt(prompt: &str, schema_json: &str) -> String {
-        if schema_json.is_empty() || schema_json == "{}" {
+        if prompt.contains("<|im_start|>") {
+            return prompt.to_string();
+        }
+
+        if schema_json.is_empty() || schema_json == "{}" || schema_json == "[]" {
             return format!(
                 "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
                 prompt
@@ -309,7 +313,11 @@ impl Qwen2VlEngine {
             } => {
                 let _guard = self.infer_lock.lock().map_err(|e| e.to_string())?;
 
-                let has_tools = matches!(schema, serde_json::Value::Object(o) if !o.is_empty());
+                let has_tools = match schema {
+                    serde_json::Value::Object(o) => !o.is_empty(),
+                    serde_json::Value::Array(a) => !a.is_empty(),
+                    _ => false,
+                };
                 let schema_str = if has_tools {
                     serde_json::to_string_pretty(schema)?
                 } else {
@@ -322,17 +330,23 @@ impl Qwen2VlEngine {
                     Err(e) => return Err(e),
                 };
 
-                if has_tools {
+                if has_tools && raw.contains("<tool_call>") {
                     let clean_json = Self::extract_tool_call_json(&raw);
-                    let parsed: serde_json::Value = serde_json::from_str(&clean_json)?;
-                    Ok(InferenceTaskResponse::ToolCall(parsed))
-                } else {
-                    Ok(InferenceTaskResponse::Text(
-                        Self::post_process(&raw).trim().to_string(),
-                    ))
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&clean_json) {
+                        let is_non_empty = match &parsed {
+                            serde_json::Value::Array(a) => !a.is_empty(),
+                            serde_json::Value::Object(o) => !o.is_empty(),
+                            _ => false,
+                        };
+                        if is_non_empty {
+                            return Ok(InferenceTaskResponse::ToolCall(parsed));
+                        }
+                    }
                 }
+                Ok(InferenceTaskResponse::Text(
+                    Self::post_process(&raw).trim().to_string(),
+                ))
             }
-            _ => Err("Qwen2VlEngine task not supported".into()),
         }
     }
 }

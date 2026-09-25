@@ -9,6 +9,54 @@
   },
   "models": [
     {
+      "id": "cactus-needle-3",
+      "name": "Cactus Needle 3",
+      "architecture": "cactus-needle-3",
+      "format": "cact",
+      "model_path": "D:/Projects/Public/rune/code-infer/weights/needle3.cact",
+      "mmproj_path": null,
+      "vision": false,
+      "modality": "Text",
+      "description": "Cactus Needle 3 tool-calling and structured extraction engine",
+      "sampling": {
+        "temperature": 0.1,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.01,
+        "max_tokens": 2048
+      },
+      "runtime": {
+        "context_length": 4096,
+        "gpu_layers": 0,
+        "extra_args": ""
+      },
+      "lora": []
+    },
+    {
+      "id": "qwen3.5-0.8b",
+      "name": "Qwen3.5 0.8B",
+      "architecture": "qwen35",
+      "format": "gguf",
+      "model_path": "D:/Projects/Public/rune/code-infer/weights/Qwen3.5-0.8B-BF16.gguf",
+      "mmproj_path": null,
+      "vision": false,
+      "modality": "Text",
+      "description": "Qwen3.5 0.8B reasoning model",
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "top_k": 32,
+        "min_p": 0.05,
+        "max_tokens": 4096
+      },
+      "runtime": {
+        "context_length": 8192,
+        "gpu_layers": 99,
+        "extra_args": ""
+      },
+      "lora": []
+    },
+    {
       "id": "oxcoder-9b",
       "name": "OxCoder 9B",
       "architecture": "qwen35",
@@ -57,48 +105,24 @@
       "lora": []
     },
     {
-      "id": "qwen-image-2.1-7b",
-      "name": "Qwen-Image-2.1 7B",
-      "architecture": "qwen-vl",
-      "format": "gguf",
-      "model_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-GGUF/snapshots/2c31ccd392b367a6637841a143813320a02dff55/qwen-image-2.1-Q4_K_M.gguf",
-      "mmproj_path": "D:/Models/qwen-image-2.1-7b-mmproj-f16.gguf",
-      "vision": true,
-      "modality": "VisionText",
-      "description": "Multimodal vision-language model with advanced image understanding",
-      "sampling": {
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "top_k": 50,
-        "min_p": 0.05,
-        "max_tokens": 4096
-      },
-      "runtime": {
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "extra_args": ""
-      },
-      "lora": []
-    },
-    {
-      "id": "qwen3.5-0.8b",
-      "name": "Qwen3.5 0.8B",
+      "id": "qwen3.8-27b",
+      "name": "Qwen3.8 27B",
       "architecture": "qwen35",
       "format": "gguf",
-      "model_path": "D:/Projects/Public/rune/code-infer/weights/Qwen3.5-0.8B-BF16.gguf",
-      "mmproj_path": null,
-      "vision": false,
-      "modality": "Text",
-      "description": "Qwen3.5 0.8B reasoning model",
+      "model_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-IQ3_S.gguf",
+      "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/mmproj-F16.gguf",
+      "vision": true,
+      "modality": "VisionText",
+      "description": "Qwen3.8 27B multimodal vision-language model (IQ3_S quantized)",
       "sampling": {
         "temperature": 0.6,
-        "top_p": 0.9,
-        "top_k": 32,
+        "top_p": 0.95,
+        "top_k": 40,
         "min_p": 0.05,
         "max_tokens": 4096
       },
       "runtime": {
-        "context_length": 8192,
+        "context_length": 16384,
         "gpu_layers": 99,
         "extra_args": ""
       },
@@ -114,6 +138,30 @@
       "mmproj_path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-mmproj-BF16.gguf",
       "vision": true,
       "description": "Qwen3-Next-VL 27B ternary (PQ2) vision-language reasoning model. Requires the PrismML-Eng llama.cpp fork (custom ternary kernels + Hadamard runtime); NOT runnable on llama-cpp-2.",
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "min_p": 0.05,
+        "max_tokens": 4096
+      },
+      "runtime": {
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "extra_args": ""
+      },
+      "lora": []
+    },
+    {
+      "id": "qwen-image-2.1-7b",
+      "name": "Qwen-Image-2.1 7B",
+      "architecture": "qwen-vl",
+      "format": "gguf",
+      "model_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-GGUF/snapshots/2c31ccd392b367a6637841a143813320a02dff55/qwen-image-2.1-Q4_K_M.gguf",
+      "mmproj_path": "D:/Models/qwen-image-2.1-7b-mmproj-f16.gguf",
+      "vision": true,
+      "modality": "VisionText",
+      "description": "Multimodal vision-language model with advanced image understanding",
       "sampling": {
         "temperature": 0.7,
         "top_p": 0.9,

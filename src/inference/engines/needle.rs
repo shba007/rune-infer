@@ -16,10 +16,6 @@ impl NeedleEngine {
         if !model_path.exists() {
             return Err(format!("Model path does not exist: {}", model_path.display()).into());
         }
-        println!(
-            "[NeedleEngine] Loading weights from: {}",
-            model_path.display()
-        );
         let engine = V3Engine::load(model_path)?;
         Ok(Self {
             id,
@@ -74,17 +70,12 @@ impl InferenceEngine for NeedleEngine {
                     .map_err(|e| format!("Lock error: {}", e))?;
                 let schema_str = schema.to_string();
 
-                println!("[NeedleEngine] Prompt: \"{}\" \"{}\"", prompt, &schema_str);
                 let raw_output = engine.run(prompt, &schema_str);
-                println!("[NeedleEngine] Raw output:\n{}", raw_output);
-
                 let clean_json = Self::extract_tool_call_json(&raw_output);
-                println!("[NeedleEngine] Clean JSON:\n{}", clean_json);
 
                 let parsed: serde_json::Value = serde_json::from_str(&clean_json)?;
                 Ok(InferenceTaskResponse::ToolCall(parsed))
             }
-            _ => Err("NeedleEngine only supports ToolCall tasks".into()),
         }
     }
 }
