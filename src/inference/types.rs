@@ -1,3 +1,4 @@
+use crate::types::ChatMessage;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,6 +9,8 @@ pub enum InferenceTaskRequest {
         schema: serde_json::Value,
         #[serde(default)]
         images: Vec<Vec<u8>>,
+        #[serde(default)]
+        messages: Vec<ChatMessage>,
     },
 }
 

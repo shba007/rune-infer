@@ -104,6 +104,134 @@ Or with specific GPU backend:
 ```bash
 cargo run --release --features cuda -- --config config/models.json
 ```
+## Downloading Inference engines
+Here are unified commands for each platform. 
+
+For **Windows (CUDA)**, the command downloads and extracts **both** the executables (`llama-server.exe`, etc.) and the CUDA runtime libraries (`cudart*.dll`, `cublas*.dll`) into the same target folder in a single step.
+
+---
+
+### 1. Windows (CUDA / NVIDIA GPU)
+
+> Downloads **both** the binary archive and the `cudart` runtime archive, extracting everything into `bin/llama-prism-latest-win-cuda/`.
+
+#### Bash / Git Bash:
+```bash
+mkdir -p bin/llama-prism-latest-win-cuda && \
+curl -s https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest \
+  | grep -o 'https://[^"]*bin-win-cuda[^"]*\.zip' \
+  | while read -r url; do \
+      echo "--> Fetching: $url"; \
+      curl -L "$url" -o bin/temp.zip && \
+      tar -xf bin/temp.zip -C bin/llama-prism-latest-win-cuda && \
+      rm bin/temp.zip; \
+    done && \
+echo "Done! Verifying:" && ls -l bin/llama-prism-latest-win-cuda/*.exe
+```
+
+#### Native PowerShell:
+```powershell
+New-Item -ItemType Directory -Force -Path "bin\llama-prism-latest-win-cuda" | Out-Null
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest"
+$release.assets | Where-Object { $_.name -match "bin-win-cuda" } | ForEach-Object {
+    Write-Host "--> Downloading: $($_.name)"
+    $zipPath = "bin\temp.zip"
+    Invoke-WebRequest -Uri $_.browser_download_url -OutFile $zipPath
+    Expand-Archive -Path $zipPath -DestinationPath "bin\llama-prism-latest-win-cuda" -Force
+    Remove-Item $zipPath
+}
+Write-Host "Done! Verifying:"
+Get-ChildItem "bin\llama-prism-latest-win-cuda\*.exe"
+```
+
+---
+
+### 2. Windows (Vulkan / AMD, Intel, or Universal GPU)
+
+#### Bash / Git Bash:
+```bash
+mkdir -p bin/llama-prism-latest-win-vulkan && \
+curl -s https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest \
+  | grep -o 'https://[^"]*bin-win-vulkan[^"]*\.zip' \
+  | head -n 1 \
+  | while read -r url; do \
+      echo "--> Fetching: $url"; \
+      curl -L "$url" -o bin/temp.zip && \
+      tar -xf bin/temp.zip -C bin/llama-prism-latest-win-vulkan && \
+      rm bin/temp.zip; \
+    done && \
+echo "Done! Verifying:" && ls -l bin/llama-prism-latest-win-vulkan/*.exe
+```
+
+#### Native PowerShell:
+```powershell
+New-Item -ItemType Directory -Force -Path "bin\llama-prism-latest-win-vulkan" | Out-Null
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest"
+$asset = $release.assets | Where-Object { $_.name -match "bin-win-vulkan" } | Select-Object -First 1
+Write-Host "--> Downloading: $($asset.name)"
+Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "bin\temp.zip"
+Expand-Archive -Path "bin\temp.zip" -DestinationPath "bin\llama-prism-latest-win-vulkan" -Force
+Remove-Item "bin\temp.zip"
+Get-ChildItem "bin\llama-prism-latest-win-vulkan\*.exe"
+```
+
+---
+
+### 3. Linux (CUDA / NVIDIA GPU)
+
+```bash
+mkdir -p bin/llama-prism-latest-linux-cuda && \
+curl -s https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest \
+  | grep -o 'https://[^"]*bin-[^"]*cuda[^"]*\.tar\.gz' \
+  | head -n 1 \
+  | while read -r url; do \
+      echo "--> Fetching: $url"; \
+      curl -L "$url" -o bin/temp.tar.gz && \
+      tar -xzf bin/temp.tar.gz -C bin/llama-prism-latest-linux-cuda --strip-components=1 2>/dev/null || tar -xzf bin/temp.tar.gz -C bin/llama-prism-latest-linux-cuda && \
+      rm bin/temp.tar.gz; \
+    done && \
+echo "Done! Verifying:" && ls -l bin/llama-prism-latest-linux-cuda/llama-server
+```
+
+---
+
+### 4. macOS (Apple Silicon / Metal)
+
+```bash
+mkdir -p bin/llama-prism-latest-macos && \
+curl -s https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest \
+  | grep -o 'https://[^"]*bin-macos-arm64[^"]*\.tar\.gz' \
+  | head -n 1 \
+  | while read -r url; do \
+      echo "--> Fetching: $url"; \
+      curl -L "$url" -o bin/temp.tar.gz && \
+      tar -xzf bin/temp.tar.gz -C bin/llama-prism-latest-macos --strip-components=1 2>/dev/null || tar -xzf bin/temp.tar.gz -C bin/llama-prism-latest-macos && \
+      rm bin/temp.tar.gz; \
+    done && \
+echo "Done! Verifying:" && ls -l bin/llama-prism-latest-macos/llama-server
+```
+
+---
+
+### Verification
+
+After running the Windows CUDA command, your `bin/llama-prism-latest-win-cuda` directory will contain both the binaries and DLLs:
+
+```text
+bin/llama-prism-latest-win-cuda/
+├── llama-server.exe
+├── llama-cli.exe
+├── ggml.dll
+├── llama.dll
+├── cublas64_12.dll
+├── cublasLt64_12.dll
+└── cudart64_12.dll
+```
+
+Run:
+```bash
+./bin/llama-prism-latest-win-cuda/llama-server.exe --version
+```
 
 ## Downloading Inference Models
 

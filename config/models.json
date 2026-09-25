@@ -5,7 +5,8 @@
     "port": 3423,
     "api_key": null,
     "max_loaded_models": 1,
-    "idle_unload_seconds": 300
+    "idle_unload_seconds": 300,
+    "vram_budget_ratio": 0.97
   },
   "models": [
     {
@@ -18,6 +19,14 @@
       "vision": false,
       "modality": "Text",
       "description": "Cactus Needle 3 tool-calling and structured extraction engine",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output",
+        "Text Embeddings"
+      ],
+      "bits_per_weight": 2.0,
+      "total_params": 121000000,
+      "max_context_length": 8192,
       "sampling": {
         "temperature": 0.1,
         "top_p": 0.95,
@@ -26,7 +35,7 @@
         "max_tokens": 2048
       },
       "runtime": {
-        "context_length": 4096,
+        "context_length": -1,
         "gpu_layers": 0,
         "extra_args": ""
       },
@@ -42,6 +51,15 @@
       "vision": false,
       "modality": "Text",
       "description": "Qwen3.5 0.8B reasoning model",
+      "capabilities": [
+        "Chat",
+        "Reasoning",
+        "Tool Call",
+        "Code Generation"
+      ],
+      "bits_per_weight": 16.0,
+      "total_params": 873000000,
+      "max_context_length": 262144,
       "sampling": {
         "temperature": 0.6,
         "top_p": 0.9,
@@ -50,7 +68,7 @@
         "max_tokens": 4096
       },
       "runtime": {
-        "context_length": 8192,
+        "context_length": -1,
         "gpu_layers": 99,
         "extra_args": ""
       },
@@ -66,6 +84,17 @@
       "vision": false,
       "modality": "Text",
       "description": "Code generation and instruction following",
+      "capabilities": [
+        "Agentic Coding",
+        "Terminal Automation",
+        "Chat",
+        "Code Generation",
+        "Tool Call",
+        "Error Recovery"
+      ],
+      "bits_per_weight": 6.56,
+      "total_params": 9000000000,
+      "max_context_length": 262144,
       "sampling": {
         "temperature": 0.2,
         "top_p": 0.95,
@@ -74,7 +103,7 @@
         "max_tokens": 2048
       },
       "runtime": {
-        "context_length": 32768,
+        "context_length": -1,
         "gpu_layers": 99,
         "extra_args": ""
       },
@@ -90,6 +119,17 @@
       "vision": true,
       "modality": "VisionText",
       "description": "Multimodal vision-language reasoning model",
+      "max_resolution": "3840×2160 (4K UHD)",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Reasoning",
+        "Agentic Coding",
+        "Tool Call"
+      ],
+      "bits_per_weight": 8.5,
+      "total_params": 9400000000,
+      "max_context_length": 262144,
       "sampling": {
         "temperature": 0.6,
         "top_p": 0.95,
@@ -98,7 +138,7 @@
         "max_tokens": 4096
       },
       "runtime": {
-        "context_length": 8192,
+        "context_length": -1,
         "gpu_layers": 99,
         "extra_args": ""
       },
@@ -114,6 +154,17 @@
       "vision": true,
       "modality": "VisionText",
       "description": "Qwen3.8 27B multimodal vision-language model (IQ3_S quantized)",
+      "max_resolution": "4096×4096 (Dynamic 4K)",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Reasoning",
+        "Agentic Tasks",
+        "Tool Call"
+      ],
+      "bits_per_weight": 3.44,
+      "total_params": 27000000000,
+      "max_context_length": 262144,
       "sampling": {
         "temperature": 0.6,
         "top_p": 0.95,
@@ -122,14 +173,14 @@
         "max_tokens": 4096
       },
       "runtime": {
-        "context_length": 16384,
+        "context_length": -1,
         "gpu_layers": 99,
         "extra_args": ""
       },
       "lora": []
     },
     {
-      "id": "ternary-bonsai-2",
+      "id": "ternary-bonsai-2-27b",
       "name": "Ternary Bonsai-2 27B",
       "modality": "VisionText",
       "architecture": "ternary-bonsai-vl",
@@ -137,7 +188,17 @@
       "model_path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-PQ2_0.gguf",
       "mmproj_path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-mmproj-BF16.gguf",
       "vision": true,
-      "description": "Qwen3-Next-VL 27B ternary (PQ2) vision-language reasoning model. Requires the PrismML-Eng llama.cpp fork (custom ternary kernels + Hadamard runtime); NOT runnable on llama-cpp-2.",
+      "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
+      "max_resolution": "4096×4096 (Dynamic 4K)",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Reasoning",
+        "Tool Call"
+      ],
+      "bits_per_weight": 2.13,
+      "total_params": 27000000000,
+      "max_context_length": 262144,
       "sampling": {
         "temperature": 0.7,
         "top_p": 0.9,
@@ -146,7 +207,7 @@
         "max_tokens": 4096
       },
       "runtime": {
-        "context_length": 32768,
+        "context_length": -1,
         "gpu_layers": 99,
         "extra_args": ""
       },
@@ -162,6 +223,16 @@
       "vision": true,
       "modality": "VisionText",
       "description": "Multimodal vision-language model with advanced image understanding",
+      "max_resolution": "2048×2048 (Native DiT)",
+      "capabilities": [
+        "Text-to-Image",
+        "Image Editing",
+        "Vision",
+        "Transparency (RGBA)"
+      ],
+      "bits_per_weight": 4.5,
+      "total_params": 7000000000,
+      "max_context_length": 32768,
       "sampling": {
         "temperature": 0.7,
         "top_p": 0.9,
@@ -170,7 +241,7 @@
         "max_tokens": 4096
       },
       "runtime": {
-        "context_length": 32768,
+        "context_length": -1,
         "gpu_layers": 99,
         "extra_args": ""
       },

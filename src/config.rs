@@ -25,6 +25,8 @@ pub struct ServerConfig {
     pub api_key: Option<String>,
     pub max_loaded_models: usize,
     pub idle_unload_seconds: u64,
+    #[serde(default = "default_vram_budget_ratio")]
+    pub vram_budget_ratio: f64,
 }
 
 impl Default for ServerConfig {
@@ -35,8 +37,13 @@ impl Default for ServerConfig {
             api_key: None,
             max_loaded_models: 1,
             idle_unload_seconds: 300,
+            vram_budget_ratio: 0.97,
         }
     }
+}
+
+fn default_vram_budget_ratio() -> f64 {
+    0.97
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,25 +83,30 @@ impl ModelRegistry {
     }
 
     pub fn find(&self, id: &str) -> Option<&ModelConfig> {
-        self.models.iter().find(|m| m.id == id)
+        self.models.iter().find(|m| {
+            m.id == id
+                || m.id.eq_ignore_ascii_case(id)
+                || m.name.eq_ignore_ascii_case(id)
+                || (m.id == "ternary-Bonsai-2-27b" && id == "ternary-Bonsai-2-27b")
+        })
     }
 
     pub fn find_owned(&self, id: &str) -> Option<ModelConfig> {
-        self.models.iter().find(|m| m.id == id).cloned()
+        self.find(id).cloned()
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RuntimeConfig {
     #[serde(default = "default_context_length")]
-    pub context_length: u32,
+    pub context_length: i64,
     #[serde(default = "default_gpu_layers")]
     pub gpu_layers: u32,
     #[serde(default)]
     pub extra_args: Option<String>,
 }
 
-fn default_context_length() -> u32 {
+fn default_context_length() -> i64 {
     8192
 }
 
@@ -113,6 +125,18 @@ pub struct ModelConfig {
     pub vision: bool,
     pub description: String,
     #[serde(default)]
+    pub bits_per_weight: Option<f64>,
+    #[serde(default)]
+    pub total_params: Option<u64>,
+    #[serde(default)]
+    pub max_context_length: Option<u32>,
+    #[serde(default)]
+    pub kv_bytes_per_token: Option<u64>,
+    #[serde(default)]
+    pub max_resolution: Option<String>,
+    #[serde(default)]
+    pub capabilities: Option<Vec<String>>,
+    #[serde(default)]
     pub runtime: Option<RuntimeConfig>,
 }
 
@@ -122,5 +146,18 @@ impl ModelConfig {
             anyhow::bail!("Model '{}' has empty id", self.name);
         }
         Ok(())
+    }
+
+    pub fn resolved_capabilities(&self) -> Vec<String> {
+        if let Some(ref caps) = self.capabilities {
+            if !caps.is_empty() {
+                return caps.clone();
+            }
+        }
+        let mut caps = vec!["Chat".to_string(), "Tool Call".to_string()];
+        if self.vision || self.modality == Modality::VisionText {
+            caps.push("Vision".to_string());
+        }
+        caps
     }
 }

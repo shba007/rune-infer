@@ -174,9 +174,8 @@ impl Qwen35Engine {
             n_cur += 1;
         }
 
-        let model_text = output_str.replace("<think>", "").replace("</think>", "");
-
-        let stripped = model_text
+        // Keep <think> and </think> tags intact so reasoning is properly rendered by the UI
+        let stripped = output_str
             .split("<|im_start|>")
             .next()
             .unwrap_or("")

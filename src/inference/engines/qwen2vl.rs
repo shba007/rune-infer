@@ -144,9 +144,7 @@ impl Qwen2VlEngine {
     }
 
     fn post_process(raw: &str) -> String {
-        let model_text = raw.replace("<think>", "").replace("</think>", "");
-
-        let stripped = model_text
+        let stripped = raw
             .split("<|im_start|>")
             .next()
             .unwrap_or("")
@@ -310,6 +308,7 @@ impl Qwen2VlEngine {
                 prompt,
                 schema,
                 images,
+                ..
             } => {
                 let _guard = self.infer_lock.lock().map_err(|e| e.to_string())?;
 

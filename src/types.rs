@@ -42,7 +42,7 @@ impl ChatMessage {
             MessageContent::Text(text) => (text.clone(), Vec::new()),
             MessageContent::Parts(parts) => {
                 let mut text = String::new();
-                let mut images = Vec::new();
+                let mut media_urls = Vec::new();
                 for p in parts {
                     if let Some(t) = &p.text {
                         if !t.is_empty() {
@@ -51,10 +51,13 @@ impl ChatMessage {
                         }
                     }
                     if let Some(img) = &p.image_url {
-                        images.push(img.url.clone());
+                        media_urls.push(img.url.clone());
+                    }
+                    if let Some(vid) = &p.video_url {
+                        media_urls.push(vid.url.clone());
                     }
                 }
-                (text.trim().to_string(), images)
+                (text.trim().to_string(), media_urls)
             }
         }
     }
@@ -74,10 +77,17 @@ pub struct ContentPart {
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<ImageUrlContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_url: Option<VideoUrlContent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageUrlContent {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoUrlContent {
     pub url: String,
 }
 

@@ -1,3 +1,4 @@
+pub mod bonsai;
 pub mod needle;
 pub mod qwen;
 pub mod qwen2vl;

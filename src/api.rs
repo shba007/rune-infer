@@ -9,6 +9,7 @@ use axum::{
 use base64::Engine;
 use serde::Deserialize;
 use std::convert::Infallible;
+use std::path::Path;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -35,8 +36,116 @@ pub fn create_router(state: AppState) -> Router<Arc<AppState>> {
         .with_state(Arc::new(state))
 }
 
-fn decode_image(url: &str) -> Result<Vec<u8>, ErrorResponse> {
-    if let Some(rest) = url.strip_prefix("data:") {
+fn is_video_format(url_or_path: &str) -> bool {
+    let lower = url_or_path.to_lowercase();
+    lower.starts_with("data:video/")
+        || lower.ends_with(".mp4")
+        || lower.ends_with(".mkv")
+        || lower.ends_with(".mov")
+        || lower.ends_with(".webm")
+        || lower.ends_with(".avi")
+}
+
+fn extract_video_frames(video_path: &Path) -> Result<Vec<Vec<u8>>, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temp_dir = std::env::temp_dir().join(format!("rune_vid_{}_{}", std::process::id(), now));
+    std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
+
+    let out_pattern = temp_dir.join("frame_%04d.jpg");
+
+    // Extract keyframes at 1 FPS, max 16 frames, scaling preserving aspect ratio
+    let status = std::process::Command::new("ffmpeg")
+        .arg("-y")
+        .arg("-i")
+        .arg(video_path)
+        .arg("-vf")
+        .arg("fps=1,scale='min(768,iw)':-2")
+        .arg("-vframes")
+        .arg("16")
+        .arg(&out_pattern)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            let mut frames = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+                let mut paths: Vec<_> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+                paths.sort();
+                for p in paths {
+                    if let Ok(bytes) = std::fs::read(&p) {
+                        frames.push(bytes);
+                    }
+                }
+            }
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            if frames.is_empty() {
+                Err("FFmpeg extracted 0 frames from video".to_string())
+            } else {
+                Ok(frames)
+            }
+        }
+        Ok(s) => {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            Err(format!("FFmpeg failed with exit code: {s}"))
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            Err(format!("Failed to spawn ffmpeg: {e}. Is ffmpeg in PATH?"))
+        }
+    }
+}
+
+fn decode_media(url: &str) -> Result<Vec<Vec<u8>>, ErrorResponse> {
+    if is_video_format(url) {
+        if let Some(rest) = url.strip_prefix("data:") {
+            let (_header, b64_data) = rest.split_once(',').ok_or_else(|| ErrorResponse {
+                error: ApiError::new("Invalid video data URL: missing comma separator")
+                    .with_type("invalid_request_error")
+                    .with_code("invalid_video"),
+            })?;
+
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64_data.trim())
+                .map_err(|e| ErrorResponse {
+                    error: ApiError::new(&format!("Invalid base64 video payload: {e}"))
+                        .with_type("invalid_request_error")
+                        .with_code("invalid_video"),
+                })?;
+
+            let temp_video =
+                std::env::temp_dir().join(format!("rune_tmp_{}.mp4", std::process::id()));
+            std::fs::write(&temp_video, &bytes).map_err(|e| ErrorResponse {
+                error: ApiError::new(&format!("Failed to write temporary video: {e}")),
+            })?;
+
+            let frames = extract_video_frames(&temp_video).map_err(|e| ErrorResponse {
+                error: ApiError::new(&format!("Video processing error: {e}"))
+                    .with_type("video_processing_error")
+                    .with_code("ffmpeg_error"),
+            });
+            let _ = std::fs::remove_file(&temp_video);
+            frames
+        } else {
+            let path = Path::new(url);
+            if !path.exists() {
+                return Err(ErrorResponse {
+                    error: ApiError::new(&format!("Video file not found at '{}'", url))
+                        .with_type("invalid_request_error")
+                        .with_code("file_not_found"),
+                });
+            }
+            extract_video_frames(path).map_err(|e| ErrorResponse {
+                error: ApiError::new(&format!("Video processing error: {e}"))
+                    .with_type("video_processing_error")
+                    .with_code("ffmpeg_error"),
+            })
+        }
+    } else if let Some(rest) = url.strip_prefix("data:") {
         let (header, b64_data) = rest.split_once(',').ok_or_else(|| ErrorResponse {
             error: ApiError::new("Invalid image data URL: missing comma separator")
                 .with_type("invalid_request_error")
@@ -53,7 +162,6 @@ fn decode_image(url: &str) -> Result<Vec<u8>, ErrorResponse> {
         }
 
         let clean_b64 = b64_data.trim();
-
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(clean_b64)
             .map_err(|e| ErrorResponse {
@@ -62,12 +170,12 @@ fn decode_image(url: &str) -> Result<Vec<u8>, ErrorResponse> {
                     .with_code("invalid_image"),
             })?;
 
-        Ok(bytes)
+        Ok(vec![bytes])
     } else {
         match std::fs::read(url) {
-            Ok(bytes) => Ok(bytes),
+            Ok(bytes) => Ok(vec![bytes]),
             Err(e) => Err(ErrorResponse {
-                error: ApiError::new(&format!("Could not read image file '{}': {e}", url))
+                error: ApiError::new(&format!("Could not read file '{}': {e}", url))
                     .with_type("invalid_request_error")
                     .with_code("invalid_image"),
             }),
@@ -257,7 +365,7 @@ async fn chat_completions_handler(
         }
 
         for msg in &request.messages {
-            let (mut text, img_urls) = msg.split_text_and_images();
+            let (mut text, media_urls) = msg.split_text_and_images();
             let role = if msg.role.trim().is_empty() {
                 "user"
             } else {
@@ -269,11 +377,13 @@ async fn chat_completions_handler(
             }
 
             let mut decoded_in_msg = 0;
-            for url in &img_urls {
-                match decode_image(url) {
-                    Ok(bytes) => {
-                        images.push(bytes);
-                        decoded_in_msg += 1;
+            for url in &media_urls {
+                match decode_media(url) {
+                    Ok(frames) => {
+                        for frame in frames {
+                            images.push(frame);
+                            decoded_in_msg += 1;
+                        }
                     }
                     Err(e) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
                 }
@@ -320,6 +430,7 @@ async fn chat_completions_handler(
             serde_json::json!({})
         },
         images,
+        messages: request.messages.clone(),
     };
 
     let created = std::time::SystemTime::now()
