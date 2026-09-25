@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "server": {
+    "host": "0.0.0.0",
+    "port": 3421,
+    "api_key": null,
+    "max_loaded_models": 1,
+    "idle_unload_seconds": 300
+  },
+  "models": [
+    {
+      "id": "smoke-test",
+      "name": "Smoke Test Dummy",
+      "modality": "Text",
+      "model_path": "D:/Projects/Public/rune/code-infer/Cargo.toml",
+      "vision": false,
+      "description": "dummy path for smoke test"
+    }
+  ]
+}

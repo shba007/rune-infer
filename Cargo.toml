@@ -1,16 +1,47 @@
 [package]
-name = "crane-mvp"
+name = "rune-infer"
+description = "A standalone, config-driven, OpenAI-API-compatible model server written in Rust"
 version = "0.1.0"
+authors = ["Shirsendu Bairagi <shirsendu2001@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/shba007/rune-infer.git"
 edition = "2024"
+rust-version = "1.98.1"
 
-[dependencies]
-crane = { git = "https://github.com/lucasjinreal/Crane.git", version = "0.1.0" }
-crane-core = { git = "https://github.com/lucasjinreal/Crane.git", version = "0.1.0" }
-anyhow = "1"
+[[bin]]
+name = "rune-infer"
+path = "src/main.rs"
 
 [features]
-default = []
-accelerate = ["crane/accelerate", "crane-core/accelerate"]
-cuda = ["crane/cuda", "crane-core/cuda"]
-metal = ["crane/metal", "crane-core/metal"]
-rocm = ["crane/rocm", "crane-core/rocm"]
+default = ["cpu"]
+cpu = []
+cuda = ["llama-cpp-2/cuda", "llama-cpp-2/common"]
+vulkan = ["llama-cpp-2/vulkan", "llama-cpp-2/common"]
+metal = ["llama-cpp-2/metal", "llama-cpp-2/common"]
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tokio = { version = "1.0", features = ["full", "sync"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+axum = { version = "0.8", features = ["macros", "http2"] }
+tower = "0.5"
+tower-http = { version = "0.7", features = ["cors"] }
+notify = "8.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+image = { version = "0.25", default-features = false, features = [
+	"png",
+	"jpeg",
+	"webp",
+] }
+llama-cpp-2 = { version = "0.1", default-features = false, features = ["mtmd"] }
+needle-infer = "0.3"
+encoding_rs = "0.8"
+base64 = "0.23"
+clap = { version = "4.4", features = ["derive"] }
+
+
+[profile.dev.package."*"]
+opt-level = 3

@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "server": {
+    "host": "0.0.0.0",
+    "port": 3423,
+    "api_key": null,
+    "max_loaded_models": 1,
+    "idle_unload_seconds": 300
+  },
+  "models": [
+    {
+      "id": "oxcoder-9b",
+      "name": "OxCoder 9B",
+      "architecture": "qwen35",
+      "format": "gguf",
+      "model_path": "D:/Models/huggingface/hub/models--mradermacher--OxCoder-9B-i1-GGUF/snapshots/e3335e20fc13b04618c821f9b99d1f8ef5cd103d/OxCoder-9B.i1-Q6_K.gguf",
+      "mmproj_path": null,
+      "vision": false,
+      "modality": "Text",
+      "description": "Code generation and instruction following",
+      "sampling": {
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.01,
+        "max_tokens": 2048
+      },
+      "runtime": {
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "extra_args": ""
+      },
+      "lora": []
+    },
+    {
+      "id": "ornith-1.5-9b",
+      "name": "Ornith 1.5 9B",
+      "architecture": "qwen35",
+      "format": "gguf",
+      "model_path": "D:/Models/huggingface/hub/models--ornith-ai--Ornith-1.5-9B-GGUF/snapshots/abdd624b12ebf020b767fff532ff44fe552b28c3/Ornith-1.5-9B-Q8_0.gguf",
+      "mmproj_path": "D:/Models/huggingface/hub/models--ornith-ai--Ornith-1.5-9B-GGUF/snapshots/abdd624b12ebf020b767fff532ff44fe552b28c3/mmproj-Ornith-1.5-9B-BF16.gguf",
+      "vision": true,
+      "modality": "VisionText",
+      "description": "Multimodal vision-language reasoning model",
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.01,
+        "max_tokens": 4096
+      },
+      "runtime": {
+        "context_length": 8192,
+        "gpu_layers": 99,
+        "extra_args": ""
+      },
+      "lora": []
+    },
+    {
+      "id": "qwen-image-2.1-7b",
+      "name": "Qwen-Image-2.1 7B",
+      "architecture": "qwen-vl",
+      "format": "gguf",
+      "model_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-GGUF/snapshots/2c31ccd392b367a6637841a143813320a02dff55/qwen-image-2.1-Q4_K_M.gguf",
+      "mmproj_path": "D:/Models/qwen-image-2.1-7b-mmproj-f16.gguf",
+      "vision": true,
+      "modality": "VisionText",
+      "description": "Multimodal vision-language model with advanced image understanding",
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "min_p": 0.05,
+        "max_tokens": 4096
+      },
+      "runtime": {
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "extra_args": ""
+      },
+      "lora": []
+    },
+    {
+      "id": "qwen3.5-0.8b",
+      "name": "Qwen3.5 0.8B",
+      "architecture": "qwen35",
+      "format": "gguf",
+      "model_path": "D:/Projects/Public/rune/code-infer/weights/Qwen3.5-0.8B-BF16.gguf",
+      "mmproj_path": null,
+      "vision": false,
+      "modality": "Text",
+      "description": "Qwen3.5 0.8B reasoning model",
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "top_k": 32,
+        "min_p": 0.05,
+        "max_tokens": 4096
+      },
+      "runtime": {
+        "context_length": 8192,
+        "gpu_layers": 99,
+        "extra_args": ""
+      },
+      "lora": []
+    },
+    {
+      "id": "ternary-bonsai-2",
+      "name": "Ternary Bonsai-2 27B",
+      "modality": "VisionText",
+      "architecture": "ternary-bonsai-vl",
+      "format": "gguf",
+      "model_path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-PQ2_0.gguf",
+      "mmproj_path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-mmproj-BF16.gguf",
+      "vision": true,
+      "description": "Qwen3-Next-VL 27B ternary (PQ2) vision-language reasoning model. Requires the PrismML-Eng llama.cpp fork (custom ternary kernels + Hadamard runtime); NOT runnable on llama-cpp-2.",
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "min_p": 0.05,
+        "max_tokens": 4096
+      },
+      "runtime": {
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "extra_args": ""
+      },
+      "lora": []
+    }
+  ]
+}
