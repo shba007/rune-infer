@@ -160,4 +160,46 @@ impl ModelConfig {
         }
         caps
     }
+
+    pub fn supports_structured_output(&self) -> bool {
+        self.resolved_capabilities().iter().any(|c| {
+            c.eq_ignore_ascii_case("Structured Output")
+                || c.eq_ignore_ascii_case("Structured JSON")
+                || c.eq_ignore_ascii_case("Structured Output Mode")
+                || c.eq_ignore_ascii_case("Structured Extraction")
+        })
+    }
+
+    pub fn max_dimensions(&self) -> (u32, u32) {
+        if let Some(ref res_str) = self.max_resolution {
+            let clean = res_str.split('(').next().unwrap_or(res_str).trim();
+            let parts: Vec<&str> = if clean.contains('×') {
+                clean.split('×').collect()
+            } else if clean.contains('x') {
+                clean.split('x').collect()
+            } else if clean.contains('*') {
+                clean.split('*').collect()
+            } else {
+                Vec::new()
+            };
+            if parts.len() == 2 {
+                if let (Ok(w), Ok(h)) = (
+                    parts[0].trim().parse::<u32>(),
+                    parts[1].trim().parse::<u32>(),
+                ) {
+                    return (w, h);
+                }
+            }
+        }
+        (2048, 2048)
+    }
+
+    pub fn effective_context_limit(&self) -> u32 {
+        if let Some(ref r) = self.runtime {
+            if r.context_length > 0 {
+                return (r.context_length as u32).min(self.max_context_length.unwrap_or(131072));
+            }
+        }
+        self.max_context_length.unwrap_or(8192)
+    }
 }

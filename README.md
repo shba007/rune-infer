@@ -4,430 +4,655 @@ A standalone, config-driven, OpenAI-API-compatible model server written in Rust.
 
 ## Overview
 
-Rune Infer serves multiple local models (different weights, different quantizations) behind one HTTP server, chosen per-request via `model` id — similar in spirit to `llama-server`/Ollama/LM Studio, but config-file-first and designed from day one to grow into a general local-inference hub.
+Rune Infer serves multiple local and quantized models (GGUF, CACT, etc.) behind a unified HTTP server chosen per-request via the `model` ID. It features on-demand lazy loading, LRU memory eviction, pre-flight context/token budget validation, native multi-camera spatiotemporal video understanding, structured JSON schema decoding, and OpenAI-compatible tool/function calling.
+
+---
+
+## Key Features
+
+- **OpenAI-API Compatible**: Drop-in replacement for `/v1/chat/completions` (streaming & non-streaming), `/v1/models`, and `/health`.
+- **Config-Driven & Lazy-Loaded**: Models are defined in `config/models.json` and loaded into VRAM/RAM only when requested, respecting `max_loaded_models` and LRU eviction.
+- **Multimodal Vision & Native Video**:
+  - Image inputs via HTTPS URLs, Base64 Data URLs, or local file paths.
+  - Native video understanding using **3D Spatiotemporal Tubelets** and **M-RoPE** (continuous $(T, H, W)$ space-time coordinates).
+  - Remote streaming from AWS S3, Cloudflare R2, MinIO, and RustFS (zero-RAM disk streaming).
+- **Pre-Flight Context & Token Budget Protection**: Automatically calculates text and visual patch tokens against the context window before native execution, preventing native GGML memory aborts (`SIGABRT`).
+- **Structured JSON Mode**: Full support for OpenAI `response_format` (`json_object` and `json_schema` with strict validation) for models with `Structured Output` capabilities (e.g., `cactus-needle-3`, `qwen3.8-27b`).
+- **Tool Calling (Function Calling)**: Supports multi-tool definitions, schema validation, and streaming tool chunk generation.
+- **Direct Task Inference**: `/v1/inference?engine=<id>` endpoint for raw task execution and structured extraction.
+- **Auditing & Event Logging**: Lightweight structured request/response audit logging to `logs/rune-infer.log` with status, latency, media count, and token usage (payload bodies are omitted to prevent disk bloat).
+
+---
 
 ## Architecture
 
-### High-Level Design
-
 ```
                     ┌─────────────────────────────┐
-                    │        Rune Infer (CLI)         │
-                    │  clap-based entrypoint        │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌───────────────▼───────────────┐
-                    │      Config Loader/Watcher      │
-                    │  models.json -> ModelRegistry   │
-                    │  (serde, validated, hot-reload) │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌───────────────▼───────────────┐
-                    │        HTTP Layer (axum)        │
-                    │  /v1/chat/completions           │
-                    │  /v1/models  /health             │
-                    │  OpenAI request/response types   │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌───────────────▼───────────────┐
-                    │     Engine Manager / Router      │
-                    │  - resolves model id -> config   │
-                    │  - owns loaded-engine cache       │
-                    │  - load/unload/evict policy       │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌───────────────▼───────────────┐
-                    │     Engine (llama-cpp-2)        │
-                    │  TextEngine + VisionEngine     │
-                    └─────────────────────────────────┘
+                    │      Rune Infer (CLI)       │
+                    │    clap-based entrypoint    │
+                    └──────────────┬──────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │     Config / Registry       │
+                    │   models.json validation    │
+                    │  VRAM estimation & budgets  │
+                    └──────────────┬──────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │      HTTP Layer (Axum)      │
+                    │  /v1/chat/completions       │
+                    │  /v1/inference   /v1/models │
+                    │  /health   Dual Log Writer  │
+                    └──────────────┬──────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │   Engine Registry / Router  │
+                    │    Lazy Loader + LRU Cache  │
+                    └──────────────┬──────────────┘
+                                   │
+         ┌─────────────────────────┼─────────────────────────┐
+         │                         │                         │
+┌────────▼────────┐       ┌────────▼────────┐       ┌────────▼────────┐
+│  Qwen2VlEngine  │       │  Qwen35Engine   │       │  NeedleEngine   │
+│ (3D Tubelets &  │       │ (Hybrid Attention│      │(Tool Calling &  │
+│    M-RoPE)      │       │   Text Model)   │       │ Structured JSON)│
+└─────────────────┘       └─────────────────┘       └─────────────────┘
 ```
 
-### Crate Structure
+### Project Layout
 
-```
-Rune Infer/
-├── Cargo.toml                # workspace root
-├── crates/
-│   ├── Rune Infer-cli/          # Binary: CLI args, main(), wiring
-│   ├── Rune Infer-config/       # Config schema, serde types, validation, hot-reload
-│   ├── Rune Infer-api/          # OpenAI-compatible request/response types + axum handlers
-│   ├── Rune Infer-core/         # Engine trait, ModelRegistry, EngineManager/router, errors
-│   └── Rune Infer-engine-llama/ # llama-cpp-2 wrapper: TextEngine + VisionEngine
+```text
+rune-infer/
+├── Cargo.toml            # Manifest & feature definitions (cpu, cuda, vulkan, metal)
 ├── config/
-│   └── models.json           # Example / default config
-├── AGENTS.md
-└── README.md
+│   └── models.json       # Model catalog, runtime configs, and sampling parameters
+├── logs/
+│   └── rune-infer.log    # Persistent audit log (timestamps, status, latency, tokens)
+├── src/
+│   ├── main.rs           # Server bootstrap, CLI args, dual logger setup
+│   ├── lib.rs            # Library entrypoint and public exports
+│   ├── api.rs            # Axum router, OpenAI handlers, media processing
+│   ├── config.rs         # ModelRegistry schema, capability resolution, token budgets
+│   ├── types.rs          # OpenAI request/response structures, SSE, ChatMessage
+│   └── inference/
+│       ├── mod.rs        # AppState and engine dispatch
+│       ├── registry.rs   # Engine catalog, VRAM calculation, LRU eviction
+│       ├── traits.rs     # InferenceEngine trait
+│       ├── types.rs      # Task request/response types
+│       └── engines/
+│           ├── bonsai.rs # Managed llama-server subprocess runner
+│           ├── needle.rs # Cactus Needle 3 native engine
+│           ├── qwen.rs   # LlamaModel text runner
+│           ├── qwen2vl.rs# Multimodal vision/video engine (mtmd)
+│           └── qwen35.rs # Qwen3.5 text engine
 ```
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 
-- Rust 1.75+
-- CUDA toolkit (for GPU acceleration on Windows/Linux)
-- Visual Studio Build Tools or GCC/Clang (for C/C++ toolchain)
+- **Rust**: 1.80+ (Rust Edition 2024 compatible)
+- **FFmpeg**: Must be available in `PATH` for video frame extraction and container decoding.
+- **CUDA Toolkit** (Optional): For NVIDIA GPU acceleration.
+- **C/C++ Compiler**: MSVC (Windows) or GCC/Clang (Linux/macOS) for native `llama.cpp` compilation.
 
-### Building
-
-#### CPU-only (default)
-
-```bash
-cargo run --release --features cpu
-```
-
-#### CUDA (Windows/Linux)
+### Building from Source
 
 ```bash
-cargo run --release --features cuda
+# CPU Only
+cargo build --release --features cpu
+
+# CUDA (NVIDIA GPU Acceleration)
+cargo build --release --features cuda
+
+# Vulkan (AMD, Intel, or cross-platform GPU)
+cargo build --release --features vulkan
+
+# Metal (macOS Apple Silicon)
+cargo build --release --features metal
 ```
 
-#### Vulkan (Linux)
+### Running the Server
 
 ```bash
-cargo run --release --features vulkan
+# Run with default config (config/models.json)
+./target/release/rune-infer
+
+# Specify custom config, host, port, and max loaded models
+./target/release/rune-infer --config config/models.json --host 0.0.0.0 --port 3423 --max-loaded-models 2
 ```
 
-#### Metal (macOS)
-
-```bash
-cargo run --release --features metal
-```
-
-### Running
-
-```bash
-cargo run --release -- --config config/models.json
-```
-
-Or with specific GPU backend:
-
-```bash
-cargo run --release --features cuda -- --config config/models.json
-```
-## Downloading Inference engines
-Here are unified commands for each platform. 
-
-For **Windows (CUDA)**, the command downloads and extracts **both** the executables (`llama-server.exe`, etc.) and the CUDA runtime libraries (`cudart*.dll`, `cublas*.dll`) into the same target folder in a single step.
-
----
-
-### 1. Windows (CUDA / NVIDIA GPU)
-
-> Downloads **both** the binary archive and the `cudart` runtime archive, extracting everything into `bin/llama-prism-latest-win-cuda/`.
-
-#### Bash / Git Bash:
-```bash
-mkdir -p bin/llama-prism-latest-win-cuda && \
-curl -s https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest \
-  | grep -o 'https://[^"]*bin-win-cuda[^"]*\.zip' \
-  | while read -r url; do \
-      echo "--> Fetching: $url"; \
-      curl -L "$url" -o bin/temp.zip && \
-      tar -xf bin/temp.zip -C bin/llama-prism-latest-win-cuda && \
-      rm bin/temp.zip; \
-    done && \
-echo "Done! Verifying:" && ls -l bin/llama-prism-latest-win-cuda/*.exe
-```
-
-#### Native PowerShell:
-```powershell
-New-Item -ItemType Directory -Force -Path "bin\llama-prism-latest-win-cuda" | Out-Null
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest"
-$release.assets | Where-Object { $_.name -match "bin-win-cuda" } | ForEach-Object {
-    Write-Host "--> Downloading: $($_.name)"
-    $zipPath = "bin\temp.zip"
-    Invoke-WebRequest -Uri $_.browser_download_url -OutFile $zipPath
-    Expand-Archive -Path $zipPath -DestinationPath "bin\llama-prism-latest-win-cuda" -Force
-    Remove-Item $zipPath
-}
-Write-Host "Done! Verifying:"
-Get-ChildItem "bin\llama-prism-latest-win-cuda\*.exe"
-```
-
----
-
-### 2. Windows (Vulkan / AMD, Intel, or Universal GPU)
-
-#### Bash / Git Bash:
-```bash
-mkdir -p bin/llama-prism-latest-win-vulkan && \
-curl -s https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest \
-  | grep -o 'https://[^"]*bin-win-vulkan[^"]*\.zip' \
-  | head -n 1 \
-  | while read -r url; do \
-      echo "--> Fetching: $url"; \
-      curl -L "$url" -o bin/temp.zip && \
-      tar -xf bin/temp.zip -C bin/llama-prism-latest-win-vulkan && \
-      rm bin/temp.zip; \
-    done && \
-echo "Done! Verifying:" && ls -l bin/llama-prism-latest-win-vulkan/*.exe
-```
-
-#### Native PowerShell:
-```powershell
-New-Item -ItemType Directory -Force -Path "bin\llama-prism-latest-win-vulkan" | Out-Null
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest"
-$asset = $release.assets | Where-Object { $_.name -match "bin-win-vulkan" } | Select-Object -First 1
-Write-Host "--> Downloading: $($asset.name)"
-Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "bin\temp.zip"
-Expand-Archive -Path "bin\temp.zip" -DestinationPath "bin\llama-prism-latest-win-vulkan" -Force
-Remove-Item "bin\temp.zip"
-Get-ChildItem "bin\llama-prism-latest-win-vulkan\*.exe"
-```
-
----
-
-### 3. Linux (CUDA / NVIDIA GPU)
-
-```bash
-mkdir -p bin/llama-prism-latest-linux-cuda && \
-curl -s https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest \
-  | grep -o 'https://[^"]*bin-[^"]*cuda[^"]*\.tar\.gz' \
-  | head -n 1 \
-  | while read -r url; do \
-      echo "--> Fetching: $url"; \
-      curl -L "$url" -o bin/temp.tar.gz && \
-      tar -xzf bin/temp.tar.gz -C bin/llama-prism-latest-linux-cuda --strip-components=1 2>/dev/null || tar -xzf bin/temp.tar.gz -C bin/llama-prism-latest-linux-cuda && \
-      rm bin/temp.tar.gz; \
-    done && \
-echo "Done! Verifying:" && ls -l bin/llama-prism-latest-linux-cuda/llama-server
-```
-
----
-
-### 4. macOS (Apple Silicon / Metal)
-
-```bash
-mkdir -p bin/llama-prism-latest-macos && \
-curl -s https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/latest \
-  | grep -o 'https://[^"]*bin-macos-arm64[^"]*\.tar\.gz' \
-  | head -n 1 \
-  | while read -r url; do \
-      echo "--> Fetching: $url"; \
-      curl -L "$url" -o bin/temp.tar.gz && \
-      tar -xzf bin/temp.tar.gz -C bin/llama-prism-latest-macos --strip-components=1 2>/dev/null || tar -xzf bin/temp.tar.gz -C bin/llama-prism-latest-macos && \
-      rm bin/temp.tar.gz; \
-    done && \
-echo "Done! Verifying:" && ls -l bin/llama-prism-latest-macos/llama-server
-```
-
----
-
-### Verification
-
-After running the Windows CUDA command, your `bin/llama-prism-latest-win-cuda` directory will contain both the binaries and DLLs:
+### CLI Options
 
 ```text
-bin/llama-prism-latest-win-cuda/
-├── llama-server.exe
-├── llama-cli.exe
-├── ggml.dll
-├── llama.dll
-├── cublas64_12.dll
-├── cublasLt64_12.dll
-└── cudart64_12.dll
+Usage: rune-infer [OPTIONS]
+
+Options:
+  -c, --config <CONFIG>            Path to models.json [default: config/models.json]
+      --host <HOST>                Host IP to bind to [default: 0.0.0.0]
+  -p, --port <PORT>                Port to bind to [default: from config]
+      --max-loaded-models <N>      Max models kept in VRAM/RAM [default: 1]
+      --idle-timeout <SECONDS>     Idle unload duration in seconds [default: 300]
+  -h, --help                       Print help
+  -V, --version                    Print version
 ```
 
-Run:
-```bash
-./bin/llama-prism-latest-win-cuda/llama-server.exe --version
-```
+---
 
-## Downloading Inference Models
+## Configuration (`models.json`)
 
-The inference engines (needle, qwen3, qwen35) auto-discover their weights from
-the `weights/` folder at startup. Place a GGUF file there and the matching
-engine loads it on first start — no config change needed.
-
-### Qwen3.5-0.8B (16-bit / BF16)
-
-```bash
-curl -L -o weights/Qwen3.5-0.8B-BF16.gguf \
-  "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-BF16.gguf"
-```
-
-The `-L` flag follows the redirect to Hugging Face's CDN. The engine
-(`qwen35-0.8b`) picks it up automatically.
-
-## API
-
-### Endpoints
-
-#### `GET /health`
-
-Health check endpoint.
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "version": "0.1.0",
-  "loaded_models": ["oxcoder-9b"]
-}
-```
-
-#### `GET /v1/models`
-
-List available models.
-
-**Response:**
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "oxcoder-9b",
-      "object": "model",
-      "owned_by": "Rune Infer"
-    }
-  ]
-}
-```
-
-#### `POST /v1/chat/completions`
-
-Chat completion endpoint (OpenAI-compatible).
-
-**Request:**
-```json
-{
-  "model": "oxcoder-9b",
-  "messages": [
-    {
-      "role": "user",
-      "content": "What is the capital of France?"
-    }
-  ],
-  "stream": true,
-  "temperature": 0.7,
-  "max_tokens": 1024
-}
-```
-
-**Streaming Response:**
-```
-data: {"choices":[{"index":0,"delta":{"content":"Paris"}}]}
-
-data: {"choices":[{"index":0,"delta":{"content":" is"}}]}
-
-data: {"choices":[{"index":0,"delta":{"content":" the"}}]}
-
-data: {"choices":[{"index":0,"delta":{"content":" capital"}}]}
-
-data: {"choices":[{"index":0,"delta":{"content":" of"}}]}
-
-data: {"choices":[{"index":0,"delta":{"content":" France"}}]}
-
-data: {"choices":[{"index":0,"delta":{}}}
-
-data: [DONE]
-```
-
-### Vision Models
-
-Vision models support image inputs via `image_url`:
-
-```json
-{
-  "model": "ornith-1.5-9b",
-  "messages": [
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "text",
-          "text": "Describe this image."
-        },
-        {
-          "type": "image_url",
-          "image_url": {
-            "url": "data:image/png;base64,iVBOR..."
-          }
-        }
-      ]
-    }
-  ]
-}
-```
-
-## Configuration
-
-Config file (`config/models.json`):
+The server configuration resides in `config/models.json`:
 
 ```json
 {
   "schema_version": 1,
   "server": {
     "host": "0.0.0.0",
-    "port": 8080,
+    "port": 3423,
     "api_key": null,
     "max_loaded_models": 1,
-    "idle_unload_seconds": 300
+    "idle_unload_seconds": 300,
+    "vram_budget_ratio": 0.97
   },
   "models": [
     {
-      "id": "oxcoder-9b",
-      "name": "OxCoder 9B",
+      "id": "qwen3.8-27b",
+      "name": "Qwen3.8 27B",
       "architecture": "qwen35",
       "format": "gguf",
-      "model_path": "D:/Models/...",
-      "mmproj_path": null,
-      "vision": false,
-      "modality": "text",
-      "description": "Code generation",
+      "model_path": "D:/Models/qwen3.8-27b.gguf",
+      "mmproj_path": "D:/Models/mmproj-F16.gguf",
+      "vision": true,
+      "modality": "VisionText",
+      "description": "Multimodal vision-language model",
+      "max_resolution": "4096×4096 (Dynamic 4K)",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Reasoning",
+        "Agentic Tasks",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "bits_per_weight": 3.44,
+      "total_params": 27000000000,
+      "max_context_length": 262144,
       "sampling": {
-        "temperature": 0.2,
+        "temperature": 0.6,
         "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.01,
-        "max_tokens": 2048
+        "top_k": 40,
+        "min_p": 0.05,
+        "max_tokens": 4096
       },
       "runtime": {
-        "context_length": 32768,
+        "context_length": -1,
         "gpu_layers": 99,
-        "n_threads": 4,
         "extra_args": ""
-      },
-      "lora": []
+      }
     }
   ]
 }
 ```
 
-### CLI Options
+---
 
-```
-Usage: rune-infer [OPTIONS]
+## API Reference & cURL Examples
 
-Options:
-  -c, --config <CONFIG>    Path to configuration file [default: config/models.json]
-  -h, --host <HOST>        Host to bind to [default: 0.0.0.0]
-  -p, --port <PORT>        Port to bind to [default: 8080]
-  -C, --cuda               Enable CUDA backend
-  -V, --vulkan             Enable Vulkan backend
-  -M, --metal              Enable Metal backend
-  -c, --cpu                CPU-only mode
-  -w, --watch-config       Enable config hot-reload [default: true]
-  -k, --api-key <KEY>      API key for authentication
-      --max-loaded-models <N>    Maximum number of loaded models [default: 1]
-      --idle-timeout <SECONDS>   Idle unload timeout [default: 300]
-  -h, --help               Print help
-  -V, --version            Print version
+All endpoints default to port `3423` (or as configured in `models.json`).
+
+### 1. Health & Server Status
+
+#### Check Server Health
+```bash
+curl -X GET http://localhost:3423/health
 ```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "loaded_models": ["qwen3.8-27b"]
+}
+```
+
+#### List Available Models
+```bash
+curl -X GET http://localhost:3423/v1/models
+```
+
+---
+
+### 2. Standard Text Completions
+
+#### Non-Streaming Chat Completion
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "oxcoder-9b",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are an expert Rust systems programmer."
+      },
+      {
+        "role": "user",
+        "content": "Explain zero-copy deserialization in serde."
+      }
+    ],
+    "temperature": 0.2,
+    "max_tokens": 512
+  }'
+```
+
+#### Server-Sent Events (SSE) Streaming
+```bash
+curl -N -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3.5-0.8b",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Write a short poem about concurrent programming."
+      }
+    ],
+    "stream": true
+  }'
+```
+
+---
+
+### 3. Structured JSON Mode (`response_format`)
+
+Rune Infer natively supports OpenAI's `response_format` for models configured with `"Structured Output"` capability (e.g., `cactus-needle-3`, `qwen3.8-27b`).
+
+#### Strict JSON Schema Mode
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3.8-27b",
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "user_profile_extraction",
+        "strict": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "full_name": { "type": "string" },
+            "role": { "type": "string" },
+            "skills": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "years_experience": { "type": "integer" }
+          },
+          "required": ["full_name", "role", "skills", "years_experience"]
+        }
+      }
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Alex Vance is a Principal Systems Architect with 12 years working in Rust, Distributed Storage, and CUDA."
+      }
+    ],
+    "temperature": 0.1
+  }'
+```
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-1790414800",
+  "object": "chat.completion",
+  "created": 1790414800,
+  "model": "qwen3.8-27b",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"full_name\": \"Alex Vance\",\n  \"role\": \"Principal Systems Architect\",\n  \"skills\": [\"Rust\", \"Distributed Storage\", \"CUDA\"],\n  \"years_experience\": 12\n}",
+        "tool_calls": null
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 142,
+    "completion_tokens": 48,
+    "total_tokens": 190
+  }
+}
+```
+
+#### Generic JSON Object Mode
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "cactus-needle-3",
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "Extract the server IP and port from: Connection established to 192.168.1.100 on port 8080"
+      }
+    ]
+  }'
+```
+
+---
+
+### 4. Tool Calling (Function Calling)
+
+#### Function Definition and Invocation
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3.8-27b",
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "execute_shell_command",
+          "description": "Execute a shell command on the host terminal",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "command": { "type": "string", "description": "The command line string to run" },
+              "timeout_sec": { "type": "integer", "description": "Timeout in seconds" }
+            },
+            "required": ["command"]
+          }
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Check the available disk space on the primary partition."
+      }
+    ],
+    "temperature": 0.1
+  }'
+```
+
+**Response with `tool_calls`:**
+```json
+{
+  "id": "chatcmpl-1790415200",
+  "object": "chat.completion",
+  "created": 1790415200,
+  "model": "qwen3.8-27b",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_1790415200_0",
+            "type": "function",
+            "function": {
+              "name": "execute_shell_command",
+              "arguments": "{\"command\": \"df -h /\", \"timeout_sec\": 10}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 210,
+    "completion_tokens": 32,
+    "total_tokens": 242
+  }
+}
+```
+
+---
+
+### 5. Multimodal Vision (Images)
+
+Rune Infer accepts remote URLs, S3/storage links, base64 data URLs, and local file paths. Large images are automatically scaled according to the model's `max_resolution`.
+
+#### Image via Remote / Object Storage URL
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ornith-1.5-9b",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "Analyze the architecture diagram in this image." },
+          {
+            "type": "image_url",
+            "image_url": { "url": "https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png" }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+#### Image via Base64 Data URL
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3.8-27b",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "Identify what is in this image." },
+          {
+            "type": "image_url",
+            "image_url": { "url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBD..." }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+---
+
+### 6. Native Video Understanding (`video_url`)
+
+Rune Infer handles video natively. Remote video URLs (`.mp4`, `.webm`, `.mov`, `.mkv`) are streamed directly to disk, decoded via FFmpeg, converted into 3D spatiotemporal tubelet tokens, and wrapped in Qwen's native video conversation format (`Video 1: <|video_start|>...<|video_end|>`).
+
+#### Video via Remote HTTPS / Presigned S3 URL
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3.8-27b",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Summarize the key events in this video in 3 bullet points with timestamps."
+          },
+          {
+            "type": "video_url",
+            "video_url": {
+              "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
+            }
+          }
+        ]
+      }
+    ],
+    "temperature": 0.4,
+    "max_tokens": 512
+  }'
+```
+
+#### Video Analysis with Structured JSON Extraction
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3.8-27b",
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "video_temporal_events",
+        "strict": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "video_summary": { "type": "string" },
+            "timeline": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "timestamp": { "type": "string" },
+                  "action": { "type": "string" }
+                },
+                "required": ["timestamp", "action"]
+              }
+            }
+          },
+          "required": ["video_summary", "timeline"]
+        }
+      }
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "Extract all temporal action markers from this recording." },
+          {
+            "type": "video_url",
+            "video_url": { "url": "http://127.0.0.1:9000/videos/factory_clip.mp4" }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+---
+
+### 7. RustFS / S3 Object Storage Workflow
+
+For large media files that cannot be sent via Base64, run the included `docker-compose.yml` to spin up a local S3-compatible RustFS bucket service:
+
+```bash
+docker compose up -d
+```
+
+#### 1. Create a Bucket (using `curl --aws-sigv4`)
+```bash
+curl -X PUT \
+  --aws-sigv4 "aws:amz:us-east-1:s3" \
+  --user "rustfsadmin:rustfsadmin" \
+  http://localhost:9000/videos
+```
+
+#### 2. Stream Upload Video Binary to S3/RustFS
+```bash
+curl -X PUT \
+  --aws-sigv4 "aws:amz:us-east-1:s3" \
+  --user "rustfsadmin:rustfsadmin" \
+  -H "Content-Type: video/mp4" \
+  -T "local_recording.mp4" \
+  http://localhost:9000/videos/sample.mp4
+```
+
+#### 3. Run Inference against the Stored Asset
+```bash
+curl -X POST http://localhost:3423/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3.8-27b",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": "Describe the main activity in this video." },
+          {
+            "type": "video_url",
+            "video_url": { "url": "http://127.0.0.1:9000/videos/sample.mp4" }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+---
+
+### 8. Direct Engine Task Execution (`/v1/inference`)
+
+For direct task invocation or benchmarking bypass of the OpenAI conversation layer:
+
+```bash
+curl -X POST "http://localhost:3423/v1/inference?engine=cactus-needle-3" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "tool_call",
+    "prompt": "Schedule a meeting with David tomorrow at 2pm",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "attendee": { "type": "string" },
+        "time": { "type": "string" }
+      },
+      "required": ["attendee", "time"]
+    }
+  }'
+```
+
+---
+
+## Logging & Auditing
+
+Rune Infer writes dual output:
+- **Console (`stdout`)**: Real-time server diagnostics and tracing.
+- **Persistent Audit Log (`logs/rune-infer.log`)**: Compact audit trail documenting every transaction without storing large payload bodies:
+
+```text
+2026-09-26T08:29:38.272845Z  INFO rune_infer: Starting Rune Infer...
+2026-09-26T08:29:38.273508Z  INFO rune_infer: Server listening on 0.0.0.0:3423
+2026-09-26T08:36:36.481767Z  INFO audit: Chat completion successful (text) status=200 latency_ms=80834 model=qwen3.8-27b prompt_tokens=2342 completion_tokens=973 media=images: 1, videos: 0
+2026-09-26T08:48:30.698627Z  INFO audit: Chat completion successful (text) status=200 latency_ms=131529 model=qwen3.8-27b prompt_tokens=2675 completion_tokens=908 media=images: 0, videos: 1
+2026-09-26T09:18:13.114716Z  WARN audit: Media decoding failed status=400 error=Remote server returned HTTP error for URL: HTTP status client error (403 Forbidden)
+```
+
+---
 
 ## Roadmap
 
 ### Phase 1: Text MVP (Current)
 - [x] Config schema + loader + validation
 - [x] `/health`, `/v1/models` endpoints
-- [ ] `TextEngine` wrapping llama-cpp-2
-- [ ] `/v1/chat/completions` streaming
-- [ ] Load on demand
+- [x] `TextEngine` wrapping llama-cpp-2
+- [x] `/v1/chat/completions` streaming
+- [x] Load on demand
 
 ### Phase 2: Vision
-- [ ] `VisionEngine` using mtmd
-- [ ] Image preprocessing
-- [ ] Vision-language generation
+- [x] `VisionEngine` using mtmd
+- [x] Image preprocessing
+- [x] Vision-language generation
 
 ### Phase 3: Multi-model & LoRA
 - [ ] LRU eviction

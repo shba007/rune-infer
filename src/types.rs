@@ -17,6 +17,32 @@ pub struct ChatCompletionRequest {
     pub tools: Option<serde_json::Value>,
     #[serde(default)]
     pub tool_choice: Option<serde_json::Value>,
+    #[serde(default)]
+    pub response_format: Option<ResponseFormat>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResponseFormat {
+    pub r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json_schema: Option<JsonSchemaDefinition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonSchemaDefinition {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MediaItem {
+    Image(String),
+    Video(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,12 +63,12 @@ impl ChatMessage {
         }
     }
 
-    pub fn split_text_and_images(&self) -> (String, Vec<String>) {
+    pub fn split_text_and_media(&self) -> (String, Vec<MediaItem>) {
         match &self.content {
             MessageContent::Text(text) => (text.clone(), Vec::new()),
             MessageContent::Parts(parts) => {
                 let mut text = String::new();
-                let mut media_urls = Vec::new();
+                let mut media_items = Vec::new();
                 for p in parts {
                     if let Some(t) = &p.text {
                         if !t.is_empty() {
@@ -51,15 +77,27 @@ impl ChatMessage {
                         }
                     }
                     if let Some(img) = &p.image_url {
-                        media_urls.push(img.url.clone());
+                        media_items.push(MediaItem::Image(img.url.clone()));
                     }
                     if let Some(vid) = &p.video_url {
-                        media_urls.push(vid.url.clone());
+                        media_items.push(MediaItem::Video(vid.url.clone()));
                     }
                 }
-                (text.trim().to_string(), media_urls)
+                (text.trim().to_string(), media_items)
             }
         }
+    }
+
+    pub fn split_text_and_images(&self) -> (String, Vec<String>) {
+        let (text, items) = self.split_text_and_media();
+        let urls = items
+            .into_iter()
+            .map(|item| match item {
+                MediaItem::Image(url) => url,
+                MediaItem::Video(url) => url,
+            })
+            .collect();
+        (text, urls)
     }
 }
 
@@ -71,8 +109,8 @@ pub enum MessageContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
 pub struct ContentPart {
+    pub r#type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

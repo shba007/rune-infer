@@ -55,6 +55,7 @@
         "Chat",
         "Reasoning",
         "Tool Call",
+        "Structured Output",
         "Code Generation"
       ],
       "bits_per_weight": 16.0,
@@ -63,7 +64,7 @@
       "sampling": {
         "temperature": 0.6,
         "top_p": 0.9,
-        "top_k": 32,
+        "top_k": 20,
         "min_p": 0.05,
         "max_tokens": 4096
       },
@@ -90,6 +91,7 @@
         "Chat",
         "Code Generation",
         "Tool Call",
+        "Structured Output",
         "Error Recovery"
       ],
       "bits_per_weight": 6.56,
@@ -100,7 +102,7 @@
         "top_p": 0.95,
         "top_k": 20,
         "min_p": 0.01,
-        "max_tokens": 2048
+        "max_tokens": 4096
       },
       "runtime": {
         "context_length": -1,
@@ -125,6 +127,7 @@
         "Vision",
         "Reasoning",
         "Agentic Coding",
+        "Structured Output",
         "Tool Call"
       ],
       "bits_per_weight": 8.5,
@@ -161,6 +164,7 @@
         "Reasoning",
         "Agentic Tasks",
         "Tool Call",
+        "Structured Output",
         "Person Identification"
       ],
       "bits_per_weight": 3.44,
@@ -195,6 +199,7 @@
         "Chat",
         "Vision",
         "Reasoning",
+        "Structured Output",
         "Tool Call"
       ],
       "bits_per_weight": 2.13,

@@ -31,6 +31,7 @@ tower = "0.5"
 tower-http = { version = "0.7", features = ["cors"] }
 notify = "8.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 image = { version = "0.25", default-features = false, features = [
 	"png",
 	"jpeg",
@@ -38,10 +39,10 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 llama-cpp-2 = { version = "0.1", default-features = false, features = ["mtmd"] }
 needle-infer = "0.3"
-encoding_rs = "0.8"
+encoding_rs = "0.8.42"
 base64 = "0.23"
 clap = { version = "4.4", features = ["derive"] }
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.13.5", features = ["json", "blocking"] }
 
 [profile.dev.package."*"]
 opt-level = 3

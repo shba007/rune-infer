@@ -18,7 +18,8 @@ use crate::config::ModelRegistry;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{
     ApiError, ChatCompletionRequest, ChatCompletionResponse, Choice, ChoiceDelta, ErrorResponse,
-    HealthResponse, ModelInfo, ModelsResponse, ResponseMessage, ToolCall, ToolCallChunk, Usage,
+    HealthResponse, MediaItem, ModelInfo, ModelsResponse, ResponseMessage, ToolCall, ToolCallChunk,
+    Usage,
 };
 
 #[derive(Clone)]
@@ -38,15 +39,128 @@ pub fn create_router(state: AppState) -> Router<Arc<AppState>> {
 
 fn is_video_format(url_or_path: &str) -> bool {
     let lower = url_or_path.to_lowercase();
+    let path_part = lower.split('?').next().unwrap_or(&lower);
     lower.starts_with("data:video/")
-        || lower.ends_with(".mp4")
-        || lower.ends_with(".mkv")
-        || lower.ends_with(".mov")
-        || lower.ends_with(".webm")
-        || lower.ends_with(".avi")
+        || path_part.ends_with(".mp4")
+        || path_part.ends_with(".mkv")
+        || path_part.ends_with(".mov")
+        || path_part.ends_with(".webm")
+        || path_part.ends_with(".avi")
 }
 
-fn extract_video_frames(video_path: &Path) -> Result<Vec<Vec<u8>>, String> {
+fn download_remote_to_temp_file(url: &str) -> Result<std::path::PathBuf, ErrorResponse> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temp_file =
+        std::env::temp_dir().join(format!("rune_dl_{}_{}.mp4", std::process::id(), now));
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| ErrorResponse {
+            error: ApiError::new(format!("Failed to build HTTP client: {e}"))
+                .with_type("server_error"),
+        })?;
+
+    let mut resp = client
+        .get(url)
+        .send()
+        .map_err(|e| ErrorResponse {
+            error: ApiError::new(format!("Failed to fetch video from URL '{url}': {e}"))
+                .with_type("invalid_request_error")
+                .with_code("media_fetch_error"),
+        })?
+        .error_for_status()
+        .map_err(|e| ErrorResponse {
+            error: ApiError::new(format!("Remote server returned HTTP error for URL: {e}"))
+                .with_type("invalid_request_error")
+                .with_code("remote_media_error"),
+        })?;
+
+    let mut file = std::fs::File::create(&temp_file).map_err(|e| ErrorResponse {
+        error: ApiError::new(format!("Failed to create temporary file for download: {e}"))
+            .with_type("server_error"),
+    })?;
+
+    std::io::copy(&mut resp, &mut file).map_err(|e| {
+        let _ = std::fs::remove_file(&temp_file);
+        ErrorResponse {
+            error: ApiError::new(format!("Failed to stream media to disk: {e}"))
+                .with_type("server_error"),
+        }
+    })?;
+
+    Ok(temp_file)
+}
+
+fn download_remote_bytes(url: &str) -> Result<Vec<u8>, ErrorResponse> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| ErrorResponse {
+            error: ApiError::new(format!("Failed to build HTTP client: {e}"))
+                .with_type("server_error"),
+        })?;
+
+    let resp = client
+        .get(url)
+        .send()
+        .map_err(|e| ErrorResponse {
+            error: ApiError::new(format!("Failed to fetch image from URL '{url}': {e}"))
+                .with_type("invalid_request_error")
+                .with_code("media_fetch_error"),
+        })?
+        .error_for_status()
+        .map_err(|e| ErrorResponse {
+            error: ApiError::new(format!("Remote server returned error for image URL: {e}"))
+                .with_type("invalid_request_error")
+                .with_code("remote_media_error"),
+        })?;
+
+    let bytes = resp.bytes().map_err(|e| ErrorResponse {
+        error: ApiError::new(format!("Failed to read image bytes: {e}")).with_type("server_error"),
+    })?;
+
+    Ok(bytes.to_vec())
+}
+
+fn process_image_bytes(
+    bytes: &[u8],
+    max_dims: (u32, u32),
+) -> Result<(Vec<u8>, u32, u32), ErrorResponse> {
+    let img = image::load_from_memory(bytes).map_err(|e| ErrorResponse {
+        error: ApiError::new(format!("Invalid or unreadable image data: {e}"))
+            .with_type("invalid_request_error")
+            .with_code("invalid_image"),
+    })?;
+
+    let (mut w, mut h) = (img.width(), img.height());
+    let (max_w, max_h) = max_dims;
+
+    if w > max_w || h > max_h {
+        let resized = img.resize(max_w, max_h, image::imageops::FilterType::Triangle);
+        w = resized.width();
+        h = resized.height();
+        let mut buf = std::io::Cursor::new(Vec::new());
+        resized
+            .write_to(&mut buf, image::ImageFormat::Jpeg)
+            .map_err(|e| ErrorResponse {
+                error: ApiError::new(format!("Failed to encode resized image: {e}"))
+                    .with_type("server_error")
+                    .with_code("image_processing_error"),
+            })?;
+        Ok((buf.into_inner(), w, h))
+    } else {
+        Ok((bytes.to_vec(), w, h))
+    }
+}
+
+fn extract_video_frames(
+    video_path: &Path,
+    max_dims: (u32, u32),
+) -> Result<Vec<(Vec<u8>, u32, u32)>, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -61,7 +175,7 @@ fn extract_video_frames(video_path: &Path) -> Result<Vec<Vec<u8>>, String> {
         .arg("-i")
         .arg(video_path)
         .arg("-vf")
-        .arg("fps=1,scale='min(768,iw)':-2")
+        .arg("fps=2,scale='min(768,iw)':-2")
         .arg("-vframes")
         .arg("16")
         .arg(&out_pattern)
@@ -77,7 +191,9 @@ fn extract_video_frames(video_path: &Path) -> Result<Vec<Vec<u8>>, String> {
                 paths.sort();
                 for p in paths {
                     if let Ok(bytes) = std::fs::read(&p) {
-                        frames.push(bytes);
+                        if let Ok(processed) = process_image_bytes(&bytes, max_dims) {
+                            frames.push(processed);
+                        }
                     }
                 }
             }
@@ -99,9 +215,23 @@ fn extract_video_frames(video_path: &Path) -> Result<Vec<Vec<u8>>, String> {
     }
 }
 
-fn decode_media(url: &str) -> Result<Vec<Vec<u8>>, ErrorResponse> {
+fn decode_media(
+    url: &str,
+    max_dims: (u32, u32),
+) -> Result<Vec<(Vec<u8>, u32, u32)>, ErrorResponse> {
+    let is_remote = url.starts_with("http://") || url.starts_with("https://");
+
     if is_video_format(url) {
-        if let Some(rest) = url.strip_prefix("data:") {
+        if is_remote {
+            let temp_video = download_remote_to_temp_file(url)?;
+            let frames = extract_video_frames(&temp_video, max_dims).map_err(|e| ErrorResponse {
+                error: ApiError::new(format!("Video processing error: {e}"))
+                    .with_type("video_processing_error")
+                    .with_code("ffmpeg_error"),
+            });
+            let _ = std::fs::remove_file(&temp_video);
+            frames
+        } else if let Some(rest) = url.strip_prefix("data:") {
             let (_header, b64_data) = rest.split_once(',').ok_or_else(|| ErrorResponse {
                 error: ApiError::new("Invalid video data URL: missing comma separator")
                     .with_type("invalid_request_error")
@@ -122,7 +252,7 @@ fn decode_media(url: &str) -> Result<Vec<Vec<u8>>, ErrorResponse> {
                 error: ApiError::new(&format!("Failed to write temporary video: {e}")),
             })?;
 
-            let frames = extract_video_frames(&temp_video).map_err(|e| ErrorResponse {
+            let frames = extract_video_frames(&temp_video, max_dims).map_err(|e| ErrorResponse {
                 error: ApiError::new(&format!("Video processing error: {e}"))
                     .with_type("video_processing_error")
                     .with_code("ffmpeg_error"),
@@ -138,12 +268,16 @@ fn decode_media(url: &str) -> Result<Vec<Vec<u8>>, ErrorResponse> {
                         .with_code("file_not_found"),
                 });
             }
-            extract_video_frames(path).map_err(|e| ErrorResponse {
+            extract_video_frames(path, max_dims).map_err(|e| ErrorResponse {
                 error: ApiError::new(&format!("Video processing error: {e}"))
                     .with_type("video_processing_error")
                     .with_code("ffmpeg_error"),
             })
         }
+    } else if is_remote {
+        let bytes = download_remote_bytes(url)?;
+        let processed = process_image_bytes(&bytes, max_dims)?;
+        Ok(vec![processed])
     } else if let Some(rest) = url.strip_prefix("data:") {
         let (header, b64_data) = rest.split_once(',').ok_or_else(|| ErrorResponse {
             error: ApiError::new("Invalid image data URL: missing comma separator")
@@ -169,10 +303,14 @@ fn decode_media(url: &str) -> Result<Vec<Vec<u8>>, ErrorResponse> {
                     .with_code("invalid_image"),
             })?;
 
-        Ok(vec![bytes])
+        let processed = process_image_bytes(&bytes, max_dims)?;
+        Ok(vec![processed])
     } else {
         match std::fs::read(url) {
-            Ok(bytes) => Ok(vec![bytes]),
+            Ok(bytes) => {
+                let processed = process_image_bytes(&bytes, max_dims)?;
+                Ok(vec![processed])
+            }
             Err(e) => Err(ErrorResponse {
                 error: ApiError::new(&format!("Could not read file '{}': {e}", url))
                     .with_type("invalid_request_error")
@@ -213,9 +351,11 @@ async fn inference_handler(
     Query(q): Query<InferenceQuery>,
     Json(task): Json<InferenceTaskRequest>,
 ) -> Response {
+    let start_time = std::time::Instant::now();
     let engine_id = match q.engine.as_deref().filter(|s| !s.trim().is_empty()) {
         Some(id) => id.to_string(),
         None => {
+            tracing::warn!(target: "audit", status = 400, "Inference call missing 'engine' param");
             return (
                 StatusCode::BAD_REQUEST,
                 Json(InferenceTaskResponse::Error(
@@ -231,17 +371,42 @@ async fn inference_handler(
         tokio::task::spawn_blocking(move || inference.execute_task(&engine_id, &task, None)).await;
 
     match res {
-        Ok(Ok(output)) => Json(output).into_response(),
+        Ok(Ok(output)) => {
+            tracing::info!(
+                target: "audit",
+                status = 200,
+                latency_ms = start_time.elapsed().as_millis(),
+                tokens = output.usage.total_tokens,
+                "Inference task completed"
+            );
+            Json(output).into_response()
+        }
         Ok(Err(e)) => {
+            tracing::warn!(
+                target: "audit",
+                status = 404,
+                latency_ms = start_time.elapsed().as_millis(),
+                error = %e,
+                "Inference task failed: engine not found or execution error"
+            );
             (StatusCode::NOT_FOUND, Json(InferenceTaskResponse::Error(e))).into_response()
         }
-        Err(join_err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(InferenceTaskResponse::Error(format!(
-                "Task failed: {join_err}"
-            ))),
-        )
-            .into_response(),
+        Err(join_err) => {
+            tracing::error!(
+                target: "audit",
+                status = 500,
+                latency_ms = start_time.elapsed().as_millis(),
+                error = %join_err,
+                "Inference task thread join error"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(InferenceTaskResponse::Error(format!(
+                    "Task failed: {join_err}"
+                ))),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -288,7 +453,10 @@ async fn chat_completions_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ChatCompletionRequest>,
 ) -> Response {
+    let start_time = std::time::Instant::now();
+
     if request.model.trim().is_empty() {
+        tracing::warn!(target: "audit", status = 400, "Chat completion rejected: missing 'model'");
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -300,11 +468,102 @@ async fn chat_completions_handler(
             .into_response();
     }
 
+    let model_config = match state.config.find(&request.model) {
+        Some(c) => c.clone(),
+        None => {
+            tracing::warn!(
+                target: "audit",
+                status = 404,
+                model = %request.model,
+                "Chat completion rejected: model not found in catalog"
+            );
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Model '{}' not found", request.model))
+                        .with_type("invalid_request_error")
+                        .with_code("model_not_found"),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let mut has_video = false;
+    let mut has_media = false;
+
+    for msg in &request.messages {
+        let (_, media) = msg.split_text_and_media();
+        if !media.is_empty() {
+            has_media = true;
+        }
+        if media.iter().any(|m| matches!(m, MediaItem::Video(_))) {
+            has_video = true;
+        }
+    }
+
+    if has_media
+        && !model_config.vision
+        && model_config.modality != crate::config::Modality::VisionText
+    {
+        tracing::warn!(
+            target: "audit",
+            status = 400,
+            model = %request.model,
+            "Chat completion rejected: media provided to text-only model"
+        );
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new(format!(
+                    "Model '{}' does not support vision/media inputs.",
+                    model_config.id
+                ))
+                .with_type("invalid_request_error")
+                .with_code("model_vision_unsupported"),
+            }),
+        )
+            .into_response();
+    }
+
+    let is_structured_mode = match &request.response_format {
+        Some(rf) => rf.r#type == "json_object" || rf.r#type == "json_schema",
+        None => false,
+    };
+
+    if is_structured_mode && !model_config.supports_structured_output() {
+        tracing::warn!(
+            target: "audit",
+            status = 400,
+            model = %request.model,
+            "Chat completion rejected: structured JSON mode requested on unsupported model"
+        );
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new(format!(
+                    "Model '{}' does not support structured JSON mode (capability 'Structured Output' is missing in models.json).",
+                    model_config.id
+                ))
+                .with_type("invalid_request_error")
+                .with_code("unsupported_response_format"),
+            }),
+        )
+            .into_response();
+    }
+
     let model_id = request.model.clone();
     let inference = state.inference.clone();
     let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
         Ok(Ok(e)) => e,
         Ok(Err(err)) => {
+            tracing::error!(
+                target: "audit",
+                status = 404,
+                model = %request.model,
+                error = %err,
+                "Failed to acquire engine for model"
+            );
             return (
                 StatusCode::NOT_FOUND,
                 Json(ErrorResponse {
@@ -319,6 +578,12 @@ async fn chat_completions_handler(
                 .into_response();
         }
         Err(join_err) => {
+            tracing::error!(
+                target: "audit",
+                status = 500,
+                error = %join_err,
+                "Engine spawn_blocking task join error"
+            );
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -335,7 +600,29 @@ async fn chat_completions_handler(
         serde_json::Value::Object(o) => !o.is_empty(),
         _ => false,
     };
-    let default_tool_system = if has_tools {
+
+    let structured_schema = if is_structured_mode {
+        if let Some(ref rf) = request.response_format {
+            if let Some(ref js) = rf.json_schema {
+                js.schema
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({ "type": "object" }))
+            } else {
+                serde_json::json!({ "type": "object" })
+            }
+        } else {
+            serde_json::json!({})
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    let default_tool_system = if is_structured_mode {
+        format!(
+            "You are a helpful assistant.\nYou must respond ONLY with a valid JSON object matching this schema:\n{}",
+            serde_json::to_string_pretty(&structured_schema).unwrap_or_default()
+        )
+    } else if has_tools {
         let tools_json = serde_json::to_string_pretty(&tools_value).unwrap_or_default();
         format!(
             "You are a helpful assistant with access to tools.\n\
@@ -347,9 +634,16 @@ async fn chat_completions_handler(
             {}",
             tools_json
         )
+    } else if has_video {
+        "You are a helpful assistant with native video understanding capabilities. Analyze the video sequence directly, observing temporal motion, continuity, actions, and timestamps.".to_string()
     } else {
         "You are a helpful assistant.".to_string()
     };
+
+    let max_dims = model_config.max_dimensions();
+    let mut total_media_tokens = 0u32;
+    let mut image_count = 0usize;
+    let mut video_count = 0usize;
 
     let (prompt, images) = {
         let mut prompt = String::new();
@@ -364,70 +658,134 @@ async fn chat_completions_handler(
         }
 
         for msg in &request.messages {
-            let (mut text, media_urls) = msg.split_text_and_images();
+            let (mut text, media_items) = msg.split_text_and_media();
             let role = if msg.role.trim().is_empty() {
                 "user"
             } else {
                 msg.role.trim()
             };
 
-            if role == "system" && has_tools {
+            if role == "system" && (has_tools || is_structured_mode) {
                 text = format!("{}\n\n{}", text, default_tool_system);
             }
 
-            let mut decoded_in_msg = 0;
-            for url in &media_urls {
-                match decode_media(url) {
-                    Ok(frames) => {
-                        for frame in frames {
-                            images.push(frame);
-                            decoded_in_msg += 1;
+            let mut media_blocks = String::new();
+            for item in &media_items {
+                match item {
+                    MediaItem::Video(url) => {
+                        video_count += 1;
+                        match decode_media(url, max_dims) {
+                            Ok(frames) => {
+                                let (w, h) =
+                                    frames.first().map(|f| (f.1, f.2)).unwrap_or((768, 768));
+                                let patch_w = (w + 27) / 28;
+                                let patch_h = (h + 27) / 28;
+                                let tubelet_slices = ((frames.len() + 1) / 2) as u32;
+                                total_media_tokens = total_media_tokens
+                                    .saturating_add((tubelet_slices * patch_w * patch_h) + 32);
+
+                                media_blocks
+                                    .push_str(&format!("\nVideo {video_count}:\n<|video_start|>"));
+                                for (frame_bytes, _, _) in frames {
+                                    images.push(frame_bytes);
+                                    media_blocks.push_str("<__media__>");
+                                }
+                                media_blocks.push_str("<|video_end|>\n");
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    target: "audit",
+                                    status = 400,
+                                    error = %e.error.message,
+                                    "Video decoding failed"
+                                );
+                                return (StatusCode::BAD_REQUEST, Json(e)).into_response();
+                            }
                         }
                     }
-                    Err(e) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
+                    MediaItem::Image(url) => {
+                        image_count += 1;
+                        match decode_media(url, max_dims) {
+                            Ok(frames) => {
+                                for (frame_bytes, w, h) in frames {
+                                    let patch_w = (w + 27) / 28;
+                                    let patch_h = (h + 27) / 28;
+                                    total_media_tokens =
+                                        total_media_tokens.saturating_add((patch_w * patch_h) + 32);
+
+                                    images.push(frame_bytes);
+                                    media_blocks.push_str(&format!(
+                                        "\nPicture {image_count}:\n<__media__>\n"
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    target: "audit",
+                                    status = 400,
+                                    error = %e.error.message,
+                                    "Image decoding failed"
+                                );
+                                return (StatusCode::BAD_REQUEST, Json(e)).into_response();
+                            }
+                        }
+                    }
                 }
             }
 
-            let existing_markers = text.matches("<__media__>").count();
-            if existing_markers > 0 {
-                let mut kept = 0;
-                let mut cleaned = String::new();
-                let parts: Vec<&str> = text.split("<__media__>").collect();
-                for (i, part) in parts.iter().enumerate() {
-                    cleaned.push_str(part);
-                    if i < parts.len() - 1 {
-                        if kept < decoded_in_msg {
-                            cleaned.push_str("<__media__>");
-                            kept += 1;
-                        } else {
-                            cleaned.push_str("[media]");
-                        }
-                    }
-                }
-                text = cleaned;
-                while kept < decoded_in_msg {
-                    text.push_str("\n<__media__>");
-                    kept += 1;
-                }
-            } else {
-                for _ in 0..decoded_in_msg {
-                    text.push_str("\n<__media__>");
-                }
-            }
-
+            text.push_str(&media_blocks);
             prompt.push_str(&format!("<|im_start|>{role}\n{}<|im_end|>\n", text.trim()));
         }
         prompt.push_str("<|im_start|>assistant\n");
         (prompt, images)
     };
 
+    let est_text_tokens = ((prompt.len() / 4).max(1)) as u32;
+    let reserved_tokens = request.max_tokens.unwrap_or(2048) as u32;
+    let total_required = est_text_tokens
+        .saturating_add(total_media_tokens)
+        .saturating_add(reserved_tokens);
+    let context_limit = model_config.effective_context_limit();
+
+    if total_required > context_limit {
+        let err_msg = format!(
+            "Request token budget estimated at ~{} tokens (text: {}, media: {}, max_tokens: {}) exceeds model '{}' context limit of {} tokens.",
+            total_required,
+            est_text_tokens,
+            total_media_tokens,
+            reserved_tokens,
+            model_config.id,
+            context_limit
+        );
+        tracing::warn!(
+            target: "audit",
+            status = 413,
+            model = %request.model,
+            error = %err_msg,
+            "Context window exceeded"
+        );
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(ErrorResponse {
+                error: ApiError::new(err_msg)
+                    .with_type("invalid_request_error")
+                    .with_code("context_length_exceeded"),
+            }),
+        )
+            .into_response();
+    }
+
+    let task_schema = if is_structured_mode {
+        structured_schema
+    } else if has_tools {
+        tools_value
+    } else {
+        serde_json::json!({})
+    };
+
     let task = InferenceTaskRequest::ToolCall {
         prompt,
-        schema: if has_tools {
-            tools_value
-        } else {
-            serde_json::json!({})
-        },
+        schema: task_schema,
         images,
         messages: request.messages.clone(),
     };
@@ -444,7 +802,7 @@ async fn chat_completions_handler(
         let model_id = request.model.clone();
 
         tokio::task::spawn_blocking(move || {
-            if has_tools {
+            if has_tools && !is_structured_mode {
                 match engine_clone.execute(&task_clone, None) {
                     Ok(output) => match output.response {
                         InferenceTaskResponse::ToolCall(val) => {
@@ -532,11 +890,27 @@ async fn chat_completions_handler(
                             );
                         }
                         InferenceTaskResponse::Error(other) => {
-                            eprintln!("[API] Unexpected error: {other}");
+                            let err_chunk = serde_json::json!({
+                                "error": {
+                                    "message": other,
+                                    "type": "server_error",
+                                    "code": "inference_error"
+                                }
+                            });
+                            let _ = tx
+                                .send(Event::default().event("error").data(err_chunk.to_string()));
                         }
                     },
                     Err(e) => {
-                        eprintln!("[API] Execution error: {e}");
+                        let err_chunk = serde_json::json!({
+                            "error": {
+                                "message": e.to_string(),
+                                "type": "server_error",
+                                "code": "engine_execution_failed"
+                            }
+                        });
+                        let _ =
+                            tx.send(Event::default().event("error").data(err_chunk.to_string()));
                     }
                 }
             } else {
@@ -599,11 +973,28 @@ async fn chat_completions_handler(
                         );
                     }
                     Err(e) => {
-                        eprintln!("[API] Engine execution error: {e}");
+                        let err_chunk = serde_json::json!({
+                            "error": {
+                                "message": e.to_string(),
+                                "type": "server_error",
+                                "code": "engine_execution_failed"
+                            }
+                        });
+                        let _ =
+                            tx.send(Event::default().event("error").data(err_chunk.to_string()));
                     }
                 }
             }
         });
+
+        tracing::info!(
+            target: "audit",
+            status = 200,
+            latency_ms = start_time.elapsed().as_millis(),
+            model = %request.model,
+            media = %format!("images: {image_count}, videos: {video_count}"),
+            "SSE stream started"
+        );
 
         let stream = UnboundedReceiverStream::new(rx);
         let done_stream = tokio_stream::once(Ok::<_, Infallible>(Event::default().data("[DONE]")));
@@ -617,65 +1008,140 @@ async fn chat_completions_handler(
     })
     .await;
 
-    let response = match result {
+    match result {
         Ok(Ok(output)) => match output.response {
             InferenceTaskResponse::ToolCall(val) => {
-                if let Some(tool_calls) = convert_to_tool_calls(&val, created) {
-                    chat_completion_response(
+                tracing::info!(
+                    target: "audit",
+                    status = 200,
+                    latency_ms = start_time.elapsed().as_millis(),
+                    model = %request.model,
+                    prompt_tokens = output.usage.prompt_tokens,
+                    completion_tokens = output.usage.completion_tokens,
+                    media = %format!("images: {image_count}, videos: {video_count}"),
+                    "Chat completion successful (structured/tool_call)"
+                );
+                if is_structured_mode {
+                    let content_str = match &val {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+                    };
+                    let resp = chat_completion_response(
+                        &request.model,
+                        Some(content_str),
+                        None,
+                        "stop",
+                        created,
+                        output.usage,
+                    );
+                    Json(resp).into_response()
+                } else if let Some(tool_calls) = convert_to_tool_calls(&val, created) {
+                    let resp = chat_completion_response(
                         &request.model,
                         None,
                         Some(tool_calls),
                         "tool_calls",
                         created,
                         output.usage,
-                    )
+                    );
+                    Json(resp).into_response()
                 } else {
-                    chat_completion_response(
+                    let resp = chat_completion_response(
                         &request.model,
                         Some(val.to_string()),
                         None,
                         "stop",
                         created,
                         output.usage,
-                    )
+                    );
+                    Json(resp).into_response()
                 }
             }
-            InferenceTaskResponse::Text(text) => chat_completion_response(
-                &request.model,
-                Some(text),
-                None,
-                "stop",
-                created,
-                output.usage,
-            ),
-            InferenceTaskResponse::Error(e) => chat_completion_response(
-                &request.model,
-                Some(e),
-                None,
-                "stop",
-                created,
-                output.usage,
-            ),
+            InferenceTaskResponse::Text(text) => {
+                tracing::info!(
+                    target: "audit",
+                    status = 200,
+                    latency_ms = start_time.elapsed().as_millis(),
+                    model = %request.model,
+                    prompt_tokens = output.usage.prompt_tokens,
+                    completion_tokens = output.usage.completion_tokens,
+                    media = %format!("images: {image_count}, videos: {video_count}"),
+                    "Chat completion successful (text)"
+                );
+                let resp = chat_completion_response(
+                    &request.model,
+                    Some(text),
+                    None,
+                    "stop",
+                    created,
+                    output.usage,
+                );
+                Json(resp).into_response()
+            }
+            InferenceTaskResponse::Error(e) => {
+                tracing::error!(
+                    target: "audit",
+                    status = 500,
+                    latency_ms = start_time.elapsed().as_millis(),
+                    model = %request.model,
+                    error = %e,
+                    "Inference returned internal error"
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(e)
+                            .with_type("server_error")
+                            .with_code("inference_error"),
+                    }),
+                )
+                    .into_response()
+            }
         },
-        Ok(Err(e)) => chat_completion_response(
-            &request.model,
-            Some(e),
-            None,
-            "stop",
-            created,
-            Usage::default(),
-        ),
-        Err(join_err) => chat_completion_response(
-            &request.model,
-            Some(format!("Thread execution error: {join_err}")),
-            None,
-            "stop",
-            created,
-            Usage::default(),
-        ),
-    };
-
-    Json(response).into_response()
+        Ok(Err(e)) => {
+            let status = if e.contains("context") || e.contains("tokens") || e.contains("limit") {
+                StatusCode::PAYLOAD_TOO_LARGE
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            tracing::warn!(
+                target: "audit",
+                status = status.as_u16(),
+                latency_ms = start_time.elapsed().as_millis(),
+                model = %request.model,
+                error = %e,
+                "Engine execution returned error"
+            );
+            (
+                status,
+                Json(ErrorResponse {
+                    error: ApiError::new(e)
+                        .with_type("invalid_request_error")
+                        .with_code("inference_failure"),
+                }),
+            )
+                .into_response()
+        }
+        Err(join_err) => {
+            tracing::error!(
+                target: "audit",
+                status = 500,
+                latency_ms = start_time.elapsed().as_millis(),
+                model = %request.model,
+                error = %join_err,
+                "Engine thread join error"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Thread execution failure: {join_err}"))
+                        .with_type("server_error")
+                        .with_code("internal_error"),
+                }),
+            )
+                .into_response()
+        }
+    }
 }
 
 fn chat_completion_response(

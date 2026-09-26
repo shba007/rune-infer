@@ -23,6 +23,7 @@ pub struct Qwen2VlEngine {
     context_params: LlamaContextParams,
     mtmd_ctx: MtmdContext,
     n_ctx: u32,
+    n_batch: u32,
     infer_lock: Mutex<()>,
 }
 
@@ -72,8 +73,14 @@ impl Qwen2VlEngine {
         }
 
         let ctx_size = n_ctx.unwrap_or(32768);
+        let batch_size = 8192.min(ctx_size);
+        let ubatch_size = 2048.min(batch_size);
+
         let mut context_params = LlamaContextParams::default();
-        context_params = context_params.with_n_ctx(NonZeroU32::new(ctx_size));
+        context_params = context_params
+            .with_n_ctx(NonZeroU32::new(ctx_size))
+            .with_n_batch(batch_size)
+            .with_n_ubatch(ubatch_size);
 
         Ok(Self {
             id,
@@ -82,6 +89,7 @@ impl Qwen2VlEngine {
             context_params,
             mtmd_ctx,
             n_ctx: ctx_size,
+            n_batch: batch_size,
             infer_lock: Mutex::new(()),
         })
     }
@@ -182,13 +190,29 @@ impl Qwen2VlEngine {
             .map_err(|e| format!("Failed to tokenize: {:?}", e))?;
 
         let prompt_tokens = tokens.len() as u32;
-
-        let mut batch = llama_cpp_2::llama_batch::LlamaBatch::new(self.n_ctx as usize, 1);
-        let last_index = (tokens.len() - 1) as i32;
-        for (i, token) in tokens.iter().enumerate() {
-            batch.add(*token, i as i32, &[0], i as i32 == last_index)?;
+        if prompt_tokens >= self.n_ctx {
+            return Err(format!(
+                "Prompt tokens ({prompt_tokens}) exceed context size ({})",
+                self.n_ctx
+            )
+            .into());
         }
-        ctx.decode(&mut batch)?;
+
+        let batch_capacity = (self.n_batch as usize).min(2048);
+        let mut batch = llama_cpp_2::llama_batch::LlamaBatch::new(batch_capacity, 1);
+        let total_tokens = tokens.len();
+
+        let mut n_eval = 0;
+        for chunk in tokens.chunks(batch_capacity) {
+            batch.clear();
+            for (i, &token) in chunk.iter().enumerate() {
+                let pos = n_eval + i as i32;
+                let is_last = pos == (total_tokens - 1) as i32;
+                batch.add(token, pos, &[0], is_last)?;
+            }
+            ctx.decode(&mut batch)?;
+            n_eval += chunk.len() as i32;
+        }
 
         let mut sampler =
             LlamaSampler::chain_simple([LlamaSampler::temp(0.1), LlamaSampler::greedy()]);
@@ -262,7 +286,17 @@ impl Qwen2VlEngine {
             &bitmap_refs,
         )?;
 
-        let n_past = chunks.eval_chunks(&self.mtmd_ctx, &ctx, 0, 0, 8192, true)? as i32;
+        let eval_batch_size = (self.n_batch as i32).min(8192);
+        let n_past = chunks.eval_chunks(&self.mtmd_ctx, &ctx, 0, 0, eval_batch_size, true)? as i32;
+
+        if n_past >= self.n_ctx as i32 {
+            return Err(format!(
+                "Multimodal tokens ({n_past}) exceed context limit ({})",
+                self.n_ctx
+            )
+            .into());
+        }
+
         let prompt_tokens = n_past as u32;
 
         let mut sampler =

@@ -44,6 +44,7 @@ EXTRA_IGNORES=(
     "models.json"
     "smoke_test.json"
     "build.sh"
+    "static"
     # "package.json"
     # "Cargo.toml"
 )
