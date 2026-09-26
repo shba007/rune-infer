@@ -64,6 +64,9 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogWriter {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    // Load .env from root if found; otherwise log warning
+    let env_result = dotenvy::dotenv();
+
     std::fs::create_dir_all("logs").context("Failed to create 'logs' directory")?;
     let log_file = std::fs::OpenOptions::new()
         .create(true)
@@ -86,6 +89,19 @@ async fn main() -> Result<()> {
 
     tracing::info!("Starting Rune Infer...");
     tracing::info!("Persistent log audit active at logs/rune-infer.log");
+
+    match env_result {
+        Ok(path) => tracing::info!(
+            "✓ Loaded environment configurations from {}",
+            path.display()
+        ),
+        Err(e) if e.not_found() => tracing::warn!(
+            "No .env file found in root; continuing with system environment variables"
+        ),
+        Err(e) => tracing::warn!(
+            "Failed to load .env file: {e}; continuing with system environment variables"
+        ),
+    }
 
     let config_path = std::path::Path::new(&args.config);
     let config = ModelRegistry::from_file(config_path).context("Failed to load config")?;

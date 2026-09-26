@@ -32,6 +32,14 @@ tower-http = { version = "0.7", features = ["cors"] }
 notify = "8.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
+dotenvy = "0.15"
+chrono = { version = "0.4", default-features = false, features = [
+	"clock",
+	"std",
+] }
+sha2 = "0.11"
+hmac = "0.13"
+hex = "0.4"
 image = { version = "0.25", default-features = false, features = [
 	"png",
 	"jpeg",
