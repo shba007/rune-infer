@@ -523,17 +523,43 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> Json<HealthRespon
 }
 
 #[axum::debug_handler]
-async fn models_handler(State(state): State<Arc<AppState>>) -> Json<ModelsResponse> {
+async fn models_handler(State(state): State<Arc<AppState>>) -> Response {
+    let mut mtp_models = Vec::new();
     let data = state
         .config
         .models
         .iter()
-        .map(|m| ModelInfo::new(&m.id).with_ownership("Rune Infer".to_string()))
+        .map(|m| {
+            let heads = m.mtp_heads();
+            if m.has_mtp() {
+                mtp_models.push(m.id.clone());
+            }
+            ModelInfo::new(&m.id)
+                .with_ownership("Rune Infer".to_string())
+                .with_mtp_heads(heads)
+                .with_capabilities(m.resolved_capabilities())
+        })
         .collect();
-    Json(ModelsResponse {
-        object: "list".to_string(),
-        data,
-    })
+
+    let mut headers = axum::http::HeaderMap::new();
+    if !mtp_models.is_empty() {
+        headers.insert(
+            "x-mtp-available",
+            axum::http::HeaderValue::from_static("true"),
+        );
+        if let Ok(val) = axum::http::HeaderValue::from_str(&mtp_models.join(", ")) {
+            headers.insert("x-mtp-models", val);
+        }
+    }
+
+    (
+        headers,
+        Json(ModelsResponse {
+            object: "list".to_string(),
+            data,
+        }),
+    )
+        .into_response()
 }
 
 #[derive(Deserialize, Default)]
@@ -1195,7 +1221,13 @@ async fn chat_completions_handler(
         let stream = UnboundedReceiverStream::new(rx);
         let done_stream = tokio_stream::once(Ok::<_, Infallible>(Event::default().data("[DONE]")));
         let sse_stream = stream.map(Ok::<_, Infallible>).chain(done_stream);
-        return Sse::new(sse_stream).into_response();
+        let mut resp = Sse::new(sse_stream).into_response();
+        if let Some(heads) = model_config.mtp_heads() {
+            if let Ok(val) = axum::http::HeaderValue::from_str(&heads.to_string()) {
+                resp.headers_mut().insert("x-mtp-heads", val);
+            }
+        }
+        return resp;
     }
 
     let task_clone = task.clone();
@@ -1217,7 +1249,7 @@ async fn chat_completions_handler(
                     media = %format!("images: {image_count}, videos: {video_count}"),
                     "Chat completion successful (structured/tool_call)"
                 );
-                if is_structured_mode {
+                let json_resp = if is_structured_mode {
                     let content_str = match &val {
                         serde_json::Value::String(s) => s.clone(),
                         other => serde_json::to_string_pretty(other).unwrap_or_default(),
@@ -1251,7 +1283,15 @@ async fn chat_completions_handler(
                         output.usage,
                     );
                     Json(resp).into_response()
+                };
+
+                let mut final_resp = json_resp;
+                if let Some(heads) = model_config.mtp_heads() {
+                    if let Ok(val) = axum::http::HeaderValue::from_str(&heads.to_string()) {
+                        final_resp.headers_mut().insert("x-mtp-heads", val);
+                    }
                 }
+                final_resp
             }
             InferenceTaskResponse::Text(text) => {
                 tracing::info!(
@@ -1272,7 +1312,13 @@ async fn chat_completions_handler(
                     created,
                     output.usage,
                 );
-                Json(resp).into_response()
+                let mut final_resp = Json(resp).into_response();
+                if let Some(heads) = model_config.mtp_heads() {
+                    if let Ok(val) = axum::http::HeaderValue::from_str(&heads.to_string()) {
+                        final_resp.headers_mut().insert("x-mtp-heads", val);
+                    }
+                }
+                final_resp
             }
             InferenceTaskResponse::Error(e) => {
                 tracing::error!(

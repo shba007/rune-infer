@@ -15,9 +15,9 @@ path = "src/main.rs"
 [features]
 default = ["cpu"]
 cpu = []
-cuda = ["llama-cpp-2/cuda", "llama-cpp-2/common"]
-vulkan = ["llama-cpp-2/vulkan", "llama-cpp-2/common"]
-metal = ["llama-cpp-2/metal", "llama-cpp-2/common"]
+cuda = []
+vulkan = []
+metal = []
 
 [dependencies]
 anyhow = "1.0"
@@ -45,12 +45,21 @@ image = { version = "0.25", default-features = false, features = [
 	"jpeg",
 	"webp",
 ] }
-llama-cpp-2 = { version = "0.1", default-features = false, features = ["mtmd"] }
-needle-infer = "0.3"
 encoding_rs = "0.8.42"
 base64 = "0.23"
 clap = { version = "4.4", features = ["derive"] }
 reqwest = { version = "0.13.5", features = ["json", "blocking"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+	"Win32_System_JobObjects",
+	"Win32_Foundation",
+	"Win32_System_Threading",
+	"Win32_Security",
+] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [profile.dev.package."*"]
 opt-level = 3

@@ -103,6 +103,8 @@ pub struct RuntimeConfig {
     #[serde(default = "default_gpu_layers")]
     pub gpu_layers: u32,
     #[serde(default)]
+    pub mtp_heads: Option<u32>,
+    #[serde(default)]
     pub extra_args: Option<String>,
 }
 
@@ -122,6 +124,8 @@ pub struct ModelConfig {
     pub architecture: String,
     pub model_path: String,
     pub mmproj_path: Option<String>,
+    #[serde(default)]
+    pub mtp_path: Option<String>,
     pub vision: bool,
     pub description: String,
     #[serde(default)]
@@ -134,6 +138,8 @@ pub struct ModelConfig {
     pub kv_bytes_per_token: Option<u64>,
     #[serde(default)]
     pub max_resolution: Option<String>,
+    #[serde(default)]
+    pub mtp_heads: Option<u32>,
     #[serde(default)]
     pub capabilities: Option<Vec<String>>,
     #[serde(default)]
@@ -148,6 +154,22 @@ impl ModelConfig {
         Ok(())
     }
 
+    pub fn mtp_heads(&self) -> Option<u32> {
+        self.mtp_heads
+            .or_else(|| self.runtime.as_ref().and_then(|r| r.mtp_heads))
+    }
+
+    pub fn has_mtp(&self) -> bool {
+        if self
+            .mtp_path
+            .as_ref()
+            .map_or(false, |p| !p.trim().is_empty())
+        {
+            return true;
+        }
+        self.mtp_heads().map_or(false, |h| h > 0)
+    }
+
     pub fn resolved_capabilities(&self) -> Vec<String> {
         if let Some(ref caps) = self.capabilities {
             if !caps.is_empty() {
@@ -157,6 +179,9 @@ impl ModelConfig {
         let mut caps = vec!["Chat".to_string(), "Tool Call".to_string()];
         if self.vision || self.modality == Modality::VisionText {
             caps.push("Vision".to_string());
+        }
+        if self.has_mtp() && !caps.iter().any(|c| c.eq_ignore_ascii_case("mtp")) {
+            caps.push("MTP".to_string());
         }
         caps
     }

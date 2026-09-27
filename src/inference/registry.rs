@@ -136,16 +136,52 @@ impl ModelRegistry {
     }
 
     fn detect_total_gpu_vram() -> Option<u64> {
-        let output = std::process::Command::new("nvidia-smi")
+        if let Ok(output) = std::process::Command::new("nvidia-smi")
             .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
             .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
+        {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                if let Some(line) = text.lines().next() {
+                    if let Ok(mib) = line.trim().parse::<u64>() {
+                        return Some(mib * 1024 * 1024);
+                    }
+                }
+            }
         }
-        let text = String::from_utf8_lossy(&output.stdout);
-        let mib: u64 = text.lines().next()?.trim().parse().ok()?;
-        Some(mib * 1024 * 1024)
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(output) = std::process::Command::new("sysctl")
+                .args(["-n", "hw.memsize"])
+                .output()
+            {
+                if output.status.success() {
+                    let text = String::from_utf8_lossy(&output.stdout);
+                    if let Ok(bytes) = text.trim().parse::<u64>() {
+                        return Some(bytes);
+                    }
+                }
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
+                for line in content.lines() {
+                    if line.starts_with("MemTotal:") {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            if let Ok(kb) = parts[1].parse::<u64>() {
+                                return Some(kb * 1024);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     fn detect_used_gpu_vram() -> Option<u64> {
@@ -177,12 +213,11 @@ impl ModelRegistry {
     fn calculate_vram_and_context(
         model: &ModelConfig,
         server: &ServerConfig,
-    ) -> (u32, u64, u64, u64, u64) {
+    ) -> (u32, u64, u64, u64, u64, u64) {
         let total_vram = Self::detect_total_gpu_vram().unwrap_or(24 * 1024 * 1024 * 1024);
         let budget_ratio = server.vram_budget_ratio.clamp(0.0, 1.0);
         let budget_bytes = (total_vram as f64 * budget_ratio) as u64;
 
-        // Ground-truth text model weight size
         let model_vram = std::fs::metadata(&model.model_path)
             .map(|m| m.len())
             .unwrap_or_else(|_| {
@@ -193,9 +228,14 @@ impl ModelRegistry {
                 }
             });
 
-        // Vision projector weight size calculated independently
         let projector_vram = if let Some(ref mmproj) = model.mmproj_path {
             std::fs::metadata(mmproj).map(|m| m.len()).unwrap_or(0)
+        } else {
+            0
+        };
+
+        let mtp_vram = if let Some(ref mtp) = model.mtp_path {
+            std::fs::metadata(mtp).map(|m| m.len()).unwrap_or(0)
         } else {
             0
         };
@@ -208,10 +248,18 @@ impl ModelRegistry {
             .map(|r| r.context_length)
             .unwrap_or(8192);
 
+        // MTP requires 1.5–2.0 GB headroom for its draft KV cache and workspace buffers
+        let mtp_headroom = if model.has_mtp() {
+            1536 * 1024 * 1024
+        } else {
+            0
+        };
+
         let n_ctx = if configured_ctx <= 0 {
             let overhead_scratch = 768 * 1024 * 1024;
-            let remaining_kv =
-                budget_bytes.saturating_sub(model_vram + projector_vram + overhead_scratch);
+            let remaining_kv = budget_bytes.saturating_sub(
+                model_vram + projector_vram + mtp_vram + overhead_scratch + mtp_headroom,
+            );
             let raw_tokens = (remaining_kv / bytes_per_token) as u32;
 
             let rounded = (raw_tokens / 1024) * 1024;
@@ -221,7 +269,14 @@ impl ModelRegistry {
         };
 
         let context_vram = (n_ctx as u64) * bytes_per_token;
-        (n_ctx, context_vram, model_vram, projector_vram, total_vram)
+        (
+            n_ctx,
+            context_vram,
+            model_vram,
+            projector_vram,
+            mtp_vram,
+            total_vram,
+        )
     }
 
     fn create_engine(
@@ -238,9 +293,12 @@ impl ModelRegistry {
             .into());
         }
 
-        let (n_ctx, context_vram, model_vram, projector_vram, _total_vram) =
+        let (n_ctx, context_vram, model_vram, projector_vram, mtp_vram, _total_vram) =
             Self::calculate_vram_and_context(model, server);
         let gpu_layers = model.runtime.as_ref().map(|r| r.gpu_layers);
+        let mtp_path = model.mtp_path.as_deref().map(std::path::Path::new);
+        let mtp_heads = model.mtp_heads();
+        let extra_args = model.runtime.as_ref().and_then(|r| r.extra_args.clone());
 
         let engine: Arc<dyn InferenceEngine> = match model.architecture.as_str() {
             "cactus-needle-3" => {
@@ -250,57 +308,35 @@ impl ModelRegistry {
                 )?;
                 Arc::new(engine)
             }
-            "qwen" | "qwen3" => {
-                let engine = crate::inference::engines::qwen::QwenEngine::new(
-                    model.id.clone(),
-                    model_path,
-                    Some(n_ctx),
-                    gpu_layers,
-                )?;
-                Arc::new(engine)
-            }
-            "ternary-bonsai-vl" | "bonsai" | "bonsai-vl" | "ternary-bonsai" => {
+            "ternary-bonsai" | "bonsai" | "bonsai-vl" | "ternary-bonsai-vl" => {
                 let mmproj_path = model.mmproj_path.as_deref().map(std::path::Path::new);
-                let engine = crate::inference::engines::bonsai::BonsaiEngine::new(
+                let engine = crate::inference::engines::llama_server::LlamaServerEngine::new(
                     model.id.clone(),
                     model_path,
                     mmproj_path,
+                    mtp_path,
                     Some(n_ctx),
                     gpu_layers,
+                    mtp_heads,
+                    extra_args,
+                    crate::inference::engines::llama_server::RuntimeFlavor::Prism,
                 )?;
                 Arc::new(engine)
             }
             _ => {
-                if model.vision || model.modality == crate::config::Modality::VisionText {
-                    let mmproj_str = model.mmproj_path.as_deref().ok_or_else(|| {
-                        format!("Vision model '{}' requires 'mmproj_path'", model.id)
-                    })?;
-                    let mmproj_path = std::path::Path::new(mmproj_str);
-                    if !mmproj_path.exists() {
-                        return Err(format!(
-                            "mmproj file not found for '{}': {}",
-                            model.id, mmproj_str
-                        )
-                        .into());
-                    }
-
-                    let engine = crate::inference::engines::qwen2vl::Qwen2VlEngine::new(
-                        model.id.clone(),
-                        model_path,
-                        mmproj_path,
-                        Some(n_ctx),
-                        gpu_layers,
-                    )?;
-                    Arc::new(engine)
-                } else {
-                    let engine = crate::inference::engines::qwen35::Qwen35Engine::new(
-                        model.id.clone(),
-                        model_path,
-                        Some(n_ctx),
-                        gpu_layers,
-                    )?;
-                    Arc::new(engine)
-                }
+                let mmproj_path = model.mmproj_path.as_deref().map(std::path::Path::new);
+                let engine = crate::inference::engines::llama_server::LlamaServerEngine::new(
+                    model.id.clone(),
+                    model_path,
+                    mmproj_path,
+                    mtp_path,
+                    Some(n_ctx),
+                    gpu_layers,
+                    mtp_heads,
+                    extra_args,
+                    crate::inference::engines::llama_server::RuntimeFlavor::Upstream,
+                )?;
+                Arc::new(engine)
             }
         };
 
@@ -310,7 +346,7 @@ impl ModelRegistry {
             "Weights".to_string()
         };
 
-        let total_est = model_vram + projector_vram + context_vram;
+        let total_est = model_vram + projector_vram + mtp_vram + context_vram;
         let real_str =
             if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
                 let actual_used = after.saturating_sub(before);
@@ -341,6 +377,17 @@ impl ModelRegistry {
                 "[ModelRegistry]   • Projector:  {} | {}",
                 res_str,
                 Self::format_bytes(projector_vram)
+            );
+        }
+
+        if mtp_vram > 0 || model.has_mtp() {
+            let heads_desc = mtp_heads
+                .map(|h| format!("{} heads", h))
+                .unwrap_or_else(|| "auto".to_string());
+            println!(
+                "[ModelRegistry]   • MTP Draft:    {} | {}",
+                heads_desc,
+                Self::format_bytes(mtp_vram)
             );
         }
 

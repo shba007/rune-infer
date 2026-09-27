@@ -64,7 +64,6 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogWriter {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Load .env from root if found; otherwise log warning
     let env_result = dotenvy::dotenv();
 
     std::fs::create_dir_all("logs").context("Failed to create 'logs' directory")?;
@@ -89,6 +88,9 @@ async fn main() -> Result<()> {
 
     tracing::info!("Starting Rune Infer...");
     tracing::info!("Persistent log audit active at logs/rune-infer.log");
+
+    // Clean up any stale child processes from abnormal previous exits
+    rune_infer::inference::process::cleanup_orphaned_pids();
 
     match env_result {
         Ok(path) => tracing::info!(

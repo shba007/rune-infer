@@ -170,7 +170,7 @@ pub struct ResponseMessage {
     pub tool_calls: Option<Vec<ToolCall>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Choice {
     pub index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -288,6 +288,10 @@ pub struct ModelInfo {
     pub object: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owned_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mtp_heads: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<String>>,
 }
 
 impl ModelInfo {
@@ -296,11 +300,23 @@ impl ModelInfo {
             id: id.to_string(),
             object: "model".to_string(),
             owned_by: None,
+            mtp_heads: None,
+            capabilities: None,
         }
     }
 
     pub fn with_ownership(mut self, owner: impl Into<String>) -> Self {
         self.owned_by = Some(owner.into());
+        self
+    }
+
+    pub fn with_mtp_heads(mut self, heads: Option<u32>) -> Self {
+        self.mtp_heads = heads;
+        self
+    }
+
+    pub fn with_capabilities(mut self, caps: Vec<String>) -> Self {
+        self.capabilities = Some(caps);
         self
     }
 }
