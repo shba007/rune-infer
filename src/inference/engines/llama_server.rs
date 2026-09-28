@@ -1,3 +1,4 @@
+use super::download;
 use crate::inference::process::{ProcessGuard, configure_death_signal};
 use crate::inference::traits::InferenceEngine;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
@@ -163,176 +164,6 @@ impl LlamaServerEngine {
         Ok(listener.local_addr()?.port())
     }
 
-    fn detect_host_cuda_version() -> Option<(u32, u32)> {
-        let output = Command::new("nvidia-smi").output().ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        let text = String::from_utf8_lossy(&output.stdout);
-        let idx = text
-            .find("CUDA UMD Version:")
-            .map(|i| i + "CUDA UMD Version:".len())
-            .or_else(|| {
-                text.find("CUDA Version:")
-                    .map(|i| i + "CUDA Version:".len())
-            })?;
-        let rest = &text[idx..];
-        let ver_str = rest.split_whitespace().next()?;
-        Self::parse_cuda_version(ver_str)
-    }
-
-    fn parse_cuda_version(s: &str) -> Option<(u32, u32)> {
-        let clean = s.trim_start_matches("cu").trim_start_matches('v');
-        let mut parts = clean.split('.');
-        let major: u32 = parts.next()?.parse().ok()?;
-        let minor: u32 = parts.next().unwrap_or("0").parse().ok()?;
-        Some((major, minor))
-    }
-
-    fn matches_arch(filename: &str) -> bool {
-        let lower = filename.to_lowercase();
-        if cfg!(target_arch = "x86_64") {
-            (lower.contains("x64") || lower.contains("x86_64") || lower.contains("amd64"))
-                && !lower.contains("arm64")
-        } else if cfg!(target_arch = "aarch64") {
-            lower.contains("arm64") || lower.contains("aarch64")
-        } else {
-            true
-        }
-    }
-
-    fn extract_cuda_version(filename: &str) -> Option<(u32, u32)> {
-        let lower = filename.to_lowercase();
-        for (idx, _) in lower.match_indices("cuda") {
-            let slice = &lower[idx + "cuda".len()..];
-            let clean = slice
-                .trim_start_matches('-')
-                .trim_start_matches("cu")
-                .trim_start_matches('_');
-            if let Some(ver_part) = clean.split(|c: char| !c.is_numeric() && c != '.').next() {
-                if !ver_part.is_empty() {
-                    let mut parts = ver_part.split('.');
-                    if let Some(major_str) = parts.next() {
-                        if let Ok(major) = major_str.parse::<u32>() {
-                            let minor: u32 = parts.next().unwrap_or("0").parse().unwrap_or(0);
-                            return Some((major, minor));
-                        }
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn find_executable_recursive(dir: &Path, name: &str) -> Option<PathBuf> {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && path.file_name().map(|n| n == name).unwrap_or(false) {
-                    return Some(path);
-                } else if path.is_dir() {
-                    if let Some(found) = Self::find_executable_recursive(&path, name) {
-                        return Some(found);
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn extract_archive(archive_file: &Path, dest_dir: &Path) -> Result<(), Box<dyn Error>> {
-        let filename = archive_file
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("");
-        let is_tar = filename.ends_with(".tar.gz") || filename.ends_with(".tgz");
-        let is_zip = filename.ends_with(".zip");
-
-        let tar_flag = if is_tar { "-xzf" } else { "-xf" };
-        if let Ok(status) = Command::new("tar")
-            .args([
-                tar_flag,
-                archive_file.to_str().unwrap(),
-                "-C",
-                dest_dir.to_str().unwrap(),
-            ])
-            .status()
-        {
-            if status.success() {
-                return Ok(());
-            }
-        }
-
-        if is_zip {
-            #[cfg(windows)]
-            {
-                let ps_cmd = format!(
-                    "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
-                    archive_file.display(),
-                    dest_dir.display()
-                );
-                if let Ok(s) = Command::new("powershell")
-                    .args(["-NoProfile", "-Command", &ps_cmd])
-                    .status()
-                {
-                    if s.success() {
-                        return Ok(());
-                    }
-                }
-            }
-
-            #[cfg(unix)]
-            {
-                if let Ok(s) = Command::new("unzip")
-                    .args([
-                        "-q",
-                        "-o",
-                        archive_file.to_str().unwrap(),
-                        "-d",
-                        dest_dir.to_str().unwrap(),
-                    ])
-                    .status()
-                {
-                    if s.success() {
-                        return Ok(());
-                    }
-                }
-            }
-        }
-
-        Err(format!("Failed to extract archive: {}", archive_file.display()).into())
-    }
-
-    fn flatten_dlls(base_dir: &Path) {
-        #[cfg(windows)]
-        {
-            if let Ok(entries) = std::fs::read_dir(base_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        if let Ok(sub_entries) = std::fs::read_dir(&path) {
-                            for sub in sub_entries.flatten() {
-                                let sub_path = sub.path();
-                                if sub_path.is_file() {
-                                    if let Some(ext) = sub_path.extension() {
-                                        if ext.eq_ignore_ascii_case("dll") {
-                                            if let Some(fname) = sub_path.file_name() {
-                                                let dest = base_dir.join(fname);
-                                                if !dest.exists() {
-                                                    let _ = std::fs::copy(&sub_path, &dest);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn Error>> {
         let exe_name = if cfg!(windows) {
             "llama-server.exe"
@@ -416,15 +247,7 @@ impl LlamaServerEngine {
         );
         std::fs::create_dir_all(&base_dir)?;
 
-        let mut builder = reqwest::blocking::Client::builder()
-            .user_agent("rune-infer/0.1.0 (Windows NT 10.0; Win64; x64)")
-            .timeout(Duration::from_secs(60))
-            .connect_timeout(Duration::from_secs(10));
-
-        if let Ok(v4) = "0.0.0.0".parse::<std::net::IpAddr>() {
-            builder = builder.local_address(v4);
-        }
-        let client = builder.build()?;
+        let client = download::create_download_client()?;
 
         let release_url = match flavor {
             RuntimeFlavor::Upstream => {
@@ -471,7 +294,7 @@ impl LlamaServerEngine {
 
                 println!("[LlamaServerEngine] Resolved latest tag: {tag}");
 
-                let host_cuda = Self::detect_host_cuda_version();
+                let host_cuda = download::detect_host_cuda_version();
                 let mut direct_urls = Vec::new();
 
                 if cfg!(target_os = "windows") {
@@ -495,30 +318,41 @@ impl LlamaServerEngine {
                         "x64"
                     };
                     let bin_asset = format!("llama-{tag}-bin-macos-{arch_label}.tar.gz");
-                    direct_urls.push((bin_asset.clone(), format!("https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{bin_asset}")));
+                    direct_urls.push((
+                        bin_asset.clone(),
+                        format!(
+                            "https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{bin_asset}"
+                        ),
+                    ));
                 } else {
                     let bin_asset = format!("llama-{tag}-bin-ubuntu-x64.tar.gz");
-                    direct_urls.push((bin_asset.clone(), format!("https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{bin_asset}")));
+                    direct_urls.push((
+                        bin_asset.clone(),
+                        format!(
+                            "https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{bin_asset}"
+                        ),
+                    ));
                 }
 
                 for (name, url) in direct_urls {
-                    println!("[LlamaServerEngine] Downloading {}...", name);
-                    let temp_file = base_dir.join(&name);
-                    let mut dl_resp = client.get(&url).send()?.error_for_status()?;
-                    let mut file = std::fs::File::create(&temp_file)?;
-                    std::io::copy(&mut dl_resp, &mut file)?;
-                    println!("[LlamaServerEngine] Extracting {}...", name);
-                    let _ = Self::extract_archive(&temp_file, &base_dir);
-                    let _ = std::fs::remove_file(&temp_file);
+                    download::download_and_extract(
+                        &client,
+                        &url,
+                        &base_dir,
+                        &name,
+                        "[LlamaServerEngine]",
+                    )?;
                 }
 
-                Self::flatten_dlls(&base_dir);
+                download::flatten_dlls(&base_dir);
 
                 if !exe_path.exists() {
-                    if let Some(nested) = Self::find_executable_recursive(&base_dir, exe_name) {
+                    if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
                         let _ = std::fs::copy(&nested, &exe_path);
                     }
                 }
+
+                download::make_executable(&exe_path)?;
 
                 if exe_path.exists() {
                     println!(
@@ -556,7 +390,7 @@ impl LlamaServerEngine {
             .as_array()
             .ok_or("Invalid GitHub API response: missing 'assets'")?;
 
-        let host_cuda = Self::detect_host_cuda_version();
+        let host_cuda = download::detect_host_cuda_version();
         let mut download_urls = Vec::new();
 
         if cfg!(target_os = "windows") {
@@ -572,19 +406,19 @@ impl LlamaServerEngine {
 
             for asset in assets {
                 let name = asset["name"].as_str().unwrap_or("");
-                if !Self::matches_arch(name) {
+                if !download::matches_arch(name) {
                     continue;
                 }
 
                 if !name.starts_with("cudart")
                     && (name.contains("bin-win-cuda") || name.contains("bin-cuda"))
                 {
-                    if let Some(parsed_ver) = Self::extract_cuda_version(name) {
+                    if let Some(parsed_ver) = download::extract_cuda_version(name) {
                         let cudart = assets.iter().find(|a| {
                             let cname = a["name"].as_str().unwrap_or("");
                             cname.contains("cudart")
-                                && Self::matches_arch(cname)
-                                && Self::extract_cuda_version(cname) == Some(parsed_ver)
+                                && download::matches_arch(cname)
+                                && download::extract_cuda_version(cname) == Some(parsed_ver)
                         });
 
                         candidates.push(Candidate {
@@ -628,7 +462,7 @@ impl LlamaServerEngine {
             } else {
                 if let Some(asset) = assets.iter().find(|a| {
                     let name = a["name"].as_str().unwrap_or("");
-                    Self::matches_arch(name)
+                    download::matches_arch(name)
                         && (name.contains("bin-win-vulkan")
                             || name.contains("bin-win-avx2")
                             || name.contains("bin-win-cpu"))
@@ -668,7 +502,7 @@ impl LlamaServerEngine {
             let cuda_asset = if host_cuda.is_some() {
                 assets.iter().find(|a| {
                     let name = a["name"].as_str().unwrap_or("");
-                    Self::matches_arch(name)
+                    download::matches_arch(name)
                         && (name.contains("bin-linux-cuda") || name.contains("bin-ubuntu-cuda"))
                 })
             } else {
@@ -677,7 +511,7 @@ impl LlamaServerEngine {
 
             let fallback_asset = assets.iter().find(|a| {
                 let name = a["name"].as_str().unwrap_or("");
-                Self::matches_arch(name)
+                download::matches_arch(name)
                     && (name.contains("bin-ubuntu") || name.contains("bin-linux"))
             });
 
@@ -695,34 +529,18 @@ impl LlamaServerEngine {
         }
 
         for (name, url) in download_urls {
-            println!("[LlamaServerEngine] Downloading {}...", name);
-            let temp_file = base_dir.join(&name);
-            let mut resp = client.get(&url).send()?.error_for_status()?;
-            let mut file = std::fs::File::create(&temp_file)?;
-            std::io::copy(&mut resp, &mut file)?;
-
-            println!("[LlamaServerEngine] Extracting {}...", name);
-            let _ = Self::extract_archive(&temp_file, &base_dir);
-            let _ = std::fs::remove_file(&temp_file);
+            download::download_and_extract(&client, &url, &base_dir, &name, "[LlamaServerEngine]")?;
         }
 
-        Self::flatten_dlls(&base_dir);
+        download::flatten_dlls(&base_dir);
 
         if !exe_path.exists() {
-            if let Some(nested) = Self::find_executable_recursive(&base_dir, exe_name) {
+            if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
                 let _ = std::fs::copy(&nested, &exe_path);
             }
         }
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(metadata) = std::fs::metadata(&exe_path) {
-                let mut perms = metadata.permissions();
-                perms.set_mode(0o755);
-                let _ = std::fs::set_permissions(&exe_path, perms);
-            }
-        }
+        download::make_executable(&exe_path)?;
 
         if !exe_path.exists() {
             return Err(format!(
@@ -1096,6 +914,7 @@ impl InferenceEngine for LlamaServerEngine {
                     usage: final_usage,
                 })
             }
+            _ => Err("LlamaServerEngine does not support this task type".into()),
         }
     }
 }

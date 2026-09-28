@@ -1,3 +1,4 @@
+use super::download;
 use crate::inference::process::configure_death_signal;
 use crate::inference::traits::InferenceEngine;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
@@ -5,7 +6,6 @@ use crate::types::Usage;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
 
 pub struct NeedleEngine {
     id: String,
@@ -62,25 +62,9 @@ impl NeedleEngine {
             platform, exe_name
         );
 
-        println!("[NeedleEngine] Downloading from {}...", download_url);
-        let client = reqwest::blocking::Client::builder()
-            .user_agent("rune-infer/0.1.0")
-            .timeout(Duration::from_secs(180))
-            .build()?;
-
-        let mut resp = client.get(&download_url).send()?.error_for_status()?;
-        let mut file = std::fs::File::create(&exe_path)?;
-        std::io::copy(&mut resp, &mut file)?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(metadata) = std::fs::metadata(&exe_path) {
-                let mut perms = metadata.permissions();
-                perms.set_mode(0o755);
-                let _ = std::fs::set_permissions(&exe_path, perms);
-            }
-        }
+        let client = download::create_download_client()?;
+        download::download_to_file(&client, &download_url, &exe_path, "[NeedleEngine]")?;
+        download::make_executable(&exe_path)?;
 
         println!(
             "[NeedleEngine] ✓ Needle 3 installed at {}",
@@ -151,6 +135,7 @@ impl InferenceEngine for NeedleEngine {
                     usage: Usage::new(prompt_tokens, completion_tokens),
                 })
             }
+            _ => Err("NeedleEngine only supports ToolCall tasks".into()),
         }
     }
 }

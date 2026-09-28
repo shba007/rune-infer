@@ -1,4 +1,4 @@
-use crate::types::{ChatMessage, Usage};
+use crate::types::{ChatMessage, ImageGenerationResponse, Usage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,6 +12,13 @@ pub enum InferenceTaskRequest {
         #[serde(default)]
         messages: Vec<ChatMessage>,
     },
+    ImageGeneration {
+        prompt: String,
+        size: Option<String>,
+        response_format: Option<String>,
+        steps: Option<u32>,
+        cfg_scale: Option<f32>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +26,7 @@ pub enum InferenceTaskRequest {
 pub enum InferenceTaskResponse {
     ToolCall(serde_json::Value),
     Text(String),
+    Image(ImageGenerationResponse),
     Error(String),
 }
 

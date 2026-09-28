@@ -233,40 +233,85 @@
       "lora": []
     },
     {
-      "id": "qwen-image-2.1-7b",
+      "id": "z-image",
+      "name": "Z-Image 6B",
+      "modality": "ImageGeneration",
+      "architecture": "z-image",
+      "format": "gguf",
+      "model_path": "D:/Models/huggingface/hub/models--unsloth--Z-Image-GGUF/snapshots/c9913e69743c5d9dfa7fdac58a0cc5709a17aa08/z-image-Q8_0.gguf",
+      "text_encoder_path": "D:/Models/huggingface/hub/models--Tongyi-MAI--Z-Image/snapshots/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder",
+      "vae_path": "D:/Models/huggingface/hub/models--Tongyi-MAI--Z-Image/snapshots/04cc4abb7c5069926f75c9bfde9ef43d49423021/vae/diffusion_pytorch_model.safetensors",
+      "vision": false,
+      "description": "Z-Image 6B Single-Stream Diffusion Transformer for high-fidelity photorealistic text-to-image generation",
+      "capabilities": [
+        "Text-to-Image",
+        "Photorealism",
+        "Bilingual Rendering"
+      ],
+      "bits_per_weight": 8.5,
+      "total_params": 6000000000,
+      "default_steps": 30,
+      "default_cfg_scale": 4.0,
+      "default_sample_method": "euler",
+      "runtime": {
+        "gpu_layers": 99,
+        "extra_args": "--diffusion-fa"
+      }
+    },
+    {
+      "id": "qwen-image-2512",
+      "name": "Qwen Image 2512 7B",
+      "modality": "ImageGeneration",
+      "architecture": "qwen-image",
+      "format": "gguf",
+      "model_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2512-GGUF/snapshots/1626d7531f84b4d2ea1cd6d2e69f41ec027dd354/qwen-image-2512-Q5_K_M.gguf",
+      "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth-Qwen2.5VL/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
+      "llm_vision_path": null,
+      "vae_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2512/snapshots/b96dde7fa56044ec6892801be5a37540a253717e/vae/diffusion_pytorch_model.safetensors",
+      "vision": false,
+      "description": "Qwen-Image 2512 7B DiT foundation model for high-fidelity text-to-image synthesis and image editing",
+      "capabilities": [
+        "Text-to-Image",
+        "Image Editing",
+        "Photorealism"
+      ],
+      "bits_per_weight": 4.5,
+      "total_params": 7000000000,
+      "default_steps": 30,
+      "default_cfg_scale": 6.0,
+      "default_sample_method": "euler",
+      "runtime": {
+        "gpu_layers": 99,
+        "extra_args": "--diffusion-fa --offload-to-cpu"
+      }
+    },
+    {
+      "id": "qwen-image-2.1",
       "name": "Qwen-Image-2.1 7B",
-      "architecture": "qwen-vl",
+      "modality": "ImageGeneration",
+      "architecture": "qwen-image-2.1",
       "format": "gguf",
       "model_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-GGUF/snapshots/2c31ccd392b367a6637841a143813320a02dff55/qwen-image-2.1-Q4_K_M.gguf",
-      "mmproj_path": "D:/Models/qwen-image-2.1-7b-mmproj-f16.gguf",
-      "mtp_path": null,
-      "mtp_heads": null,
-      "vision": true,
-      "modality": "VisionText",
-      "description": "Multimodal vision-language model with advanced image understanding",
+      "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf",
+      "vae_path": "D:/Models/huggingface/hub/models--Qwen--Qwen-Image-2.1/snapshots/790c92633540aa0cb11d9abf19eb46d861714758/vae/diffusion_pytorch_model.safetensors",
+      "llm_vision_path": null,
+      "vision": false,
+      "description": "Qwen-Image-2.1 7B Single-Stream DiT foundation model with native 2K rendering, RGBA transparency, and image editing",
       "max_resolution": "2048×2048 (Native DiT)",
       "capabilities": [
         "Text-to-Image",
         "Image Editing",
-        "Vision",
         "Transparency (RGBA)"
       ],
       "bits_per_weight": 4.5,
       "total_params": 7000000000,
-      "max_context_length": 32768,
-      "sampling": {
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "top_k": 50,
-        "min_p": 0.05,
-        "max_tokens": 4096
-      },
+      "default_steps": 30,
+      "default_cfg_scale": 4.0,
+      "default_sample_method": "euler",
       "runtime": {
-        "context_length": -1,
         "gpu_layers": 99,
-        "extra_args": ""
-      },
-      "lora": []
+        "extra_args": "--diffusion-fa --offload-to-cpu"
+      }
     }
   ]
 }

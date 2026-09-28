@@ -248,7 +248,6 @@ impl ModelRegistry {
             .map(|r| r.context_length)
             .unwrap_or(8192);
 
-        // MTP requires 1.5–2.0 GB headroom for its draft KV cache and workspace buffers
         let mtp_headroom = if model.has_mtp() {
             1536 * 1024 * 1024
         } else {
@@ -291,6 +290,11 @@ impl ModelRegistry {
                 model.id, model.model_path
             )
             .into());
+        }
+
+        if model.modality == crate::config::Modality::ImageGeneration {
+            let engine = crate::inference::engines::sd_server::SdServerEngine::new(model)?;
+            return Ok(Arc::new(engine));
         }
 
         let (n_ctx, context_vram, model_vram, projector_vram, mtp_vram, _total_vram) =

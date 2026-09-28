@@ -20,8 +20,8 @@ use crate::config::ModelRegistry;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{
     ApiError, ChatCompletionRequest, ChatCompletionResponse, Choice, ChoiceDelta, ErrorResponse,
-    HealthResponse, MediaItem, ModelInfo, ModelsResponse, ResponseMessage, ToolCall, ToolCallChunk,
-    Usage,
+    HealthResponse, ImageGenerationRequest, MediaItem, ModelInfo, ModelsResponse, ResponseMessage,
+    ToolCall, ToolCallChunk, Usage,
 };
 
 #[derive(Clone)]
@@ -33,6 +33,7 @@ pub struct AppState {
 pub fn create_router(state: AppState) -> Router<Arc<AppState>> {
     Router::new()
         .route("/v1/chat/completions", post(chat_completions_handler))
+        .route("/v1/images/generations", post(image_generation_handler))
         .route("/v1/inference", post(inference_handler))
         .route("/v1/models", get(models_handler))
         .route("/health", get(health_handler))
@@ -520,6 +521,109 @@ fn decode_media(
 async fn health_handler(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
     let loaded_models = state.inference.loaded_models();
     Json(HealthResponse::new().with_loaded_models(loaded_models))
+}
+
+#[axum::debug_handler]
+async fn image_generation_handler(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ImageGenerationRequest>,
+) -> Response {
+    let model_id = match &request.model {
+        Some(m) if !m.trim().is_empty() => m.clone(),
+        _ => {
+            match state
+                .config
+                .models
+                .iter()
+                .find(|m| m.modality == crate::config::Modality::ImageGeneration)
+            {
+                Some(m) => m.id.clone(),
+                None => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: ApiError::new(
+                                "No image generation model specified and none found in config",
+                            )
+                            .with_type("invalid_request_error"),
+                        }),
+                    )
+                        .into_response();
+                }
+            }
+        }
+    };
+
+    let inference = state.inference.clone();
+    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
+        Ok(Ok(e)) => e,
+        Ok(Err(err)) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Model failed to load: {err}"))
+                        .with_type("invalid_request_error"),
+                }),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Thread join error: {e}")),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let task = InferenceTaskRequest::ImageGeneration {
+        prompt: request.prompt.clone(),
+        size: request.size.clone(),
+        response_format: request.response_format.clone(),
+        steps: None,
+        cfg_scale: None,
+    };
+
+    let res =
+        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
+            .await;
+
+    match res {
+        Ok(Ok(output)) => match output.response {
+            InferenceTaskResponse::Image(img_resp) => Json(img_resp).into_response(),
+            InferenceTaskResponse::Error(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new(e).with_type("server_error"),
+                }),
+            )
+                .into_response(),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new("Unexpected response type from engine")
+                        .with_type("server_error"),
+                }),
+            )
+                .into_response(),
+        },
+        Ok(Err(e)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: ApiError::new(e).with_type("server_error"),
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: ApiError::new(e.to_string()).with_type("server_error"),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 #[axum::debug_handler]
@@ -1122,6 +1226,7 @@ async fn chat_completions_handler(
                             let _ = tx
                                 .send(Event::default().event("error").data(err_chunk.to_string()));
                         }
+                        _ => {}
                     },
                     Err(e) => {
                         let err_chunk = serde_json::json!({
@@ -1339,6 +1444,14 @@ async fn chat_completions_handler(
                 )
                     .into_response()
             }
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new("Unexpected response type from text inference")
+                        .with_type("server_error"),
+                }),
+            )
+                .into_response(),
         },
         Ok(Err(e)) => {
             let status = if e.contains("context") || e.contains("tokens") || e.contains("limit") {
@@ -1369,7 +1482,6 @@ async fn chat_completions_handler(
                 target: "audit",
                 status = 500,
                 latency_ms = start_time.elapsed().as_millis(),
-                model = %request.model,
                 error = %join_err,
                 "Engine thread join error"
             );

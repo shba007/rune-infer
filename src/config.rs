@@ -7,6 +7,7 @@ use std::path::Path;
 pub enum Modality {
     Text,
     VisionText,
+    ImageGeneration,
 }
 
 impl Modality {
@@ -14,6 +15,7 @@ impl Modality {
         match self {
             Modality::Text => "text",
             Modality::VisionText => "vision-text",
+            Modality::ImageGeneration => "image-generation",
         }
     }
 }
@@ -126,6 +128,18 @@ pub struct ModelConfig {
     pub mmproj_path: Option<String>,
     #[serde(default)]
     pub mtp_path: Option<String>,
+    #[serde(default)]
+    pub vae_path: Option<String>,
+    #[serde(default)]
+    pub text_encoder_path: Option<String>,
+    #[serde(default)]
+    pub llm_vision_path: Option<String>,
+    #[serde(default)]
+    pub default_steps: Option<u32>,
+    #[serde(default)]
+    pub default_cfg_scale: Option<f32>,
+    #[serde(default)]
+    pub default_sample_method: Option<String>,
     pub vision: bool,
     pub description: String,
     #[serde(default)]
@@ -182,6 +196,11 @@ impl ModelConfig {
         }
         if self.has_mtp() && !caps.iter().any(|c| c.eq_ignore_ascii_case("mtp")) {
             caps.push("MTP".to_string());
+        }
+        if self.modality == Modality::ImageGeneration
+            && !caps.iter().any(|c| c.eq_ignore_ascii_case("text-to-image"))
+        {
+            caps.push("Text-to-Image".to_string());
         }
         caps
     }
