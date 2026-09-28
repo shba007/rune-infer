@@ -597,17 +597,109 @@ impl LlamaServerEngine {
 
             std::thread::sleep(Duration::from_millis(500));
         }
-
         Err("Timed out waiting for managed llama-server".into())
     }
 
-    fn extract_tool_call_json(raw: &str) -> String {
-        if let Some(start) = raw.find("<tool_call>") {
-            let content_start = start + "<tool_call>".len();
-            if let Some(end) = raw[content_start..].find("</tool_call>") {
-                return raw[content_start..content_start + end].trim().to_string();
+    fn parse_xml_tool_call(block: &str) -> Option<serde_json::Value> {
+        let fn_start = block.find("<function=")?;
+        let after_fn = &block[fn_start + "<function=".len()..];
+        let fn_end = after_fn.find('>')?;
+        let fn_name = after_fn[..fn_end]
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'');
+        if fn_name.is_empty() {
+            return None;
+        }
+
+        let mut args = serde_json::Map::new();
+        let mut cursor = &after_fn[fn_end + 1..];
+
+        while let Some(p_start) = cursor.find("<parameter=") {
+            let after_p = &cursor[p_start + "<parameter=".len()..];
+            let p_end = after_p.find('>')?;
+            let param_name = after_p[..p_end]
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
+            let val_start = &after_p[p_end + 1..];
+
+            let val_end = val_start
+                .find("<parameter=")
+                .or_else(|| val_start.find("</parameter>"))
+                .or_else(|| val_start.find("</function>"))
+                .unwrap_or(val_start.len());
+
+            let raw_val = val_start[..val_end].trim();
+            let val = serde_json::from_str::<serde_json::Value>(raw_val)
+                .unwrap_or_else(|_| serde_json::Value::String(raw_val.to_string()));
+
+            if !param_name.is_empty() {
+                args.insert(param_name, val);
             }
-            return raw[content_start..].trim().to_string();
+
+            cursor = &val_start[val_end..];
+            if let Some(stripped) = cursor.strip_prefix("</parameter>") {
+                cursor = stripped;
+            }
+        }
+
+        Some(serde_json::json!({
+            "name": fn_name,
+            "arguments": serde_json::Value::Object(args)
+        }))
+    }
+
+    fn extract_tool_calls(raw: &str) -> Option<(Option<String>, serde_json::Value)> {
+        if raw.contains("<tool_call>") {
+            let mut calls = Vec::new();
+            let mut remaining = raw;
+            let mut text_parts = Vec::new();
+
+            while let Some(start) = remaining.find("<tool_call>") {
+                let before = &remaining[..start];
+                if !before.trim().is_empty() {
+                    text_parts.push(before.trim());
+                }
+                let after_start = &remaining[start + "<tool_call>".len()..];
+                let (block, next_rem) = match after_start.find("</tool_call>") {
+                    Some(end) => (
+                        &after_start[..end],
+                        &after_start[end + "</tool_call>".len()..],
+                    ),
+                    None => (after_start, ""),
+                };
+                remaining = next_rem;
+                let block = block.trim();
+
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(block) {
+                    if let Some(arr) = parsed.as_array() {
+                        calls.extend(arr.clone());
+                    } else if parsed.is_object() {
+                        calls.push(parsed);
+                    }
+                    continue;
+                }
+
+                if let Some(call) = Self::parse_xml_tool_call(block) {
+                    calls.push(call);
+                }
+            }
+
+            if !remaining.trim().is_empty() {
+                text_parts.push(remaining.trim());
+            }
+
+            if !calls.is_empty() {
+                let clean_text = text_parts.join("\n\n").trim().to_string();
+                let content_opt = if clean_text.is_empty() {
+                    None
+                } else {
+                    Some(clean_text)
+                };
+                return Some((content_opt, serde_json::Value::Array(calls)));
+            }
         }
 
         let mut cleaned = raw;
@@ -617,16 +709,28 @@ impl LlamaServerEngine {
 
         if let (Some(first_b), Some(last_b)) = (cleaned.find('['), cleaned.rfind(']')) {
             if first_b < last_b {
-                return cleaned[first_b..=last_b].trim().to_string();
+                if let Ok(val) =
+                    serde_json::from_str::<serde_json::Value>(&cleaned[first_b..=last_b])
+                {
+                    if val.is_array() {
+                        return Some((None, val));
+                    }
+                }
             }
         }
         if let (Some(first_b), Some(last_b)) = (cleaned.find('{'), cleaned.rfind('}')) {
             if first_b < last_b {
-                return cleaned[first_b..=last_b].trim().to_string();
+                if let Ok(val) =
+                    serde_json::from_str::<serde_json::Value>(&cleaned[first_b..=last_b])
+                {
+                    if val.is_object() {
+                        return Some((None, serde_json::Value::Array(vec![val])));
+                    }
+                }
             }
         }
 
-        cleaned.trim().to_string()
+        None
     }
 }
 
@@ -691,10 +795,30 @@ impl InferenceEngine for LlamaServerEngine {
                             }
                         }
 
-                        server_messages.push(serde_json::json!({
+                        let mut msg_obj = serde_json::json!({
                             "role": msg.role,
-                            "content": parts
-                        }));
+                        });
+
+                        if msg.role == "assistant" && msg.tool_calls.is_some() {
+                            if !text.is_empty() {
+                                msg_obj["content"] = serde_json::Value::String(text);
+                            } else {
+                                msg_obj["content"] = serde_json::Value::Null;
+                            }
+                            msg_obj["tool_calls"] = serde_json::json!(msg.tool_calls);
+                        } else if msg.role == "tool" {
+                            msg_obj["content"] = serde_json::Value::String(text);
+                            if let Some(ref tid) = msg.tool_call_id {
+                                msg_obj["tool_call_id"] = serde_json::json!(tid);
+                            }
+                            if let Some(ref name) = msg.name {
+                                msg_obj["name"] = serde_json::json!(name);
+                            }
+                        } else {
+                            msg_obj["content"] = serde_json::Value::Array(parts);
+                        }
+
+                        server_messages.push(msg_obj);
                     }
                 } else {
                     let mut parts = Vec::new();
@@ -729,12 +853,21 @@ impl InferenceEngine for LlamaServerEngine {
                     }));
                 }
 
-                let body = serde_json::json!({
+                let has_tools = match schema {
+                    serde_json::Value::Object(o) => !o.is_empty(),
+                    serde_json::Value::Array(a) => !a.is_empty(),
+                    _ => false,
+                };
+
+                let mut body = serde_json::json!({
                     "messages": server_messages,
                     "temperature": 0.7,
                     "top_p": 0.9,
                     "stream": stream_mode
                 });
+                if has_tools {
+                    body["tools"] = schema.clone();
+                }
 
                 let resp = self
                     .client
@@ -865,6 +998,24 @@ impl InferenceEngine for LlamaServerEngine {
                     }
 
                     let choice = &result["choices"][0];
+
+                    if let Some(tc) = choice["message"]
+                        .get("tool_calls")
+                        .filter(|v| v.is_array() && !v.as_array().unwrap().is_empty())
+                    {
+                        let content_str = choice["message"]["content"]
+                            .as_str()
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|s| s.to_string());
+                        return Ok(InferenceOutput {
+                            response: InferenceTaskResponse::ToolCall {
+                                content: content_str,
+                                tool_calls: tc.clone(),
+                            },
+                            usage: server_usage.unwrap_or_else(|| Usage::new(0, 0)),
+                        });
+                    }
+
                     let content = choice["message"]["content"]
                         .as_str()
                         .or_else(|| result["content"].as_str())
@@ -893,20 +1044,15 @@ impl InferenceEngine for LlamaServerEngine {
                     Usage::new(est_prompt, est_completion)
                 });
 
-                let has_tools = match schema {
-                    serde_json::Value::Object(o) => !o.is_empty(),
-                    serde_json::Value::Array(a) => !a.is_empty(),
-                    _ => false,
-                };
-
-                if has_tools && full_output.contains("<tool_call>") {
-                    let clean_json = Self::extract_tool_call_json(&full_output);
-                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&clean_json) {
-                        return Ok(InferenceOutput {
-                            response: InferenceTaskResponse::ToolCall(parsed),
-                            usage: final_usage,
-                        });
-                    }
+                if let Some((clean_content, parsed_tools)) = Self::extract_tool_calls(&full_output)
+                {
+                    return Ok(InferenceOutput {
+                        response: InferenceTaskResponse::ToolCall {
+                            content: clean_content,
+                            tool_calls: parsed_tools,
+                        },
+                        usage: final_usage,
+                    });
                 }
 
                 Ok(InferenceOutput {

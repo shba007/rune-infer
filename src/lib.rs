@@ -1,6 +1,7 @@
 pub mod api;
 pub mod config;
 pub mod inference;
+pub mod media;
 pub mod types;
 
 pub use api::{AppState, create_router};

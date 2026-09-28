@@ -41,7 +41,10 @@ pub enum InferenceTaskRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum InferenceTaskResponse {
-    ToolCall(serde_json::Value),
+    ToolCall {
+        content: Option<String>,
+        tool_calls: serde_json::Value,
+    },
     Text(String),
     Image(ImageGenerationResponse),
     Audio(Vec<u8>),

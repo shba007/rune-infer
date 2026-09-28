@@ -13,7 +13,7 @@ pub struct ChatCompletionRequest {
     pub top_p: Option<f64>,
     #[serde(default)]
     pub max_tokens: Option<usize>,
-    #[serde(default)]
+    #[serde(default, alias = "functions")]
     pub tools: Option<serde_json::Value>,
     #[serde(default)]
     pub tool_choice: Option<serde_json::Value>,
@@ -48,14 +48,22 @@ pub enum MediaItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: MessageContent,
+    #[serde(default)]
+    pub content: Option<MessageContent>,
+    #[serde(default)]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 impl ChatMessage {
     pub fn text_content(&self) -> String {
         match &self.content {
-            MessageContent::Text(text) => text.clone(),
-            MessageContent::Parts(parts) => parts
+            None => String::new(),
+            Some(MessageContent::Text(text)) => text.clone(),
+            Some(MessageContent::Parts(parts)) => parts
                 .iter()
                 .filter_map(|p| p.text.clone())
                 .collect::<Vec<_>>()
@@ -65,8 +73,9 @@ impl ChatMessage {
 
     pub fn split_text_and_media(&self) -> (String, Vec<MediaItem>) {
         match &self.content {
-            MessageContent::Text(text) => (text.clone(), Vec::new()),
-            MessageContent::Parts(parts) => {
+            None => (String::new(), Vec::new()),
+            Some(MessageContent::Text(text)) => (text.clone(), Vec::new()),
+            Some(MessageContent::Parts(parts)) => {
                 let mut text = String::new();
                 let mut media_items = Vec::new();
                 for p in parts {
@@ -186,6 +195,8 @@ pub struct ChoiceDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCallChunk>>,
@@ -202,7 +213,6 @@ pub struct ImageGenerationRequest {
     pub size: Option<String>,
     #[serde(default)]
     pub response_format: Option<String>,
-    // Extended parameters (Unsloth panel controls)
     #[serde(default)]
     pub negative_prompt: Option<String>,
     #[serde(default)]
