@@ -386,18 +386,27 @@ impl InferenceEngine for SdServerEngine {
         match task {
             InferenceTaskRequest::ImageGeneration {
                 prompt,
+                negative_prompt,
                 size,
                 response_format,
                 steps,
                 cfg_scale,
+                seed,
+                sample_method,
             } => {
                 let endpoint = format!("http://127.0.0.1:{}/v1/images/generations", self.port);
                 let (width, height) = if let Some(s) = size {
-                    let parts: Vec<&str> = s.split('x').collect();
+                    let parts: Vec<&str> = if s.contains('x') {
+                        s.split('x').collect()
+                    } else if s.contains('×') {
+                        s.split('×').collect()
+                    } else {
+                        s.split('*').collect()
+                    };
                     if parts.len() == 2 {
                         (
-                            parts[0].parse::<u32>().unwrap_or(1024),
-                            parts[1].parse::<u32>().unwrap_or(1024),
+                            parts[0].trim().parse::<u32>().unwrap_or(1024),
+                            parts[1].trim().parse::<u32>().unwrap_or(1024),
                         )
                     } else {
                         (1024, 1024)
@@ -406,22 +415,80 @@ impl InferenceEngine for SdServerEngine {
                     (1024, 1024)
                 };
 
-                // Standard OpenAI payload format + custom fields
+                let final_steps = steps.unwrap_or(self.default_steps);
+                let final_cfg = cfg_scale.unwrap_or(self.default_cfg);
                 let size_str = format!("{}x{}", width, height);
-                let body = serde_json::json!({
-                    "prompt": prompt,
+
+                // Build <sd_cpp_extra_args> snippet for standard stable-diffusion.cpp compatibility
+                let mut extra_map = serde_json::Map::new();
+                extra_map.insert("steps".to_string(), serde_json::json!(final_steps));
+                extra_map.insert("cfg_scale".to_string(), serde_json::json!(final_cfg));
+
+                if let Some(s) = seed {
+                    if *s >= 0 {
+                        extra_map.insert("seed".to_string(), serde_json::json!(s));
+                    }
+                }
+                if let Some(np) = negative_prompt {
+                    if !np.trim().is_empty() {
+                        extra_map
+                            .insert("negative_prompt".to_string(), serde_json::json!(np.trim()));
+                    }
+                }
+                if let Some(sm) = sample_method {
+                    if !sm.trim().is_empty() {
+                        extra_map
+                            .insert("sampling_method".to_string(), serde_json::json!(sm.trim()));
+                    }
+                }
+
+                let extra_json_str = serde_json::Value::Object(extra_map).to_string();
+                let final_prompt = if prompt.contains("<sd_cpp_extra_args>") {
+                    prompt.clone()
+                } else {
+                    format!(
+                        "{}<sd_cpp_extra_args>{}</sd_cpp_extra_args>",
+                        prompt.trim(),
+                        extra_json_str
+                    )
+                };
+
+                let mut body = serde_json::json!({
+                    "prompt": final_prompt,
                     "size": size_str,
                     "width": width,
                     "height": height,
-                    "steps": steps.unwrap_or(self.default_steps),
-                    "cfg_scale": cfg_scale.unwrap_or(self.default_cfg),
+                    "steps": final_steps,
+                    "cfg_scale": final_cfg,
                     "response_format": response_format.as_deref().unwrap_or("b64_json"),
                 });
 
+                if let Some(s) = seed {
+                    if *s >= 0 {
+                        body["seed"] = serde_json::json!(s);
+                    }
+                }
+                if let Some(np) = negative_prompt {
+                    if !np.trim().is_empty() {
+                        body["negative_prompt"] = serde_json::json!(np.trim());
+                    }
+                }
+                if let Some(sm) = sample_method {
+                    if !sm.trim().is_empty() {
+                        body["sampling_method"] = serde_json::json!(sm.trim());
+                    }
+                }
+
                 println!(
-                    "[SdServerEngine] Sending generation request to managed sd-server ({} steps, size: {})...",
-                    steps.unwrap_or(self.default_steps),
-                    size_str
+                    "[SdServerEngine] Generating image ({} steps | CFG: {:.1} | size: {}{}{})...",
+                    final_steps,
+                    final_cfg,
+                    size_str,
+                    seed.map(|s| format!(" | seed: {s}")).unwrap_or_default(),
+                    negative_prompt
+                        .as_ref()
+                        .map(|np| format!(" | neg: \"{}\"", np.trim()))
+                        .unwrap_or_default()
                 );
 
                 let resp = self.client.post(&endpoint).json(&body).send()?;

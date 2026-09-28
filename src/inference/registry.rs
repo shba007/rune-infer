@@ -292,12 +292,91 @@ impl ModelRegistry {
             .into());
         }
 
+        let model_vram = std::fs::metadata(&model.model_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        let param_info = if let Some(p) = model.total_params {
+            format!("{} params", Self::format_params(p))
+        } else {
+            "Weights".to_string()
+        };
+
+        let capabilities_str = model.resolved_capabilities().join(", ");
+
+        // Structured logging for Image Generation models
         if model.modality == crate::config::Modality::ImageGeneration {
             let engine = crate::inference::engines::sd_server::SdServerEngine::new(model)?;
+            let text_encoder_vram = model
+                .text_encoder_path
+                .as_ref()
+                .and_then(|p| std::fs::metadata(p).ok())
+                .map(|m| m.len())
+                .unwrap_or(0);
+
+            let vae_vram = model
+                .vae_path
+                .as_ref()
+                .and_then(|p| std::fs::metadata(p).ok())
+                .map(|m| m.len())
+                .unwrap_or(0);
+
+            let overhead = 1536 * 1024 * 1024; // Flash Attention + working buffer
+            let total_est = model_vram + text_encoder_vram + vae_vram + overhead;
+            let real_str =
+                if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
+                    let actual_used = after.saturating_sub(before);
+                    format!("Real: {}", Self::format_bytes(actual_used))
+                } else {
+                    "Real: N/A".to_string()
+                };
+
+            let res_str = model
+                .max_resolution
+                .as_deref()
+                .unwrap_or("1024×1024 (Native DiT)");
+            let steps = model.default_steps.unwrap_or(30);
+            let cfg = model.default_cfg_scale.unwrap_or(4.0);
+            let sampler = model.default_sample_method.as_deref().unwrap_or("euler");
+
+            println!(
+                "[ModelRegistry] ✓ Successfully loaded engine: \"{}\" ({})",
+                model.id, model.name
+            );
+            println!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
+            println!(
+                "[ModelRegistry]   • Model:        {} | {}",
+                param_info,
+                Self::format_bytes(model_vram)
+            );
+            if text_encoder_vram > 0 {
+                println!(
+                    "[ModelRegistry]   • Text Encoder: {}",
+                    Self::format_bytes(text_encoder_vram)
+                );
+            }
+            if vae_vram > 0 {
+                println!(
+                    "[ModelRegistry]   • VAE:          {}",
+                    Self::format_bytes(vae_vram)
+                );
+            }
+            println!("[ModelRegistry]   • Resolution:   {}", res_str);
+            println!(
+                "[ModelRegistry]   • Sampling:     {} steps | {:.1} CFG | {}",
+                steps, cfg, sampler
+            );
+            println!(
+                "[ModelRegistry]   • Total VRAM:   Est: {} | {}",
+                Self::format_bytes(total_est),
+                real_str
+            );
+
             return Ok(Arc::new(engine));
         }
 
-        let (n_ctx, context_vram, model_vram, projector_vram, mtp_vram, _total_vram) =
+        // For Text, Vision, and Needle models
+        let (n_ctx, context_vram, _, projector_vram, mtp_vram, _total_vram) =
             Self::calculate_vram_and_context(model, server);
         let gpu_layers = model.runtime.as_ref().map(|r| r.gpu_layers);
         let mtp_path = model.mtp_path.as_deref().map(std::path::Path::new);
@@ -344,12 +423,6 @@ impl ModelRegistry {
             }
         };
 
-        let param_info = if let Some(p) = model.total_params {
-            format!("{} params", Self::format_params(p))
-        } else {
-            "Weights".to_string()
-        };
-
         let total_est = model_vram + projector_vram + mtp_vram + context_vram;
         let real_str =
             if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
@@ -358,8 +431,6 @@ impl ModelRegistry {
             } else {
                 "Real: N/A".to_string()
             };
-
-        let capabilities_str = model.resolved_capabilities().join(", ");
 
         println!(
             "[ModelRegistry] ✓ Successfully loaded engine: \"{}\" ({})",
@@ -378,7 +449,7 @@ impl ModelRegistry {
                 .as_deref()
                 .unwrap_or("4096×4096 (Dynamic 4K)");
             println!(
-                "[ModelRegistry]   • Projector:  {} | {}",
+                "[ModelRegistry]   • Projector:    {} | {}",
                 res_str,
                 Self::format_bytes(projector_vram)
             );

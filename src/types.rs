@@ -202,6 +202,19 @@ pub struct ImageGenerationRequest {
     pub size: Option<String>,
     #[serde(default)]
     pub response_format: Option<String>,
+    // Extended parameters (Unsloth panel controls)
+    #[serde(default)]
+    pub negative_prompt: Option<String>,
+    #[serde(default)]
+    pub steps: Option<u32>,
+    #[serde(default, alias = "guidance")]
+    pub cfg_scale: Option<f32>,
+    #[serde(default)]
+    pub seed: Option<i64>,
+    #[serde(default)]
+    pub aspect_ratio: Option<String>,
+    #[serde(default)]
+    pub sample_method: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

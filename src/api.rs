@@ -554,6 +554,20 @@ async fn image_generation_handler(
         }
     };
 
+    let model_config = match state.config.find(&model_id) {
+        Some(c) => c.clone(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Model '{}' not found", model_id))
+                        .with_type("invalid_request_error"),
+                }),
+            )
+                .into_response();
+        }
+    };
+
     let inference = state.inference.clone();
     let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
         Ok(Ok(e)) => e,
@@ -578,12 +592,25 @@ async fn image_generation_handler(
         }
     };
 
+    // Precedence rule: API parameters take priority. If omitted, fall back to models.json defaults
+    let resolved_size = resolve_image_dimensions(
+        request.size.as_deref(),
+        request.aspect_ratio.as_deref(),
+        model_config.max_resolution.as_deref(),
+    );
+
     let task = InferenceTaskRequest::ImageGeneration {
         prompt: request.prompt.clone(),
-        size: request.size.clone(),
+        negative_prompt: request.negative_prompt.clone(),
+        size: Some(resolved_size),
         response_format: request.response_format.clone(),
-        steps: None,
-        cfg_scale: None,
+        steps: request.steps.or(model_config.default_steps),
+        cfg_scale: request.cfg_scale.or(model_config.default_cfg_scale),
+        seed: request.seed,
+        sample_method: request
+            .sample_method
+            .clone()
+            .or_else(|| model_config.default_sample_method.clone()),
     };
 
     let res =
@@ -624,6 +651,47 @@ async fn image_generation_handler(
         )
             .into_response(),
     }
+}
+
+/// Resolves width and height from explicit size, aspect ratio, or model default
+fn resolve_image_dimensions(
+    size: Option<&str>,
+    aspect_ratio: Option<&str>,
+    default_res: Option<&str>,
+) -> String {
+    if let Some(s) = size {
+        if s.contains('x') || s.contains('×') || s.contains('*') {
+            return s.to_string();
+        }
+    }
+
+    if let Some(ar) = aspect_ratio {
+        let clean = ar.to_lowercase();
+        if clean.contains("16:9") {
+            return "1024x576".to_string();
+        } else if clean.contains("9:16") {
+            return "576x1024".to_string();
+        } else if clean.contains("1:1") {
+            return "1024x1024".to_string();
+        } else if clean.contains("4:3") {
+            return "1024x768".to_string();
+        } else if clean.contains("3:4") {
+            return "768x1024".to_string();
+        } else if clean.contains("21:9") {
+            return "1280x544".to_string();
+        } else if clean.contains("9:21") {
+            return "544x1280".to_string();
+        }
+    }
+
+    if let Some(d) = default_res {
+        let clean = d.split('(').next().unwrap_or(d).trim();
+        if clean.contains('x') || clean.contains('×') || clean.contains('*') {
+            return clean.replace('×', "x").replace('*', "x");
+        }
+    }
+
+    "1024x1024".to_string()
 }
 
 #[axum::debug_handler]

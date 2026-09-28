@@ -310,7 +310,7 @@
       "default_sample_method": "euler",
       "runtime": {
         "gpu_layers": 99,
-        "extra_args": "--diffusion-fa --offload-to-cpu"
+        "extra_args": "--diffusion-fa"
       }
     }
   ]

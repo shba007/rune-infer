@@ -14,10 +14,13 @@ pub enum InferenceTaskRequest {
     },
     ImageGeneration {
         prompt: String,
+        negative_prompt: Option<String>,
         size: Option<String>,
         response_format: Option<String>,
         steps: Option<u32>,
         cfg_scale: Option<f32>,
+        seed: Option<i64>,
+        sample_method: Option<String>,
     },
 }
 
