@@ -8,6 +8,10 @@ pub enum Modality {
     Text,
     VisionText,
     ImageGeneration,
+    #[serde(alias = "AudioToText", alias = "AudioTranscription")]
+    SpeechToText,
+    #[serde(alias = "TextToAudio", alias = "AudioSpeech")]
+    TextToSpeech,
 }
 
 impl Modality {
@@ -16,6 +20,8 @@ impl Modality {
             Modality::Text => "text",
             Modality::VisionText => "vision-text",
             Modality::ImageGeneration => "image-generation",
+            Modality::SpeechToText => "speech-to-text",
+            Modality::TextToSpeech => "text-to-speech",
         }
     }
 }
@@ -201,6 +207,20 @@ impl ModelConfig {
             && !caps.iter().any(|c| c.eq_ignore_ascii_case("text-to-image"))
         {
             caps.push("Text-to-Image".to_string());
+        }
+        if (self.modality == Modality::SpeechToText || self.architecture == "crispasr")
+            && !caps
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case("speech-to-text") || c.eq_ignore_ascii_case("asr"))
+        {
+            caps.push("Speech-to-Text".to_string());
+        }
+        if self.modality == Modality::TextToSpeech
+            && !caps
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case("text-to-speech") || c.eq_ignore_ascii_case("tts"))
+        {
+            caps.push("Text-to-Speech".to_string());
         }
         caps
     }

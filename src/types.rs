@@ -383,3 +383,29 @@ impl HealthResponse {
         self
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioTranscriptionResponse {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segments: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub words: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioSpeechRequest {
+    #[serde(default)]
+    pub model: Option<String>,
+    pub input: String,
+    #[serde(default)]
+    pub voice: Option<String>,
+    #[serde(default)]
+    pub response_format: Option<String>,
+    #[serde(default)]
+    pub speed: Option<f32>,
+}

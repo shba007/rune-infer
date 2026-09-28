@@ -310,7 +310,28 @@
       "default_sample_method": "euler",
       "runtime": {
         "gpu_layers": 99,
-        "extra_args": "--diffusion-fa"
+        "extra_args": "--diffusion-fa --offload-to-cpu"
+      }
+    },
+    {
+      "id": "audio8-asr-infinite",
+      "name": "Edge0 Audio8 ASR Infinite",
+      "modality": "SpeechToText",
+      "architecture": "crispasr",
+      "vision": false,
+      "model_path": "D:/Models/huggingface/hub/models--edge0-Audio8-ASR-Infinite/model.safetensors",
+      "total_params": 4100000000,
+      "bits_per_weight": 4.5,
+      "description": "Infinite 24/7 rolling-KV streaming ASR with 80ms clock and semantic VAD based on Voxtral Realtime 4B + Qwen2.5-3B",
+      "capabilities": [
+        "Speech-to-Text",
+        "Streaming",
+        "Realtime",
+        "Semantic VAD"
+      ],
+      "runtime": {
+        "gpu_layers": 99,
+        "extra_args": "--backend voxtral4b"
       }
     }
   ]

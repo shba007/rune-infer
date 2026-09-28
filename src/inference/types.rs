@@ -1,4 +1,4 @@
-use crate::types::{ChatMessage, ImageGenerationResponse, Usage};
+use crate::types::{AudioTranscriptionResponse, ChatMessage, ImageGenerationResponse, Usage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +22,20 @@ pub enum InferenceTaskRequest {
         seed: Option<i64>,
         sample_method: Option<String>,
     },
+    AudioTranscription {
+        audio_bytes: Vec<u8>,
+        filename: String,
+        prompt: Option<String>,
+        language: Option<String>,
+        temperature: Option<f32>,
+        response_format: Option<String>,
+    },
+    AudioSpeech {
+        input: String,
+        voice: Option<String>,
+        response_format: Option<String>,
+        speed: Option<f32>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +44,8 @@ pub enum InferenceTaskResponse {
     ToolCall(serde_json::Value),
     Text(String),
     Image(ImageGenerationResponse),
+    Audio(Vec<u8>),
+    Transcription(AudioTranscriptionResponse),
     Error(String),
 }
 

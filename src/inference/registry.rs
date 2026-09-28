@@ -375,6 +375,40 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
+        // Structured logging and engine creation for Speech & Audio models (CrispASR)
+        if model.modality == crate::config::Modality::SpeechToText
+            || model.modality == crate::config::Modality::TextToSpeech
+            || model.architecture.eq_ignore_ascii_case("crispasr")
+            || model.architecture.eq_ignore_ascii_case("audio8")
+            || model.architecture.eq_ignore_ascii_case("voxtral4b")
+        {
+            let engine = crate::inference::engines::crispasr::CrispAsrEngine::new(model)?;
+            let real_str =
+                if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
+                    let actual_used = after.saturating_sub(before);
+                    format!("Real: {}", Self::format_bytes(actual_used))
+                } else {
+                    "Real: N/A".to_string()
+                };
+
+            println!(
+                "[ModelRegistry] ✓ Successfully loaded engine: \"{}\" ({})",
+                model.id, model.name
+            );
+            println!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
+            println!(
+                "[ModelRegistry]   • Model:        {} | {}",
+                param_info,
+                Self::format_bytes(model_vram)
+            );
+            println!(
+                "[ModelRegistry]   • Total VRAM:   Est: {} | {}",
+                Self::format_bytes(model_vram + 1024 * 1024 * 1024),
+                real_str
+            );
+            return Ok(Arc::new(engine));
+        }
+
         // For Text, Vision, and Needle models
         let (n_ctx, context_vram, _, projector_vram, mtp_vram, _total_vram) =
             Self::calculate_vram_and_context(model, server);
