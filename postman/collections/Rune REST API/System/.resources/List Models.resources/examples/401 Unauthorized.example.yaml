@@ -1,0 +1,27 @@
+$kind: http-example
+name: 401 Unauthorized
+request:
+  url: '{{base_url}}/v1/models'
+  method: GET
+  headers:
+    - key: Accept
+      value: application/json
+    - key: Authorization
+      value: 'Bearer invalid-token'
+response:
+  statusCode: 401
+  statusText: Unauthorized
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "Incorrect API key provided or authorization header is missing.",
+          "type": "authentication_error",
+          "param": null,
+          "code": "invalid_api_key"
+        }
+      }
+order: 1110

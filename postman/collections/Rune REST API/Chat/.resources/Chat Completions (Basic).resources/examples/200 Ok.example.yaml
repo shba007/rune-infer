@@ -1,0 +1,54 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "qwen3.5-0.8b",
+        "messages": [
+          { "role": "system", "content": "You are a concise, helpful assistant." },
+          { "role": "user", "content": "Explain Rust ownership in one sentence." }
+        ],
+        "temperature": 0.7,
+        "max_tokens": 128,
+        "stream": false
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "chatcmpl-9xK12V8B10M2",
+        "object": "chat.completion",
+        "created": 1727827210,
+        "model": "qwen3.5-0.8b",
+        "system_fingerprint": "fp_rune_rust_v1",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Rust ownership is a compile-time memory management discipline where every value has a single owner responsible for deallocating it when dropped, guaranteeing memory safety without a garbage collector.",
+              "refusal": null
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 27,
+          "completion_tokens": 33,
+          "total_tokens": 60
+        }
+      }
+order: 2000

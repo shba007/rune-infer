@@ -886,6 +886,7 @@ impl InferenceEngine for LlamaServerEngine {
                 let mut is_thinking = false;
                 let mut streamed_tokens = 0u32;
                 let mut server_usage: Option<Usage> = None;
+                let mut streamed_tool_calls: Vec<serde_json::Value> = Vec::new();
 
                 if stream_mode {
                     let reader = std::io::BufReader::new(resp);
@@ -908,6 +909,66 @@ impl InferenceEngine for LlamaServerEngine {
                                         .unwrap_or(0)
                                         as u32;
                                     server_usage = Some(Usage::new(pt, ct));
+                                }
+
+                                if let Some(tc_list) =
+                                    v["choices"][0]["delta"]["tool_calls"].as_array()
+                                {
+                                    for tc_delta in tc_list {
+                                        let idx = tc_delta
+                                            .get("index")
+                                            .and_then(|i| i.as_u64())
+                                            .unwrap_or(0)
+                                            as usize;
+                                        while streamed_tool_calls.len() <= idx {
+                                            streamed_tool_calls.push(serde_json::json!({
+                                                "id": "",
+                                                "type": "function",
+                                                "function": {
+                                                    "name": "",
+                                                    "arguments": ""
+                                                }
+                                            }));
+                                        }
+                                        if let Some(id) =
+                                            tc_delta.get("id").and_then(|i| i.as_str())
+                                        {
+                                            if !id.is_empty() {
+                                                streamed_tool_calls[idx]["id"] =
+                                                    serde_json::json!(id);
+                                            }
+                                        }
+                                        if let Some(func) =
+                                            tc_delta.get("function").and_then(|f| f.as_object())
+                                        {
+                                            if let Some(name) =
+                                                func.get("name").and_then(|n| n.as_str())
+                                            {
+                                                if !name.is_empty() {
+                                                    let cur = streamed_tool_calls[idx]["function"]
+                                                        ["name"]
+                                                        .as_str()
+                                                        .unwrap_or("");
+                                                    streamed_tool_calls[idx]["function"]["name"] = serde_json::json!(
+                                                        format!("{}{}", cur, name)
+                                                    );
+                                                }
+                                            }
+                                            if let Some(args) =
+                                                func.get("arguments").and_then(|a| a.as_str())
+                                            {
+                                                if !args.is_empty() {
+                                                    let cur = streamed_tool_calls[idx]["function"]
+                                                        ["arguments"]
+                                                        .as_str()
+                                                        .unwrap_or("");
+                                                    streamed_tool_calls[idx]["function"]["arguments"] = serde_json::json!(
+                                                        format!("{}{}", cur, args)
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 let reasoning_opt = v["choices"][0]["delta"]["reasoning_content"]
@@ -1043,6 +1104,20 @@ impl InferenceEngine for LlamaServerEngine {
                     };
                     Usage::new(est_prompt, est_completion)
                 });
+
+                if !streamed_tool_calls.is_empty() {
+                    return Ok(InferenceOutput {
+                        response: InferenceTaskResponse::ToolCall {
+                            content: if full_output.trim().is_empty() {
+                                None
+                            } else {
+                                Some(full_output.trim().to_string())
+                            },
+                            tool_calls: serde_json::Value::Array(streamed_tool_calls),
+                        },
+                        usage: final_usage,
+                    });
+                }
 
                 if let Some((clean_content, parsed_tools)) = Self::extract_tool_calls(&full_output)
                 {

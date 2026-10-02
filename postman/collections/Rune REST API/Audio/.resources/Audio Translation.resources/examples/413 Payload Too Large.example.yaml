@@ -1,0 +1,28 @@
+$kind: http-example
+name: 413 Payload Too Large
+request:
+  url: '{{base_url}}/v1/audio/translations'
+  method: POST
+  body:
+    type: formdata
+    content:
+      - key: model
+        type: text
+        value: 'whisper-large-v3-turbo'
+response:
+  statusCode: 413
+  statusText: Payload Too Large
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "Maximum audio file upload size is 25 MB. The uploaded file exceeds this limit.",
+          "type": "invalid_request_error",
+          "param": "file",
+          "code": "file_too_large"
+        }
+      }
+order: 4210

@@ -1,0 +1,49 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/embeddings'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "bge-large-en-v1.5",
+        "input": "Rune Infer high performance embeddings in Rust",
+        "encoding_format": "float"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "object": "list",
+        "data": [
+          {
+            "object": "embedding",
+            "index": 0,
+            "embedding": [
+              0.0023064,
+              -0.0123984,
+              0.0482103,
+              -0.0049214,
+              0.0312091,
+              -0.0210382,
+              0.0142981,
+              -0.0089124
+            ]
+          }
+        ],
+        "model": "bge-large-en-v1.5",
+        "usage": {
+          "prompt_tokens": 8,
+          "total_tokens": 8
+        }
+      }
+order: 5000

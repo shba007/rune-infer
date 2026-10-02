@@ -1,0 +1,39 @@
+$kind: http-request
+name: Chat Completions (Structured Output JSON)
+url: '{{base_url}}/v1/chat/completions'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{chat_model}}",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Extract entity details: Dr. Jane Doe is a 42-year-old astrophysicist from Cambridge."
+        }
+      ],
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "PersonExtraction",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "properties": {
+              "full_name": { "type": "string" },
+              "age": { "type": "integer" },
+              "occupation": { "type": "string" },
+              "city": { "type": "string" }
+            },
+            "required": ["full_name", "age", "occupation", "city"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+examples: .resources/Chat Completions (Structured Output JSON).resources/examples
+order: 2300

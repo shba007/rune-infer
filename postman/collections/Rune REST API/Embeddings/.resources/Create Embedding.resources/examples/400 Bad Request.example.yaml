@@ -1,0 +1,31 @@
+$kind: http-example
+name: 400 Bad Request
+request:
+  url: '{{base_url}}/v1/embeddings'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "bge-large-en-v1.5"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'input' is a required string or array of strings parameter.",
+          "type": "invalid_request_error",
+          "param": "input",
+          "code": "missing_required_parameter"
+        }
+      }
+order: 5010

@@ -1,0 +1,21 @@
+$kind: http-request
+name: Audio Translation
+url: '{{base_url}}/v1/audio/translations'
+method: POST
+body:
+  type: formdata
+  content:
+    - key: file
+      type: file
+      src: ''
+    - key: model
+      type: text
+      value: '{{asr_model}}'
+    - key: response_format
+      type: text
+      value: 'json'
+    - key: temperature
+      type: text
+      value: '0.0'
+examples: .resources/Audio Translation.resources/examples
+order: 4200

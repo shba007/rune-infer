@@ -1,0 +1,27 @@
+$kind: http-request
+name: Chat Completions (Streaming SSE)
+url: '{{base_url}}/v1/chat/completions'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: text/event-stream
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{chat_model}}",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Count from 1 to 5 and explain each number briefly."
+        }
+      ],
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      }
+    }
+examples: .resources/Chat Completions (Streaming SSE).resources/examples
+order: 2100

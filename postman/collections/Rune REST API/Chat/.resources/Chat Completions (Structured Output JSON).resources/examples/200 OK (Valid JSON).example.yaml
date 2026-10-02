@@ -1,0 +1,40 @@
+$kind: http-example
+name: 200 OK (Valid JSON)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "chatcmpl-json-strict-44",
+        "object": "chat.completion",
+        "created": 1727827280,
+        "model": "qwen3.5-0.8b",
+        "system_fingerprint": "fp_rune_rust_v1",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"full_name\":\"Dr. Jane Doe\",\"age\":42,\"occupation\":\"astrophysicist\",\"city\":\"Cambridge\"}",
+              "refusal": null
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 58,
+          "completion_tokens": 27,
+          "total_tokens": 85
+        }
+      }
+order: 2300

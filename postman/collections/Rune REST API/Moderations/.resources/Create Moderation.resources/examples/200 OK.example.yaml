@@ -1,0 +1,53 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/moderations'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "omni-moderation-latest",
+        "input": "I want to hurt someone."
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "modr-90df6b1c2e",
+        "model": "omni-moderation-latest",
+        "results": [
+          {
+            "flagged": true,
+            "categories": {
+              "sexual": false,
+              "hate": false,
+              "harassment": false,
+              "self-harm": false,
+              "sexual/minors": false,
+              "hate/threatening": false,
+              "violence/graphic": false,
+              "violence": true
+            },
+            "category_scores": {
+              "sexual": 0.00001,
+              "hate": 0.00012,
+              "harassment": 0.00341,
+              "self-harm": 0.00002,
+              "sexual/minors": 0.00000,
+              "hate/threatening": 0.00008,
+              "violence/graphic": 0.00021,
+              "violence": 0.94218
+            }
+          }
+        ]
+      }
+order: 5100

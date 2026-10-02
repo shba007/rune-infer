@@ -1,0 +1,19 @@
+$kind: http-request
+name: Audio Speech (TTS)
+url: '{{base_url}}/v1/audio/speech'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{tts_model}}",
+      "input": "Rune Infer is a standalone config-driven model server written in Rust.",
+      "voice": "alloy",
+      "response_format": "wav",
+      "speed": 1.0
+    }
+examples: .resources/Audio Speech (TTS).resources/examples
+order: 4100

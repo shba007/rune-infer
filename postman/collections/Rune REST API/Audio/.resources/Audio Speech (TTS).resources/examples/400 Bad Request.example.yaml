@@ -1,0 +1,33 @@
+$kind: http-example
+name: 400 Bad Request
+request:
+  url: '{{base_url}}/v1/audio/speech'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "audio8-tts-preview-0.6b",
+        "input": "",
+        "voice": "alloy"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'input' field must be a non-empty string under 4096 characters.",
+          "type": "invalid_request_error",
+          "param": "input",
+          "code": "invalid_payload"
+        }
+      }
+order: 4110

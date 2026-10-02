@@ -483,112 +483,161 @@ pub async fn chat_completions_handler(
         let model_id = request.model.clone();
 
         tokio::task::spawn_blocking(move || {
-            if has_tools && !is_structured_mode {
-                match engine_clone.execute(&task_clone, None) {
-                    Ok(output) => match output.response {
-                        InferenceTaskResponse::ToolCall {
-                            content,
-                            tool_calls,
-                        } => {
-                            if let Some(parsed_calls) = convert_to_tool_calls(&tool_calls, created)
-                            {
-                                if let Some(ref text) = content {
-                                    if !text.is_empty() {
-                                        let text_chunk = make_chunk(
-                                            &format!("chatcmpl-{created}"),
-                                            created,
-                                            &model_id,
-                                            ChoiceDelta {
-                                                content: Some(text.clone()),
-                                                reasoning_content: None,
-                                                role: Some("assistant".to_string()),
-                                                tool_calls: None,
-                                            },
-                                            None,
-                                            output.usage.clone(),
-                                        );
-                                        let _ = tx.send(Event::default().data(
-                                            serde_json::to_string(&text_chunk).unwrap_or_default(),
-                                        ));
-                                    }
+            let tx_clone = tx.clone();
+            let model_id_clone = model_id.clone();
+            let mut completion_tokens = 0u32;
+            let mut is_thinking = false;
+            let mut tool_call_buffering = false;
+
+            let mut on_token = move |piece: &str| -> bool {
+                completion_tokens += 1;
+
+                if piece == "<think>\n" {
+                    is_thinking = true;
+                    return true;
+                }
+                if piece == "\n</think>\n\n" {
+                    is_thinking = false;
+                    return true;
+                }
+
+                if is_thinking {
+                    let chunk = make_chunk(
+                        &format!("chatcmpl-{created}"),
+                        created,
+                        &model_id_clone,
+                        ChoiceDelta {
+                            content: None,
+                            reasoning_content: Some(piece.to_string()),
+                            role: Some("assistant".to_string()),
+                            tool_calls: None,
+                        },
+                        None,
+                        Usage {
+                            prompt_tokens: 0,
+                            completion_tokens,
+                            total_tokens: completion_tokens,
+                        },
+                    );
+                    return tx_clone
+                        .send(
+                            Event::default()
+                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                        )
+                        .is_ok();
+                }
+
+                if piece.contains("<tool_call>") || tool_call_buffering {
+                    tool_call_buffering = true;
+                    return true;
+                }
+
+                let chunk = make_chunk(
+                    &format!("chatcmpl-{created}"),
+                    created,
+                    &model_id_clone,
+                    ChoiceDelta {
+                        content: Some(piece.to_string()),
+                        reasoning_content: None,
+                        role: Some("assistant".to_string()),
+                        tool_calls: None,
+                    },
+                    None,
+                    Usage {
+                        prompt_tokens: 0,
+                        completion_tokens,
+                        total_tokens: completion_tokens,
+                    },
+                );
+                tx_clone
+                    .send(Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()))
+                    .is_ok()
+            };
+
+            match engine_clone.execute(&task_clone, Some(&mut on_token)) {
+                Ok(output) => match output.response {
+                    InferenceTaskResponse::ToolCall {
+                        content,
+                        tool_calls,
+                    } => {
+                        if let Some(parsed_calls) = convert_to_tool_calls(&tool_calls, created) {
+                            if let Some(ref text) = content {
+                                if !text.is_empty() {
+                                    let text_chunk = make_chunk(
+                                        &format!("chatcmpl-{created}"),
+                                        created,
+                                        &model_id,
+                                        ChoiceDelta {
+                                            content: Some(text.clone()),
+                                            reasoning_content: None,
+                                            role: Some("assistant".to_string()),
+                                            tool_calls: None,
+                                        },
+                                        None,
+                                        output.usage.clone(),
+                                    );
+                                    let _ = tx.send(Event::default().data(
+                                        serde_json::to_string(&text_chunk).unwrap_or_default(),
+                                    ));
                                 }
-
-                                let tool_chunks = parsed_calls
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(idx, tc)| ToolCallChunk {
-                                        index: idx,
-                                        id: Some(tc.id),
-                                        r#type: Some(tc.r#type),
-                                        function: Some(crate::types::FunctionCallChunk {
-                                            name: Some(tc.function.name),
-                                            arguments: Some(tc.function.arguments),
-                                        }),
-                                    })
-                                    .collect();
-
-                                let tool_chunk = make_chunk(
-                                    &format!("chatcmpl-{created}"),
-                                    created,
-                                    &model_id,
-                                    ChoiceDelta {
-                                        content: None,
-                                        reasoning_content: None,
-                                        role: Some("assistant".to_string()),
-                                        tool_calls: Some(tool_chunks),
-                                    },
-                                    None,
-                                    output.usage.clone(),
-                                );
-                                let _ =
-                                    tx.send(Event::default().data(
-                                        serde_json::to_string(&tool_chunk).unwrap_or_default(),
-                                    ));
-
-                                let final_chunk = make_chunk(
-                                    &format!("chatcmpl-{created}"),
-                                    created,
-                                    &model_id,
-                                    ChoiceDelta {
-                                        content: None,
-                                        reasoning_content: None,
-                                        role: None,
-                                        tool_calls: None,
-                                    },
-                                    Some("tool_calls".to_string()),
-                                    output.usage,
-                                );
-                                let _ =
-                                    tx.send(Event::default().data(
-                                        serde_json::to_string(&final_chunk).unwrap_or_default(),
-                                    ));
-                            } else {
-                                let chunk = make_chunk(
-                                    &format!("chatcmpl-{created}"),
-                                    created,
-                                    &model_id,
-                                    ChoiceDelta {
-                                        content: Some(tool_calls.to_string()),
-                                        reasoning_content: None,
-                                        role: Some("assistant".to_string()),
-                                        tool_calls: None,
-                                    },
-                                    Some("stop".to_string()),
-                                    output.usage,
-                                );
-                                let _ = tx.send(
-                                    Event::default()
-                                        .data(serde_json::to_string(&chunk).unwrap_or_default()),
-                                );
                             }
-                        }
-                        InferenceTaskResponse::Text(text) => {
+
+                            let tool_chunks = parsed_calls
+                                .into_iter()
+                                .enumerate()
+                                .map(|(idx, tc)| ToolCallChunk {
+                                    index: idx,
+                                    id: Some(tc.id),
+                                    r#type: Some(tc.r#type),
+                                    function: Some(crate::types::FunctionCallChunk {
+                                        name: Some(tc.function.name),
+                                        arguments: Some(tc.function.arguments),
+                                    }),
+                                })
+                                .collect();
+
+                            let tool_chunk = make_chunk(
+                                &format!("chatcmpl-{created}"),
+                                created,
+                                &model_id,
+                                ChoiceDelta {
+                                    content: None,
+                                    reasoning_content: None,
+                                    role: Some("assistant".to_string()),
+                                    tool_calls: Some(tool_chunks),
+                                },
+                                None,
+                                output.usage.clone(),
+                            );
+                            let _ = tx.send(
+                                Event::default()
+                                    .data(serde_json::to_string(&tool_chunk).unwrap_or_default()),
+                            );
+
+                            let final_chunk = make_chunk(
+                                &format!("chatcmpl-{created}"),
+                                created,
+                                &model_id,
+                                ChoiceDelta {
+                                    content: None,
+                                    reasoning_content: None,
+                                    role: None,
+                                    tool_calls: None,
+                                },
+                                Some("tool_calls".to_string()),
+                                output.usage,
+                            );
+                            let _ = tx.send(
+                                Event::default()
+                                    .data(serde_json::to_string(&final_chunk).unwrap_or_default()),
+                            );
+                        } else {
                             let chunk = make_chunk(
                                 &format!("chatcmpl-{created}"),
                                 created,
                                 &model_id,
                                 ChoiceDelta {
-                                    content: Some(text),
+                                    content: Some(tool_calls.to_string()),
                                     reasoning_content: None,
                                     role: Some("assistant".to_string()),
                                     tool_calls: None,
@@ -601,64 +650,8 @@ pub async fn chat_completions_handler(
                                     .data(serde_json::to_string(&chunk).unwrap_or_default()),
                             );
                         }
-                        InferenceTaskResponse::Error(other) => {
-                            let err_chunk = serde_json::json!({
-                                "error": {
-                                    "message": other,
-                                    "type": "server_error",
-                                    "code": "inference_error"
-                                }
-                            });
-                            let _ = tx
-                                .send(Event::default().event("error").data(err_chunk.to_string()));
-                        }
-                        _ => {}
-                    },
-                    Err(e) => {
-                        let err_chunk = serde_json::json!({
-                            "error": {
-                                "message": e.to_string(),
-                                "type": "server_error",
-                                "code": "engine_execution_failed"
-                            }
-                        });
-                        let _ =
-                            tx.send(Event::default().event("error").data(err_chunk.to_string()));
                     }
-                }
-            } else {
-                let tx_clone = tx.clone();
-                let model_id_clone = model_id.clone();
-                let mut completion_tokens = 0u32;
-                let mut on_token = move |piece: &str| -> bool {
-                    completion_tokens += 1;
-                    let chunk = make_chunk(
-                        &format!("chatcmpl-{created}"),
-                        created,
-                        &model_id_clone,
-                        ChoiceDelta {
-                            content: Some(piece.to_string()),
-                            reasoning_content: None,
-                            role: Some("assistant".to_string()),
-                            tool_calls: None,
-                        },
-                        None,
-                        Usage {
-                            prompt_tokens: 0,
-                            completion_tokens,
-                            total_tokens: completion_tokens,
-                        },
-                    );
-                    tx_clone
-                        .send(
-                            Event::default()
-                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
-                        )
-                        .is_ok()
-                };
-
-                match engine_clone.execute(&task_clone, Some(&mut on_token)) {
-                    Ok(final_output) => {
+                    InferenceTaskResponse::Text(_text) => {
                         let final_chunk = make_chunk(
                             &format!("chatcmpl-{created}"),
                             created,
@@ -670,24 +663,35 @@ pub async fn chat_completions_handler(
                                 tool_calls: None,
                             },
                             Some("stop".to_string()),
-                            final_output.usage,
+                            output.usage,
                         );
                         let _ = tx.send(
                             Event::default()
                                 .data(serde_json::to_string(&final_chunk).unwrap_or_default()),
                         );
                     }
-                    Err(e) => {
+                    InferenceTaskResponse::Error(other) => {
                         let err_chunk = serde_json::json!({
                             "error": {
-                                "message": e.to_string(),
+                                "message": other,
                                 "type": "server_error",
-                                "code": "engine_execution_failed"
+                                "code": "inference_error"
                             }
                         });
                         let _ =
                             tx.send(Event::default().event("error").data(err_chunk.to_string()));
                     }
+                    _ => {}
+                },
+                Err(e) => {
+                    let err_chunk = serde_json::json!({
+                        "error": {
+                            "message": e.to_string(),
+                            "type": "server_error",
+                            "code": "engine_execution_failed"
+                        }
+                    });
+                    let _ = tx.send(Event::default().event("error").data(err_chunk.to_string()));
                 }
             }
         });

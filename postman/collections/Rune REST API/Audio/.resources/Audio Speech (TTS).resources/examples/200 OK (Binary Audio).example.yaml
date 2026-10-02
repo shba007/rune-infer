@@ -1,0 +1,28 @@
+$kind: http-example
+name: 200 OK (Binary Audio)
+request:
+  url: '{{base_url}}/v1/audio/speech'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "audio8-tts-preview-0.6b",
+        "input": "Rune Infer is a standalone config-driven model server written in Rust.",
+        "voice": "alloy",
+        "response_format": "wav",
+        "speed": 1.0
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: audio/wav
+    transfer-encoding: chunked
+  body:
+    type: text
+    content: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='
+order: 4100

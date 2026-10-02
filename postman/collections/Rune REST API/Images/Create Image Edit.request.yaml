@@ -1,0 +1,30 @@
+$kind: http-request
+name: Create Image Edit
+url: '{{base_url}}/v1/images/edits'
+method: POST
+body:
+  type: formdata
+  content:
+    - key: image
+      type: file
+      src: ''
+    - key: mask
+      type: file
+      src: ''
+    - key: prompt
+      type: text
+      value: 'A sun shining warmly through the trees'
+    - key: model
+      type: text
+      value: '{{image_model}}'
+    - key: n
+      type: text
+      value: '1'
+    - key: size
+      type: text
+      value: '1024x1024'
+    - key: response_format
+      type: text
+      value: 'b64_json'
+examples: .resources/Create Image Edit.resources/examples
+order: 3100
