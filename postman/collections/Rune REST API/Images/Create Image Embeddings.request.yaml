@@ -1,0 +1,25 @@
+$kind: http-request
+name: Create Image Embeddings
+url: '{{base_url}}/v1/images/embeddings'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{image_embedding_model}}",
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "regions": [
+        {
+          "box": [0.427, 0.396, 0.143, 0.110],
+          "label": "jewellery_crop_01"
+        }
+      ],
+      "encoding_format": "float"
+    }
+examples: .resources/Create Image Embeddings.resources/examples
+order: 3400

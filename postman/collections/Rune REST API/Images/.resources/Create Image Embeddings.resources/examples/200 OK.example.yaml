@@ -1,0 +1,57 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/images/embeddings'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "clip-vit-large-patch14",
+        "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "regions": [
+          {
+            "box": [0.427, 0.396, 0.143, 0.110],
+            "label": "jewellery_crop_01"
+          }
+        ],
+        "encoding_format": "float"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "object": "list",
+        "data": [
+          {
+            "object": "embedding",
+            "index": 0,
+            "label": "jewellery_crop_01",
+            "embedding": [
+              0.012491,
+              -0.038102,
+              0.051928,
+              -0.009182,
+              0.024109,
+              -0.015291,
+              0.031029,
+              -0.004128
+            ]
+          }
+        ],
+        "model": "clip-vit-large-patch14",
+        "usage": {
+          "total_regions": 1
+        }
+      }
+order: 3400

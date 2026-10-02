@@ -10,3 +10,11 @@ variables:
   tts_model: audio8-tts-preview-0.6b
   embedding_model: bge-large-en-v1.5
   moderation_model: omni-moderation-latest
+  detection_model: yolo-11x-detection
+  image_embedding_model: clip-vit-large-patch14
+  ocr_model: got-ocr-2.0
+  upscale_model: real-esrgan-x4plus
+  restoration_model: codeformer-v0.1
+  style_model: neural-style-v2
+  nlu_model: gliner-bi-encoder-v2.5
+  s2st_model: seamless-m4t-v2-large

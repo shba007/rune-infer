@@ -1,0 +1,58 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/nlu/intents'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "gliner-bi-encoder-v2.5",
+        "text": "Book a business flight to New York for Dr. Jane tomorrow at 9 AM"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "nlu_01J9R4T8Q7X10",
+        "object": "nlu.analysis",
+        "model": "gliner-bi-encoder-v2.5",
+        "intent": {
+          "name": "book_flight",
+          "confidence": 0.982
+        },
+        "entities": [
+          {
+            "type": "destination",
+            "value": "New York",
+            "start": 27,
+            "end": 35,
+            "confidence": 0.965
+          },
+          {
+            "type": "passenger",
+            "value": "Dr. Jane",
+            "start": 40,
+            "end": 48,
+            "confidence": 0.974
+          },
+          {
+            "type": "time",
+            "value": "tomorrow at 9 AM",
+            "start": 49,
+            "end": 65,
+            "confidence": 0.941
+          }
+        ]
+      }
+order: 2500

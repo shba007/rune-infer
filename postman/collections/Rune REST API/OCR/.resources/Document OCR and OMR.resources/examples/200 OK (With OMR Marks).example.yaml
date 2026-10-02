@@ -1,0 +1,94 @@
+$kind: http-example
+name: 200 OK (With OMR Marks)
+request:
+  url: '{{base_url}}/v1/ocr'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "got-ocr-2.0",
+        "document": {
+          "type": "image_url",
+          "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        },
+        "features": [
+          "text",
+          "selection_marks"
+        ],
+        "response_format": "json"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "ocr_01J9R4T8Q9M1K7",
+        "object": "ocr.analysis",
+        "created": 1727827600,
+        "model": "got-ocr-2.0",
+        "text": "# Assessment Sheet\nQ1: (A) [X] (B) [ ]\nQ2: (A) [ ] (B) [X]",
+        "pages": [
+          {
+            "page": 1,
+            "dimensions": {
+              "width": 2380,
+              "height": 3368
+            },
+            "lines": [
+              {
+                "text": "Assessment Sheet",
+                "bbox": [70, 55, 380, 110]
+              }
+            ],
+            "selection_marks": [
+              {
+                "id": "q1_opt_a",
+                "question_index": 1,
+                "value": 1,
+                "state": "selected",
+                "confidence": 0.988,
+                "bbox": [220, 400, 260, 440]
+              },
+              {
+                "id": "q1_opt_b",
+                "question_index": 1,
+                "value": 0,
+                "state": "unselected",
+                "confidence": 0.976,
+                "bbox": [280, 400, 320, 440]
+              },
+              {
+                "id": "q2_opt_a",
+                "question_index": 2,
+                "value": 1,
+                "state": "unselected",
+                "confidence": 0.969,
+                "bbox": [220, 480, 260, 520]
+              },
+              {
+                "id": "q2_opt_b",
+                "question_index": 2,
+                "value": 0,
+                "state": "selected",
+                "confidence": 0.992,
+                "bbox": [280, 480, 320, 520]
+              }
+            ],
+            "tables": []
+          }
+        ],
+        "usage": {
+          "pages_processed": 1
+        }
+      }
+order: 6000

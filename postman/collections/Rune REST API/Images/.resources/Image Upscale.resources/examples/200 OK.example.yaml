@@ -1,0 +1,43 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/images/upscales'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "real-esrgan-x4plus",
+        "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "scale": 4,
+        "response_format": "b64_json"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "created": 1727827530,
+        "data": [
+          {
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAADklEQVR42mNk+M9QzwAEBgGAWb2/EQAAAABJRU5ErkJggg=="
+          }
+        ],
+        "usage": {
+          "input_width": 256,
+          "input_height": 256,
+          "output_width": 1024,
+          "output_height": 1024,
+          "scale": 4
+        }
+      }
+order: 3370

@@ -1,0 +1,73 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/images/detections'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "grounding-dino-yolo-hybrid",
+        "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "prompt": "person with sunglasses",
+        "features": ["boxes", "masks", "keypoints", "attributes"]
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "det_01J9R4T8Q1V5K2",
+        "object": "list",
+        "created": 1727827500,
+        "model": "grounding-dino-yolo-hybrid",
+        "data": [
+          {
+            "object": "detection",
+            "index": 0,
+            "label": "face",
+            "confidence": 0.962,
+            "box": {
+              "x": 0.501,
+              "y": 0.284,
+              "width": 0.215,
+              "height": 0.245
+            },
+            "bbox_pixels": {
+              "x_min": 393,
+              "y_min": 162,
+              "x_max": 608,
+              "y_max": 407
+            },
+            "mask": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ...",
+            "pose": [
+              { "name": "nose", "x": 0.501, "y": 0.275, "confidence": 0.98 },
+              { "name": "left_eye", "x": 0.478, "y": 0.252, "confidence": 0.97 },
+              { "name": "right_eye", "x": 0.524, "y": 0.252, "confidence": 0.97 }
+            ],
+            "attributes": {
+              "age": 32,
+              "gender": "female",
+              "expression": "neutral",
+              "glasses": true,
+              "mask": false,
+              "liveness": true
+            }
+          }
+        ],
+        "usage": {
+          "image_width": 1000,
+          "image_height": 1000,
+          "total_objects": 1
+        }
+      }
+order: 3300

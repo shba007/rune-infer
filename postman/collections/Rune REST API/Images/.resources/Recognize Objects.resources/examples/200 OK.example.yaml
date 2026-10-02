@@ -1,0 +1,51 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/images/recognize'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "imagebind-huge",
+        "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "top_k": 2,
+        "targets": [
+          { "label": "antique_gold_ring", "text": "A vintage gold ring with an emerald gemstone" },
+          { "label": "diamond_necklace", "text": "Diamond choker necklace in platinum" }
+        ]
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "object": "list",
+        "model": "imagebind-huge",
+        "data": [
+          {
+            "object": "recognition_match",
+            "index": 0,
+            "label": "antique_gold_ring",
+            "similarity": 0.9412,
+            "type": "text"
+          },
+          {
+            "object": "recognition_match",
+            "index": 1,
+            "label": "diamond_necklace",
+            "similarity": 0.3125,
+            "type": "text"
+          }
+        ]
+      }
+order: 3350
