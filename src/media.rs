@@ -287,8 +287,13 @@ pub fn process_image_bytes(
     let (mut w, mut h) = (img.width(), img.height());
     let (max_w, max_h) = max_dims;
 
-    if w > max_w || h > max_h {
-        let resized = img.resize(max_w, max_h, image::imageops::FilterType::Triangle);
+    let min_dim = 32u32;
+    let needs_resize = w > max_w || h > max_h || w < min_dim || h < min_dim;
+
+    if needs_resize {
+        let target_w = w.clamp(min_dim, max_w);
+        let target_h = h.clamp(min_dim, max_h);
+        let resized = img.resize(target_w, target_h, image::imageops::FilterType::Triangle);
         w = resized.width();
         h = resized.height();
         let mut buf = std::io::Cursor::new(Vec::new());
@@ -441,25 +446,32 @@ pub fn decode_media(
         let (header, b64_data) = rest.split_once(',').ok_or_else(|| ErrorResponse {
             error: ApiError::new("Invalid image data URL: missing comma separator")
                 .with_type("invalid_request_error")
-                .with_code("invalid_image"),
+                .with_param("image_url.url")
+                .with_code("invalid_image_format"),
         })?;
 
         let header_lower = header.to_lowercase();
         if !header_lower.starts_with("image/") || !header_lower.contains(";base64") {
             return Err(ErrorResponse {
-                error: ApiError::new("Invalid image data URL (expected `image/*;base64,<data>`)")
-                    .with_type("invalid_request_error")
-                    .with_code("invalid_image"),
+                error: ApiError::new(
+                    "Invalid base64 image data URI format in 'messages[0].content[1].image_url.url'.",
+                )
+                .with_type("invalid_request_error")
+                .with_param("image_url.url")
+                .with_code("invalid_image_format"),
             });
         }
 
         let clean_b64 = b64_data.trim();
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(clean_b64)
-            .map_err(|e| ErrorResponse {
-                error: ApiError::new(&format!("Invalid base64 payload: {e}"))
-                    .with_type("invalid_request_error")
-                    .with_code("invalid_image"),
+            .map_err(|_| ErrorResponse {
+                error: ApiError::new(
+                    "Invalid base64 image data URI format in 'messages[0].content[1].image_url.url'.",
+                )
+                .with_type("invalid_request_error")
+                .with_param("image_url.url")
+                .with_code("invalid_image_format"),
             })?;
 
         let processed = process_image_bytes(&bytes, max_dims)?;

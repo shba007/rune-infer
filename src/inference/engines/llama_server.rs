@@ -2,7 +2,9 @@ use super::download;
 use crate::inference::process::{ProcessGuard, configure_death_signal};
 use crate::inference::traits::InferenceEngine;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
-use crate::types::Usage;
+use crate::types::{ImageCaptionResponse, Usage};
+use base64::Engine;
+use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::io::BufRead;
 use std::net::TcpListener;
@@ -754,17 +756,6 @@ impl InferenceEngine for LlamaServerEngine {
                 let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
                 let stream_mode = on_token.is_some();
 
-                let scratch_path = std::env::temp_dir().join("rune_infer").join(format!(
-                    "ipc_{}_{}",
-                    std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_nanos()
-                ));
-                let _ = std::fs::create_dir_all(&scratch_path);
-                let _guard = ScratchDirGuard(scratch_path.clone());
-
                 let mut server_messages = Vec::new();
 
                 if !messages.is_empty() {
@@ -782,16 +773,20 @@ impl InferenceEngine for LlamaServerEngine {
                         if msg.role == "user"
                             && m_idx == messages.iter().position(|m| m.role == "user").unwrap_or(0)
                         {
-                            for (f_idx, frame_bytes) in images.iter().enumerate() {
-                                let frame_file = scratch_path.join(format!("frame_{f_idx}.jpg"));
-                                if std::fs::write(&frame_file, frame_bytes).is_ok() {
-                                    parts.push(serde_json::json!({
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": frame_file.to_string_lossy().to_string()
-                                        }
-                                    }));
-                                }
+                            for frame_bytes in images.iter() {
+                                let mime = if frame_bytes.starts_with(b"\x89PNG") {
+                                    "image/png"
+                                } else {
+                                    "image/jpeg"
+                                };
+                                let b64 =
+                                    base64::engine::general_purpose::STANDARD.encode(frame_bytes);
+                                parts.push(serde_json::json!({
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": format!("data:{mime};base64,{b64}")
+                                    }
+                                }));
                             }
                         }
 
@@ -835,16 +830,19 @@ impl InferenceEngine for LlamaServerEngine {
                         "text": clean_prompt
                     }));
 
-                    for (f_idx, frame_bytes) in images.iter().enumerate() {
-                        let frame_file = scratch_path.join(format!("frame_{f_idx}.jpg"));
-                        if std::fs::write(&frame_file, frame_bytes).is_ok() {
-                            parts.push(serde_json::json!({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": frame_file.to_string_lossy().to_string()
-                                }
-                            }));
-                        }
+                    for frame_bytes in images.iter() {
+                        let mime = if frame_bytes.starts_with(b"\x89PNG") {
+                            "image/png"
+                        } else {
+                            "image/jpeg"
+                        };
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(frame_bytes);
+                        parts.push(serde_json::json!({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": format!("data:{mime};base64,{b64}")
+                            }
+                        }));
                     }
 
                     server_messages.push(serde_json::json!({
@@ -879,7 +877,9 @@ impl InferenceEngine for LlamaServerEngine {
                     })?;
 
                 if !resp.status().is_success() {
-                    return Err(format!("llama-server returned HTTP {}", resp.status()).into());
+                    let status = resp.status();
+                    let err_text = resp.text().unwrap_or_default();
+                    return Err(format!("llama-server returned HTTP {status}: {err_text}").into());
                 }
 
                 let mut full_output = String::new();
@@ -1133,6 +1133,97 @@ impl InferenceEngine for LlamaServerEngine {
                 Ok(InferenceOutput {
                     response: InferenceTaskResponse::Text(full_output.trim().to_string()),
                     usage: final_usage,
+                })
+            }
+            InferenceTaskRequest::ImageCaption {
+                model,
+                image_bytes,
+                detail,
+                max_tokens,
+            } => {
+                let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
+
+                let mime = if image_bytes.starts_with(b"\x89PNG") {
+                    "image/png"
+                } else {
+                    "image/jpeg"
+                };
+                let b64 = base64::engine::general_purpose::STANDARD.encode(image_bytes);
+                let data_uri = format!("data:{mime};base64,{b64}");
+
+                let prompt_text = if detail == "detailed" {
+                    "Provide a detailed description of this image."
+                } else {
+                    "Provide a concise, single-sentence caption for this image."
+                };
+
+                let body = serde_json::json!({
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": prompt_text
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": data_uri
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.2,
+                    "stream": false
+                });
+
+                let resp = self
+                    .client
+                    .post(&endpoint)
+                    .json(&body)
+                    .send()
+                    .map_err(|e| format!("Failed to connect to managed llama-server: {e}"))?;
+
+                if !resp.status().is_success() {
+                    let status = resp.status();
+                    let err_text = resp.text().unwrap_or_default();
+
+                    return Err(format!("llama-server returned HTTP {status}: {err_text}").into());
+                }
+
+                let result: serde_json::Value = resp.json()?;
+                let caption = result["choices"][0]["message"]["content"]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+
+                let pt = result["usage"]["prompt_tokens"].as_u64().unwrap_or(85) as u32;
+                let ct = result["usage"]["completion_tokens"].as_u64().unwrap_or(12) as u32;
+                let usage = Usage::new(pt, ct);
+
+                let created = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let id = format!(
+                    "cap_{}",
+                    hex::encode(&Sha256::digest(caption.as_bytes())[..8])
+                );
+
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Caption(ImageCaptionResponse {
+                        id,
+                        object: "image.caption".to_string(),
+                        created,
+                        model: self.id.clone(),
+                        caption,
+                        usage: usage.clone(),
+                    }),
+                    usage,
                 })
             }
             _ => Err("LlamaServerEngine does not support this task type".into()),

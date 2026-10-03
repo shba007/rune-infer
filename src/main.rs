@@ -121,11 +121,8 @@ async fn main() -> Result<()> {
         config,
     };
 
-    let app = create_router(state.clone());
-
-    let app = app
-        .layer(tower::ServiceBuilder::new().layer(tower_http::cors::CorsLayer::permissive()))
-        .with_state(Arc::new(state));
+    let app = create_router(state)
+        .layer(tower::ServiceBuilder::new().layer(tower_http::cors::CorsLayer::permissive()));
 
     let addr = format!("{}:{}", host, port);
     tracing::info!(

@@ -12,6 +12,26 @@ pub enum Modality {
     SpeechToText,
     #[serde(alias = "TextToAudio", alias = "AudioSpeech")]
     TextToSpeech,
+    #[serde(alias = "SpeechToSpeechTranslation", alias = "S2ST")]
+    SpeechToSpeech,
+    #[serde(alias = "embedding", alias = "embeddings")]
+    Embedding,
+    #[serde(alias = "moderation", alias = "moderations", alias = "guardrails")]
+    Moderation,
+    #[serde(alias = "nlu", alias = "intent", alias = "classifier")]
+    Nlu,
+    #[serde(alias = "ocr", alias = "omr")]
+    Ocr,
+    #[serde(alias = "detection", alias = "object-detection")]
+    ObjectDetection,
+    #[serde(alias = "image_embedding", alias = "image-embeddings")]
+    ImageEmbedding,
+    #[serde(alias = "restoration", alias = "face-restoration")]
+    ImageRestoration,
+    #[serde(alias = "upscale", alias = "super-resolution")]
+    ImageUpscale,
+    #[serde(alias = "style_transfer", alias = "style")]
+    ImageStyleTransfer,
 }
 
 impl Modality {
@@ -22,6 +42,16 @@ impl Modality {
             Modality::ImageGeneration => "image-generation",
             Modality::SpeechToText => "speech-to-text",
             Modality::TextToSpeech => "text-to-speech",
+            Modality::SpeechToSpeech => "speech-to-speech",
+            Modality::Embedding => "embedding",
+            Modality::Moderation => "moderation",
+            Modality::Nlu => "nlu",
+            Modality::Ocr => "ocr",
+            Modality::ObjectDetection => "object-detection",
+            Modality::ImageEmbedding => "image-embedding",
+            Modality::ImageRestoration => "image-restoration",
+            Modality::ImageUpscale => "image-upscale",
+            Modality::ImageStyleTransfer => "image-style-transfer",
         }
     }
 }
@@ -91,12 +121,55 @@ impl ModelRegistry {
     }
 
     pub fn find(&self, id: &str) -> Option<&ModelConfig> {
-        self.models.iter().find(|m| {
-            m.id == id
-                || m.id.eq_ignore_ascii_case(id)
-                || m.name.eq_ignore_ascii_case(id)
-                || (m.id == "ternary-Bonsai-2-27b" && id == "ternary-Bonsai-2-27b")
-        })
+        self.models
+            .iter()
+            .find(|m| {
+                m.id == id
+                    || m.id.eq_ignore_ascii_case(id)
+                    || m.name.eq_ignore_ascii_case(id)
+                    || (m.id == "ternary-Bonsai-2-27b" && id == "ternary-Bonsai-2-27b")
+            })
+            .or_else(|| {
+                let lower = id.to_lowercase();
+                if lower.contains("embed") || lower.contains("bge") || lower.contains("granite") {
+                    self.models
+                        .iter()
+                        .find(|m| m.modality == Modality::Embedding)
+                } else if lower.contains("moderation") || lower.contains("guard") {
+                    self.models
+                        .iter()
+                        .find(|m| m.modality == Modality::Moderation)
+                } else if lower.contains("intent")
+                    || lower.contains("nlu")
+                    || lower.contains("gliner")
+                    || lower.contains("mmbert")
+                {
+                    self.models.iter().find(|m| m.modality == Modality::Nlu)
+                } else if lower.contains("got-ocr") || lower.contains("ocr") {
+                    self.models.iter().find(|m| m.modality == Modality::Ocr)
+                } else if lower.contains("whisper")
+                    || lower.contains("transcription")
+                    || lower.contains("asr")
+                {
+                    self.models
+                        .iter()
+                        .find(|m| m.modality == Modality::SpeechToText)
+                } else if lower.contains("tts") || lower.contains("speech") {
+                    self.models
+                        .iter()
+                        .find(|m| m.modality == Modality::TextToSpeech)
+                } else if lower.contains("s2st") || lower.contains("seamless") {
+                    self.models
+                        .iter()
+                        .find(|m| m.modality == Modality::SpeechToSpeech)
+                } else if lower.contains("yolo") || lower.contains("detection") {
+                    self.models
+                        .iter()
+                        .find(|m| m.modality == Modality::ObjectDetection)
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn find_owned(&self, id: &str) -> Option<ModelConfig> {
@@ -221,6 +294,62 @@ impl ModelConfig {
                 .any(|c| c.eq_ignore_ascii_case("text-to-speech") || c.eq_ignore_ascii_case("tts"))
         {
             caps.push("Text-to-Speech".to_string());
+        }
+        if self.modality == Modality::Embedding
+            && !caps.iter().any(|c| c.eq_ignore_ascii_case("embeddings"))
+        {
+            caps.push("Embeddings".to_string());
+        }
+        if self.modality == Modality::Moderation
+            && !caps.iter().any(|c| c.eq_ignore_ascii_case("moderations"))
+        {
+            caps.push("Moderations".to_string());
+        }
+        if self.modality == Modality::Nlu && !caps.iter().any(|c| c.eq_ignore_ascii_case("nlu")) {
+            caps.push("NLU".to_string());
+        }
+        if self.modality == Modality::Ocr && !caps.iter().any(|c| c.eq_ignore_ascii_case("ocr")) {
+            caps.push("OCR".to_string());
+        }
+        if self.modality == Modality::SpeechToSpeech
+            && !caps
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case("speech-to-speech"))
+        {
+            caps.push("Speech-to-Speech".to_string());
+        }
+        if self.modality == Modality::ObjectDetection
+            && !caps
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case("object-detection"))
+        {
+            caps.push("Object Detection".to_string());
+        }
+        if self.modality == Modality::ImageEmbedding
+            && !caps
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case("image-embeddings"))
+        {
+            caps.push("Image Embeddings".to_string());
+        }
+        if self.modality == Modality::ImageRestoration
+            && !caps
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case("image-restoration"))
+        {
+            caps.push("Image Restoration".to_string());
+        }
+        if self.modality == Modality::ImageUpscale
+            && !caps.iter().any(|c| c.eq_ignore_ascii_case("image-upscale"))
+        {
+            caps.push("Image Upscale".to_string());
+        }
+        if self.modality == Modality::ImageStyleTransfer
+            && !caps
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case("style-transfer"))
+        {
+            caps.push("Style Transfer".to_string());
         }
         caps
     }

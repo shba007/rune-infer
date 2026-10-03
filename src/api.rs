@@ -1,9 +1,15 @@
 pub mod audio;
 pub mod chat;
+pub mod embeddings;
 pub mod images;
+pub mod moderation;
+pub mod nlu;
+pub mod ocr;
+pub mod responses;
 
-use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::extract::{Path, Query, Request, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::middleware::{Next, from_fn_with_state};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -12,7 +18,7 @@ use std::sync::Arc;
 
 use crate::config::ModelRegistry;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
-use crate::types::{HealthResponse, ModelInfo, ModelsResponse};
+use crate::types::{ApiError, ErrorResponse, HealthResponse, ModelInfo, ModelsResponse};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -20,28 +26,123 @@ pub struct AppState {
     pub config: ModelRegistry,
 }
 
-pub fn create_router(state: AppState) -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/v1/chat/completions", post(chat::chat_completions_handler))
+pub fn create_router(state: AppState) -> Router {
+    let shared_state = Arc::new(state);
+
+    let v1_routes = Router::new()
+        // Chat & Responses
+        .route("/chat/completions", post(chat::chat_completions_handler))
+        .route("/responses", post(responses::responses_handler))
+        // Images
         .route(
-            "/v1/images/generations",
+            "/images/generations",
             post(images::image_generation_handler),
         )
+        .route("/images/edits", post(images::image_edit_handler))
+        .route("/images/variations", post(images::image_variation_handler))
+        .route("/images/captions", post(images::image_caption_handler))
+        .route("/images/detections", post(images::detect_objects_handler))
+        .route("/images/embeddings", post(images::image_embeddings_handler))
+        .route("/images/recognize", post(images::recognize_objects_handler))
+        .route("/images/upscales", post(images::image_upscale_handler))
         .route(
-            "/v1/audio/transcriptions",
+            "/images/restorations",
+            post(images::image_restoration_handler),
+        )
+        .route(
+            "/images/style-transfers",
+            post(images::image_style_transfer_handler),
+        )
+        // Audio
+        .route(
+            "/audio/transcriptions",
             post(audio::audio_transcriptions_handler),
         )
-        .route("/v1/audio/speech", post(audio::audio_speech_handler))
-        .route("/v1/inference", post(inference_handler))
-        .route("/v1/models", get(models_handler))
+        .route(
+            "/audio/translations",
+            post(audio::audio_translations_handler),
+        )
+        .route("/audio/speech", post(audio::audio_speech_handler))
+        .route(
+            "/audio/speech-to-speech",
+            post(audio::speech_to_speech_handler),
+        )
+        // Text & NLU & OCR
+        .route("/inference", post(inference_handler))
+        .route("/models", get(models_handler))
+        .route("/models/{model}", get(retrieve_model_handler))
+        .route("/embeddings", post(embeddings::embeddings_handler))
+        .route("/moderations", post(moderation::moderations_handler))
+        .route("/nlu/intents", post(nlu::nlu_intents_handler))
+        .route("/ocr", post(ocr::document_ocr_handler))
+        .layer(from_fn_with_state(shared_state.clone(), auth_middleware));
+
+    Router::new()
+        .nest("/v1", v1_routes)
         .route("/health", get(health_handler))
-        .with_state(Arc::new(state))
+        .with_state(shared_state)
+}
+
+async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
+    let configured_key = state
+        .config
+        .server
+        .api_key
+        .clone()
+        .or_else(|| std::env::var("RUNE_API_KEY").ok())
+        .or_else(|| std::env::var("API_KEY").ok());
+
+    if let Some(expected) = configured_key {
+        if !expected.trim().is_empty() {
+            let auth_header = req.headers().get(header::AUTHORIZATION);
+            let is_valid = match auth_header.and_then(|h| h.to_str().ok()) {
+                Some(header_val) => {
+                    if let Some(token) = header_val.strip_prefix("Bearer ") {
+                        token.trim() == expected.trim()
+                    } else {
+                        false
+                    }
+                }
+                None => false,
+            };
+
+            if !is_valid {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(ErrorResponse {
+                        error: ApiError::new(
+                            "Incorrect API key provided or authorization header is missing.",
+                        )
+                        .with_type("authentication_error")
+                        .with_code("invalid_api_key"),
+                    }),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    next.run(req).await
 }
 
 #[axum::debug_handler]
-async fn health_handler(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
-    let loaded_models = state.inference.loaded_models();
-    Json(HealthResponse::new().with_loaded_models(loaded_models))
+async fn health_handler(State(state): State<Arc<AppState>>) -> Response {
+    let is_healthy = state.inference.registry.lock().is_ok();
+    if is_healthy {
+        Json(HealthResponse::new()).into_response()
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: ApiError::new(
+                    "Model execution runtime is currently unready or out of memory.",
+                )
+                .with_type("server_error")
+                .with_code("runtime_unhealthy"),
+            }),
+        )
+            .into_response()
+    }
 }
 
 #[axum::debug_handler]
@@ -57,13 +158,12 @@ async fn models_handler(State(state): State<Arc<AppState>>) -> Response {
                 mtp_models.push(m.id.clone());
             }
             ModelInfo::new(&m.id)
-                .with_ownership("Rune Infer".to_string())
                 .with_mtp_heads(heads)
                 .with_capabilities(m.resolved_capabilities())
         })
         .collect();
 
-    let mut headers = axum::http::HeaderMap::new();
+    let mut headers = HeaderMap::new();
     if !mtp_models.is_empty() {
         headers.insert(
             "x-mtp-available",
@@ -82,6 +182,34 @@ async fn models_handler(State(state): State<Arc<AppState>>) -> Response {
         }),
     )
         .into_response()
+}
+
+#[axum::debug_handler]
+async fn retrieve_model_handler(
+    State(state): State<Arc<AppState>>,
+    Path(model_id): Path<String>,
+) -> Response {
+    if let Some(m) = state.config.find(&model_id) {
+        let heads = m.mtp_heads();
+        let model_info = ModelInfo::new(&m.id)
+            .with_mtp_heads(heads)
+            .with_capabilities(m.resolved_capabilities());
+        Json(model_info).into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: ApiError::new(format!(
+                    "The model '{}' does not exist or you do not have access to it.",
+                    model_id
+                ))
+                .with_type("invalid_request_error")
+                .with_param("model")
+                .with_code("model_not_found"),
+            }),
+        )
+            .into_response()
+    }
 }
 
 #[derive(Deserialize, Default)]

@@ -10,6 +10,33 @@
   },
   "models": [
     {
+      "id": "granite-embedding-311m-multilingual-r2",
+      "name": "Granite Embedding 311M Multilingual R2",
+      "modality": "Embedding",
+      "architecture": "modernbert",
+      "model_path": "D:/Models/huggingface/hub/models--ibm-granite--granite-embedding-311m-multilingual-r2/snapshots/44399559930365213510b1ee2eb15ded83374f0e/model.safetensors",
+      "vision": false,
+      "description": "IBM Granite 311M Multilingual ModernBERT dense embedding model"
+    },
+    {
+      "id": "gliguard-LLMGuardrails-300M",
+      "name": "GLiGuard LLM Guardrails 300M",
+      "modality": "Moderation",
+      "architecture": "encoder",
+      "model_path": "D:/Models/huggingface/hub/models--fastino--gliguard-LLMGuardrails-300M/snapshots/7776816b54581f37b90dd2de12dbe13123229a9b/model.safetensors",
+      "vision": false,
+      "description": "Fastino GLiGuard 300M multi-category safety moderation model"
+    },
+    {
+      "id": "mmbert32k-intent-classifier-merged",
+      "name": "mmBERT 32K Intent Classifier",
+      "modality": "Nlu",
+      "architecture": "encoder",
+      "model_path": "D:/Models/huggingface/hub/models--vllm-sr--mmbert32k-intent-classifier-merged/snapshots/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/model.safetensors",
+      "vision": false,
+      "description": "ModernBERT 32K zero-shot intent and entity classifier"
+    },
+    {
       "id": "qwen3-embedding-4b",
       "name": "Qwen3 Embedding 4B",
       "architecture": "qwen3-embedding",
@@ -39,39 +66,6 @@
       "runtime": {
         "context_length": -1,
         "gpu_layers": 99,
-        "extra_args": ""
-      },
-      "lora": []
-    },
-    {
-      "id": "bge-small-en-v1.5",
-      "name": "BGE Small EN v1.5",
-      "architecture": "bert",
-      "format": "safetensors",
-      "model_path": "D:/Models/huggingface/hub/models--unsloth--bge-small-en-v1.5/snapshots/main",
-      "mmproj_path": null,
-      "mtp_path": null,
-      "mtp_heads": null,
-      "vision": false,
-      "modality": "Text",
-      "description": "High-speed lightweight English embedding model for local vector indexing",
-      "capabilities": [
-        "Text Embeddings",
-        "Semantic Search"
-      ],
-      "bits_per_weight": 16.0,
-      "total_params": 33000000,
-      "max_context_length": 512,
-      "sampling": {
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 1,
-        "min_p": 0.0,
-        "max_tokens": 1
-      },
-      "runtime": {
-        "context_length": 512,
-        "gpu_layers": 0,
         "extra_args": ""
       },
       "lora": []
@@ -611,9 +605,9 @@
       "id": "audio8-asr-infinite",
       "name": "Edge0 Audio8 ASR Infinite",
       "modality": "SpeechToText",
-      "architecture": "crispasr",
+      "architecture": "arkasr",
       "vision": false,
-      "model_path": "D:/Models/huggingface/hub/models--edge0-Audio8-ASR-Infinite/model.safetensors",
+      "model_path": "D:/Models/huggingface/hub/models--Reza2kn--Audio8-ASR-Infinite-Compressed/snapshots/25be0c71030726ad8b81b87fb333b333bd73ac23/gguf/model.a8m",
       "total_params": 4100000000,
       "bits_per_weight": 4.5,
       "description": "Infinite 24/7 rolling-KV streaming ASR with 80ms clock and semantic VAD based on Voxtral Realtime 4B + Qwen2.5-3B",
@@ -622,11 +616,7 @@
         "Streaming",
         "Realtime",
         "Semantic VAD"
-      ],
-      "runtime": {
-        "gpu_layers": 99,
-        "extra_args": "--backend voxtral4b"
-      }
+      ]
     },
     {
       "id": "whisper-large-v3",

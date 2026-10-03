@@ -1,4 +1,5 @@
 use axum::Json;
+use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
@@ -29,10 +30,12 @@ pub fn make_chunk(
         object: "chat.completion.chunk".to_string(),
         created,
         model: model.to_string(),
+        system_fingerprint: Some("fp_rune_rust_v1".to_string()),
         choices: vec![Choice {
             index: 0,
             message: None,
             delta: Some(delta),
+            logprobs: None,
             finish_reason,
         }],
         usage,
@@ -52,14 +55,17 @@ pub fn chat_completion_response(
         object: "chat.completion".to_string(),
         created,
         model: model.to_string(),
+        system_fingerprint: Some("fp_rune_rust_v1".to_string()),
         choices: vec![Choice {
             index: 0,
             message: Some(ResponseMessage {
                 role: "assistant".to_string(),
                 content,
                 tool_calls,
+                refusal: None,
             }),
             delta: None,
+            logprobs: None,
             finish_reason: Some(finish_reason.to_string()),
         }],
         usage,
@@ -160,9 +166,105 @@ pub fn convert_to_tool_calls(value: &serde_json::Value, created: u64) -> Option<
 #[axum::debug_handler]
 pub async fn chat_completions_handler(
     State(state): State<Arc<AppState>>,
-    Json(request): Json<ChatCompletionRequest>,
+    bytes: Bytes,
 ) -> Response {
     let start_time = std::time::Instant::now();
+
+    let body_val: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Invalid JSON payload: {e}"))
+                        .with_type("invalid_request_error"),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // 1. Validate messages type & empty array
+    match body_val.get("messages") {
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new("'messages' field must be an array of message objects.")
+                        .with_type("invalid_request_error")
+                        .with_param("messages")
+                        .with_code("invalid_type"),
+                }),
+            )
+                .into_response();
+        }
+        Some(val) if !val.is_array() => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new("'messages' field must be an array of message objects.")
+                        .with_type("invalid_request_error")
+                        .with_param("messages")
+                        .with_code("invalid_type"),
+                }),
+            )
+                .into_response();
+        }
+        Some(serde_json::Value::Array(arr)) if arr.is_empty() => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new("'messages' array cannot be empty.")
+                        .with_type("invalid_request_error")
+                        .with_param("messages")
+                        .with_code("empty_array"),
+                }),
+            )
+                .into_response();
+        }
+        _ => {}
+    }
+
+    // 2. Validate tools item function.name
+    if let Some(serde_json::Value::Array(tools)) = body_val.get("tools") {
+        for (idx, tool) in tools.iter().enumerate() {
+            if tool.get("type").and_then(|t| t.as_str()) == Some("function") {
+                let name = tool
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str());
+                if name.is_none() || name.unwrap().trim().is_empty() {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!(
+                                "'tools[{}].function.name' is a required string property.",
+                                idx
+                            ))
+                            .with_type("invalid_request_error")
+                            .with_param(format!("tools[{}].function.name", idx))
+                            .with_code("missing_required_field"),
+                        }),
+                    )
+                        .into_response();
+                }
+            }
+        }
+    }
+
+    let request: ChatCompletionRequest = match serde_json::from_value(body_val) {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Invalid request structure: {e}"))
+                        .with_type("invalid_request_error"),
+                }),
+            )
+                .into_response();
+        }
+    };
 
     if request.model.trim().is_empty() {
         return (
@@ -227,6 +329,33 @@ pub async fn chat_completions_handler(
         None => false,
     };
 
+    // Validate strict schema additionalProperties
+    if let Some(ref rf) = request.response_format {
+        if rf.r#type == "json_schema" {
+            if let Some(ref js) = rf.json_schema {
+                if js.strict.unwrap_or(false) {
+                    if let Some(ref schema) = js.schema {
+                        let add_props = schema.get("additionalProperties");
+                        if add_props != Some(&serde_json::Value::Bool(false)) {
+                            return (
+                                StatusCode::UNPROCESSABLE_ENTITY,
+                                Json(ErrorResponse {
+                                    error: ApiError::new(
+                                        "When 'strict' is set to true in response_format, 'schema.additionalProperties' must be explicitly set to false.",
+                                    )
+                                    .with_type("invalid_request_error")
+                                    .with_param("response_format.json_schema.schema.additionalProperties")
+                                    .with_code("invalid_json_schema"),
+                                }),
+                            )
+                                .into_response();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if is_structured_mode && !model_config.supports_structured_output() {
         return (
             StatusCode::BAD_REQUEST,
@@ -244,32 +373,34 @@ pub async fn chat_completions_handler(
 
     let model_id = request.model.clone();
     let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        Ok(Err(err)) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: ApiError::new(&format!(
-                        "Model '{}' not found or failed to load: {err}",
-                        request.model
-                    ))
-                    .with_type("invalid_request_error")
-                    .with_code("model_not_found"),
-                }),
-            )
-                .into_response();
-        }
-        Err(join_err) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new(&format!("Thread execution error: {join_err}")),
-                }),
-            )
-                .into_response();
-        }
-    };
+    let model_target = model_id.clone();
+    let engine =
+        match tokio::task::spawn_blocking(move || inference.get_engine(&model_target)).await {
+            Ok(Ok(e)) => e,
+            Ok(Err(err)) => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: ApiError::new(&format!(
+                            "Model '{}' not found or failed to load: {err}",
+                            request.model
+                        ))
+                        .with_type("invalid_request_error")
+                        .with_code("model_not_found"),
+                    }),
+                )
+                    .into_response();
+            }
+            Err(join_err) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(&format!("Thread execution error: {join_err}")),
+                    }),
+                )
+                    .into_response();
+            }
+        };
 
     let tools_value = request.tools.clone().unwrap_or(serde_json::Value::Null);
     let has_tools = match &tools_value {
@@ -342,7 +473,7 @@ pub async fn chat_completions_handler(
             );
         }
 
-        for msg in &request.messages {
+        for (m_idx, msg) in request.messages.iter().enumerate() {
             let (mut text, media_items) = msg.split_text_and_media();
             let role = if msg.role.trim().is_empty() {
                 "user"
@@ -401,7 +532,21 @@ pub async fn chat_completions_handler(
                                 }
                                 media_blocks.push_str("<|video_end|>\n");
                             }
-                            Err(e) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
+                            Err(_) => {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(ErrorResponse {
+                                        error: ApiError::new(format!(
+                                            "Invalid video format in 'messages[{}].content'.",
+                                            m_idx
+                                        ))
+                                        .with_type("invalid_request_error")
+                                        .with_param("video_url.url")
+                                        .with_code("invalid_video_format"),
+                                    }),
+                                )
+                                    .into_response();
+                            }
                         }
                     }
                     MediaItem::Image(url) => {
@@ -420,7 +565,21 @@ pub async fn chat_completions_handler(
                                     ));
                                 }
                             }
-                            Err(e) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
+                            Err(_) => {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(ErrorResponse {
+                                        error: ApiError::new(format!(
+                                            "Invalid base64 image data URI format in 'messages[{}].content[1].image_url.url'.",
+                                            m_idx
+                                        ))
+                                        .with_type("invalid_request_error")
+                                        .with_param("image_url.url")
+                                        .with_code("invalid_image_format"),
+                                    }),
+                                )
+                                    .into_response();
+                            }
                         }
                     }
                 }

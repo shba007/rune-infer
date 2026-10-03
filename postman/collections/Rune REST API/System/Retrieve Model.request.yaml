@@ -1,9 +1,7 @@
 $kind: http-request
-name: Retrieve Model
-url: '{{base_url}}/v1/models/{{chat_model}}'
+url: "{{base_url}}/v1/models/{{embedding_model}}"
 method: GET
 headers:
-  - key: Accept
-    value: application/json
+  Accept: application/json
 examples: .resources/Retrieve Model.resources/examples
 order: 1200

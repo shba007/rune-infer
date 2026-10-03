@@ -1,24 +1,29 @@
 $kind: http-request
-name: Audio Transcription (STT)
-url: '{{base_url}}/v1/audio/transcriptions'
+url: "{{base_url}}/v1/audio/transcriptions"
 method: POST
 body:
   type: formdata
   content:
-    - key: file
-      type: file
-      src: ''
-    - key: model
-      type: text
-      value: '{{asr_model}}'
-    - key: language
-      type: text
-      value: 'en'
-    - key: response_format
-      type: text
-      value: 'json'
-    - key: temperature
-      type: text
-      value: '0.0'
+    - type: file
+      key: file
+      src:
+        - /D:/Projects/Public/rune/code-infer/static/artifacts/audios/audio_3.wav
+      disabled: false
+    - type: text
+      key: model
+      value: "{{asr_model}}"
+      disabled: false
+    - type: text
+      key: language
+      value: en
+      disabled: false
+    - type: text
+      key: response_format
+      value: json
+      disabled: false
+    - type: text
+      key: temperature
+      value: "0.0"
+      disabled: false
 examples: .resources/Audio Transcription (STT).resources/examples
 order: 4000

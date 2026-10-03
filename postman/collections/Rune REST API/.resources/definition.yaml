@@ -6,15 +6,15 @@ variables:
   chat_model: qwen3.5-0.8b
   vision_model: ornith-1.5-9b
   image_model: z-image
-  asr_model: whisper-large-v3-turbo
+  asr_model: audio8-asr-infinite
   tts_model: audio8-tts-preview-0.6b
-  embedding_model: bge-large-en-v1.5
-  moderation_model: omni-moderation-latest
+  embedding_model: granite-embedding-311m-multilingual-r2
+  moderation_model: gliguard-LLMGuardrails-300M
   detection_model: yolo-11x-detection
   image_embedding_model: clip-vit-large-patch14
   ocr_model: got-ocr-2.0
   upscale_model: real-esrgan-x4plus
   restoration_model: codeformer-v0.1
   style_model: neural-style-v2
-  nlu_model: gliner-bi-encoder-v2.5
+  nlu_model: mmbert32k-intent-classifier-merged
   s2st_model: seamless-m4t-v2-large
