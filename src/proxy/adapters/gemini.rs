@@ -10,24 +10,129 @@ use crate::types::{
     ApiError, ChatCompletionRequest, ChoiceDelta, FunctionCall, ToolCall, ToolCallChunk, Usage,
 };
 
-/// Recursively removes schema keywords unsupported by Google's Schema protobuf
-/// (e.g. `additionalProperties`, `$schema`, `strict`, `title`).
+/// Recursively sanitizes JSON Schema into a compliant Google Gemini OpenAPI 3.0 Schema protobuf.
+/// - Converts `exclusiveMinimum` / `exclusiveMaximum` -> `minimum` / `maximum`.
+/// - Flattens `allOf` / `anyOf` sub-properties into `properties`.
+/// - Enforces Gemini's rule: every item in `required` MUST be defined in `properties`.
+/// - Strips unsupported keywords (`propertyNames`, `additionalProperties`, `title`, etc.).
 fn sanitize_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(map) => {
             let mut cleaned = serde_json::Map::new();
+
+            let mut exclusive_min = None;
+            let mut exclusive_max = None;
+
             for (k, v) in map {
-                // Strip fields unsupported by Google Gemini Schema protobuf
-                if k == "additionalProperties"
-                    || k == "$schema"
-                    || k == "strict"
-                    || k == "$defs"
-                    || k == "definitions"
-                {
-                    continue;
+                match k.as_str() {
+                    "exclusiveMinimum" => {
+                        if let Some(n) = v.as_f64() {
+                            exclusive_min = Some(n);
+                        }
+                    }
+                    "exclusiveMaximum" => {
+                        if let Some(n) = v.as_f64() {
+                            exclusive_max = Some(n);
+                        }
+                    }
+                    // Strip unsupported keywords for Google's Schema protobuf
+                    "propertyNames"
+                    | "additionalProperties"
+                    | "patternProperties"
+                    | "unevaluatedProperties"
+                    | "unevaluatedItems"
+                    | "minProperties"
+                    | "maxProperties"
+                    | "$schema"
+                    | "$id"
+                    | "id"
+                    | "$comment"
+                    | "$defs"
+                    | "definitions"
+                    | "title"
+                    | "strict"
+                    | "dependencies"
+                    | "dependentRequired"
+                    | "dependentSchemas" => {
+                        continue;
+                    }
+                    // Convert oneOf and allOf into anyOf for Gemini compatibility
+                    "oneOf" | "allOf" => {
+                        let sanitized_v = sanitize_gemini_schema(v);
+                        cleaned.insert("anyOf".to_string(), sanitized_v);
+                    }
+                    _ => {
+                        cleaned.insert(k.clone(), sanitize_gemini_schema(v));
+                    }
                 }
-                cleaned.insert(k.clone(), sanitize_gemini_schema(v));
             }
+
+            if let Some(min_val) = exclusive_min {
+                if !cleaned.contains_key("minimum") {
+                    cleaned.insert("minimum".to_string(), serde_json::json!(min_val));
+                }
+            }
+            if let Some(max_val) = exclusive_max {
+                if !cleaned.contains_key("maximum") {
+                    cleaned.insert("maximum".to_string(), serde_json::json!(max_val));
+                }
+            }
+
+            // Flatten properties from anyOf / allOf into the top-level properties map
+            if let Some(serde_json::Value::Array(any_of_items)) = cleaned.get("anyOf").cloned() {
+                let mut merged_props = cleaned
+                    .get("properties")
+                    .and_then(|p| p.as_object().cloned())
+                    .unwrap_or_default();
+
+                for item in any_of_items {
+                    if let Some(sub_props) = item.get("properties").and_then(|p| p.as_object()) {
+                        for (sp_k, sp_v) in sub_props {
+                            if !merged_props.contains_key(sp_k) {
+                                merged_props.insert(sp_k.clone(), sp_v.clone());
+                            }
+                        }
+                    }
+                }
+
+                if !merged_props.is_empty() {
+                    cleaned.insert(
+                        "properties".to_string(),
+                        serde_json::Value::Object(merged_props),
+                    );
+                }
+            }
+
+            // CRITICAL: Gemini requires every entry in `required` to exist in `properties`.
+            // Any required field not defined in `properties` triggers HTTP 400 "property is not defined".
+            if let Some(req_val) = cleaned.get("required") {
+                if let Some(req_arr) = req_val.as_array() {
+                    let known_properties = cleaned.get("properties").and_then(|p| p.as_object());
+
+                    if let Some(props) = known_properties {
+                        let valid_required: Vec<serde_json::Value> = req_arr
+                            .iter()
+                            .filter(|item| {
+                                item.as_str().map_or(false, |name| props.contains_key(name))
+                            })
+                            .cloned()
+                            .collect();
+
+                        if valid_required.is_empty() {
+                            cleaned.remove("required");
+                        } else {
+                            cleaned.insert(
+                                "required".to_string(),
+                                serde_json::Value::Array(valid_required),
+                            );
+                        }
+                    } else {
+                        // If there are no properties defined, required cannot be present
+                        cleaned.remove("required");
+                    }
+                }
+            }
+
             serde_json::Value::Object(cleaned)
         }
         serde_json::Value::Array(arr) => {
@@ -164,9 +269,6 @@ pub async fn execute_chat(
         }
     });
 
-    // =========================================================================
-    // Map & Sanitize Structured Output JSON Schema for Gemini
-    // =========================================================================
     if let Some(ref rf) = request.response_format {
         if rf.r#type == "json_object" {
             body["generationConfig"]["responseMimeType"] = serde_json::json!("application/json");
@@ -174,7 +276,6 @@ pub async fn execute_chat(
             body["generationConfig"]["responseMimeType"] = serde_json::json!("application/json");
             if let Some(ref js) = rf.json_schema {
                 if let Some(ref schema) = js.schema {
-                    // Sanitize away `additionalProperties: false` and other non-proto fields
                     let sanitized = sanitize_gemini_schema(schema);
                     body["generationConfig"]["responseSchema"] = sanitized;
                 }
@@ -316,7 +417,6 @@ pub async fn execute_chat(
                             }
                         }
 
-                        // Only complete if finishReason is present and non-empty
                         if let Some(finish_str) = candidate
                             .get("finishReason")
                             .and_then(|r| r.as_str())

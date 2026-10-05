@@ -854,11 +854,13 @@ impl InferenceEngine for LlamaServerEngine {
                     }
                 }
 
-                let has_tools = match schema {
-                    serde_json::Value::Object(o) => !o.is_empty(),
-                    serde_json::Value::Array(a) => !a.is_empty(),
-                    _ => false,
-                };
+                // =============================================================
+                // FIX: Differentiate between Tool Array and Structured Schema
+                // =============================================================
+                let is_tools_array =
+                    schema.is_array() && !schema.as_array().map_or(true, |a| a.is_empty());
+                let is_schema_object =
+                    schema.is_object() && !schema.as_object().map_or(true, |o| o.is_empty());
 
                 let mut body = serde_json::json!({
                     "messages": server_messages,
@@ -867,8 +869,16 @@ impl InferenceEngine for LlamaServerEngine {
                     "stream": stream_mode,
                     "max_tokens": max_tokens.unwrap_or(16384)
                 });
-                if has_tools {
+
+                if is_tools_array {
                     body["tools"] = schema.clone();
+                } else if is_schema_object {
+                    body["response_format"] = serde_json::json!({
+                        "type": "json_schema",
+                        "json_schema": {
+                            "schema": schema.clone()
+                        }
+                    });
                 }
 
                 let resp = self
@@ -1123,15 +1133,19 @@ impl InferenceEngine for LlamaServerEngine {
                     });
                 }
 
-                if let Some((clean_content, parsed_tools)) = Self::extract_tool_calls(&full_output)
-                {
-                    return Ok(InferenceOutput {
-                        response: InferenceTaskResponse::ToolCall {
-                            content: clean_content,
-                            tool_calls: parsed_tools,
-                        },
-                        usage: final_usage,
-                    });
+                // Only extract tool calls if actual tools were passed into the task
+                if is_tools_array {
+                    if let Some((clean_content, parsed_tools)) =
+                        Self::extract_tool_calls(&full_output)
+                    {
+                        return Ok(InferenceOutput {
+                            response: InferenceTaskResponse::ToolCall {
+                                content: clean_content,
+                                tool_calls: parsed_tools,
+                            },
+                            usage: final_usage,
+                        });
+                    }
                 }
 
                 Ok(InferenceOutput {

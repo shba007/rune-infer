@@ -55,7 +55,6 @@
       ],
       "bits_per_weight": 16.0,
       "total_params": 4000000000,
-      "max_context_length": 32768,
       "sampling": {
         "temperature": 0.0,
         "top_p": 1.0,
@@ -347,10 +346,11 @@
         "Vision",
         "Structured Output"
       ],
+      "max_context_length": 1048576,
       "rate_limit": {
-        "requests_per_minute": 30,
-        "tokens_per_minute": 1000000,
-        "requests_per_day": 1500,
+        "requests_per_minute": 15,
+        "tokens_per_minute": 250000,
+        "requests_per_day": 500,
         "max_concurrent": 5,
         "queue_timeout_seconds": 30
       }
@@ -371,10 +371,11 @@
         "Vision",
         "Structured Output"
       ],
+      "max_context_length": 1048576,
       "rate_limit": {
-        "requests_per_minute": 10,
+        "requests_per_minute": 5,
         "tokens_per_minute": 250000,
-        "requests_per_day": 500,
+        "requests_per_day": 20,
         "max_concurrent": 2,
         "queue_timeout_seconds": 30
       }
@@ -395,10 +396,11 @@
         "Vision",
         "Structured Output"
       ],
+      "max_context_length": 1048576,
       "rate_limit": {
-        "requests_per_minute": 10,
+        "requests_per_minute": 5,
         "tokens_per_minute": 250000,
-        "requests_per_day": 500,
+        "requests_per_day": 20,
         "max_concurrent": 2,
         "queue_timeout_seconds": 30
       }
@@ -617,7 +619,6 @@
       ],
       "bits_per_weight": 16.0,
       "total_params": 224000000,
-      "max_context_length": 4096,
       "runtime": {
         "gpu_layers": 99,
         "extra_args": ""
@@ -642,7 +643,6 @@
       ],
       "bits_per_weight": 16.0,
       "total_params": 172000000,
-      "max_context_length": 2048,
       "runtime": {
         "gpu_layers": 99,
         "extra_args": ""
@@ -667,7 +667,6 @@
       ],
       "bits_per_weight": 16.0,
       "total_params": 1100000000,
-      "max_context_length": 2048,
       "runtime": {
         "gpu_layers": 99,
         "extra_args": ""

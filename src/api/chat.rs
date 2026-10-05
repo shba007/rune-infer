@@ -44,12 +44,39 @@ pub fn make_chunk(
 
 pub fn chat_completion_response(
     model: &str,
-    content: Option<String>,
+    raw_content: Option<String>,
     tool_calls: Option<Vec<ToolCall>>,
     finish_reason: &str,
     created: u64,
     usage: Usage,
 ) -> ChatCompletionResponse {
+    // Separate <think>...</think> from the actual message content
+    let (reasoning_content, content) = match raw_content {
+        Some(text) => {
+            if let Some(start) = text.find("<think>") {
+                if let Some(end) = text.find("</think>") {
+                    let think_part = text[start + "<think>".len()..end].trim().to_string();
+                    let rem = format!("{}{}", &text[..start], &text[end + "</think>".len()..])
+                        .trim()
+                        .to_string();
+                    (
+                        if think_part.is_empty() {
+                            None
+                        } else {
+                            Some(think_part)
+                        },
+                        if rem.is_empty() { None } else { Some(rem) },
+                    )
+                } else {
+                    (None, Some(text))
+                }
+            } else {
+                (None, Some(text))
+            }
+        }
+        None => (None, None),
+    };
+
     ChatCompletionResponse {
         id: format!("chatcmpl-{created}"),
         object: "chat.completion".to_string(),
@@ -61,6 +88,7 @@ pub fn chat_completion_response(
             message: Some(ResponseMessage {
                 role: "assistant".to_string(),
                 content,
+                reasoning_content,
                 tool_calls,
                 refusal: None,
             }),
