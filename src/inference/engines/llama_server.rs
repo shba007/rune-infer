@@ -66,6 +66,7 @@ impl LlamaServerEngine {
             .arg(n_ctx.unwrap_or(32768).to_string())
             .arg("-ngl")
             .arg(n_gpu_layers.unwrap_or(99).to_string())
+            .arg("--jinja")
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 
@@ -77,11 +78,7 @@ impl LlamaServerEngine {
                     path.display()
                 );
                 cmd.arg("--mmproj").arg(path);
-            } else {
-                cmd.arg("--no-mmproj");
             }
-        } else {
-            cmd.arg("--no-mmproj");
         }
 
         if let Some(ref mtp) = mtp_path {
@@ -752,6 +749,9 @@ impl InferenceEngine for LlamaServerEngine {
                 schema,
                 images,
                 messages,
+                max_tokens,
+                temperature,
+                top_p,
             } => {
                 let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
                 let stream_mode = on_token.is_some();
@@ -761,18 +761,22 @@ impl InferenceEngine for LlamaServerEngine {
                 if !messages.is_empty() {
                     for (m_idx, msg) in messages.iter().enumerate() {
                         let (text, _) = msg.split_text_and_media();
-                        let mut parts = Vec::new();
+                        let has_images = !images.is_empty()
+                            && msg.role == "user"
+                            && m_idx == messages.iter().position(|m| m.role == "user").unwrap_or(0);
 
-                        if !text.is_empty() {
-                            parts.push(serde_json::json!({
-                                "type": "text",
-                                "text": text
-                            }));
-                        }
+                        let mut msg_obj = serde_json::json!({
+                            "role": msg.role,
+                        });
 
-                        if msg.role == "user"
-                            && m_idx == messages.iter().position(|m| m.role == "user").unwrap_or(0)
-                        {
+                        if has_images {
+                            let mut parts = Vec::new();
+                            if !text.is_empty() {
+                                parts.push(serde_json::json!({
+                                    "type": "text",
+                                    "text": text
+                                }));
+                            }
                             for frame_bytes in images.iter() {
                                 let mime = if frame_bytes.starts_with(b"\x89PNG") {
                                     "image/png"
@@ -788,13 +792,8 @@ impl InferenceEngine for LlamaServerEngine {
                                     }
                                 }));
                             }
-                        }
-
-                        let mut msg_obj = serde_json::json!({
-                            "role": msg.role,
-                        });
-
-                        if msg.role == "assistant" && msg.tool_calls.is_some() {
+                            msg_obj["content"] = serde_json::Value::Array(parts);
+                        } else if msg.role == "assistant" && msg.tool_calls.is_some() {
                             if !text.is_empty() {
                                 msg_obj["content"] = serde_json::Value::String(text);
                             } else {
@@ -810,13 +809,12 @@ impl InferenceEngine for LlamaServerEngine {
                                 msg_obj["name"] = serde_json::json!(name);
                             }
                         } else {
-                            msg_obj["content"] = serde_json::Value::Array(parts);
+                            msg_obj["content"] = serde_json::Value::String(text);
                         }
 
                         server_messages.push(msg_obj);
                     }
                 } else {
-                    let mut parts = Vec::new();
                     let clean_prompt = prompt
                         .replace("<|im_start|>", "")
                         .replace("<|im_end|>", "")
@@ -825,30 +823,35 @@ impl InferenceEngine for LlamaServerEngine {
                         .trim()
                         .to_string();
 
-                    parts.push(serde_json::json!({
-                        "type": "text",
-                        "text": clean_prompt
-                    }));
-
-                    for frame_bytes in images.iter() {
-                        let mime = if frame_bytes.starts_with(b"\x89PNG") {
-                            "image/png"
-                        } else {
-                            "image/jpeg"
-                        };
-                        let b64 = base64::engine::general_purpose::STANDARD.encode(frame_bytes);
-                        parts.push(serde_json::json!({
-                            "type": "image_url",
-                            "image_url": {
-                                "url": format!("data:{mime};base64,{b64}")
-                            }
+                    if !images.is_empty() {
+                        let mut parts = vec![serde_json::json!({
+                            "type": "text",
+                            "text": clean_prompt
+                        })];
+                        for frame_bytes in images.iter() {
+                            let mime = if frame_bytes.starts_with(b"\x89PNG") {
+                                "image/png"
+                            } else {
+                                "image/jpeg"
+                            };
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(frame_bytes);
+                            parts.push(serde_json::json!({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": format!("data:{mime};base64,{b64}")
+                                }
+                            }));
+                        }
+                        server_messages.push(serde_json::json!({
+                            "role": "user",
+                            "content": parts
+                        }));
+                    } else {
+                        server_messages.push(serde_json::json!({
+                            "role": "user",
+                            "content": clean_prompt
                         }));
                     }
-
-                    server_messages.push(serde_json::json!({
-                        "role": "user",
-                        "content": parts
-                    }));
                 }
 
                 let has_tools = match schema {
@@ -859,9 +862,10 @@ impl InferenceEngine for LlamaServerEngine {
 
                 let mut body = serde_json::json!({
                     "messages": server_messages,
-                    "temperature": 0.7,
-                    "top_p": 0.9,
-                    "stream": stream_mode
+                    "temperature": temperature.unwrap_or(1.0),
+                    "top_p": top_p.unwrap_or(0.95),
+                    "stream": stream_mode,
+                    "max_tokens": max_tokens.unwrap_or(16384)
                 });
                 if has_tools {
                     body["tools"] = schema.clone();
@@ -1136,7 +1140,7 @@ impl InferenceEngine for LlamaServerEngine {
                 })
             }
             InferenceTaskRequest::ImageCaption {
-                model,
+                model: _,
                 image_bytes,
                 detail,
                 max_tokens,

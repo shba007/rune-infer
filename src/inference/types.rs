@@ -17,6 +17,12 @@ pub enum InferenceTaskRequest {
         images: Vec<Vec<u8>>,
         #[serde(default)]
         messages: Vec<ChatMessage>,
+        #[serde(default)]
+        max_tokens: Option<usize>,
+        #[serde(default)]
+        temperature: Option<f64>,
+        #[serde(default)]
+        top_p: Option<f64>,
     },
     ImageGeneration {
         prompt: String,

@@ -7,7 +7,7 @@ variables:
   vision_model: ornith-1.5-9b
   image_model: z-image
   asr_model: audio8-asr-infinite
-  tts_model: audio8-tts-preview-0.6b
+  tts_model: voxcpm2
   embedding_model: granite-embedding-311m-multilingual-r2
   moderation_model: gliguard-LLMGuardrails-300M
   detection_model: yolo-11x-detection

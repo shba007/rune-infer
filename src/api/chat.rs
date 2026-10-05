@@ -2,7 +2,7 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::sse::{Event, Sse};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -75,7 +75,6 @@ pub fn chat_completion_response(
 pub fn parse_single_tool_call(val: &serde_json::Value, fallback_id: String) -> Option<ToolCall> {
     let obj = val.as_object()?;
 
-    // 1. Handle native OpenAI format: {"id": "...", "type": "function", "function": {"name": "...", "arguments": ...}}
     if let Some(func) = obj.get("function").and_then(|f| f.as_object()) {
         let name = func.get("name")?.as_str()?.to_string();
         let args = match func.get("arguments") {
@@ -106,7 +105,6 @@ pub fn parse_single_tool_call(val: &serde_json::Value, fallback_id: String) -> O
         });
     }
 
-    // 2. Handle flat format: {"name": "...", "arguments": ...} (optionally with root id/type)
     let name = obj.get("name")?.as_str()?.to_string();
     let args = match obj.get("arguments") {
         Some(serde_json::Value::String(s)) => s.clone(),
@@ -184,7 +182,6 @@ pub async fn chat_completions_handler(
         }
     };
 
-    // 1. Validate messages type & empty array
     match body_val.get("messages") {
         None => {
             return (
@@ -225,7 +222,6 @@ pub async fn chat_completions_handler(
         _ => {}
     }
 
-    // 2. Validate tools item function.name
     if let Some(serde_json::Value::Array(tools)) = body_val.get("tools") {
         for (idx, tool) in tools.iter().enumerate() {
             if tool.get("type").and_then(|t| t.as_str()) == Some("function") {
@@ -293,6 +289,16 @@ pub async fn chat_completions_handler(
         }
     };
 
+    // =========================================================================
+    // Decoupled Dispatcher Branch: Remote Provider Proxy vs Local Execution
+    // =========================================================================
+    if !model_config.is_local() {
+        return state.proxy.execute_chat(&model_config, &request).await;
+    }
+
+    // =========================================================================
+    // Local Model Execution Hub (Unchanged)
+    // =========================================================================
     let mut has_video = false;
     let mut has_media = false;
 
@@ -329,7 +335,6 @@ pub async fn chat_completions_handler(
         None => false,
     };
 
-    // Validate strict schema additionalProperties
     if let Some(ref rf) = request.response_format {
         if rf.r#type == "json_schema" {
             if let Some(ref js) = rf.json_schema {
@@ -454,7 +459,7 @@ pub async fn chat_completions_handler(
         let mut augmented_messages = request.messages.clone();
 
         let has_system = request.messages.iter().any(|m| m.role == "system");
-        if !has_system {
+        if !has_system && (has_tools || is_structured_mode || has_video) {
             prompt.push_str(&format!(
                 "<|im_start|>system\n{}<|im_end|>\n",
                 default_tool_system
@@ -593,7 +598,7 @@ pub async fn chat_completions_handler(
     };
 
     let est_text_tokens = ((prompt.len() / 4).max(1)) as u32;
-    let reserved_tokens = request.max_tokens.unwrap_or(2048) as u32;
+    let reserved_tokens = request.max_tokens.unwrap_or(16384) as u32;
     let total_required = est_text_tokens
         .saturating_add(total_media_tokens)
         .saturating_add(reserved_tokens);
@@ -628,6 +633,9 @@ pub async fn chat_completions_handler(
         schema: task_schema,
         images,
         messages: augmented_messages,
+        max_tokens: request.max_tokens,
+        temperature: request.temperature,
+        top_p: request.top_p,
     };
 
     let created = std::time::SystemTime::now()
@@ -641,25 +649,99 @@ pub async fn chat_completions_handler(
         let engine_clone = engine.clone();
         let model_id = request.model.clone();
 
+        let initial_chunk = make_chunk(
+            &format!("chatcmpl-{created}"),
+            created,
+            &model_id,
+            ChoiceDelta {
+                content: Some(String::new()),
+                reasoning_content: None,
+                role: Some("assistant".to_string()),
+                tool_calls: None,
+            },
+            None,
+            Usage::default(),
+        );
+        let _ = tx
+            .send(Event::default().data(serde_json::to_string(&initial_chunk).unwrap_or_default()));
+
         tokio::task::spawn_blocking(move || {
             let tx_clone = tx.clone();
             let model_id_clone = model_id.clone();
             let mut completion_tokens = 0u32;
+            let has_streamed_content =
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let has_streamed_clone = has_streamed_content.clone();
             let mut is_thinking = false;
             let mut tool_call_buffering = false;
 
             let mut on_token = move |piece: &str| -> bool {
                 completion_tokens += 1;
 
-                if piece == "<think>\n" {
+                // 1. Detect start of thinking
+                if piece.contains("<think>") {
                     is_thinking = true;
-                    return true;
-                }
-                if piece == "\n</think>\n\n" {
-                    is_thinking = false;
+                    let clean = piece
+                        .replace("<think>", "")
+                        .trim_start_matches('\n')
+                        .to_string();
+                    if !clean.is_empty() {
+                        let chunk = make_chunk(
+                            &format!("chatcmpl-{created}"),
+                            created,
+                            &model_id_clone,
+                            ChoiceDelta {
+                                content: None,
+                                reasoning_content: Some(clean),
+                                role: None,
+                                tool_calls: None,
+                            },
+                            None,
+                            Usage {
+                                prompt_tokens: 0,
+                                completion_tokens,
+                                total_tokens: completion_tokens,
+                            },
+                        );
+                        let _ = tx_clone.send(
+                            Event::default()
+                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                        );
+                    }
                     return true;
                 }
 
+                // 2. Detect end of thinking
+                if piece.contains("</think>") {
+                    is_thinking = false;
+                    let clean = piece.replace("</think>", "").trim_matches('\n').to_string();
+                    if !clean.is_empty() {
+                        let chunk = make_chunk(
+                            &format!("chatcmpl-{created}"),
+                            created,
+                            &model_id_clone,
+                            ChoiceDelta {
+                                content: Some(clean),
+                                reasoning_content: None,
+                                role: None,
+                                tool_calls: None,
+                            },
+                            None,
+                            Usage {
+                                prompt_tokens: 0,
+                                completion_tokens,
+                                total_tokens: completion_tokens,
+                            },
+                        );
+                        let _ = tx_clone.send(
+                            Event::default()
+                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                        );
+                    }
+                    return true;
+                }
+
+                // 3. During thinking: deliver strictly to reasoning_content
                 if is_thinking {
                     let chunk = make_chunk(
                         &format!("chatcmpl-{created}"),
@@ -668,7 +750,7 @@ pub async fn chat_completions_handler(
                         ChoiceDelta {
                             content: None,
                             reasoning_content: Some(piece.to_string()),
-                            role: Some("assistant".to_string()),
+                            role: None,
                             tool_calls: None,
                         },
                         None,
@@ -686,11 +768,14 @@ pub async fn chat_completions_handler(
                         .is_ok();
                 }
 
+                // 4. Outside thinking: ignore raw tool call syntax if tool buffering
                 if piece.contains("<tool_call>") || tool_call_buffering {
                     tool_call_buffering = true;
                     return true;
                 }
 
+                // 5. Final answer generation: deliver strictly to content
+                has_streamed_clone.store(true, std::sync::atomic::Ordering::Relaxed);
                 let chunk = make_chunk(
                     &format!("chatcmpl-{created}"),
                     created,
@@ -698,7 +783,7 @@ pub async fn chat_completions_handler(
                     ChoiceDelta {
                         content: Some(piece.to_string()),
                         reasoning_content: None,
-                        role: Some("assistant".to_string()),
+                        role: None,
                         tool_calls: None,
                     },
                     None,
@@ -720,24 +805,27 @@ pub async fn chat_completions_handler(
                         tool_calls,
                     } => {
                         if let Some(parsed_calls) = convert_to_tool_calls(&tool_calls, created) {
-                            if let Some(ref text) = content {
-                                if !text.is_empty() {
-                                    let text_chunk = make_chunk(
-                                        &format!("chatcmpl-{created}"),
-                                        created,
-                                        &model_id,
-                                        ChoiceDelta {
-                                            content: Some(text.clone()),
-                                            reasoning_content: None,
-                                            role: Some("assistant".to_string()),
-                                            tool_calls: None,
-                                        },
-                                        None,
-                                        output.usage.clone(),
-                                    );
-                                    let _ = tx.send(Event::default().data(
-                                        serde_json::to_string(&text_chunk).unwrap_or_default(),
-                                    ));
+                            // Only emit text_chunk if content was NOT already streamed chunk-by-chunk by on_token
+                            if !has_streamed_content.load(std::sync::atomic::Ordering::Relaxed) {
+                                if let Some(ref text) = content {
+                                    if !text.is_empty() {
+                                        let text_chunk = make_chunk(
+                                            &format!("chatcmpl-{created}"),
+                                            created,
+                                            &model_id,
+                                            ChoiceDelta {
+                                                content: Some(text.clone()),
+                                                reasoning_content: None,
+                                                role: None,
+                                                tool_calls: None,
+                                            },
+                                            None,
+                                            output.usage.clone(),
+                                        );
+                                        let _ = tx.send(Event::default().data(
+                                            serde_json::to_string(&text_chunk).unwrap_or_default(),
+                                        ));
+                                    }
                                 }
                             }
 
@@ -762,7 +850,7 @@ pub async fn chat_completions_handler(
                                 ChoiceDelta {
                                     content: None,
                                     reasoning_content: None,
-                                    role: Some("assistant".to_string()),
+                                    role: None,
                                     tool_calls: Some(tool_chunks),
                                 },
                                 None,
@@ -798,7 +886,7 @@ pub async fn chat_completions_handler(
                                 ChoiceDelta {
                                     content: Some(tool_calls.to_string()),
                                     reasoning_content: None,
-                                    role: Some("assistant".to_string()),
+                                    role: None,
                                     tool_calls: None,
                                 },
                                 Some("stop".to_string()),
@@ -867,7 +955,9 @@ pub async fn chat_completions_handler(
         let stream = UnboundedReceiverStream::new(rx);
         let done_stream = tokio_stream::once(Ok::<_, Infallible>(Event::default().data("[DONE]")));
         let sse_stream = stream.map(Ok::<_, Infallible>).chain(done_stream);
-        let mut resp = Sse::new(sse_stream).into_response();
+        let mut resp = Sse::new(sse_stream)
+            .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+            .into_response();
         if let Some(heads) = model_config.mtp_heads() {
             if let Ok(val) = axum::http::HeaderValue::from_str(&heads.to_string()) {
                 resp.headers_mut().insert("x-mtp-heads", val);

@@ -11,7 +11,7 @@ pub struct ChatCompletionRequest {
     pub temperature: Option<f64>,
     #[serde(default)]
     pub top_p: Option<f64>,
-    #[serde(default)]
+    #[serde(default, alias = "max_completion_tokens")]
     pub max_tokens: Option<usize>,
     #[serde(default, alias = "functions")]
     pub tools: Option<serde_json::Value>,
@@ -179,27 +179,49 @@ pub struct ResponseMessage {
     pub refusal: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Choice {
     pub index: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<ResponseMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delta: Option<ChoiceDelta>,
+    #[serde(default)]
     pub logprobs: Option<serde_json::Value>,
+    #[serde(default)]
     pub finish_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChoiceDelta {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCallChunk>>,
+}
+
+fn default_chat_object() -> String {
+    "chat.completion".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatCompletionResponse {
+    pub id: String,
+    #[serde(default = "default_chat_object")]
+    pub object: String,
+    #[serde(default)]
+    pub created: u64,
+    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_fingerprint: Option<String>,
+    #[serde(default)]
+    pub choices: Vec<Choice>,
+    #[serde(default)]
+    pub usage: Usage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -239,18 +261,6 @@ pub struct ImageData {
     pub b64_json: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ChatCompletionResponse {
-    pub id: String,
-    pub object: String,
-    pub created: u64,
-    pub model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub system_fingerprint: Option<String>,
-    pub choices: Vec<Choice>,
-    pub usage: Usage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

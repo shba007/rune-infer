@@ -301,7 +301,7 @@
       "architecture": "ternary-bonsai-vl",
       "format": "gguf",
       "model_path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-PQ2_0.gguf",
-      "mmproj_path": null,
+      "mmproj_path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-mmproj-BF16.gguf",
       "mtp_path": null,
       "mtp_heads": null,
       "vision": true,
@@ -330,6 +330,78 @@
         "extra_args": ""
       },
       "lora": []
+    },
+    {
+      "id": "gemini-3.5-flash-lite",
+      "name": "Gemini 3.5 Flash-Lite (Google AI Cloud)",
+      "provider": "google",
+      "upstream_model": "gemini-3.5-flash-lite",
+      "api_key": "{{GEMINI_API_KEY}}",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "modality": "VisionText",
+      "vision": true,
+      "description": "Google Gemini 3.5 Flash-Lite high-throughput, ultra-low latency model optimized for high-frequency tasks and agentic tool calling",
+      "capabilities": [
+        "Chat",
+        "Tool Call",
+        "Vision",
+        "Structured Output"
+      ],
+      "rate_limit": {
+        "requests_per_minute": 30,
+        "tokens_per_minute": 1000000,
+        "requests_per_day": 1500,
+        "max_concurrent": 5,
+        "queue_timeout_seconds": 30
+      }
+    },
+    {
+      "id": "gemini-3.7-flash",
+      "name": "Gemini 3.7 Flash (Google AI Cloud)",
+      "provider": "google",
+      "upstream_model": "gemini-3.7-flash",
+      "api_key": "{{GEMINI_API_KEY}}",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "modality": "VisionText",
+      "vision": true,
+      "description": "Google Gemini 3.7 Flash workhorse model for coding, agentic workflows, and general reasoning",
+      "capabilities": [
+        "Chat",
+        "Tool Call",
+        "Vision",
+        "Structured Output"
+      ],
+      "rate_limit": {
+        "requests_per_minute": 10,
+        "tokens_per_minute": 250000,
+        "requests_per_day": 500,
+        "max_concurrent": 2,
+        "queue_timeout_seconds": 30
+      }
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "name": "Gemini 3.8 Flash (Google AI Cloud)",
+      "provider": "google",
+      "upstream_model": "gemini-3.8-flash",
+      "api_key": "{{GEMINI_API_KEY}}",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "modality": "VisionText",
+      "vision": true,
+      "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",
+      "capabilities": [
+        "Chat",
+        "Tool Call",
+        "Vision",
+        "Structured Output"
+      ],
+      "rate_limit": {
+        "requests_per_minute": 10,
+        "tokens_per_minute": 250000,
+        "requests_per_day": 500,
+        "max_concurrent": 2,
+        "queue_timeout_seconds": 30
+      }
     },
     {
       "id": "z-image",
@@ -730,7 +802,7 @@
       "architecture": "voxcpm",
       "format": "safetensors",
       "vision": false,
-      "model_path": "D:/Models/huggingface/hub/models--openbmb--VoxCPM2/snapshots/main",
+      "model_path": "D:/Models/huggingface/hub/models--openbmb--VoxCPM2/snapshots/bffb3df5a29440629464e5e839f4d214c8714c3d/model.safetensors",
       "total_params": 2400000000,
       "bits_per_weight": 16.0,
       "description": "OpenBMB end-to-end omni-conversational voice speech generation engine",

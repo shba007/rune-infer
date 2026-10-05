@@ -120,6 +120,9 @@ pub async fn responses_handler(
         schema: tools_val,
         images: Vec::new(),
         messages,
+        max_tokens: None,
+        temperature: request.temperature,
+        top_p: None,
     };
 
     let res =

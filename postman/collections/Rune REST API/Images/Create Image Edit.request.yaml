@@ -1,30 +1,38 @@
 $kind: http-request
-name: Create Image Edit
 url: '{{base_url}}/v1/images/edits'
 method: POST
 body:
   type: formdata
   content:
-    - key: image
-      type: file
-      src: ''
-    - key: mask
-      type: file
-      src: ''
-    - key: prompt
-      type: text
-      value: 'A sun shining warmly through the trees'
-    - key: model
-      type: text
+    - type: file
+      key: image
+      src:
+        - /D:/Projects/Public/rune/code-infer/static/artifacts/audios/visualization.png
+      disabled: false
+    - type: file
+      key: mask
+      src:
+        - ''
+      disabled: false
+    - type: text
+      key: prompt
+      value: A sun shining warmly through the trees
+      disabled: false
+    - type: text
+      key: model
       value: '{{image_model}}'
-    - key: n
-      type: text
+      disabled: false
+    - type: text
+      key: n
       value: '1'
-    - key: size
-      type: text
-      value: '1024x1024'
-    - key: response_format
-      type: text
-      value: 'b64_json'
+      disabled: false
+    - type: text
+      key: size
+      value: 1024x1024
+      disabled: false
+    - type: text
+      key: response_format
+      value: b64_json
+      disabled: false
 examples: .resources/Create Image Edit.resources/examples
 order: 3100

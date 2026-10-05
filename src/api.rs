@@ -18,11 +18,13 @@ use std::sync::Arc;
 
 use crate::config::ModelRegistry;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
+use crate::proxy::ProxyService;
 use crate::types::{ApiError, ErrorResponse, HealthResponse, ModelInfo, ModelsResponse};
 
 #[derive(Clone)]
 pub struct AppState {
     pub inference: Arc<crate::inference::AppState>,
+    pub proxy: Arc<ProxyService>,
     pub config: ModelRegistry,
 }
 
