@@ -36,17 +36,22 @@ pub async fn execute_chat(
         );
     }
 
-    let resp = client
+    let mut req_builder = client
         .post(&endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            ApiError::new(format!("Failed to connect to OpenAI endpoint: {e}"))
-                .with_type("api_error")
-        })?;
+        .header("Content-Type", "application/json");
+
+    if config.provider == crate::config::ProviderType::OpenRouter
+        || endpoint.contains("openrouter.ai")
+    {
+        req_builder = req_builder
+            .header("HTTP-Referer", "https://github.com/shba007/rune-infer")
+            .header("X-Title", "Rune Infer");
+    }
+
+    let resp = req_builder.json(&body).send().await.map_err(|e| {
+        ApiError::new(format!("Failed to connect to OpenAI endpoint: {e}")).with_type("api_error")
+    })?;
 
     let status = resp.status();
     if !status.is_success() {

@@ -414,6 +414,60 @@
       }
     },
     {
+      "id": "apodex-1.1-mini",
+      "name": "Apodex 1.1 Mini (Free)",
+      "provider": "openrouter",
+      "modality": "Text",
+      "upstream_model": "apodex/apodex-1.1-mini:free",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "{{OPENROUTER_API_KEY}}",
+      "description": "Apodex 1.1 Mini reasoning model hosted on OpenRouter Free Tier",
+      "max_context_length": 262144,
+      "capabilities": [
+        "Chat",
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning"
+      ],
+      "rate_limit": {
+        "requests_per_minute": 20,
+        "max_concurrent": 2,
+        "queue_timeout_seconds": 60,
+        "max_retries": 5,
+        "retry_delay_ms": 1500,
+        "retry_timeout_seconds": 45
+      }
+    },
+    {
+      "id": "dots-3-note-preview",
+      "name": "Dots3-Note Preview (Free)",
+      "provider": "openrouter",
+      "modality": "VisionText",
+      "vision": true,
+      "upstream_model": "dots-studio/dots-3-note-preview:free",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "{{OPENROUTER_API_KEY}}",
+      "description": "Dots Studio Dots3-Note Preview 16B/280B MoE multimodal reasoning model with 512K context",
+      "max_context_length": 512000,
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning"
+      ],
+      "rate_limit": {
+        "requests_per_minute": 20,
+        "max_concurrent": 2,
+        "queue_timeout_seconds": 60,
+        "max_retries": 5,
+        "retry_delay_ms": 1500,
+        "retry_timeout_seconds": 45
+      }
+    },
+    {
       "id": "z-image",
       "name": "Z-Image 6B",
       "modality": "ImageGeneration",

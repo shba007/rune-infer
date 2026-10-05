@@ -21,10 +21,11 @@ pub async fn dispatch_chat(
     request: &ChatCompletionRequest,
 ) -> Result<Response, ApiError> {
     match config.provider {
-        ProviderType::OpenAi => openai::execute_chat(client, config, request).await,
+        ProviderType::OpenAi | ProviderType::OpenRouter | ProviderType::Custom => {
+            openai::execute_chat(client, config, request).await
+        }
         ProviderType::Anthropic => anthropic::execute_chat(client, config, request).await,
         ProviderType::Google => gemini::execute_chat(client, config, request).await,
-        ProviderType::Custom => openai::execute_chat(client, config, request).await,
         ProviderType::Local => Err(
             ApiError::new("Local models must use internal engine registry")
                 .with_type("invalid_request_error"),

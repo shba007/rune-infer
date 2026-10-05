@@ -13,6 +13,8 @@ pub enum ProviderType {
     Anthropic,
     #[serde(alias = "google", alias = "gemini")]
     Google,
+    #[serde(alias = "openrouter")]
+    OpenRouter,
     #[serde(alias = "custom")]
     Custom,
 }
@@ -28,6 +30,7 @@ impl ProviderType {
             ProviderType::OpenAi => "openai",
             ProviderType::Anthropic => "anthropic",
             ProviderType::Google => "google",
+            ProviderType::OpenRouter => "openrouter",
             ProviderType::Custom => "custom",
         }
     }
@@ -72,11 +75,11 @@ fn default_max_retries() -> u32 {
 }
 
 fn default_retry_delay_ms() -> u64 {
-    1000 // 1 second base retry interval
+    1000
 }
 
 fn default_retry_timeout() -> u64 {
-    30 // 30 seconds total retry budget
+    30
 }
 
 impl RateLimitConfig {
@@ -243,6 +246,15 @@ impl ModelRegistry {
                     self.models
                         .iter()
                         .find(|m| m.provider == ProviderType::Google)
+                } else if lower.contains("dots") {
+                    self.models
+                        .iter()
+                        .find(|m| m.id.contains("dots") || m.name.to_lowercase().contains("dots"))
+                } else if lower.contains("apodex") || lower.contains("openrouter") {
+                    self.models.iter().find(|m| {
+                        m.provider == ProviderType::OpenRouter
+                            || m.id.to_lowercase().contains("apodex")
+                    })
                 } else if lower.contains("gpt-") || lower.contains("openai") {
                     self.models
                         .iter()
@@ -302,13 +314,13 @@ pub fn interpolate_env_vars(raw: &str) -> Result<String> {
 
     while let Some(c) = chars.next() {
         if c == '{' && chars.peek() == Some(&'{') {
-            chars.next(); // consume second '{'
+            chars.next();
             let mut var_name = String::new();
             let mut closed = false;
 
             while let Some(inner) = chars.next() {
                 if inner == '}' && chars.peek() == Some(&'}') {
-                    chars.next(); // consume second '}'
+                    chars.next();
                     closed = true;
                     break;
                 }
@@ -322,7 +334,6 @@ pub fn interpolate_env_vars(raw: &str) -> Result<String> {
             let var_trimmed = var_name.trim();
             match std::env::var(var_trimmed) {
                 Ok(val) => {
-                    // Escape backslashes and double quotes if JSON string context
                     let escaped = val.replace('\\', "\\\\").replace('"', "\\\"");
                     result.push_str(&escaped);
                 }
