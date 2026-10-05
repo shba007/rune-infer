@@ -352,7 +352,10 @@
         "tokens_per_minute": 250000,
         "requests_per_day": 500,
         "max_concurrent": 5,
-        "queue_timeout_seconds": 30
+        "queue_timeout_seconds": 30,
+        "max_retries": 6,
+        "retry_delay_seconds": 2,
+        "retry_timeout_seconds": 45
       }
     },
     {
@@ -377,7 +380,10 @@
         "tokens_per_minute": 250000,
         "requests_per_day": 20,
         "max_concurrent": 2,
-        "queue_timeout_seconds": 30
+        "queue_timeout_seconds": 30,
+        "max_retries": 6,
+        "retry_delay_seconds": 2,
+        "retry_timeout_seconds": 45
       }
     },
     {
@@ -396,13 +402,15 @@
         "Vision",
         "Structured Output"
       ],
-      "max_context_length": 1048576,
       "rate_limit": {
         "requests_per_minute": 5,
         "tokens_per_minute": 250000,
         "requests_per_day": 20,
         "max_concurrent": 2,
-        "queue_timeout_seconds": 30
+        "queue_timeout_seconds": 30,
+        "max_retries": 6,
+        "retry_delay_seconds": 2,
+        "retry_timeout_seconds": 45
       }
     },
     {

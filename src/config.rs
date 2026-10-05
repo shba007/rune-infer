@@ -45,6 +45,14 @@ pub struct RateLimitConfig {
     pub max_concurrent: usize,
     #[serde(default = "default_queue_timeout")]
     pub queue_timeout_seconds: u64,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default)]
+    pub retry_delay_seconds: Option<u64>,
+    #[serde(default = "default_retry_delay_ms")]
+    pub retry_delay_ms: u64,
+    #[serde(default = "default_retry_timeout")]
+    pub retry_timeout_seconds: u64,
 }
 
 fn default_rpm() -> u32 {
@@ -59,6 +67,28 @@ fn default_queue_timeout() -> u64 {
     60
 }
 
+fn default_max_retries() -> u32 {
+    5
+}
+
+fn default_retry_delay_ms() -> u64 {
+    1000 // 1 second base retry interval
+}
+
+fn default_retry_timeout() -> u64 {
+    30 // 30 seconds total retry budget
+}
+
+impl RateLimitConfig {
+    pub fn effective_retry_delay_ms(&self) -> u64 {
+        if let Some(sec) = self.retry_delay_seconds {
+            sec * 1000
+        } else {
+            self.retry_delay_ms
+        }
+    }
+}
+
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
@@ -67,6 +97,10 @@ impl Default for RateLimitConfig {
             requests_per_day: None,
             max_concurrent: default_max_concurrent(),
             queue_timeout_seconds: default_queue_timeout(),
+            max_retries: default_max_retries(),
+            retry_delay_seconds: None,
+            retry_delay_ms: default_retry_delay_ms(),
+            retry_timeout_seconds: default_retry_timeout(),
         }
     }
 }
