@@ -24,27 +24,27 @@ All notable changes to this project will be documented in this file.
 
 - Add audio transcription and speech synthesis endpoints with CrispASR integration by @shba007
 
-- Add image generation API and media handling
+- Add image generation API and media handling by @shba007
 
-- *(api)* Add image generation and moderation endpoints
+- *(api)* Add image generation and moderation endpoints by @shba007
 
-- Add new scripts and update api request examples
+- Add new scripts and update api request examples by @shba007
 
-- Add image captioning and related inference tasks
+- Add image captioning and related inference tasks by @shba007
 
-- *(proxy)* Add gemini adapter for chat completions
+- *(proxy)* Add gemini adapter for chat completions by @shba007
 
-- *(chat)* Enhance chat completion response with reasoning content extraction
+- *(chat)* Enhance chat completion response with reasoning content extraction by @shba007
 
-- *(proxy)* Implement automatic retries for chat completion requests with configurable parameters
+- *(proxy)* Implement automatic retries for chat completion requests with configurable parameters by @shba007
 
-- *(openrouter)* Add Apodex and Dots3-Note models with configuration parsing and integration tests
+- *(openrouter)* Add Apodex and Dots3-Note models with configuration parsing and integration tests by @shba007
 
-- *(models)* Add Space Bunny Alpha model with multimodal capabilities
+- *(models)* Add Space Bunny Alpha model with multimodal capabilities by @shba007
 
-- *(hooks)* Add commit-msg and pre-commit hooks for message verification and secret scanning
+- *(hooks)* Add commit-msg and pre-commit hooks for message verification and secret scanning by @shba007
 
-- *(workflows)* Enhance CI/CD configurations for improved deployment and integration
+- *(workflows)* Enhance CI/CD configurations for improved deployment and integration by @shba007
 
 
 ### 🚜 Refactor
@@ -56,9 +56,11 @@ All notable changes to this project will be documented in this file.
 
 ### ⚙️ Miscellaneous Tasks
 
-- Make cargo-husky hook scripts executable
+- Make cargo-husky hook scripts executable by @shba007
 
-- Add initial_tag configuration for versioning
+- Add initial_tag configuration for versioning by @shba007
+
+- Update dependencies and improve documentation in docker-compose.yml
 
 
 
