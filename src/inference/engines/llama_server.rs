@@ -2,7 +2,9 @@ use super::download;
 use crate::inference::process::{ProcessGuard, configure_death_signal};
 use crate::inference::traits::InferenceEngine;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
-use crate::types::Usage;
+use crate::types::{ImageCaptionResponse, Usage};
+use base64::Engine;
+use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::io::BufRead;
 use std::net::TcpListener;
@@ -10,13 +12,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-
-struct ScratchDirGuard(PathBuf);
-impl Drop for ScratchDirGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeFlavor {
@@ -64,6 +59,7 @@ impl LlamaServerEngine {
             .arg(n_ctx.unwrap_or(32768).to_string())
             .arg("-ngl")
             .arg(n_gpu_layers.unwrap_or(99).to_string())
+            .arg("--jinja")
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 
@@ -75,11 +71,7 @@ impl LlamaServerEngine {
                     path.display()
                 );
                 cmd.arg("--mmproj").arg(path);
-            } else {
-                cmd.arg("--no-mmproj");
             }
-        } else {
-            cmd.arg("--no-mmproj");
         }
 
         if let Some(ref mtp) = mtp_path {
@@ -130,7 +122,7 @@ impl LlamaServerEngine {
             let lines_clone = last_stderr_lines.clone();
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     let mut l = lines_clone.lock().unwrap();
                     if l.len() >= 30 {
                         l.remove(0);
@@ -204,7 +196,7 @@ impl LlamaServerEngine {
                 {
                     let cuda_dll = base_dir.join("ggml-cuda.dll");
                     if cuda_dll.exists() {
-                        std::fs::read_dir(&base_dir).map_or(false, |entries| {
+                        std::fs::read_dir(&base_dir).is_ok_and(|entries| {
                             entries.flatten().any(|e| {
                                 let name = e.file_name().to_string_lossy().to_lowercase();
                                 name.starts_with("cudart64_") && name.ends_with(".dll")
@@ -375,7 +367,7 @@ impl LlamaServerEngine {
             releases_arr
                 .iter()
                 .find(|rel| {
-                    rel["assets"].as_array().map_or(false, |assets| {
+                    rel["assets"].as_array().is_some_and(|assets| {
                         assets
                             .iter()
                             .any(|a| a["name"].as_str().unwrap_or("").contains("bin-"))
@@ -432,7 +424,7 @@ impl LlamaServerEngine {
                 }
             }
 
-            candidates.sort_by(|a, b| b.parsed_ver.cmp(&a.parsed_ver));
+            candidates.sort_by_key(|a| std::cmp::Reverse(a.parsed_ver));
 
             let selected = if let Some(max_cuda) = host_cuda {
                 println!(
@@ -459,23 +451,21 @@ impl LlamaServerEngine {
                 if let (Some(cname), Some(curl)) = (c.cudart_name, c.cudart_url) {
                     download_urls.push((cname.to_string(), curl.to_string()));
                 }
-            } else {
-                if let Some(asset) = assets.iter().find(|a| {
-                    let name = a["name"].as_str().unwrap_or("");
-                    download::matches_arch(name)
-                        && (name.contains("bin-win-vulkan")
-                            || name.contains("bin-win-avx2")
-                            || name.contains("bin-win-cpu"))
-                }) {
-                    println!(
-                        "[LlamaServerEngine] Selected Windows CPU/Vulkan build: {}",
-                        asset["name"].as_str().unwrap_or("")
-                    );
-                    download_urls.push((
-                        asset["name"].as_str().unwrap().to_string(),
-                        asset["browser_download_url"].as_str().unwrap().to_string(),
-                    ));
-                }
+            } else if let Some(asset) = assets.iter().find(|a| {
+                let name = a["name"].as_str().unwrap_or("");
+                download::matches_arch(name)
+                    && (name.contains("bin-win-vulkan")
+                        || name.contains("bin-win-avx2")
+                        || name.contains("bin-win-cpu"))
+            }) {
+                println!(
+                    "[LlamaServerEngine] Selected Windows CPU/Vulkan build: {}",
+                    asset["name"].as_str().unwrap_or("")
+                );
+                download_urls.push((
+                    asset["name"].as_str().unwrap().to_string(),
+                    asset["browser_download_url"].as_str().unwrap().to_string(),
+                ));
             }
         } else if cfg!(target_os = "macos") {
             let arch_label = if cfg!(target_arch = "aarch64") {
@@ -597,17 +587,109 @@ impl LlamaServerEngine {
 
             std::thread::sleep(Duration::from_millis(500));
         }
-
         Err("Timed out waiting for managed llama-server".into())
     }
 
-    fn extract_tool_call_json(raw: &str) -> String {
-        if let Some(start) = raw.find("<tool_call>") {
-            let content_start = start + "<tool_call>".len();
-            if let Some(end) = raw[content_start..].find("</tool_call>") {
-                return raw[content_start..content_start + end].trim().to_string();
+    fn parse_xml_tool_call(block: &str) -> Option<serde_json::Value> {
+        let fn_start = block.find("<function=")?;
+        let after_fn = &block[fn_start + "<function=".len()..];
+        let fn_end = after_fn.find('>')?;
+        let fn_name = after_fn[..fn_end]
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'');
+        if fn_name.is_empty() {
+            return None;
+        }
+
+        let mut args = serde_json::Map::new();
+        let mut cursor = &after_fn[fn_end + 1..];
+
+        while let Some(p_start) = cursor.find("<parameter=") {
+            let after_p = &cursor[p_start + "<parameter=".len()..];
+            let p_end = after_p.find('>')?;
+            let param_name = after_p[..p_end]
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
+            let val_start = &after_p[p_end + 1..];
+
+            let val_end = val_start
+                .find("<parameter=")
+                .or_else(|| val_start.find("</parameter>"))
+                .or_else(|| val_start.find("</function>"))
+                .unwrap_or(val_start.len());
+
+            let raw_val = val_start[..val_end].trim();
+            let val = serde_json::from_str::<serde_json::Value>(raw_val)
+                .unwrap_or_else(|_| serde_json::Value::String(raw_val.to_string()));
+
+            if !param_name.is_empty() {
+                args.insert(param_name, val);
             }
-            return raw[content_start..].trim().to_string();
+
+            cursor = &val_start[val_end..];
+            if let Some(stripped) = cursor.strip_prefix("</parameter>") {
+                cursor = stripped;
+            }
+        }
+
+        Some(serde_json::json!({
+            "name": fn_name,
+            "arguments": serde_json::Value::Object(args)
+        }))
+    }
+
+    fn extract_tool_calls(raw: &str) -> Option<(Option<String>, serde_json::Value)> {
+        if raw.contains("<tool_call>") {
+            let mut calls = Vec::new();
+            let mut remaining = raw;
+            let mut text_parts = Vec::new();
+
+            while let Some(start) = remaining.find("<tool_call>") {
+                let before = &remaining[..start];
+                if !before.trim().is_empty() {
+                    text_parts.push(before.trim());
+                }
+                let after_start = &remaining[start + "<tool_call>".len()..];
+                let (block, next_rem) = match after_start.find("</tool_call>") {
+                    Some(end) => (
+                        &after_start[..end],
+                        &after_start[end + "</tool_call>".len()..],
+                    ),
+                    None => (after_start, ""),
+                };
+                remaining = next_rem;
+                let block = block.trim();
+
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(block) {
+                    if let Some(arr) = parsed.as_array() {
+                        calls.extend(arr.clone());
+                    } else if parsed.is_object() {
+                        calls.push(parsed);
+                    }
+                    continue;
+                }
+
+                if let Some(call) = Self::parse_xml_tool_call(block) {
+                    calls.push(call);
+                }
+            }
+
+            if !remaining.trim().is_empty() {
+                text_parts.push(remaining.trim());
+            }
+
+            if !calls.is_empty() {
+                let clean_text = text_parts.join("\n\n").trim().to_string();
+                let content_opt = if clean_text.is_empty() {
+                    None
+                } else {
+                    Some(clean_text)
+                };
+                return Some((content_opt, serde_json::Value::Array(calls)));
+            }
         }
 
         let mut cleaned = raw;
@@ -615,18 +697,31 @@ impl LlamaServerEngine {
             cleaned = &raw[think_end + "</think>".len()..];
         }
 
-        if let (Some(first_b), Some(last_b)) = (cleaned.find('['), cleaned.rfind(']')) {
-            if first_b < last_b {
-                return cleaned[first_b..=last_b].trim().to_string();
-            }
-        }
-        if let (Some(first_b), Some(last_b)) = (cleaned.find('{'), cleaned.rfind('}')) {
-            if first_b < last_b {
-                return cleaned[first_b..=last_b].trim().to_string();
-            }
+        if let Some(val) = cleaned
+            .find('[')
+            .zip(cleaned.rfind(']'))
+            .filter(|&(start, end)| start < end)
+            .and_then(|(start, end)| {
+                serde_json::from_str::<serde_json::Value>(&cleaned[start..=end]).ok()
+            })
+            .filter(|v| v.is_array())
+        {
+            return Some((None, val));
         }
 
-        cleaned.trim().to_string()
+        if let Some(val) = cleaned
+            .find('{')
+            .zip(cleaned.rfind('}'))
+            .filter(|&(start, end)| start < end)
+            .and_then(|(start, end)| {
+                serde_json::from_str::<serde_json::Value>(&cleaned[start..=end]).ok()
+            })
+            .filter(|v| v.is_object())
+        {
+            return Some((None, serde_json::Value::Array(vec![val])));
+        }
+
+        None
     }
 }
 
@@ -646,58 +741,72 @@ impl InferenceEngine for LlamaServerEngine {
                 schema,
                 images,
                 messages,
+                max_tokens,
+                temperature,
+                top_p,
             } => {
                 let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
                 let stream_mode = on_token.is_some();
-
-                let scratch_path = std::env::temp_dir().join("rune_infer").join(format!(
-                    "ipc_{}_{}",
-                    std::process::id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_nanos()
-                ));
-                let _ = std::fs::create_dir_all(&scratch_path);
-                let _guard = ScratchDirGuard(scratch_path.clone());
 
                 let mut server_messages = Vec::new();
 
                 if !messages.is_empty() {
                     for (m_idx, msg) in messages.iter().enumerate() {
                         let (text, _) = msg.split_text_and_media();
-                        let mut parts = Vec::new();
+                        let has_images = !images.is_empty()
+                            && msg.role == "user"
+                            && m_idx == messages.iter().position(|m| m.role == "user").unwrap_or(0);
 
-                        if !text.is_empty() {
-                            parts.push(serde_json::json!({
-                                "type": "text",
-                                "text": text
-                            }));
-                        }
-
-                        if msg.role == "user"
-                            && m_idx == messages.iter().position(|m| m.role == "user").unwrap_or(0)
-                        {
-                            for (f_idx, frame_bytes) in images.iter().enumerate() {
-                                let frame_file = scratch_path.join(format!("frame_{f_idx}.jpg"));
-                                if std::fs::write(&frame_file, frame_bytes).is_ok() {
-                                    parts.push(serde_json::json!({
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": frame_file.to_string_lossy().to_string()
-                                        }
-                                    }));
-                                }
-                            }
-                        }
-
-                        server_messages.push(serde_json::json!({
+                        let mut msg_obj = serde_json::json!({
                             "role": msg.role,
-                            "content": parts
-                        }));
+                        });
+
+                        if has_images {
+                            let mut parts = Vec::new();
+                            if !text.is_empty() {
+                                parts.push(serde_json::json!({
+                                    "type": "text",
+                                    "text": text
+                                }));
+                            }
+                            for frame_bytes in images.iter() {
+                                let mime = if frame_bytes.starts_with(b"\x89PNG") {
+                                    "image/png"
+                                } else {
+                                    "image/jpeg"
+                                };
+                                let b64 =
+                                    base64::engine::general_purpose::STANDARD.encode(frame_bytes);
+                                parts.push(serde_json::json!({
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": format!("data:{mime};base64,{b64}")
+                                    }
+                                }));
+                            }
+                            msg_obj["content"] = serde_json::Value::Array(parts);
+                        } else if msg.role == "assistant" && msg.tool_calls.is_some() {
+                            if !text.is_empty() {
+                                msg_obj["content"] = serde_json::Value::String(text);
+                            } else {
+                                msg_obj["content"] = serde_json::Value::Null;
+                            }
+                            msg_obj["tool_calls"] = serde_json::json!(msg.tool_calls);
+                        } else if msg.role == "tool" {
+                            msg_obj["content"] = serde_json::Value::String(text);
+                            if let Some(ref tid) = msg.tool_call_id {
+                                msg_obj["tool_call_id"] = serde_json::json!(tid);
+                            }
+                            if let Some(ref name) = msg.name {
+                                msg_obj["name"] = serde_json::json!(name);
+                            }
+                        } else {
+                            msg_obj["content"] = serde_json::Value::String(text);
+                        }
+
+                        server_messages.push(msg_obj);
                     }
                 } else {
-                    let mut parts = Vec::new();
                     let clean_prompt = prompt
                         .replace("<|im_start|>", "")
                         .replace("<|im_end|>", "")
@@ -706,35 +815,60 @@ impl InferenceEngine for LlamaServerEngine {
                         .trim()
                         .to_string();
 
-                    parts.push(serde_json::json!({
-                        "type": "text",
-                        "text": clean_prompt
-                    }));
-
-                    for (f_idx, frame_bytes) in images.iter().enumerate() {
-                        let frame_file = scratch_path.join(format!("frame_{f_idx}.jpg"));
-                        if std::fs::write(&frame_file, frame_bytes).is_ok() {
+                    if !images.is_empty() {
+                        let mut parts = vec![serde_json::json!({
+                            "type": "text",
+                            "text": clean_prompt
+                        })];
+                        for frame_bytes in images.iter() {
+                            let mime = if frame_bytes.starts_with(b"\x89PNG") {
+                                "image/png"
+                            } else {
+                                "image/jpeg"
+                            };
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(frame_bytes);
                             parts.push(serde_json::json!({
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": frame_file.to_string_lossy().to_string()
+                                    "url": format!("data:{mime};base64,{b64}")
                                 }
                             }));
                         }
+                        server_messages.push(serde_json::json!({
+                            "role": "user",
+                            "content": parts
+                        }));
+                    } else {
+                        server_messages.push(serde_json::json!({
+                            "role": "user",
+                            "content": clean_prompt
+                        }));
                     }
-
-                    server_messages.push(serde_json::json!({
-                        "role": "user",
-                        "content": parts
-                    }));
                 }
 
-                let body = serde_json::json!({
+                let is_tools_array =
+                    schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty());
+                let is_schema_object =
+                    schema.is_object() && !schema.as_object().is_none_or(|o| o.is_empty());
+
+                let mut body = serde_json::json!({
                     "messages": server_messages,
-                    "temperature": 0.7,
-                    "top_p": 0.9,
-                    "stream": stream_mode
+                    "temperature": temperature.unwrap_or(1.0),
+                    "top_p": top_p.unwrap_or(0.95),
+                    "stream": stream_mode,
+                    "max_tokens": max_tokens.unwrap_or(16384)
                 });
+
+                if is_tools_array {
+                    body["tools"] = schema.clone();
+                } else if is_schema_object {
+                    body["response_format"] = serde_json::json!({
+                        "type": "json_schema",
+                        "json_schema": {
+                            "schema": schema.clone()
+                        }
+                    });
+                }
 
                 let resp = self
                     .client
@@ -746,13 +880,16 @@ impl InferenceEngine for LlamaServerEngine {
                     })?;
 
                 if !resp.status().is_success() {
-                    return Err(format!("llama-server returned HTTP {}", resp.status()).into());
+                    let status = resp.status();
+                    let err_text = resp.text().unwrap_or_default();
+                    return Err(format!("llama-server returned HTTP {status}: {err_text}").into());
                 }
 
                 let mut full_output = String::new();
                 let mut is_thinking = false;
                 let mut streamed_tokens = 0u32;
                 let mut server_usage: Option<Usage> = None;
+                let mut streamed_tool_calls: Vec<serde_json::Value> = Vec::new();
 
                 if stream_mode {
                     let reader = std::io::BufReader::new(resp);
@@ -775,6 +912,66 @@ impl InferenceEngine for LlamaServerEngine {
                                         .unwrap_or(0)
                                         as u32;
                                     server_usage = Some(Usage::new(pt, ct));
+                                }
+
+                                if let Some(tc_list) =
+                                    v["choices"][0]["delta"]["tool_calls"].as_array()
+                                {
+                                    for tc_delta in tc_list {
+                                        let idx = tc_delta
+                                            .get("index")
+                                            .and_then(|i| i.as_u64())
+                                            .unwrap_or(0)
+                                            as usize;
+                                        while streamed_tool_calls.len() <= idx {
+                                            streamed_tool_calls.push(serde_json::json!({
+                                                "id": "",
+                                                "type": "function",
+                                                "function": {
+                                                    "name": "",
+                                                    "arguments": ""
+                                                }
+                                            }));
+                                        }
+                                        if let Some(id) =
+                                            tc_delta.get("id").and_then(|i| i.as_str())
+                                        {
+                                            if !id.is_empty() {
+                                                streamed_tool_calls[idx]["id"] =
+                                                    serde_json::json!(id);
+                                            }
+                                        }
+                                        if let Some(func) =
+                                            tc_delta.get("function").and_then(|f| f.as_object())
+                                        {
+                                            if let Some(name) =
+                                                func.get("name").and_then(|n| n.as_str())
+                                            {
+                                                if !name.is_empty() {
+                                                    let cur = streamed_tool_calls[idx]["function"]
+                                                        ["name"]
+                                                        .as_str()
+                                                        .unwrap_or("");
+                                                    streamed_tool_calls[idx]["function"]["name"] = serde_json::json!(
+                                                        format!("{}{}", cur, name)
+                                                    );
+                                                }
+                                            }
+                                            if let Some(args) =
+                                                func.get("arguments").and_then(|a| a.as_str())
+                                            {
+                                                if !args.is_empty() {
+                                                    let cur = streamed_tool_calls[idx]["function"]
+                                                        ["arguments"]
+                                                        .as_str()
+                                                        .unwrap_or("");
+                                                    streamed_tool_calls[idx]["function"]["arguments"] = serde_json::json!(
+                                                        format!("{}{}", cur, args)
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 let reasoning_opt = v["choices"][0]["delta"]["reasoning_content"]
@@ -865,6 +1062,24 @@ impl InferenceEngine for LlamaServerEngine {
                     }
 
                     let choice = &result["choices"][0];
+
+                    if let Some(tc) = choice["message"]
+                        .get("tool_calls")
+                        .filter(|v| v.is_array() && !v.as_array().unwrap().is_empty())
+                    {
+                        let content_str = choice["message"]["content"]
+                            .as_str()
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|s| s.to_string());
+                        return Ok(InferenceOutput {
+                            response: InferenceTaskResponse::ToolCall {
+                                content: content_str,
+                                tool_calls: tc.clone(),
+                            },
+                            usage: server_usage.unwrap_or_else(|| Usage::new(0, 0)),
+                        });
+                    }
+
                     let content = choice["message"]["content"]
                         .as_str()
                         .or_else(|| result["content"].as_str())
@@ -893,17 +1108,29 @@ impl InferenceEngine for LlamaServerEngine {
                     Usage::new(est_prompt, est_completion)
                 });
 
-                let has_tools = match schema {
-                    serde_json::Value::Object(o) => !o.is_empty(),
-                    serde_json::Value::Array(a) => !a.is_empty(),
-                    _ => false,
-                };
+                if !streamed_tool_calls.is_empty() {
+                    return Ok(InferenceOutput {
+                        response: InferenceTaskResponse::ToolCall {
+                            content: if full_output.trim().is_empty() {
+                                None
+                            } else {
+                                Some(full_output.trim().to_string())
+                            },
+                            tool_calls: serde_json::Value::Array(streamed_tool_calls),
+                        },
+                        usage: final_usage,
+                    });
+                }
 
-                if has_tools && full_output.contains("<tool_call>") {
-                    let clean_json = Self::extract_tool_call_json(&full_output);
-                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&clean_json) {
+                if is_tools_array {
+                    if let Some((clean_content, parsed_tools)) =
+                        Self::extract_tool_calls(&full_output)
+                    {
                         return Ok(InferenceOutput {
-                            response: InferenceTaskResponse::ToolCall(parsed),
+                            response: InferenceTaskResponse::ToolCall {
+                                content: clean_content,
+                                tool_calls: parsed_tools,
+                            },
                             usage: final_usage,
                         });
                     }
@@ -912,6 +1139,97 @@ impl InferenceEngine for LlamaServerEngine {
                 Ok(InferenceOutput {
                     response: InferenceTaskResponse::Text(full_output.trim().to_string()),
                     usage: final_usage,
+                })
+            }
+            InferenceTaskRequest::ImageCaption {
+                model: _,
+                image_bytes,
+                detail,
+                max_tokens,
+            } => {
+                let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
+
+                let mime = if image_bytes.starts_with(b"\x89PNG") {
+                    "image/png"
+                } else {
+                    "image/jpeg"
+                };
+                let b64 = base64::engine::general_purpose::STANDARD.encode(image_bytes);
+                let data_uri = format!("data:{mime};base64,{b64}");
+
+                let prompt_text = if detail == "detailed" {
+                    "Provide a detailed description of this image."
+                } else {
+                    "Provide a concise, single-sentence caption for this image."
+                };
+
+                let body = serde_json::json!({
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": prompt_text
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": data_uri
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.2,
+                    "stream": false
+                });
+
+                let resp = self
+                    .client
+                    .post(&endpoint)
+                    .json(&body)
+                    .send()
+                    .map_err(|e| format!("Failed to connect to managed llama-server: {e}"))?;
+
+                if !resp.status().is_success() {
+                    let status = resp.status();
+                    let err_text = resp.text().unwrap_or_default();
+
+                    return Err(format!("llama-server returned HTTP {status}: {err_text}").into());
+                }
+
+                let result: serde_json::Value = resp.json()?;
+                let caption = result["choices"][0]["message"]["content"]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+
+                let pt = result["usage"]["prompt_tokens"].as_u64().unwrap_or(85) as u32;
+                let ct = result["usage"]["completion_tokens"].as_u64().unwrap_or(12) as u32;
+                let usage = Usage::new(pt, ct);
+
+                let created = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let id = format!(
+                    "cap_{}",
+                    hex::encode(&Sha256::digest(caption.as_bytes())[..8])
+                );
+
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Caption(ImageCaptionResponse {
+                        id,
+                        object: "image.caption".to_string(),
+                        created,
+                        model: self.id.clone(),
+                        caption,
+                        usage: usage.clone(),
+                    }),
+                    usage,
                 })
             }
             _ => Err("LlamaServerEngine does not support this task type".into()),

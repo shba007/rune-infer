@@ -2,17 +2,17 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
-use tracing_subscriber;
 
 use rune_infer::api::{AppState, create_router};
 use rune_infer::config::ModelRegistry;
 use rune_infer::inference::AppState as InferenceAppState;
+use rune_infer::proxy::ProxyService;
 
 #[derive(Parser, Debug)]
 #[command(name = "rune-infer")]
 #[command(author = "Rune Infer Team")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "A standalone model server with OpenAI-compatible API")]
+#[command(about = "A standalone model server with OpenAI-compatible API and Cloud AI Gateway")]
 struct Args {
     #[arg(short, long, default_value = "config/models.json")]
     config: String,
@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    tracing::info!("Starting Rune Infer...");
+    tracing::info!("Starting Rune Infer (with Cloud AI Gateway)...");
     tracing::info!("Persistent log audit active at logs/rune-infer.log");
 
     // Clean up any stale child processes from abnormal previous exits
@@ -115,17 +115,16 @@ async fn main() -> Result<()> {
     let port = args.port.unwrap_or(config.server.port);
 
     let inference_state = Arc::new(InferenceAppState::new(&config));
+    let proxy_service = Arc::new(ProxyService::new(&config));
 
     let state = AppState {
         inference: inference_state.clone(),
+        proxy: proxy_service,
         config,
     };
 
-    let app = create_router(state.clone());
-
-    let app = app
-        .layer(tower::ServiceBuilder::new().layer(tower_http::cors::CorsLayer::permissive()))
-        .with_state(Arc::new(state));
+    let app = create_router(state)
+        .layer(tower::ServiceBuilder::new().layer(tower_http::cors::CorsLayer::permissive()));
 
     let addr = format!("{}:{}", host, port);
     tracing::info!(

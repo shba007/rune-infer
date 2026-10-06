@@ -1,0 +1,32 @@
+$kind: http-example
+name: 200 OK (Stream)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Accept
+      value: text/event-stream
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: text/event-stream
+    cache-control: no-cache
+    connection: keep-alive
+  body:
+    type: text
+    content: |-
+      data: {"id":"chatcmpl-stream02","object":"chat.completion.chunk","created":1727827230,"model":"qwen3.5-0.8b","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+      data: {"id":"chatcmpl-stream02","object":"chat.completion.chunk","created":1727827230,"model":"qwen3.5-0.8b","choices":[{"index":0,"delta":{"content":"1: First integer.\n"},"finish_reason":null}]}
+
+      data: {"id":"chatcmpl-stream02","object":"chat.completion.chunk","created":1727827230,"model":"qwen3.5-0.8b","choices":[{"index":0,"delta":{"content":"2: Smallest prime.\n"},"finish_reason":null}]}
+
+      data: {"id":"chatcmpl-stream02","object":"chat.completion.chunk","created":1727827230,"model":"qwen3.5-0.8b","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+      data: {"id":"chatcmpl-stream02","object":"chat.completion.chunk","created":1727827230,"model":"qwen3.5-0.8b","choices":[],"usage":{"prompt_tokens":21,"completion_tokens":18,"total_tokens":39}}
+
+      data: [DONE]
+order: 2100

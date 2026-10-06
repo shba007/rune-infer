@@ -1,0 +1,26 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/audio/translations'
+  method: POST
+  body:
+    type: formdata
+    content:
+      - key: model
+        type: text
+        value: 'whisper-large-v3-turbo'
+      - key: response_format
+        type: text
+        value: 'json'
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "text": "Hello, thank you for using the audio translation service on the Rust server."
+      }
+order: 4200

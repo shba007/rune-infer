@@ -1,0 +1,49 @@
+$kind: http-example
+name: 200 OK (Tool Call)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "chatcmpl-tools-8x19b",
+        "object": "chat.completion",
+        "created": 1727827255,
+        "model": "qwen3.5-0.8b",
+        "system_fingerprint": "fp_rune_rust_v1",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "call_amsterdam_weather_001",
+                  "type": "function",
+                  "function": {
+                    "name": "get_current_weather",
+                    "arguments": "{\"location\":\"Amsterdam, Netherlands\",\"unit\":\"celsius\"}"
+                  }
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 84,
+          "completion_tokens": 24,
+          "total_tokens": 108
+        }
+      }
+order: 2200

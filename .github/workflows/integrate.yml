@@ -1,0 +1,77 @@
+name: Rust CI
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  build:
+    if: >
+      !(
+        contains(github.event.head_commit.message, 'ci(release):') ||
+        contains(github.event.head_commit.message, '[skip ci]') ||
+        startsWith(github.event.head_commit.message, 'Merge pull request') ||
+        startsWith(github.event.head_commit.message, 'Merge branch')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🦀 Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: ⚡ Cache Cargo Dependencies & Target
+        uses: Swatinem/rust-cache@v2
+
+      - name: 🛠️ Install Tooling (git-cliff & cargo-edit)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff,cargo-edit
+
+      - name: ⚙️ Build Artifact
+        run: cargo build
+
+      - name: 🧹 Lint Code
+        run: cargo clippy --all-targets || echo "Linting failed, but continuing"
+
+      - name: 🧼 Format Code
+        run: cargo fmt --all
+
+      - name: 🤖 AutoFix Code
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore: apply code fixes [skip ci]'
+
+      - name: 🏷️ Bump Version
+        id: bump_version
+        run: |
+          NEXT_VERSION=$(git-cliff --bumped-version)
+          CLEAN_VERSION=${NEXT_VERSION#v}
+          cargo set-version "$CLEAN_VERSION"
+          cargo check --quiet
+          git-cliff --tag "v$CLEAN_VERSION" --output CHANGELOG.md
+
+          DELIMITER="EOF_$(openssl rand -hex 8)"
+          echo "CHANGELOG_CONTENT<<$DELIMITER" >> "$GITHUB_ENV"
+          git-cliff --unreleased --strip header >> "$GITHUB_ENV"
+          echo "$DELIMITER" >> "$GITHUB_ENV"
+
+      - name: 🔀 Create or Update Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: 'ci(release): update version'
+          title: 'ci(release): update version'
+          body: ${{ env.CHANGELOG_CONTENT }}
+          branch: 'release/update-version'
+          base: 'develop'
+          delete-branch: true

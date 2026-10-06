@@ -1,0 +1,16 @@
+$kind: http-request
+name: Create Moderation
+url: '{{base_url}}/v1/moderations'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{moderation_model}}",
+      "input": "I want to hurt someone."
+    }
+examples: .resources/Create Moderation.resources/examples
+order: 5100

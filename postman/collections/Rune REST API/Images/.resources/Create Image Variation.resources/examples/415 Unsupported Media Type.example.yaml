@@ -1,0 +1,28 @@
+$kind: http-example
+name: 415 Unsupported Media Type
+request:
+  url: '{{base_url}}/v1/images/variations'
+  method: POST
+  body:
+    type: formdata
+    content:
+      - key: model
+        type: text
+        value: 'z-image'
+response:
+  statusCode: 415
+  statusText: Unsupported Media Type
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "Uploaded image file must be a valid PNG, JPEG, or WEBP image format under 4 MB.",
+          "type": "invalid_request_error",
+          "param": "image",
+          "code": "invalid_image_type"
+        }
+      }
+order: 3210

@@ -1,0 +1,28 @@
+$kind: http-request
+name: Detect Image Objects
+url: '{{base_url}}/v1/images/detections'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{detection_model}}",
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "prompt": "pink mug, person with sunglasses, car",
+      "categories": ["face", "jewellery", "car"],
+      "confidence_threshold": 0.25,
+      "iou_threshold": 0.45,
+      "features": [
+        "boxes",
+        "masks",
+        "keypoints",
+        "attributes"
+      ]
+    }
+examples: .resources/Detect Image Objects.resources/examples
+order: 3300

@@ -1,0 +1,27 @@
+$kind: http-request
+name: Speech-to-Speech Translation
+url: '{{base_url}}/v1/audio/speech-to-speech'
+method: POST
+headers:
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: formdata
+  content:
+    - key: file
+      type: file
+      src: ''
+    - key: model
+      type: text
+      value: '{{s2st_model}}'
+    - key: target_language
+      type: text
+      value: 'fra'
+    - key: source_language
+      type: text
+      value: 'auto'
+    - key: response_format
+      type: text
+      value: 'wav'
+examples: .resources/Speech-to-Speech Translation.resources/examples
+order: 4300

@@ -1,0 +1,25 @@
+$kind: http-example
+name: 422 Unprocessable Entity
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+response:
+  statusCode: 422
+  statusText: Unprocessable Entity
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "When 'strict' is set to true in response_format, 'schema.additionalProperties' must be explicitly set to false.",
+          "type": "invalid_request_error",
+          "param": "response_format.json_schema.schema.additionalProperties",
+          "code": "invalid_json_schema"
+        }
+      }
+order: 2310

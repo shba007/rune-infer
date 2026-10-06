@@ -1,0 +1,20 @@
+$kind: collection
+description: Comprehensive API collection for Rune Infer — an OpenAI-compatible standalone model server in Rust.
+variables:
+  base_url: http://127.0.0.1:8080
+  api_key: sk-rune-local-test-key
+  chat_model: ornith-1.5-9b
+  vision_model: ornith-1.5-9b
+  image_model: z-image
+  asr_model: audio8-asr-infinite
+  tts_model: voxcpm2
+  embedding_model: granite-embedding-311m-multilingual-r2
+  moderation_model: gliguard-LLMGuardrails-300M
+  detection_model: yolo-11x-detection
+  image_embedding_model: clip-vit-large-patch14
+  ocr_model: got-ocr-2.0
+  upscale_model: real-esrgan-x4plus
+  restoration_model: codeformer-v0.1
+  style_model: neural-style-v2
+  nlu_model: mmbert32k-intent-classifier-merged
+  s2st_model: seamless-m4t-v2-large

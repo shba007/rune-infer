@@ -1,0 +1,26 @@
+$kind: http-request
+name: Document OCR and OMR
+url: '{{base_url}}/v1/ocr'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{ocr_model}}",
+      "document": {
+        "type": "image_url",
+        "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+      },
+      "features": [
+        "text",
+        "selection_marks"
+      ],
+      "response_format": "json"
+    }
+examples: .resources/Document OCR and OMR.resources/examples
+order: 6000

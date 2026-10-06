@@ -1,0 +1,33 @@
+$kind: http-example
+name: 400 Bad Request (Invalid Size)
+request:
+  url: '{{base_url}}/v1/images/generations'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "z-image",
+        "prompt": "A serene mountain landscape",
+        "size": "1200x1200"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'1200x1200' is not one of ['256x256', '512x512', '1024x1024'] - 'size'",
+          "type": "invalid_request_error",
+          "param": "size",
+          "code": "invalid_parameter_value"
+        }
+      }
+order: 3010

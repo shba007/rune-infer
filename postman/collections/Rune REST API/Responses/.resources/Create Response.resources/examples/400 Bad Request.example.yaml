@@ -1,0 +1,31 @@
+$kind: http-example
+name: 400 Bad Request
+request:
+  url: '{{base_url}}/v1/responses'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "input": "Calculate the fibonacci of 8"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'model' is a required parameter when creating a response.",
+          "type": "invalid_request_error",
+          "param": "model",
+          "code": "missing_required_parameter"
+        }
+      }
+order: 5210

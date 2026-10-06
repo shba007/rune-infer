@@ -1,0 +1,35 @@
+$kind: http-example
+name: 400 Bad Request
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Accept
+      value: text/event-stream
+  body:
+    type: json
+    content: |-
+      {
+        "model": "qwen3.5-0.8b",
+        "messages": [],
+        "stream": true
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'messages' array cannot be empty.",
+          "type": "invalid_request_error",
+          "param": "messages",
+          "code": "empty_array"
+        }
+      }
+order: 2110

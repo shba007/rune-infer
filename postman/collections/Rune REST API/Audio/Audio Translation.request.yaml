@@ -1,0 +1,25 @@
+$kind: http-request
+url: "{{base_url}}/v1/audio/translations"
+method: POST
+body:
+  type: formdata
+  content:
+    - type: file
+      key: file
+      src:
+        - /D:/Projects/Public/rune/code-infer/static/artifacts/audios/output.mp3
+      disabled: false
+    - type: text
+      key: model
+      value: "{{asr_model}}"
+      disabled: false
+    - type: text
+      key: response_format
+      value: json
+      disabled: false
+    - type: text
+      key: temperature
+      value: "0.0"
+      disabled: false
+examples: .resources/Audio Translation.resources/examples
+order: 4200

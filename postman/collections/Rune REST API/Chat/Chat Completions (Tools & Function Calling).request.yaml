@@ -1,0 +1,45 @@
+$kind: http-request
+name: Chat Completions (Tools & Function Calling)
+url: '{{base_url}}/v1/chat/completions'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{chat_model}}",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What's the weather in Amsterdam right now in Celsius?"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_current_weather",
+            "description": "Get current weather condition for a location",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "location": {
+                  "type": "string",
+                  "description": "City and country, e.g. Amsterdam, Netherlands"
+                },
+                "unit": {
+                  "type": "string",
+                  "enum": ["celsius", "fahrenheit"]
+                }
+              },
+              "required": ["location"]
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto"
+    }
+examples: .resources/Chat Completions (Tools & Function Calling).resources/examples
+order: 2200

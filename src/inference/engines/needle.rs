@@ -119,12 +119,18 @@ impl InferenceEngine for NeedleEngine {
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw_output) {
                     if let Some(calls) = val.get("function_calls").filter(|c| c.is_array()) {
                         return Ok(InferenceOutput {
-                            response: InferenceTaskResponse::ToolCall(calls.clone()),
+                            response: InferenceTaskResponse::ToolCall {
+                                content: None,
+                                tool_calls: calls.clone(),
+                            },
                             usage: Usage::new(prompt_tokens, completion_tokens),
                         });
                     } else if val.is_array() || val.is_object() {
                         return Ok(InferenceOutput {
-                            response: InferenceTaskResponse::ToolCall(val),
+                            response: InferenceTaskResponse::ToolCall {
+                                content: None,
+                                tool_calls: val,
+                            },
                             usage: Usage::new(prompt_tokens, completion_tokens),
                         });
                     }

@@ -1,0 +1,25 @@
+$kind: http-example
+name: 503 Service Unavailable
+request:
+  url: '{{base_url}}/health'
+  method: GET
+  headers:
+    - key: Accept
+      value: application/json
+response:
+  statusCode: 503
+  statusText: Service Unavailable
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "Model execution runtime is currently unready or out of memory.",
+          "type": "server_error",
+          "param": null,
+          "code": "runtime_unhealthy"
+        }
+      }
+order: 1010

@@ -1,0 +1,31 @@
+$kind: http-example
+name: 400 Bad Request (Missing Prompt)
+request:
+  url: '{{base_url}}/v1/images/generations'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "z-image"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'prompt' is a required string field for image generation.",
+          "type": "invalid_request_error",
+          "param": "prompt",
+          "code": "missing_required_parameter"
+        }
+      }
+order: 3020

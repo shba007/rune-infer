@@ -44,6 +44,8 @@ All notable changes to this project will be documented in this file.
 
 - *(hooks)* Add commit-msg and pre-commit hooks for message verification and secret scanning
 
+- *(workflows)* Enhance CI/CD configurations for improved deployment and integration
+
 
 ### 🚜 Refactor
 

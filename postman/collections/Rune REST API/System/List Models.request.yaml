@@ -1,0 +1,9 @@
+$kind: http-request
+name: List Models
+url: '{{base_url}}/v1/models'
+method: GET
+headers:
+  - key: Accept
+    value: application/json
+examples: .resources/List Models.resources/examples
+order: 1100

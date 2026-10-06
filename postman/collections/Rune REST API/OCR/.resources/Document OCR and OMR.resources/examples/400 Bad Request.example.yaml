@@ -1,0 +1,33 @@
+$kind: http-example
+name: 400 Bad Request
+request:
+  url: '{{base_url}}/v1/ocr'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "got-ocr-2.0"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'document' is a required object containing a document/image source.",
+          "type": "invalid_request_error",
+          "param": "document",
+          "code": "missing_required_document"
+        }
+      }
+order: 6010

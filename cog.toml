@@ -1,0 +1,17 @@
+from_latest_tag = true
+ignore_merge_commits = true
+tag_prefix = "v"
+
+[commit_types]
+feat = { changelog_title = "🚀 Features" }
+fix = { changelog_title = "🐛 Bug Fixes" }
+perf = { changelog_title = "⚡ Performance" }
+refactor = { changelog_title = "🚜 Refactoring" }
+docs = { changelog_title = "📚 Documentation" }
+style = { changelog_title = "🎨 Style" }
+test = { changelog_title = "🧪 Testing" }
+ci = { changelog_title = "🤖 Continuous Integration", omit_from_changelog = true }
+chore = { changelog_title = "⚙️ Miscellaneous", omit_from_changelog = true }
+
+[git_hooks.commit-msg]
+script = "cog verify --file $1"

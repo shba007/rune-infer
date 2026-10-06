@@ -1,0 +1,7 @@
+$kind: http-request
+url: "{{base_url}}/v1/models/{{embedding_model}}"
+method: GET
+headers:
+  Accept: application/json
+examples: .resources/Retrieve Model.resources/examples
+order: 1200

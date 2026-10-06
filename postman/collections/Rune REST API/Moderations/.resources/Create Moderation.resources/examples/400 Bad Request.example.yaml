@@ -1,0 +1,32 @@
+$kind: http-example
+name: 400 Bad Request
+request:
+  url: '{{base_url}}/v1/moderations'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "omni-moderation-latest",
+        "input": ""
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'input' field cannot be an empty string.",
+          "type": "invalid_request_error",
+          "param": "input",
+          "code": "empty_input"
+        }
+      }
+order: 5110

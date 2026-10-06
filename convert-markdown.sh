@@ -45,6 +45,13 @@ EXTRA_IGNORES=(
     "smoke_test.json"
     "build.sh"
     "static"
+    "commands"
+    "registry"
+    "scripts"
+    "skills"
+    "tasks"
+    "lefthook.yml"
+    "CHANGELOG"
     # "package.json"
     # "Cargo.toml"
 )

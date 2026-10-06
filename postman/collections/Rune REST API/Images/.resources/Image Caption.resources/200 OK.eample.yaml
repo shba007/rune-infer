@@ -1,0 +1,39 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/images/captions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "ornith-1.5-9b",
+        "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "detail": "detailed"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "cap_01J9R4T8Q4M100",
+        "object": "image.caption",
+        "created": 1727827520,
+        "model": "ornith-1.5-9b",
+        "caption": "A single red pixel centered on a transparent canvas.",
+        "usage": {
+          "prompt_tokens": 85,
+          "completion_tokens": 12,
+          "total_tokens": 97
+        }
+      }
+order: 3360

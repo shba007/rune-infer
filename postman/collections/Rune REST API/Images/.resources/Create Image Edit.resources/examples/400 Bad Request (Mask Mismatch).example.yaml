@@ -1,0 +1,28 @@
+$kind: http-example
+name: 400 Bad Request (Mask Mismatch)
+request:
+  url: '{{base_url}}/v1/images/edits'
+  method: POST
+  body:
+    type: formdata
+    content:
+      - key: prompt
+        type: text
+        value: 'A sun shining warmly through the trees'
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "Uploaded mask dimensions must match the source image dimensions exactly.",
+          "type": "invalid_request_error",
+          "param": "mask",
+          "code": "mask_dimension_mismatch"
+        }
+      }
+order: 3110

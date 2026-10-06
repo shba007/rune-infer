@@ -126,7 +126,7 @@ impl ModelRegistry {
     pub fn format_tokens(tokens: u32) -> String {
         if tokens >= 1_000_000 {
             format!("{:.1}M tokens", tokens as f64 / 1_000_000.0)
-        } else if tokens >= 1024 && tokens % 1024 == 0 {
+        } else if tokens >= 1024 && tokens.is_multiple_of(1024) {
             format!("{}K tokens", tokens / 1024)
         } else if tokens >= 1000 {
             format!("{:.1}K tokens", tokens as f64 / 1000.0)
@@ -321,7 +321,7 @@ impl ModelRegistry {
                 .map(|m| m.len())
                 .unwrap_or(0);
 
-            let overhead = 1536 * 1024 * 1024; // Flash Attention + working buffer
+            let overhead = 1536 * 1024 * 1024;
             let total_est = model_vram + text_encoder_vram + vae_vram + overhead;
             let real_str =
                 if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
@@ -375,11 +375,23 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        // Structured logging and engine creation for Speech & Audio models (CrispASR)
+        // Native Audio ASR engine (audio.cpp for Audio8 Infinite models)
+        if model.architecture.eq_ignore_ascii_case("audio8")
+            || model.architecture.eq_ignore_ascii_case("audiocpp")
+            || model.id.to_lowercase().contains("audio8")
+        {
+            let engine = crate::inference::engines::audio::AudioEngine::new(model)?;
+            println!(
+                "[ModelRegistry] ✓ Successfully loaded Audio engine (audio.cpp): \"{}\"",
+                model.id
+            );
+            return Ok(Arc::new(engine));
+        }
+
+        // Speech & Audio models using CrispASR (Whisper / Voxtral)
         if model.modality == crate::config::Modality::SpeechToText
             || model.modality == crate::config::Modality::TextToSpeech
             || model.architecture.eq_ignore_ascii_case("crispasr")
-            || model.architecture.eq_ignore_ascii_case("audio8")
             || model.architecture.eq_ignore_ascii_case("voxtral4b")
         {
             let engine = crate::inference::engines::crispasr::CrispAsrEngine::new(model)?;
@@ -405,6 +417,33 @@ impl ModelRegistry {
                 "[ModelRegistry]   • Total VRAM:   Est: {} | {}",
                 Self::format_bytes(model_vram + 1024 * 1024 * 1024),
                 real_str
+            );
+            return Ok(Arc::new(engine));
+        }
+
+        // ModernBERT and Encoder-based models (Granite, GLiGuard, mmBERT, safetensors encoders)
+        let is_encoder_path = model.model_path.ends_with(".safetensors")
+            || model.model_path.ends_with(".bin")
+            || model.model_path.ends_with(".onnx");
+
+        let is_encoder_task = model.modality == crate::config::Modality::Embedding
+            || model.modality == crate::config::Modality::Moderation
+            || model.modality == crate::config::Modality::Nlu
+            || model.architecture.eq_ignore_ascii_case("modernbert")
+            || model.architecture.eq_ignore_ascii_case("encoder")
+            || model.id.contains("embedding")
+            || model.id.contains("granite")
+            || model.id.contains("guard")
+            || model.id.contains("intent")
+            || model.id.contains("mmbert");
+
+        if is_encoder_task
+            || (is_encoder_path && model.modality != crate::config::Modality::ImageGeneration)
+        {
+            let engine = crate::inference::engines::encoder::EncoderEngine::new(model)?;
+            println!(
+                "[ModelRegistry] ✓ Successfully loaded encoder engine: \"{}\" ({})",
+                model.id, model.name
             );
             return Ok(Arc::new(engine));
         }
