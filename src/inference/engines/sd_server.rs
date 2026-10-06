@@ -93,7 +93,7 @@ impl SdServerEngine {
             let lines_clone = last_stderr_lines.clone();
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     // Stream logs so you can see live progress and errors
                     eprintln!("[sd-server] {}", line);
                     let mut l = lines_clone.lock().unwrap();
@@ -227,7 +227,7 @@ impl SdServerEngine {
         let mut download_urls = Vec::new();
 
         if cfg!(target_os = "windows") {
-            let wants_cuda = host_cuda.map_or(false, |(major, _)| major >= 12);
+            let wants_cuda = host_cuda.is_some_and(|(major, _)| major >= 12);
             let cuda_asset = if wants_cuda || host_cuda.is_none() {
                 assets.iter().find(|a| {
                     let n = a["name"].as_str().unwrap_or("").to_lowercase();

@@ -1,0 +1,43 @@
+#!/usr/bin/env sh
+set -e
+
+# 1. Get the list of all staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR | sed 's| |\\ |g')
+
+# 2. Secret scanning with Gitleaks
+if command -v gitleaks >/dev/null 2>&1 && [ -n "$STAGED_FILES" ]; then
+  for file in $STAGED_FILES; do
+    [ -f "$file" ] && gitleaks detect --source="$file" --no-git --no-banner --verbose || true
+  done
+else
+  echo "⚠️ gitleaks not found; skipping secret scan"
+fi
+
+# 3. Filter staged Rust source files (.rs)
+STAGED_RS_FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.rs$' || true)
+
+# 4. Format staged Rust files using rustfmt
+if [ -n "$STAGED_RS_FILES" ]; then
+  for file in $STAGED_RS_FILES; do
+    if [ -f "$file" ]; then
+      rustfmt --edition 2024 "$file"
+    fi
+  done
+  git update-index --again
+fi
+
+# 5. Automatically repair machine-fixable lints and verify
+if [ -n "$STAGED_RS_FILES" ]; then
+  echo "🛠️ Attempting auto-fix for machine-applicable Clippy lints..."
+  cargo clippy --fix --allow-dirty --allow-staged --all-targets || true
+
+  # Re-format files modified by clippy fix and re-stage
+  cargo fmt --all || true
+  git update-index --again
+
+  echo "🔍 Verifying clean build with cargo clippy..."
+  cargo clippy --all-targets -- -D warnings || {
+    echo "❌ Clippy warnings/errors found. Fix them before committing."
+    exit 1
+  }
+fi

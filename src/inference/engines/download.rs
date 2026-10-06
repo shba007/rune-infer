@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-/// Creates a reusable HTTP client configured for engine binary downloads.
-/// Forces IPv4 to eliminate 40-60 second IPv6 resolution timeouts on Windows.
 pub fn create_download_client() -> Result<reqwest::blocking::Client, Box<dyn Error>> {
     let mut builder = reqwest::blocking::Client::builder()
         .user_agent("rune-infer/0.1.0 (Windows NT 10.0; Win64; x64)")
@@ -35,8 +33,6 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// Downloads a remote URL to a local destination with real-time progress logging.
-/// Explicitly flushes and closes the file handle so no locks remain on Windows.
 pub fn download_to_file(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -92,13 +88,11 @@ pub fn download_to_file(
             }
         }
         file.flush()?;
-    } // `file` handle is dropped here, releasing the Windows file lock
+    }
 
     Ok(())
 }
 
-/// Unified extraction mechanism supporting .zip, .tar.gz, and .tgz.
-/// Prefers `tar` if present, with fallbacks to PowerShell Expand-Archive (Windows) or unzip (Unix).
 pub fn extract_archive(
     archive_file: &Path,
     dest_dir: &Path,
@@ -168,7 +162,6 @@ pub fn extract_archive(
     Err(format!("Failed to extract archive: {}", archive_file.display()).into())
 }
 
-/// Downloads an archive to `dest_dir`, extracts it, and cleans up the temporary archive.
 pub fn download_and_extract(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -183,7 +176,6 @@ pub fn download_and_extract(
     Ok(())
 }
 
-/// Recursively searches for an executable inside a directory.
 pub fn find_executable_recursive(dir: &Path, name: &str) -> Option<PathBuf> {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -200,7 +192,6 @@ pub fn find_executable_recursive(dir: &Path, name: &str) -> Option<PathBuf> {
     None
 }
 
-/// On Windows, moves any DLL files located in immediate subdirectories up into `base_dir`.
 pub fn flatten_dlls(base_dir: &Path) {
     #[cfg(windows)]
     {
@@ -229,9 +220,9 @@ pub fn flatten_dlls(base_dir: &Path) {
             }
         }
     }
+    let _ = base_dir;
 }
 
-/// Marks a binary as executable on Unix systems (chmod 0755).
 pub fn make_executable(path: &Path) -> Result<(), Box<dyn Error>> {
     #[cfg(unix)]
     {
@@ -246,7 +237,6 @@ pub fn make_executable(path: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Detects the host's maximum CUDA version via `nvidia-smi`.
 pub fn detect_host_cuda_version() -> Option<(u32, u32)> {
     let output = Command::new("nvidia-smi").output().ok()?;
     if !output.status.success() {

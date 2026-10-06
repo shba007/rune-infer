@@ -103,8 +103,6 @@ fn sanitize_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
                 }
             }
 
-            // CRITICAL: Gemini requires every entry in `required` to exist in `properties`.
-            // Any required field not defined in `properties` triggers HTTP 400 "property is not defined".
             if let Some(req_val) = cleaned.get("required") {
                 if let Some(req_arr) = req_val.as_array() {
                     let known_properties = cleaned.get("properties").and_then(|p| p.as_object());
@@ -113,7 +111,7 @@ fn sanitize_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
                         let valid_required: Vec<serde_json::Value> = req_arr
                             .iter()
                             .filter(|item| {
-                                item.as_str().map_or(false, |name| props.contains_key(name))
+                                item.as_str().is_some_and(|name| props.contains_key(name))
                             })
                             .cloned()
                             .collect();

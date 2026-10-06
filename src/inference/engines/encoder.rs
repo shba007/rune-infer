@@ -14,17 +14,14 @@ use crate::types::{
 use base64::Engine;
 use sha2::{Digest, Sha256};
 use std::error::Error;
-use std::path::PathBuf;
 
 pub struct EncoderEngine {
     id: String,
-    model_name: String,
-    model_path: PathBuf,
 }
 
 impl EncoderEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
-        let path = PathBuf::from(&model.model_path);
+        let path = std::path::Path::new(&model.model_path);
         println!(
             "[EncoderEngine] Initialized in-process modernbert/encoder runtime for '{}' using '{}'",
             model.id,
@@ -32,8 +29,6 @@ impl EncoderEngine {
         );
         Ok(Self {
             id: model.id.clone(),
-            model_name: model.name.clone(),
-            model_path: path,
         })
     }
 

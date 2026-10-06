@@ -401,7 +401,7 @@ pub fn decode_media(
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(b64_data.trim())
                 .map_err(|e| ErrorResponse {
-                    error: ApiError::new(&format!("Invalid base64 video payload: {e}"))
+                    error: ApiError::new(format!("Invalid base64 video payload: {e}"))
                         .with_type("invalid_request_error")
                         .with_code("invalid_video"),
                 })?;
@@ -413,11 +413,11 @@ pub fn decode_media(
                 .as_nanos();
             let temp_video = temp_dir.join(format!("rune_tmp_{}_{}.mp4", std::process::id(), now));
             std::fs::write(&temp_video, &bytes).map_err(|e| ErrorResponse {
-                error: ApiError::new(&format!("Failed to write temporary video: {e}")),
+                error: ApiError::new(format!("Failed to write temporary video: {e}")),
             })?;
 
             let frames = extract_video_frames(&temp_video, max_dims).map_err(|e| ErrorResponse {
-                error: ApiError::new(&format!("Video processing error: {e}"))
+                error: ApiError::new(format!("Video processing error: {e}"))
                     .with_type("video_processing_error")
                     .with_code("ffmpeg_error"),
             });
@@ -427,13 +427,13 @@ pub fn decode_media(
             let path = Path::new(url);
             if !path.exists() {
                 return Err(ErrorResponse {
-                    error: ApiError::new(&format!("Video file not found at '{}'", url))
+                    error: ApiError::new(format!("Video file not found at '{}'", url))
                         .with_type("invalid_request_error")
                         .with_code("file_not_found"),
                 });
             }
             extract_video_frames(path, max_dims).map_err(|e| ErrorResponse {
-                error: ApiError::new(&format!("Video processing error: {e}"))
+                error: ApiError::new(format!("Video processing error: {e}"))
                     .with_type("video_processing_error")
                     .with_code("ffmpeg_error"),
             })
@@ -483,7 +483,7 @@ pub fn decode_media(
                 Ok(vec![processed])
             }
             Err(e) => Err(ErrorResponse {
-                error: ApiError::new(&format!("Could not read file '{}': {e}", url))
+                error: ApiError::new(format!("Could not read file '{}': {e}", url))
                     .with_type("invalid_request_error")
                     .with_code("invalid_image"),
             }),

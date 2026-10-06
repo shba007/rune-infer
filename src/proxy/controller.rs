@@ -6,6 +6,7 @@ use tokio::sync::{Mutex, Semaphore, SemaphorePermit};
 use crate::config::RateLimitConfig;
 use crate::types::ApiError;
 
+#[derive(Debug)]
 pub struct PermitGuard<'a> {
     _permit: SemaphorePermit<'a>,
 }

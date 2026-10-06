@@ -13,13 +13,6 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-struct ScratchDirGuard(PathBuf);
-impl Drop for ScratchDirGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeFlavor {
     Upstream,
@@ -129,7 +122,7 @@ impl LlamaServerEngine {
             let lines_clone = last_stderr_lines.clone();
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     let mut l = lines_clone.lock().unwrap();
                     if l.len() >= 30 {
                         l.remove(0);
@@ -203,7 +196,7 @@ impl LlamaServerEngine {
                 {
                     let cuda_dll = base_dir.join("ggml-cuda.dll");
                     if cuda_dll.exists() {
-                        std::fs::read_dir(&base_dir).map_or(false, |entries| {
+                        std::fs::read_dir(&base_dir).is_ok_and(|entries| {
                             entries.flatten().any(|e| {
                                 let name = e.file_name().to_string_lossy().to_lowercase();
                                 name.starts_with("cudart64_") && name.ends_with(".dll")
@@ -374,7 +367,7 @@ impl LlamaServerEngine {
             releases_arr
                 .iter()
                 .find(|rel| {
-                    rel["assets"].as_array().map_or(false, |assets| {
+                    rel["assets"].as_array().is_some_and(|assets| {
                         assets
                             .iter()
                             .any(|a| a["name"].as_str().unwrap_or("").contains("bin-"))
@@ -431,7 +424,7 @@ impl LlamaServerEngine {
                 }
             }
 
-            candidates.sort_by(|a, b| b.parsed_ver.cmp(&a.parsed_ver));
+            candidates.sort_by_key(|a| std::cmp::Reverse(a.parsed_ver));
 
             let selected = if let Some(max_cuda) = host_cuda {
                 println!(
@@ -458,23 +451,21 @@ impl LlamaServerEngine {
                 if let (Some(cname), Some(curl)) = (c.cudart_name, c.cudart_url) {
                     download_urls.push((cname.to_string(), curl.to_string()));
                 }
-            } else {
-                if let Some(asset) = assets.iter().find(|a| {
-                    let name = a["name"].as_str().unwrap_or("");
-                    download::matches_arch(name)
-                        && (name.contains("bin-win-vulkan")
-                            || name.contains("bin-win-avx2")
-                            || name.contains("bin-win-cpu"))
-                }) {
-                    println!(
-                        "[LlamaServerEngine] Selected Windows CPU/Vulkan build: {}",
-                        asset["name"].as_str().unwrap_or("")
-                    );
-                    download_urls.push((
-                        asset["name"].as_str().unwrap().to_string(),
-                        asset["browser_download_url"].as_str().unwrap().to_string(),
-                    ));
-                }
+            } else if let Some(asset) = assets.iter().find(|a| {
+                let name = a["name"].as_str().unwrap_or("");
+                download::matches_arch(name)
+                    && (name.contains("bin-win-vulkan")
+                        || name.contains("bin-win-avx2")
+                        || name.contains("bin-win-cpu"))
+            }) {
+                println!(
+                    "[LlamaServerEngine] Selected Windows CPU/Vulkan build: {}",
+                    asset["name"].as_str().unwrap_or("")
+                );
+                download_urls.push((
+                    asset["name"].as_str().unwrap().to_string(),
+                    asset["browser_download_url"].as_str().unwrap().to_string(),
+                ));
             }
         } else if cfg!(target_os = "macos") {
             let arch_label = if cfg!(target_arch = "aarch64") {
@@ -706,27 +697,28 @@ impl LlamaServerEngine {
             cleaned = &raw[think_end + "</think>".len()..];
         }
 
-        if let (Some(first_b), Some(last_b)) = (cleaned.find('['), cleaned.rfind(']')) {
-            if first_b < last_b {
-                if let Ok(val) =
-                    serde_json::from_str::<serde_json::Value>(&cleaned[first_b..=last_b])
-                {
-                    if val.is_array() {
-                        return Some((None, val));
-                    }
-                }
-            }
+        if let Some(val) = cleaned
+            .find('[')
+            .zip(cleaned.rfind(']'))
+            .filter(|&(start, end)| start < end)
+            .and_then(|(start, end)| {
+                serde_json::from_str::<serde_json::Value>(&cleaned[start..=end]).ok()
+            })
+            .filter(|v| v.is_array())
+        {
+            return Some((None, val));
         }
-        if let (Some(first_b), Some(last_b)) = (cleaned.find('{'), cleaned.rfind('}')) {
-            if first_b < last_b {
-                if let Ok(val) =
-                    serde_json::from_str::<serde_json::Value>(&cleaned[first_b..=last_b])
-                {
-                    if val.is_object() {
-                        return Some((None, serde_json::Value::Array(vec![val])));
-                    }
-                }
-            }
+
+        if let Some(val) = cleaned
+            .find('{')
+            .zip(cleaned.rfind('}'))
+            .filter(|&(start, end)| start < end)
+            .and_then(|(start, end)| {
+                serde_json::from_str::<serde_json::Value>(&cleaned[start..=end]).ok()
+            })
+            .filter(|v| v.is_object())
+        {
+            return Some((None, serde_json::Value::Array(vec![val])));
         }
 
         None
@@ -854,13 +846,10 @@ impl InferenceEngine for LlamaServerEngine {
                     }
                 }
 
-                // =============================================================
-                // FIX: Differentiate between Tool Array and Structured Schema
-                // =============================================================
                 let is_tools_array =
-                    schema.is_array() && !schema.as_array().map_or(true, |a| a.is_empty());
+                    schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty());
                 let is_schema_object =
-                    schema.is_object() && !schema.as_object().map_or(true, |o| o.is_empty());
+                    schema.is_object() && !schema.as_object().is_none_or(|o| o.is_empty());
 
                 let mut body = serde_json::json!({
                     "messages": server_messages,
@@ -1133,7 +1122,6 @@ impl InferenceEngine for LlamaServerEngine {
                     });
                 }
 
-                // Only extract tool calls if actual tools were passed into the task
                 if is_tools_array {
                     if let Some((clean_content, parsed_tools)) =
                         Self::extract_tool_calls(&full_output)

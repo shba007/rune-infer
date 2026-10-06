@@ -84,7 +84,7 @@ impl CrispAsrEngine {
             let lines_clone = last_stderr_lines.clone();
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     eprintln!("[crispasr] {}", line);
                     let mut l = lines_clone.lock().unwrap();
                     if l.len() >= 30 {

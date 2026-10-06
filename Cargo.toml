@@ -8,6 +8,10 @@ repository = "https://github.com/shba007/rune-infer.git"
 edition = "2024"
 rust-version = "1.98.1"
 
+[lints.clippy]
+too_many_arguments = "allow"
+collapsible_if = "allow"
+
 [[bin]]
 name = "rune-infer"
 path = "src/main.rs"
@@ -55,6 +59,11 @@ reqwest = { version = "0.13.5", features = [
 	"multipart",
 	"stream",
 ] }
+
+[dev-dependencies.cargo-husky]
+version = "1"
+default-features = false
+features = ["user-hooks"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

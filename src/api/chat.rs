@@ -50,7 +50,6 @@ pub fn chat_completion_response(
     created: u64,
     usage: Usage,
 ) -> ChatCompletionResponse {
-    // Separate <think>...</think> from the actual message content
     let (reasoning_content, content) = match raw_content {
         Some(text) => {
             if let Some(start) = text.find("<think>") {
@@ -317,33 +316,22 @@ pub async fn chat_completions_handler(
         }
     };
 
-    // =========================================================================
-    // Decoupled Dispatcher Branch: Remote Provider Proxy vs Local Execution
-    // =========================================================================
     if !model_config.is_local() {
         return state.proxy.execute_chat(&model_config, &request).await;
     }
 
-    // =========================================================================
-    // Local Model Execution Hub (Unchanged)
-    // =========================================================================
     let mut has_video = false;
     let mut has_media = false;
 
     for msg in &request.messages {
         let (_, media) = msg.split_text_and_media();
-        if !media.is_empty() {
-            has_media = true;
-        }
-        if media.iter().any(|m| matches!(m, MediaItem::Video(_))) {
-            has_video = true;
-        }
+        has_media |= !media.is_empty();
+        has_video |= media.iter().any(|m| matches!(m, MediaItem::Video(_)));
     }
 
-    if has_media
-        && !model_config.vision
-        && model_config.modality != crate::config::Modality::VisionText
-    {
+    let supports_vision =
+        model_config.vision || model_config.modality == crate::config::Modality::VisionText;
+    if has_media && !supports_vision {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -364,28 +352,27 @@ pub async fn chat_completions_handler(
     };
 
     if let Some(ref rf) = request.response_format {
-        if rf.r#type == "json_schema" {
-            if let Some(ref js) = rf.json_schema {
-                if js.strict.unwrap_or(false) {
-                    if let Some(ref schema) = js.schema {
-                        let add_props = schema.get("additionalProperties");
-                        if add_props != Some(&serde_json::Value::Bool(false)) {
-                            return (
-                                StatusCode::UNPROCESSABLE_ENTITY,
-                                Json(ErrorResponse {
-                                    error: ApiError::new(
-                                        "When 'strict' is set to true in response_format, 'schema.additionalProperties' must be explicitly set to false.",
-                                    )
-                                    .with_type("invalid_request_error")
-                                    .with_param("response_format.json_schema.schema.additionalProperties")
-                                    .with_code("invalid_json_schema"),
-                                }),
-                            )
-                                .into_response();
-                        }
-                    }
-                }
-            }
+        let invalid_strict_schema = rf.r#type == "json_schema"
+            && rf.json_schema.as_ref().is_some_and(|js| {
+                js.strict.unwrap_or(false)
+                    && js.schema.as_ref().is_some_and(|schema| {
+                        schema.get("additionalProperties") != Some(&serde_json::Value::Bool(false))
+                    })
+            });
+
+        if invalid_strict_schema {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ErrorResponse {
+                    error: ApiError::new(
+                        "When 'strict' is set to true in response_format, 'schema.additionalProperties' must be explicitly set to false.",
+                    )
+                    .with_type("invalid_request_error")
+                    .with_param("response_format.json_schema.schema.additionalProperties")
+                    .with_code("invalid_json_schema"),
+                }),
+            )
+                .into_response();
         }
     }
 
@@ -414,7 +401,7 @@ pub async fn chat_completions_handler(
                 return (
                     StatusCode::NOT_FOUND,
                     Json(ErrorResponse {
-                        error: ApiError::new(&format!(
+                        error: ApiError::new(format!(
                             "Model '{}' not found or failed to load: {err}",
                             request.model
                         ))
@@ -428,7 +415,7 @@ pub async fn chat_completions_handler(
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: ApiError::new(&format!("Thread execution error: {join_err}")),
+                        error: ApiError::new(format!("Thread execution error: {join_err}")),
                     }),
                 )
                     .into_response();
@@ -551,9 +538,9 @@ pub async fn chat_completions_handler(
                             Ok(frames) => {
                                 let (w, h) =
                                     frames.first().map(|f| (f.1, f.2)).unwrap_or((768, 768));
-                                let patch_w = (w + 27) / 28;
-                                let patch_h = (h + 27) / 28;
-                                let tubelet_slices = ((frames.len() + 1) / 2) as u32;
+                                let patch_w = w.div_ceil(28);
+                                let patch_h = h.div_ceil(28);
+                                let tubelet_slices = frames.len().div_ceil(2) as u32;
                                 total_media_tokens = total_media_tokens
                                     .saturating_add((tubelet_slices * patch_w * patch_h) + 32);
 
@@ -587,11 +574,10 @@ pub async fn chat_completions_handler(
                         match decode_media(url, max_dims) {
                             Ok(frames) => {
                                 for (frame_bytes, w, h) in frames {
-                                    let patch_w = (w + 27) / 28;
-                                    let patch_h = (h + 27) / 28;
+                                    let patch_w = w.div_ceil(28);
+                                    let patch_h = h.div_ceil(28);
                                     total_media_tokens =
                                         total_media_tokens.saturating_add((patch_w * patch_h) + 32);
-
                                     images.push(frame_bytes);
                                     media_blocks.push_str(&format!(
                                         "\nPicture {image_count}:\n<__media__>\n"
@@ -706,7 +692,6 @@ pub async fn chat_completions_handler(
             let mut on_token = move |piece: &str| -> bool {
                 completion_tokens += 1;
 
-                // 1. Detect start of thinking
                 if piece.contains("<think>") {
                     is_thinking = true;
                     let clean = piece
@@ -739,7 +724,6 @@ pub async fn chat_completions_handler(
                     return true;
                 }
 
-                // 2. Detect end of thinking
                 if piece.contains("</think>") {
                     is_thinking = false;
                     let clean = piece.replace("</think>", "").trim_matches('\n').to_string();
@@ -769,7 +753,6 @@ pub async fn chat_completions_handler(
                     return true;
                 }
 
-                // 3. During thinking: deliver strictly to reasoning_content
                 if is_thinking {
                     let chunk = make_chunk(
                         &format!("chatcmpl-{created}"),
@@ -796,13 +779,11 @@ pub async fn chat_completions_handler(
                         .is_ok();
                 }
 
-                // 4. Outside thinking: ignore raw tool call syntax if tool buffering
                 if piece.contains("<tool_call>") || tool_call_buffering {
                     tool_call_buffering = true;
                     return true;
                 }
 
-                // 5. Final answer generation: deliver strictly to content
                 has_streamed_clone.store(true, std::sync::atomic::Ordering::Relaxed);
                 let chunk = make_chunk(
                     &format!("chatcmpl-{created}"),
@@ -833,7 +814,6 @@ pub async fn chat_completions_handler(
                         tool_calls,
                     } => {
                         if let Some(parsed_calls) = convert_to_tool_calls(&tool_calls, created) {
-                            // Only emit text_chunk if content was NOT already streamed chunk-by-chunk by on_token
                             if !has_streamed_content.load(std::sync::atomic::Ordering::Relaxed) {
                                 if let Some(ref text) = content {
                                     if !text.is_empty() {

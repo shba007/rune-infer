@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
-use tracing_subscriber;
 
 use rune_infer::api::{AppState, create_router};
 use rune_infer::config::ModelRegistry;

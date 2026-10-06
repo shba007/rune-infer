@@ -48,7 +48,7 @@ pub fn resolve_image_dimensions(
     if let Some(d) = default_res {
         let clean = d.split('(').next().unwrap_or(d).trim();
         if clean.contains('x') || clean.contains('×') || clean.contains('*') {
-            return clean.replace('×', "x").replace('*', "x");
+            return clean.replace(['×', '*'], "x");
         }
     }
 
@@ -403,7 +403,7 @@ pub async fn image_edit_handler(
         }
     }
 
-    if prompt.as_ref().map_or(true, |p| p.trim().is_empty()) {
+    if prompt.as_ref().is_none_or(|p| p.trim().is_empty()) {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -416,26 +416,27 @@ pub async fn image_edit_handler(
             .into_response();
     }
 
-    if !image_bytes.is_empty() && !mask_bytes.is_empty() {
-        if let (Ok(img), Ok(mask)) = (
-            image::load_from_memory(&image_bytes),
-            image::load_from_memory(&mask_bytes),
-        ) {
-            if (img.width(), img.height()) != (mask.width(), mask.height()) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse {
-                        error: ApiError::new(
-                            "Uploaded mask dimensions must match the source image dimensions exactly.",
-                        )
-                        .with_type("invalid_request_error")
-                        .with_param("mask")
-                        .with_code("mask_dimension_mismatch"),
-                    }),
+    let mask_mismatch = match (
+        image::load_from_memory(&image_bytes),
+        image::load_from_memory(&mask_bytes),
+    ) {
+        (Ok(img), Ok(mask)) => (img.width(), img.height()) != (mask.width(), mask.height()),
+        _ => false,
+    };
+
+    if mask_mismatch {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new(
+                    "Uploaded mask dimensions must match the source image dimensions exactly.",
                 )
-                    .into_response();
-            }
-        }
+                .with_type("invalid_request_error")
+                .with_param("mask")
+                .with_code("mask_dimension_mismatch"),
+            }),
+        )
+            .into_response();
     }
 
     let model_id = match state

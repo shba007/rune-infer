@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -e
+
+# Verify commit message with cocogitto (cog)
+if command -v cog >/dev/null 2>&1; then
+  cog verify --file "$1"
+else
+  echo "⚠️ 'cog' (cocogitto) not found."
+  echo "💡 Install cocogitto via: cargo install cocogitto"
+fi

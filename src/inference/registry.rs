@@ -126,7 +126,7 @@ impl ModelRegistry {
     pub fn format_tokens(tokens: u32) -> String {
         if tokens >= 1_000_000 {
             format!("{:.1}M tokens", tokens as f64 / 1_000_000.0)
-        } else if tokens >= 1024 && tokens % 1024 == 0 {
+        } else if tokens >= 1024 && tokens.is_multiple_of(1024) {
             format!("{}K tokens", tokens / 1024)
         } else if tokens >= 1000 {
             format!("{:.1}K tokens", tokens as f64 / 1000.0)

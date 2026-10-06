@@ -287,6 +287,12 @@ pub struct SseResponse {
     pub choices: Vec<Choice>,
 }
 
+impl Default for SseResponse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SseResponse {
     pub fn new() -> Self {
         Self {
@@ -441,6 +447,12 @@ pub struct HealthResponse {
     pub backend: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loaded_models: Option<Vec<String>>,
+}
+
+impl Default for HealthResponse {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HealthResponse {

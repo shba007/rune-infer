@@ -197,6 +197,12 @@ pub struct ModelRegistry {
     pub models: Vec<ModelConfig>,
 }
 
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelRegistry {
     pub fn new() -> Self {
         Self {
@@ -485,14 +491,10 @@ impl ModelConfig {
     }
 
     pub fn has_mtp(&self) -> bool {
-        if self
-            .mtp_path
-            .as_ref()
-            .map_or(false, |p| !p.trim().is_empty())
-        {
+        if self.mtp_path.as_ref().is_some_and(|p| !p.trim().is_empty()) {
             return true;
         }
-        self.mtp_heads().map_or(false, |h| h > 0)
+        self.mtp_heads().is_some_and(|h| h > 0)
     }
 
     pub fn resolved_capabilities(&self) -> Vec<String> {
