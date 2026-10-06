@@ -1,0 +1,101 @@
+name: Rust CD
+run-name: ${{ github.ref_name }}
+
+permissions:
+  contents: write
+  packages: write
+
+on:
+  release:
+    types:
+      - published
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  REPO: ${{ github.repository }}
+  VERSION: ${{ github.ref_name }}
+  BIN_NAME: rune-infer
+
+jobs:
+  build-cli:
+    name: Build Artifact (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            name: macos-arm64
+            target: aarch64-apple-darwin
+            archive_suffix: macos-arm64.tar.gz
+            ext: ''
+
+          - platform: 'macos-13'
+            name: macos-x64
+            target: x86_64-apple-darwin
+            archive_suffix: macos-x64.tar.gz
+            ext: ''
+
+          - platform: 'ubuntu-latest'
+            name: linux-x64
+            target: x86_64-unknown-linux-gnu
+            archive_suffix: linux-x64.tar.gz
+            ext: ''
+
+          - platform: 'windows-latest'
+            name: windows-x64
+            target: x86_64-pc-windows-msvc
+            archive_suffix: windows-x64.zip
+            ext: '.exe'
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: 📥 Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🦀 Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: ⚡ Cache Cargo Target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: ⚙️ Build Artifact
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin ${{ env.BIN_NAME }}
+
+      - name: 📦 Package Binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          tar -czf "dist/${{ env.BIN_NAME }}_${{ env.VERSION }}_${{ matrix.archive_suffix }}" \
+            -C "target/${{ matrix.target }}/release" "${{ env.BIN_NAME }}"
+          cd dist
+          sha256sum "${{ env.BIN_NAME }}_${{ env.VERSION }}_${{ matrix.archive_suffix }}" > "${{ env.BIN_NAME }}_${{ env.VERSION }}_${{ matrix.archive_suffix }}.sha256"
+
+      - name: 📦 Package Binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ env.BIN_NAME }}.exe" `
+            -DestinationPath "dist/${{ env.BIN_NAME }}_${{ env.VERSION }}_${{ matrix.archive_suffix }}"
+          cd dist
+          $hash = (Get-FileHash "${{ env.BIN_NAME }}_${{ env.VERSION }}_${{ matrix.archive_suffix }}" -Algorithm SHA256).Hash.ToLower()
+          "$hash  ${{ env.BIN_NAME }}_${{ env.VERSION }}_${{ matrix.archive_suffix }}" | Out-File -Encoding ascii "${{ env.BIN_NAME }}_${{ env.VERSION }}_${{ matrix.archive_suffix }}.sha256"
+
+      - name: ⚙️ Upload Artifact
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/*
+          file_glob: true
+          tag: ${{ env.VERSION }}
+          overwrite: true

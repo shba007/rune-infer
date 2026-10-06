@@ -468,6 +468,34 @@
       }
     },
     {
+      "id": "space-bunny-alpha",
+      "name": "Space Bunny Alpha (Stealth)",
+      "provider": "openrouter",
+      "modality": "VisionText",
+      "vision": true,
+      "upstream_model": "stealth/space-bunny-alpha",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "{{OPENROUTER_API_KEY}}",
+      "description": "Stealth Space Bunny Alpha anonymous 1M-token multimodal reasoning model",
+      "max_context_length": 1000000,
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning"
+      ],
+      "rate_limit": {
+        "requests_per_minute": 20,
+        "max_concurrent": 2,
+        "queue_timeout_seconds": 60,
+        "max_retries": 5,
+        "retry_delay_ms": 1500,
+        "retry_timeout_seconds": 45
+      }
+    },
+    {
       "id": "z-image",
       "name": "Z-Image 6B",
       "modality": "ImageGeneration",

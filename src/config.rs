@@ -246,6 +246,14 @@ impl ModelRegistry {
                     self.models
                         .iter()
                         .find(|m| m.provider == ProviderType::Google)
+                } else if lower.contains("space-bunny")
+                    || lower.contains("bunny")
+                    || lower.contains("stealth")
+                {
+                    self.models.iter().find(|m| {
+                        m.id.contains("space-bunny")
+                            || m.name.to_lowercase().contains("space bunny")
+                    })
                 } else if lower.contains("dots") {
                     self.models
                         .iter()
