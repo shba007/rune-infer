@@ -19,28 +19,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 🛠️ Install git-cliff
+      - name: 🛠️ Install Tooling (git-cliff)
         uses: taiki-e/install-action@v2
         with:
           tool: git-cliff
 
-      - name: 📝 Tag & Create GitHub Release
+      - name: 📝 Create Release Note
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(grep -m1 '^version =' Cargo.toml | cut -d '"' -f2)
           TAG="v$VERSION"
-
-          # Configure Git & push release tag
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-
-          # Extract release notes for the current release tag
           git-cliff --current --strip header > RELEASE_NOTES.md
 
-          # Create GitHub Release
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file RELEASE_NOTES.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
