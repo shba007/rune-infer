@@ -7,7 +7,7 @@ body:
     - type: file
       key: file
       src:
-        - /D:/Projects/Public/rune/code-infer/static/artifacts/audios/audio_3.wav
+        - /D:/Projects/Public/rune/code-infer/static/artifacts/audios/sample-1-original-bengali-converted.wav
       disabled: false
     - type: text
       key: model
@@ -15,7 +15,7 @@ body:
       disabled: false
     - type: text
       key: language
-      value: en
+      value: bn
       disabled: false
     - type: text
       key: response_format

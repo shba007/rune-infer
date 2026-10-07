@@ -176,7 +176,7 @@ impl ProcessGuard {
     pub fn new(child: Child, label: impl Into<String>) -> Arc<Mutex<Self>> {
         let label = label.into();
         attach_to_supervisor(&child);
-        println!(
+        tracing::info!(
             "[Supervisor] Registered managed process '{}' (PID: {})",
             label,
             child.id()
@@ -196,9 +196,10 @@ impl ProcessGuard {
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
         let pid = self.child.id();
-        println!(
+        tracing::warn!(
             "[Supervisor] Shutting down {} (PID: {})...",
-            self.label, pid
+            self.label,
+            pid
         );
         let _ = self.child.kill();
         let _ = self.child.wait();

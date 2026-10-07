@@ -97,6 +97,10 @@ pub async fn audio_transcriptions_handler(
             m.modality == crate::config::Modality::SpeechToText
                 || m.architecture.eq_ignore_ascii_case("crispasr")
                 || m.architecture.eq_ignore_ascii_case("audio8")
+                || m.architecture.eq_ignore_ascii_case("parakeet")
+                || m.architecture.eq_ignore_ascii_case("nemo-speech")
+                || m.architecture.eq_ignore_ascii_case("fastconformer")
+                || m.architecture.eq_ignore_ascii_case("fastconformer-tdt")
         }) {
             Some(m) => m.id.clone(),
             None => {
@@ -120,6 +124,12 @@ pub async fn audio_transcriptions_handler(
         match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
+                tracing::error!(
+                    target: "audit",
+                    model = %target_model,
+                    error = %err,
+                    "Failed to load audio transcription engine"
+                );
                 return (
                     StatusCode::NOT_FOUND,
                     Json(ErrorResponse {
@@ -130,6 +140,12 @@ pub async fn audio_transcriptions_handler(
                     .into_response();
             }
             Err(e) => {
+                tracing::error!(
+                    target: "audit",
+                    model = %target_model,
+                    error = %e,
+                    "Join error when retrieving audio transcription engine"
+                );
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
@@ -274,6 +290,10 @@ pub async fn audio_translations_handler(
             m.modality == crate::config::Modality::SpeechToText
                 || m.architecture.eq_ignore_ascii_case("crispasr")
                 || m.architecture.eq_ignore_ascii_case("audio8")
+                || m.architecture.eq_ignore_ascii_case("parakeet")
+                || m.architecture.eq_ignore_ascii_case("nemo-speech")
+                || m.architecture.eq_ignore_ascii_case("fastconformer")
+                || m.architecture.eq_ignore_ascii_case("fastconformer-tdt")
         }) {
             Some(m) => m.id.clone(),
             None => "whisper-large-v3-turbo".to_string(),
@@ -286,6 +306,12 @@ pub async fn audio_translations_handler(
         match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
+                tracing::error!(
+                    target: "audit",
+                    model = %target_model,
+                    error = %err,
+                    "Failed to load audio translation engine"
+                );
                 return (
                     StatusCode::NOT_FOUND,
                     Json(ErrorResponse {
@@ -298,6 +324,12 @@ pub async fn audio_translations_handler(
                     .into_response();
             }
             Err(e) => {
+                tracing::error!(
+                    target: "audit",
+                    model = %target_model,
+                    error = %e,
+                    "Join error when retrieving audio translation engine"
+                );
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {

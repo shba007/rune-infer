@@ -398,6 +398,12 @@ pub async fn chat_completions_handler(
         match tokio::task::spawn_blocking(move || inference.get_engine(&model_target)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
+                tracing::error!(
+                    target: "audit",
+                    model = %request.model,
+                    error = %err,
+                    "Failed to load model runtime engine"
+                );
                 return (
                     StatusCode::NOT_FOUND,
                     Json(ErrorResponse {
@@ -412,6 +418,11 @@ pub async fn chat_completions_handler(
                     .into_response();
             }
             Err(join_err) => {
+                tracing::error!(
+                    target: "audit",
+                    error = %join_err,
+                    "Task thread execution error during model retrieval"
+                );
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {

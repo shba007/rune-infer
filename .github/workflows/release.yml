@@ -26,7 +26,7 @@ jobs:
 
       - name: 📝 Create Release Note
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN}}
         run: |
           VERSION=$(grep -m1 '^version =' Cargo.toml | cut -d '"' -f2)
           TAG="v$VERSION"

@@ -33,7 +33,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 async-stream = "0.3"
 axum = { version = "0.8", features = ["macros", "http2", "multipart"] }
 tower = "0.5"
-tower-http = { version = "0.7", features = ["cors"] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
 notify = "8.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"

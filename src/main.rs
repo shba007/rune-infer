@@ -1,12 +1,15 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rune_infer::api::{AppState, create_router};
 use rune_infer::config::ModelRegistry;
 use rune_infer::inference::AppState as InferenceAppState;
 use rune_infer::proxy::ProxyService;
+
+use tracing_subscriber::filter::{EnvFilter, filter_fn};
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
 
 #[derive(Parser, Debug)]
 #[command(name = "rune-infer")]
@@ -30,60 +33,37 @@ struct Args {
     idle_timeout: u64,
 }
 
-#[derive(Clone)]
-struct LogWriter {
-    file: Arc<Mutex<std::fs::File>>,
-}
-
-impl Write for LogWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let _ = std::io::stdout().write(buf);
-        if let Ok(mut f) = self.file.lock() {
-            let _ = f.write_all(buf);
-        }
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        let _ = std::io::stdout().flush();
-        if let Ok(mut f) = self.file.lock() {
-            let _ = f.flush();
-        }
-        Ok(())
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogWriter {
-    type Writer = LogWriter;
-    fn make_writer(&'a self) -> Self::Writer {
-        self.clone()
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-
     let env_result = dotenvy::dotenv();
 
     std::fs::create_dir_all("logs").context("Failed to create 'logs' directory")?;
-    let log_file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("logs/rune-infer.log")
-        .context("Failed to open 'logs/rune-infer.log'")?;
+    let file_appender = tracing_appender::rolling::never("logs", "rune-infer.log");
 
-    let log_writer = LogWriter {
-        file: Arc::new(Mutex::new(log_file)),
-    };
-
-    tracing_subscriber::fmt()
-        .with_writer(log_writer)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("rune_infer=info".parse().unwrap())
-                .add_directive("audit=info".parse().unwrap()),
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new(
+            "rune_infer=info,audit=info,llama_server=info,nemo_speech=info,tower_http=info",
         )
+    });
+
+    // Layer 1: Clean persistent file logging (records everything, including child process outputs)
+    let file_layer = fmt::layer()
+        .with_writer(file_appender)
+        .with_ansi(false)
+        .with_target(true);
+
+    // Layer 2: Colored terminal console logging (filters out verbose llama_server logs)
+    let console_filter = filter_fn(|meta| meta.target() != "llama_server");
+    let stdout_layer = fmt::layer()
+        .with_writer(std::io::stdout)
+        .with_ansi(true)
+        .with_filter(console_filter);
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(file_layer)
+        .with(stdout_layer)
         .init();
 
     tracing::info!("Starting Rune Infer (with Cloud AI Gateway)...");
@@ -124,6 +104,7 @@ async fn main() -> Result<()> {
     };
 
     let app = create_router(state)
+        .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(tower::ServiceBuilder::new().layer(tower_http::cors::CorsLayer::permissive()));
 
     let addr = format!("{}:{}", host, port);

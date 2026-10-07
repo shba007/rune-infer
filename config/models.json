@@ -6,7 +6,7 @@
     "api_key": null,
     "max_loaded_models": 1,
     "idle_unload_seconds": 300,
-    "vram_budget_ratio": 0.97
+    "vram_budget_ratio": 0.95
   },
   "models": [
     {
@@ -221,9 +221,9 @@
       "architecture": "qwen35",
       "format": "gguf",
       "model_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-IQ3_S.gguf",
-      "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/mmproj-F16.gguf",
-      "mtp_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/mtp-Qwen3.8-27B-Q4_0.gguf",
-      "mtp_heads": 3,
+      "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/mmproj-BF16.gguf",
+      "mtp_path": null,
+      "mtp_heads": null,
       "vision": true,
       "modality": "VisionText",
       "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
@@ -249,9 +249,9 @@
         "max_tokens": 4096
       },
       "runtime": {
-        "context_length": -1,
+        "context_length": 131072,
         "gpu_layers": 99,
-        "extra_args": ""
+        "extra_args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 512 -ub 512"
       },
       "lora": []
     },
@@ -945,6 +945,29 @@
       "runtime": {
         "gpu_layers": 99,
         "extra_args": "--snac-codec D:/Models/huggingface/hub/models--hubertsiuzdak--snac_24khz/snapshots/main"
+      }
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3",
+      "name": "NVIDIA Parakeet TDT 0.6B v3",
+      "modality": "SpeechToText",
+      "architecture": "crispasr",
+      "format": "gguf",
+      "model_path": "D:/Models/huggingface/hub/models--nvidia--parakeet-tdt-0.6b-v3/snapshots/541d1f99c6b0c3cd0b11a95167540bb8edefd82b/parakeet-tdt-0.6b-v3.q8_0.gguf",
+      "vision": false,
+      "total_params": 600000000,
+      "bits_per_weight": 8.0,
+      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
+      "capabilities": [
+        "Speech-to-Text",
+        "Multilingual",
+        "Timestamps",
+        "Punctuation",
+        "FastConformer-TDT"
+      ],
+      "runtime": {
+        "gpu_layers": 99,
+        "extra_args": ""
       }
     },
     {

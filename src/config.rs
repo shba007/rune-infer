@@ -292,6 +292,19 @@ impl ModelRegistry {
                     self.models.iter().find(|m| m.modality == Modality::Nlu)
                 } else if lower.contains("got-ocr") || lower.contains("ocr") {
                     self.models.iter().find(|m| m.modality == Modality::Ocr)
+                } else if lower.contains("parakeet")
+                    || lower.contains("nemo-speech")
+                    || lower.contains("fastconformer")
+                    || lower.contains("nemotron-speech")
+                {
+                    self.models.iter().find(|m| {
+                        m.id.contains("parakeet")
+                            || m.name.to_lowercase().contains("parakeet")
+                            || m.architecture.eq_ignore_ascii_case("parakeet")
+                            || m.architecture.eq_ignore_ascii_case("nemo-speech")
+                            || m.architecture.eq_ignore_ascii_case("fastconformer")
+                            || m.architecture.eq_ignore_ascii_case("fastconformer-tdt")
+                    })
                 } else if lower.contains("whisper")
                     || lower.contains("transcription")
                     || lower.contains("asr")
@@ -515,7 +528,12 @@ impl ModelConfig {
         {
             caps.push("Text-to-Image".to_string());
         }
-        if (self.modality == Modality::SpeechToText || self.architecture == "crispasr")
+        if (self.modality == Modality::SpeechToText
+            || self.architecture.eq_ignore_ascii_case("crispasr")
+            || self.architecture.eq_ignore_ascii_case("parakeet")
+            || self.architecture.eq_ignore_ascii_case("nemo-speech")
+            || self.architecture.eq_ignore_ascii_case("fastconformer")
+            || self.architecture.eq_ignore_ascii_case("fastconformer-tdt"))
             && !caps
                 .iter()
                 .any(|c| c.eq_ignore_ascii_case("speech-to-text") || c.eq_ignore_ascii_case("asr"))

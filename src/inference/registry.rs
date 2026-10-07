@@ -197,17 +197,72 @@ impl ModelRegistry {
         Some(mib * 1024 * 1024)
     }
 
+    fn estimate_total_layers(model: &ModelConfig) -> u32 {
+        match model.total_params.unwrap_or(0) {
+            0 => 64,
+            p if p < 4_000_000_000 => 28,
+            p if p < 10_000_000_000 => 32,
+            p if p < 18_000_000_000 => 48,
+            p if p < 36_000_000_000 => 64,
+            p if p < 80_000_000_000 => 80,
+            _ => 96,
+        }
+    }
+
+    fn parse_cache_type_multiplier(args: &str, flag_long: &str, flag_short: &str) -> f64 {
+        let tokens: Vec<&str> = args.split_whitespace().collect();
+        for (i, &t) in tokens.iter().enumerate() {
+            let val = if t == flag_long || t == flag_short {
+                tokens.get(i + 1).copied()
+            } else if let Some(stripped) = t.strip_prefix(&format!("{flag_long}=")) {
+                Some(stripped)
+            } else {
+                t.strip_prefix(&format!("{flag_short}="))
+            };
+
+            if let Some(v) = val {
+                let clean = v.to_lowercase();
+                if clean.contains("q4_0") || clean.contains("q4_1") || clean.contains("iq4") {
+                    return 0.28;
+                } else if clean.contains("q5_0") || clean.contains("q5_1") {
+                    return 0.35;
+                } else if clean.contains("q8_0") || clean.contains("fp8") || clean.contains("f8") {
+                    return 0.53;
+                } else if clean.contains("f16") || clean.contains("bf16") {
+                    return 1.0;
+                }
+            }
+        }
+        1.0
+    }
+
     fn estimate_bytes_per_token(model: &ModelConfig) -> u64 {
-        if let Some(custom) = model.kv_bytes_per_token {
-            return custom;
+        let extra_args = model
+            .runtime
+            .as_ref()
+            .and_then(|r| r.extra_args.as_deref())
+            .unwrap_or("");
+
+        if extra_args.contains("--no-kv-offload") {
+            return 0;
         }
 
-        match model.total_params.unwrap_or(0) {
-            p if p < 2_000_000_000 => 16 * 1024,
-            p if p < 10_000_000_000 => 32 * 1024,
-            p if p < 35_000_000_000 => 64 * 1024,
-            _ => 128 * 1024,
-        }
+        let base = if let Some(custom) = model.kv_bytes_per_token {
+            custom
+        } else {
+            match model.total_params.unwrap_or(0) {
+                p if p < 2_000_000_000 => 16 * 1024,
+                p if p < 10_000_000_000 => 32 * 1024,
+                p if p < 35_000_000_000 => 64 * 1024,
+                _ => 128 * 1024,
+            }
+        };
+
+        let k_mult = Self::parse_cache_type_multiplier(extra_args, "--cache-type-k", "-ctk");
+        let v_mult = Self::parse_cache_type_multiplier(extra_args, "--cache-type-v", "-ctv");
+        let quant_mult = (k_mult + v_mult) / 2.0;
+
+        ((base as f64 * quant_mult).max(1024.0)) as u64
     }
 
     fn calculate_vram_and_context(
@@ -218,7 +273,7 @@ impl ModelRegistry {
         let budget_ratio = server.vram_budget_ratio.clamp(0.0, 1.0);
         let budget_bytes = (total_vram as f64 * budget_ratio) as u64;
 
-        let model_vram = std::fs::metadata(&model.model_path)
+        let total_model_bytes = std::fs::metadata(&model.model_path)
             .map(|m| m.len())
             .unwrap_or_else(|_| {
                 if let (Some(params), Some(bpw)) = (model.total_params, model.bits_per_weight) {
@@ -227,6 +282,16 @@ impl ModelRegistry {
                     4 * 1024 * 1024 * 1024
                 }
             });
+
+        let gpu_layers = model.runtime.as_ref().map(|r| r.gpu_layers).unwrap_or(99);
+        let total_layers = Self::estimate_total_layers(model);
+        let model_vram = if gpu_layers >= total_layers || gpu_layers >= 90 {
+            total_model_bytes
+        } else {
+            let offload_ratio = (gpu_layers as f64 / total_layers as f64).clamp(0.0, 1.0);
+            ((total_model_bytes as f64) * (0.05 + 0.95 * offload_ratio))
+                .min(total_model_bytes as f64) as u64
+        };
 
         let projector_vram = if let Some(ref mmproj) = model.mmproj_path {
             std::fs::metadata(mmproj).map(|m| m.len()).unwrap_or(0)
@@ -254,15 +319,28 @@ impl ModelRegistry {
             0
         };
 
+        let extra_args = model
+            .runtime
+            .as_ref()
+            .and_then(|r| r.extra_args.as_deref())
+            .unwrap_or("");
+        let has_flash_attn = extra_args.contains("-fa") || extra_args.contains("--flash-attn");
+        let overhead_scratch = if has_flash_attn {
+            512 * 1024 * 1024
+        } else {
+            768 * 1024 * 1024
+        };
+
         let n_ctx = if configured_ctx <= 0 {
-            let overhead_scratch = 768 * 1024 * 1024;
             let remaining_kv = budget_bytes.saturating_sub(
                 model_vram + projector_vram + mtp_vram + overhead_scratch + mtp_headroom,
             );
-            let raw_tokens = (remaining_kv / bytes_per_token) as u32;
-
-            let rounded = (raw_tokens / 1024) * 1024;
-            rounded.clamp(2048, max_capacity)
+            if let Some(raw_tokens) = remaining_kv.checked_div(bytes_per_token) {
+                let rounded = ((raw_tokens as u32) / 1024) * 1024;
+                rounded.clamp(2048, max_capacity)
+            } else {
+                max_capacity
+            }
         } else {
             (configured_ctx as u32).min(max_capacity)
         };
@@ -304,7 +382,6 @@ impl ModelRegistry {
 
         let capabilities_str = model.resolved_capabilities().join(", ");
 
-        // Structured logging for Image Generation models
         if model.modality == crate::config::Modality::ImageGeneration {
             let engine = crate::inference::engines::sd_server::SdServerEngine::new(model)?;
             let text_encoder_vram = model
@@ -375,7 +452,6 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        // Native Audio ASR engine (audio.cpp for Audio8 Infinite models)
         if model.architecture.eq_ignore_ascii_case("audio8")
             || model.architecture.eq_ignore_ascii_case("audiocpp")
             || model.id.to_lowercase().contains("audio8")
@@ -388,7 +464,40 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        // Speech & Audio models using CrispASR (Whisper / Voxtral)
+        if model.architecture.eq_ignore_ascii_case("parakeet")
+            || model.architecture.eq_ignore_ascii_case("nemo-speech")
+            || model.architecture.eq_ignore_ascii_case("fastconformer")
+            || model.architecture.eq_ignore_ascii_case("fastconformer-tdt")
+            || model.id.to_lowercase().contains("parakeet")
+            || model.id.to_lowercase().contains("nemotron-speech")
+        {
+            let engine = crate::inference::engines::nemo_speech::NemoSpeechEngine::new(model)?;
+            let real_str =
+                if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
+                    let actual_used = after.saturating_sub(before);
+                    format!("Real: {}", Self::format_bytes(actual_used))
+                } else {
+                    "Real: N/A".to_string()
+                };
+
+            println!(
+                "[ModelRegistry] ✓ Successfully loaded NeMo-Speech engine: \"{}\" ({})",
+                model.id, model.name
+            );
+            println!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
+            println!(
+                "[ModelRegistry]   • Model:        {} | {}",
+                param_info,
+                Self::format_bytes(model_vram)
+            );
+            println!(
+                "[ModelRegistry]   • Total VRAM:   Est: {} | {}",
+                Self::format_bytes(model_vram + 1024 * 1024 * 1024),
+                real_str
+            );
+            return Ok(Arc::new(engine));
+        }
+
         if model.modality == crate::config::Modality::SpeechToText
             || model.modality == crate::config::Modality::TextToSpeech
             || model.architecture.eq_ignore_ascii_case("crispasr")
@@ -421,7 +530,6 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        // ModernBERT and Encoder-based models (Granite, GLiGuard, mmBERT, safetensors encoders)
         let is_encoder_path = model.model_path.ends_with(".safetensors")
             || model.model_path.ends_with(".bin")
             || model.model_path.ends_with(".onnx");
@@ -448,8 +556,7 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        // For Text, Vision, and Needle models
-        let (n_ctx, context_vram, _, projector_vram, mtp_vram, _total_vram) =
+        let (n_ctx, context_vram, model_vram_on_gpu, projector_vram, mtp_vram, _total_vram) =
             Self::calculate_vram_and_context(model, server);
         let gpu_layers = model.runtime.as_ref().map(|r| r.gpu_layers);
         let mtp_path = model.mtp_path.as_deref().map(std::path::Path::new);
@@ -496,7 +603,7 @@ impl ModelRegistry {
             }
         };
 
-        let total_est = model_vram + projector_vram + mtp_vram + context_vram;
+        let total_est = model_vram_on_gpu + projector_vram + mtp_vram + context_vram;
         let real_str =
             if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
                 let actual_used = after.saturating_sub(before);
@@ -505,16 +612,23 @@ impl ModelRegistry {
                 "Real: N/A".to_string()
             };
 
+        let model_mem_str = if model_vram_on_gpu < model_vram {
+            format!(
+                "{} | {} (GPU: {})",
+                param_info,
+                Self::format_bytes(model_vram),
+                Self::format_bytes(model_vram_on_gpu)
+            )
+        } else {
+            format!("{} | {}", param_info, Self::format_bytes(model_vram))
+        };
+
         println!(
             "[ModelRegistry] ✓ Successfully loaded engine: \"{}\" ({})",
             model.id, model.name
         );
         println!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
-        println!(
-            "[ModelRegistry]   • Model:        {} | {}",
-            param_info,
-            Self::format_bytes(model_vram)
-        );
+        println!("[ModelRegistry]   • Model:        {}", model_mem_str);
 
         if projector_vram > 0 || model.vision {
             let res_str = model
