@@ -1,7 +1,7 @@
 [package]
 name = "rune-infer"
 description = "A standalone, config-driven, OpenAI-API-compatible model server written in Rust."
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Shirsendu Bairagi <shirsendu2001@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/shba007/rune-infer.git"
