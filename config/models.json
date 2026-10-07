@@ -249,7 +249,7 @@
         "max_tokens": 4096
       },
       "runtime": {
-        "context_length": 131072,
+        "context_length": 135168,
         "gpu_layers": 99,
         "extra_args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 512 -ub 512"
       },

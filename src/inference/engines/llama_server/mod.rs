@@ -21,6 +21,13 @@ pub enum RuntimeFlavor {
     Prism,
 }
 
+#[derive(Default, Debug, Clone)]
+struct ToolCallAccumulator {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
 pub struct LlamaServerEngine {
     id: String,
     port: u16,
@@ -270,15 +277,49 @@ impl InferenceEngine for LlamaServerEngine {
 
                 if stream_mode {
                     let mut full_output = String::new();
+                    let mut in_reasoning = false;
+                    let mut tool_accumulators: Vec<ToolCallAccumulator> = Vec::new();
                     let reader = std::io::BufReader::new(resp);
+
                     for line in reader.lines().map_while(Result::ok) {
                         if let Some(data) = line.strip_prefix("data: ") {
                             if data.trim() == "[DONE]" {
                                 break;
                             }
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
-                                if let Some(content) = v["choices"][0]["delta"]["content"].as_str()
+                                let delta = &v["choices"][0]["delta"];
+
+                                // 1. Forward reasoning content if emitted by llama-server (e.g. Qwen thinking mode)
+                                if let Some(reasoning) =
+                                    delta.get("reasoning_content").and_then(|r| r.as_str())
                                 {
+                                    if !reasoning.is_empty() {
+                                        if !in_reasoning {
+                                            in_reasoning = true;
+                                            full_output.push_str("<think>\n");
+                                            if let Some(ref mut cb) = on_token {
+                                                let _ = cb("<think>");
+                                            }
+                                        }
+                                        full_output.push_str(reasoning);
+                                        if let Some(ref mut cb) = on_token {
+                                            if !cb(reasoning) {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 2. Forward regular content
+                                if let Some(content) = delta.get("content").and_then(|c| c.as_str())
+                                {
+                                    if in_reasoning {
+                                        in_reasoning = false;
+                                        full_output.push_str("\n</think>\n");
+                                        if let Some(ref mut cb) = on_token {
+                                            let _ = cb("</think>");
+                                        }
+                                    }
                                     full_output.push_str(content);
                                     if let Some(ref mut cb) = on_token {
                                         if !cb(content) {
@@ -286,9 +327,104 @@ impl InferenceEngine for LlamaServerEngine {
                                         }
                                     }
                                 }
+
+                                // 3. Correctly accumulate native tool-call deltas across streaming chunks
+                                if let Some(tc_array) =
+                                    delta.get("tool_calls").and_then(|t| t.as_array())
+                                {
+                                    for tc in tc_array {
+                                        let idx =
+                                            tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0)
+                                                as usize;
+                                        while tool_accumulators.len() <= idx {
+                                            tool_accumulators.push(ToolCallAccumulator {
+                                                id: String::new(),
+                                                name: String::new(),
+                                                arguments: String::new(),
+                                            });
+                                        }
+
+                                        let target = &mut tool_accumulators[idx];
+                                        if let Some(id) = tc.get("id").and_then(|s| s.as_str()) {
+                                            if !id.is_empty() {
+                                                target.id = id.to_string();
+                                            }
+                                        }
+                                        if let Some(func) = tc.get("function") {
+                                            if let Some(name) =
+                                                func.get("name").and_then(|s| s.as_str())
+                                            {
+                                                target.name.push_str(name);
+                                            }
+                                            if let Some(args) =
+                                                func.get("arguments").and_then(|s| s.as_str())
+                                            {
+                                                target.arguments.push_str(args);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+
+                    if in_reasoning {
+                        full_output.push_str("\n</think>\n");
+                        if let Some(ref mut cb) = on_token {
+                            let _ = cb("</think>");
+                        }
+                    }
+
+                    // If native tool calls were accumulated across the stream, return them
+                    let valid_accumulated: Vec<serde_json::Value> = tool_accumulators
+                        .into_iter()
+                        .filter(|t| !t.name.trim().is_empty())
+                        .map(|t| {
+                            let args = if t.arguments.trim().is_empty() {
+                                "{}".to_string()
+                            } else {
+                                t.arguments
+                            };
+                            serde_json::json!({
+                                "id": if t.id.is_empty() { format!("call_{}", std::process::id()) } else { t.id },
+                                "type": "function",
+                                "function": {
+                                    "name": t.name,
+                                    "arguments": args
+                                }
+                            })
+                        })
+                        .collect();
+
+                    if !valid_accumulated.is_empty() {
+                        let tokens = (full_output.len() / 4).max(1) as u32;
+                        return Ok(InferenceOutput {
+                            response: InferenceTaskResponse::ToolCall {
+                                content: if full_output.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(full_output.trim().to_string())
+                                },
+                                tool_calls: serde_json::Value::Array(valid_accumulated),
+                            },
+                            usage: Usage::new(tokens, tokens),
+                        });
+                    }
+
+                    // Otherwise, check if full_output contains inline tool calls (e.g. XML format)
+                    if let Some((clean_content, parsed_tools)) =
+                        tools::extract_tool_calls(&full_output)
+                    {
+                        let tokens = (full_output.len() / 4).max(1) as u32;
+                        return Ok(InferenceOutput {
+                            response: InferenceTaskResponse::ToolCall {
+                                content: clean_content,
+                                tool_calls: parsed_tools,
+                            },
+                            usage: Usage::new(tokens, tokens),
+                        });
+                    }
+
                     let tokens = (full_output.len() / 4).max(1) as u32;
                     return Ok(InferenceOutput {
                         response: InferenceTaskResponse::Text(full_output),
@@ -313,11 +449,25 @@ impl InferenceEngine for LlamaServerEngine {
                     });
                 }
 
-                let content = choice["message"]["content"]
-                    .as_str()
+                let reasoning = choice["message"]
+                    .get("reasoning_content")
+                    .and_then(|r| r.as_str())
                     .unwrap_or("")
-                    .to_string();
-                if let Some((clean_content, parsed_tools)) = tools::extract_tool_calls(&content) {
+                    .trim();
+
+                let raw_content = choice["message"]["content"].as_str().unwrap_or("").trim();
+
+                let combined_content = if !reasoning.is_empty() && !raw_content.is_empty() {
+                    format!("<think>\n{}\n</think>\n{}", reasoning, raw_content)
+                } else if !reasoning.is_empty() {
+                    format!("<think>\n{}\n</think>", reasoning)
+                } else {
+                    raw_content.to_string()
+                };
+
+                if let Some((clean_content, parsed_tools)) =
+                    tools::extract_tool_calls(&combined_content)
+                {
                     return Ok(InferenceOutput {
                         response: InferenceTaskResponse::ToolCall {
                             content: clean_content,
@@ -328,7 +478,7 @@ impl InferenceEngine for LlamaServerEngine {
                 }
 
                 Ok(InferenceOutput {
-                    response: InferenceTaskResponse::Text(content),
+                    response: InferenceTaskResponse::Text(combined_content),
                     usage: Usage::new(10, 10),
                 })
             }
