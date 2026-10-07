@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-10-07
+
+### 🚀 Features
+
+- Add NemoSpeechEngine for audio transcription and translation
+
+
+### 🐛 Bug Fixes
+
+- *(chat)* Regession fix chat completions handler with structured prompts and tool validation
+
+
 ## [0.1.0] - 2026-10-06
 
 ### 🚀 Features
@@ -60,7 +72,7 @@ All notable changes to this project will be documented in this file.
 
 - Add initial_tag configuration for versioning by @shba007
 
-- Update dependencies and improve documentation in docker-compose.yml
+- Update dependencies and improve documentation in docker-compose.yml by @shba007
 
 
 
