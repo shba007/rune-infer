@@ -2,26 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-10-11
+
+### 🚀 Features
+
+- *(schema)* Introduce new model registry schema version 2
+
+
 ## [0.3.0] - 2026-10-11
 
 ### 🚀 Features
 
-- Add terminal dashboard, setup wizard and installers; honor sampling and idle unload
+- Add terminal dashboard, setup wizard and installers; honor sampling and idle unload by @shba007
 
 
 ### 🐛 Bug Fixes
 
-- *(config)* Update server port and adjust model parameters for improved performance
+- *(config)* Update server port and adjust model parameters for improved performance by @shba007
 
 
 ### 📚 Documentation
 
-- Document arm64 support and the remaining x64-only engine fallbacks
+- Document arm64 support and the remaining x64-only engine fallbacks by @shba007
 
 
 ### ⚙️ Miscellaneous Tasks
 
-- *(install)* Make install.sh executable and pin shell scripts to LF
+- *(install)* Make install.sh executable and pin shell scripts to LF by @shba007
 
 
 ## [0.2.0] - 2026-10-07
