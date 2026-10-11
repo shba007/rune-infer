@@ -27,6 +27,8 @@ pub struct ModelRow {
     pub modality: String,
     /// `None` for local models, provider name for cloud models.
     pub provider: Option<String>,
+    /// Preferred engine for local models (e.g. `nemo-speech`).
+    pub engine: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -446,8 +448,14 @@ fn draw_models(f: &mut Frame, area: Rect, app: &App) {
             Cell::from(icon).style(Style::new().fg(color)),
             Cell::from(format!("{}{}", m.row.id, extra)),
             Cell::from(m.row.modality.clone()).style(Style::new().fg(DIM)),
-            Cell::from(m.row.provider.clone().unwrap_or_else(|| "local".into()))
-                .style(Style::new().fg(DIM)),
+            Cell::from(
+                m.row
+                    .provider
+                    .clone()
+                    .or_else(|| m.row.engine.clone())
+                    .unwrap_or_else(|| "local".into()),
+            )
+            .style(Style::new().fg(DIM)),
             Cell::from(m.requests.to_string()),
             Cell::from(m.errors.to_string()).style(if m.errors > 0 {
                 Style::new().fg(ERR)
@@ -463,7 +471,7 @@ fn draw_models(f: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(2),
             Constraint::Min(18),
             Constraint::Length(14),
-            Constraint::Length(10),
+            Constraint::Length(18),
             Constraint::Length(5),
             Constraint::Length(4),
             Constraint::Length(7),
@@ -782,12 +790,14 @@ mod tests {
                     name: "A".into(),
                     modality: "text".into(),
                     provider: None,
+                    engine: Some("llama-server".into()),
                 },
                 ModelRow {
                     id: "g".into(),
                     name: "G".into(),
                     modality: "vision-text".into(),
                     provider: Some("google".into()),
+                    engine: None,
                 },
             ],
         };

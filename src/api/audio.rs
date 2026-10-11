@@ -93,15 +93,12 @@ pub async fn audio_transcriptions_handler(
 
     let target_model = match model_id {
         Some(ref m) if !m.is_empty() => m.clone(),
-        _ => match state.config.models.iter().find(|m| {
-            m.modality == crate::config::Modality::SpeechToText
-                || m.architecture.eq_ignore_ascii_case("crispasr")
-                || m.architecture.eq_ignore_ascii_case("audio8")
-                || m.architecture.eq_ignore_ascii_case("parakeet")
-                || m.architecture.eq_ignore_ascii_case("nemo-speech")
-                || m.architecture.eq_ignore_ascii_case("fastconformer")
-                || m.architecture.eq_ignore_ascii_case("fastconformer-tdt")
-        }) {
+        _ => match state
+            .config
+            .models
+            .iter()
+            .find(|m| m.modality == crate::config::Modality::SpeechToText)
+        {
             Some(m) => m.id.clone(),
             None => {
                 return (
@@ -286,17 +283,25 @@ pub async fn audio_translations_handler(
 
     let target_model = match model_id {
         Some(ref m) if !m.is_empty() => m.clone(),
-        _ => match state.config.models.iter().find(|m| {
-            m.modality == crate::config::Modality::SpeechToText
-                || m.architecture.eq_ignore_ascii_case("crispasr")
-                || m.architecture.eq_ignore_ascii_case("audio8")
-                || m.architecture.eq_ignore_ascii_case("parakeet")
-                || m.architecture.eq_ignore_ascii_case("nemo-speech")
-                || m.architecture.eq_ignore_ascii_case("fastconformer")
-                || m.architecture.eq_ignore_ascii_case("fastconformer-tdt")
-        }) {
+        _ => match state
+            .config
+            .models
+            .iter()
+            .find(|m| m.modality == crate::config::Modality::SpeechToText)
+        {
             Some(m) => m.id.clone(),
-            None => "whisper-large-v3-turbo".to_string(),
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: ApiError::new(
+                            "No speech-to-text model specified and none found in catalog",
+                        )
+                        .with_type("invalid_request_error"),
+                    }),
+                )
+                    .into_response();
+            }
         },
     };
 

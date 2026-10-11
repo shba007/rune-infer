@@ -24,7 +24,15 @@ $version = Get-Setting 'RUNE_VERSION' 'latest'
 $installDir = Get-Setting 'RUNE_INSTALL_DIR' (Join-Path $env:LOCALAPPDATA 'Programs\rune-infer')
 $bin = 'rune-infer'
 
-$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+# Some Windows PowerShell setups return $null for the .NET type below, so fall back to the
+# environment variables (PROCESSOR_ARCHITEW6432 is set when a 32-bit shell runs on 64-bit Windows).
+$arch = $null
+try { $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture } catch {}
+if (-not $arch) {
+    $raw = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+    $arch = switch ($raw) { 'AMD64' { 'X64' } 'ARM64' { 'Arm64' } default { $raw } }
+}
+$arch = "$arch"
 $forced = Get-Setting 'RUNE_PLATFORM' ''
 if ($forced) { $arch = @{ 'windows-x64' = 'X64'; 'windows-arm64' = 'Arm64' }[$forced] }
 switch ($arch) {
@@ -74,7 +82,9 @@ try {
     } else {
         $sumFile = "$zip.sha256"
         Fetch "$archive.sha256" $sumFile
-        $expected = ((Get-Content -LiteralPath $sumFile -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+        $sumText = Get-Content -LiteralPath $sumFile -Raw
+        if ([string]::IsNullOrWhiteSpace($sumText)) { throw "The checksum file for $archive is empty. The release may still be uploading - try again in a minute." }
+        $expected = ($sumText.Trim() -split '\s+')[0].ToLowerInvariant()
         $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($expected -ne $actual) { throw "Checksum mismatch for $archive (expected $expected, got $actual). Aborting." }
         Write-Host 'Checksum verified.'
@@ -108,6 +118,10 @@ try {
     Write-Host ''
     Write-Host "Next: run 'rune-infer' - a short setup wizard creates your config in $env:USERPROFILE\.rune-infer."
     Write-Host 'Optional: install FFmpeg (winget install Gyan.FFmpeg) for video input.'
+}
+catch {
+    # iex hides where an error came from, so surface the message and the line.
+    throw ("{0}`n  at {1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage.Trim())
 }
 finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue

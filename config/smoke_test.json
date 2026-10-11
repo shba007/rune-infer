@@ -1,20 +1,37 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "server": {
     "host": "0.0.0.0",
     "port": 3421,
     "api_key": null,
     "max_loaded_models": 1,
-    "idle_unload_seconds": 300
+    "idle_unload_seconds": 300,
+    "vram_budget_ratio": 0.97
   },
   "models": [
     {
       "id": "smoke-test",
       "name": "Smoke Test Dummy",
+      "description": "dummy path for smoke test",
       "modality": "Text",
-      "model_path": "D:/Projects/Public/rune/code-infer/Cargo.toml",
-      "vision": false,
-      "description": "dummy path for smoke test"
+      "capabilities": [],
+      "engine": {
+        "supported": [
+          "llama-server"
+        ],
+        "preferred": "llama-server"
+      },
+      "max_context_length": null,
+      "sampling": {},
+      "local": {
+        "path": "D:/Projects/Public/rune/code-infer/Cargo.toml",
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "extra": {}
     }
   ]
 }

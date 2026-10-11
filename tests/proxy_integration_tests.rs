@@ -31,7 +31,7 @@ fn test_openrouter_apodex_configuration_parsing() {
     }
 
     let raw_config = r#"{
-        "schema_version": 1,
+        "schema_version": 2,
         "server": {
             "host": "127.0.0.1",
             "port": 8080,
@@ -43,19 +43,20 @@ fn test_openrouter_apodex_configuration_parsing() {
             {
                 "id": "apodex-1.1-mini",
                 "name": "Apodex 1.1 Mini (Free)",
-                "provider": "openrouter",
                 "modality": "Text",
-                "upstream_model": "apodex/apodex-1.1-mini:free",
-                "base_url": "https://openrouter.ai/api/v1",
-                "api_key": "{{TEST_OPENROUTER_KEY}}",
-                "max_context_length": 262144
+                "max_context_length": 262144,
+                "remote": {
+                    "provider": "openrouter",
+                    "upstream_model": "apodex/apodex-1.1-mini:free",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "api_key": "{{TEST_OPENROUTER_KEY}}"
+                }
             }
         ]
     }"#;
 
     let interpolated = interpolate_env_vars(raw_config).expect("Interpolation failed");
-    let registry: ModelRegistry =
-        serde_json::from_str(&interpolated).expect("Failed to parse registry");
+    let registry = ModelRegistry::from_json(&interpolated, None).expect("Failed to parse registry");
     let model = registry
         .find("apodex-1.1-mini")
         .expect("Model not found in catalog");
@@ -79,7 +80,7 @@ fn test_openrouter_dots3_note_configuration_parsing() {
     }
 
     let raw_config = r#"{
-        "schema_version": 1,
+        "schema_version": 2,
         "server": {
             "host": "127.0.0.1",
             "port": 8080,
@@ -91,20 +92,20 @@ fn test_openrouter_dots3_note_configuration_parsing() {
             {
                 "id": "dots-3-note-preview",
                 "name": "Dots3-Note Preview (Free)",
-                "provider": "openrouter",
                 "modality": "VisionText",
-                "vision": true,
-                "upstream_model": "dots-studio/dots-3-note-preview:free",
-                "base_url": "https://openrouter.ai/api/v1",
-                "api_key": "{{TEST_OPENROUTER_KEY}}",
-                "max_context_length": 512000
+                "max_context_length": 512000,
+                "remote": {
+                    "provider": "openrouter",
+                    "upstream_model": "dots-studio/dots-3-note-preview:free",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "api_key": "{{TEST_OPENROUTER_KEY}}"
+                }
             }
         ]
     }"#;
 
     let interpolated = interpolate_env_vars(raw_config).expect("Interpolation failed");
-    let registry: ModelRegistry =
-        serde_json::from_str(&interpolated).expect("Failed to parse registry");
+    let registry = ModelRegistry::from_json(&interpolated, None).expect("Failed to parse registry");
     let model = registry
         .find("dots-3-note-preview")
         .expect("Model not found in catalog");
@@ -115,7 +116,7 @@ fn test_openrouter_dots3_note_configuration_parsing() {
         Some("dots-studio/dots-3-note-preview:free")
     );
     assert_eq!(model.max_context_length, Some(512000));
-    assert!(model.vision);
+    assert!(model.is_vision());
 }
 
 #[tokio::test]
@@ -127,7 +128,6 @@ async fn test_rate_limit_controller_concurrency() {
         max_concurrent: 2,
         queue_timeout_seconds: 1,
         max_retries: 5,
-        retry_delay_seconds: None,
         retry_delay_ms: 1000,
         retry_timeout_seconds: 30,
     };

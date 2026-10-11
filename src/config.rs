@@ -24,6 +24,19 @@ impl ProviderType {
         matches!(self, ProviderType::Local)
     }
 
+    pub fn from_name(name: &str) -> Option<Self> {
+        [
+            ProviderType::Local,
+            ProviderType::OpenAi,
+            ProviderType::Anthropic,
+            ProviderType::Google,
+            ProviderType::OpenRouter,
+            ProviderType::Custom,
+        ]
+        .into_iter()
+        .find(|p| p.as_str() == name)
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             ProviderType::Local => "local",
@@ -37,12 +50,13 @@ impl ProviderType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RateLimitConfig {
     #[serde(default = "default_rpm")]
     pub requests_per_minute: u32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tokens_per_minute: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requests_per_day: Option<u32>,
     #[serde(default = "default_max_concurrent")]
     pub max_concurrent: usize,
@@ -50,8 +64,6 @@ pub struct RateLimitConfig {
     pub queue_timeout_seconds: u64,
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
-    #[serde(default)]
-    pub retry_delay_seconds: Option<u64>,
     #[serde(default = "default_retry_delay_ms")]
     pub retry_delay_ms: u64,
     #[serde(default = "default_retry_timeout")]
@@ -84,11 +96,7 @@ fn default_retry_timeout() -> u64 {
 
 impl RateLimitConfig {
     pub fn effective_retry_delay_ms(&self) -> u64 {
-        if let Some(sec) = self.retry_delay_seconds {
-            sec * 1000
-        } else {
-            self.retry_delay_ms
-        }
+        self.retry_delay_ms
     }
 }
 
@@ -101,7 +109,6 @@ impl Default for RateLimitConfig {
             max_concurrent: default_max_concurrent(),
             queue_timeout_seconds: default_queue_timeout(),
             max_retries: default_max_retries(),
-            retry_delay_seconds: None,
             retry_delay_ms: default_retry_delay_ms(),
             retry_timeout_seconds: default_retry_timeout(),
         }
@@ -190,7 +197,7 @@ fn default_vram_budget_ratio() -> f64 {
     0.97
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ModelRegistry {
     pub schema_version: u32,
     pub server: ServerConfig,
@@ -206,7 +213,7 @@ impl Default for ModelRegistry {
 impl ModelRegistry {
     pub fn new() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: crate::schema::SCHEMA_VERSION,
             server: ServerConfig::default(),
             models: Vec::new(),
         }
@@ -222,6 +229,8 @@ impl ModelRegistry {
         path: P,
         overrides: &[(String, String)],
     ) -> Result<Self> {
+        let path = path.as_ref();
+        let path_display = Some(path.display().to_string());
         let raw = std::fs::read_to_string(path).context("Failed to read config file")?;
         let interpolated = interpolate_with(&raw, &|name| {
             overrides
@@ -230,10 +239,43 @@ impl ModelRegistry {
                 .map(|(_, v)| v.clone())
                 .or_else(|| std::env::var(name).ok())
         })?;
-        let registry: ModelRegistry =
-            serde_json::from_str(&interpolated).context("Failed to parse config as JSON")?;
+        let registry = Self::from_json(&interpolated, path_display.as_deref())?;
         registry.validate()?;
         Ok(registry)
+    }
+
+    /// Parse a (placeholder-free) config document of the current schema.
+    pub fn from_json(json: &str, origin: Option<&str>) -> Result<Self> {
+        #[derive(Deserialize)]
+        struct Version {
+            #[serde(default)]
+            schema_version: u32,
+        }
+        let version: Version =
+            serde_json::from_str(json).context("Failed to parse config as JSON")?;
+        if version.schema_version != crate::schema::SCHEMA_VERSION {
+            anyhow::bail!(
+                "{} uses config schema_version {} but this rune-infer needs {}. Run `rune-infer migrate{}` to upgrade it (a backup is kept).",
+                origin.unwrap_or("The config"),
+                version.schema_version,
+                crate::schema::SCHEMA_VERSION,
+                origin
+                    .map(|o| format!(" --config \"{o}\""))
+                    .unwrap_or_default()
+            );
+        }
+        let file: crate::schema::RegistryFile =
+            serde_json::from_str(json).context("Invalid config")?;
+        let models = file
+            .models
+            .into_iter()
+            .map(ModelConfig::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            schema_version: file.schema_version,
+            server: file.server,
+            models,
+        })
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -248,100 +290,43 @@ impl ModelRegistry {
         Ok(())
     }
 
+    /// Resolve a requested model name: exact id, then case-insensitive id or
+    /// display name. If nothing matches, generic OpenAI-SDK default names
+    /// ("text-embedding-3-small", "whisper-1", "tts-1", ...) fall back to the
+    /// first configured model of the matching modality. There are no
+    /// model- or provider-specific shortcuts: give each model its own id.
     pub fn find(&self, id: &str) -> Option<&ModelConfig> {
         self.models
             .iter()
-            .find(|m| {
-                m.id == id
-                    || m.id.eq_ignore_ascii_case(id)
-                    || m.name.eq_ignore_ascii_case(id)
-                    || (m.id == "ternary-Bonsai-2-27b" && id == "ternary-Bonsai-2-27b")
+            .find(|m| m.id == id)
+            .or_else(|| {
+                self.models
+                    .iter()
+                    .find(|m| m.id.eq_ignore_ascii_case(id) || m.name.eq_ignore_ascii_case(id))
             })
             .or_else(|| {
                 let lower = id.to_lowercase();
-                if lower.contains("claude") || lower.contains("anthropic") {
-                    self.models
-                        .iter()
-                        .find(|m| m.provider == ProviderType::Anthropic)
-                } else if lower.contains("gemini") || lower.contains("google") {
-                    self.models
-                        .iter()
-                        .find(|m| m.provider == ProviderType::Google)
-                } else if lower.contains("space-bunny")
-                    || lower.contains("bunny")
-                    || lower.contains("stealth")
-                {
-                    self.models.iter().find(|m| {
-                        m.id.contains("space-bunny")
-                            || m.name.to_lowercase().contains("space bunny")
-                    })
-                } else if lower.contains("dots") {
-                    self.models
-                        .iter()
-                        .find(|m| m.id.contains("dots") || m.name.to_lowercase().contains("dots"))
-                } else if lower.contains("apodex") || lower.contains("openrouter") {
-                    self.models.iter().find(|m| {
-                        m.provider == ProviderType::OpenRouter
-                            || m.id.to_lowercase().contains("apodex")
-                    })
-                } else if lower.contains("gpt-") || lower.contains("openai") {
-                    self.models
-                        .iter()
-                        .find(|m| m.provider == ProviderType::OpenAi)
-                } else if lower.contains("embed")
-                    || lower.contains("bge")
-                    || lower.contains("granite")
-                {
-                    self.models
-                        .iter()
-                        .find(|m| m.modality == Modality::Embedding)
-                } else if lower.contains("moderation") || lower.contains("guard") {
-                    self.models
-                        .iter()
-                        .find(|m| m.modality == Modality::Moderation)
-                } else if lower.contains("intent")
-                    || lower.contains("nlu")
-                    || lower.contains("gliner")
-                    || lower.contains("mmbert")
-                {
-                    self.models.iter().find(|m| m.modality == Modality::Nlu)
-                } else if lower.contains("got-ocr") || lower.contains("ocr") {
-                    self.models.iter().find(|m| m.modality == Modality::Ocr)
-                } else if lower.contains("parakeet")
-                    || lower.contains("nemo-speech")
-                    || lower.contains("fastconformer")
-                    || lower.contains("nemotron-speech")
-                {
-                    self.models.iter().find(|m| {
-                        m.id.contains("parakeet")
-                            || m.name.to_lowercase().contains("parakeet")
-                            || m.architecture.eq_ignore_ascii_case("parakeet")
-                            || m.architecture.eq_ignore_ascii_case("nemo-speech")
-                            || m.architecture.eq_ignore_ascii_case("fastconformer")
-                            || m.architecture.eq_ignore_ascii_case("fastconformer-tdt")
-                    })
-                } else if lower.contains("whisper")
-                    || lower.contains("transcription")
-                    || lower.contains("asr")
-                {
-                    self.models
-                        .iter()
-                        .find(|m| m.modality == Modality::SpeechToText)
-                } else if lower.contains("tts") || lower.contains("speech") {
-                    self.models
-                        .iter()
-                        .find(|m| m.modality == Modality::TextToSpeech)
-                } else if lower.contains("s2st") || lower.contains("seamless") {
-                    self.models
-                        .iter()
-                        .find(|m| m.modality == Modality::SpeechToSpeech)
-                } else if lower.contains("yolo") || lower.contains("detection") {
-                    self.models
-                        .iter()
-                        .find(|m| m.modality == Modality::ObjectDetection)
+                let has = |words: &[&str]| words.iter().any(|w| lower.contains(w));
+                let modality = if has(&["embed"]) {
+                    Modality::Embedding
+                } else if has(&["moderation"]) {
+                    Modality::Moderation
+                } else if has(&["intent", "nlu"]) {
+                    Modality::Nlu
+                } else if has(&["ocr"]) {
+                    Modality::Ocr
+                } else if has(&["whisper", "transcription", "asr"]) {
+                    Modality::SpeechToText
+                } else if has(&["tts", "speech"]) {
+                    Modality::TextToSpeech
+                } else if has(&["s2st"]) {
+                    Modality::SpeechToSpeech
+                } else if has(&["detection"]) {
+                    Modality::ObjectDetection
                 } else {
-                    None
-                }
+                    return None;
+                };
+                self.models.iter().find(|m| m.modality == modality)
             })
     }
 
@@ -400,20 +385,108 @@ pub fn interpolate_with(raw: &str, lookup: &dyn Fn(&str) -> Option<String>) -> R
     Ok(result)
 }
 
+/// Inference backends a local model can run on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EngineKind {
+    /// llama.cpp `llama-server` (upstream build): GGUF text and vision models.
+    LlamaServer,
+    /// llama.cpp `llama-server` (Prism build): ternary Bonsai models.
+    LlamaServerPrism,
+    /// stable-diffusion.cpp `sd-server`: image generation.
+    SdServer,
+    /// audio.cpp: Audio8 speech models.
+    AudioCpp,
+    /// NeMo-Speech.cpp: Parakeet / FastConformer speech models.
+    NemoSpeech,
+    /// CrispASR: Whisper-family and other speech models.
+    Crispasr,
+    /// Native Rust encoders (embeddings, moderation, NLU, vision encoders).
+    Encoder,
+    /// Cactus Needle (`.cact`) tool-calling engine.
+    Needle,
+}
+
+impl EngineKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EngineKind::LlamaServer => "llama-server",
+            EngineKind::LlamaServerPrism => "llama-server-prism",
+            EngineKind::SdServer => "sd-server",
+            EngineKind::AudioCpp => "audio-cpp",
+            EngineKind::NemoSpeech => "nemo-speech",
+            EngineKind::Crispasr => "crispasr",
+            EngineKind::Encoder => "encoder",
+            EngineKind::Needle => "needle",
+        }
+    }
+}
+
+impl std::fmt::Display for EngineKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Which engines may serve a model and which one to try first.
+///
+/// ```json
+/// "engine": { "supported": ["nemo-speech", "crispasr"], "preferred": "nemo-speech" }
+/// ```
+///
+/// The preferred engine is tried first; if it fails to start, the remaining
+/// `supported` engines are tried in the order listed. `preferred` defaults to
+/// the first supported engine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EngineConfig {
+    pub supported: Vec<EngineKind>,
+    #[serde(default)]
+    pub preferred: Option<EngineKind>,
+}
+
+impl EngineConfig {
+    pub fn validate(&self, model_id: &str) -> Result<()> {
+        if self.supported.is_empty() {
+            anyhow::bail!("Model '{model_id}': engine.supported must list at least one engine");
+        }
+        for (i, kind) in self.supported.iter().enumerate() {
+            if self.supported[..i].contains(kind) {
+                anyhow::bail!("Model '{model_id}': engine.supported lists '{kind}' twice");
+            }
+        }
+        if let Some(pref) = self.preferred {
+            if !self.supported.contains(&pref) {
+                anyhow::bail!(
+                    "Model '{model_id}': engine.preferred '{pref}' is not in engine.supported"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Engines in the order they should be tried.
+    pub fn plan(&self) -> Vec<EngineKind> {
+        let first = self.preferred.unwrap_or(self.supported[0]);
+        std::iter::once(first)
+            .chain(self.supported.iter().copied().filter(|k| *k != first))
+            .collect()
+    }
+}
+
 /// Default sampling parameters for a model. Every field is optional; a value
 /// supplied in the request wins, then this config, then the engine's own
 /// built-in default.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SamplingConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_k: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_p: Option<f64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<usize>,
 }
 
@@ -447,81 +520,62 @@ impl SamplingConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Engine process settings for a local model (the file's `local` block).
+#[derive(Debug, Clone)]
 pub struct RuntimeConfig {
-    #[serde(default = "default_context_length")]
+    /// Context window in tokens; `-1` = automatic.
     pub context_length: i64,
-    #[serde(default = "default_gpu_layers")]
     pub gpu_layers: u32,
-    #[serde(default)]
-    pub mtp_heads: Option<u32>,
-    #[serde(default)]
     pub extra_args: Option<String>,
 }
 
-fn default_context_length() -> i64 {
-    8192
+/// A LoRA adapter listed under `extra.lora`. Parsed and validated, but not
+/// applied by any engine yet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LoraConfig {
+    pub name: String,
+    pub path: String,
+    #[serde(default = "default_lora_scale")]
+    pub scale: f32,
 }
 
-fn default_gpu_layers() -> u32 {
-    99
+fn default_lora_scale() -> f32 {
+    1.0
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A model as the rest of the server sees it, flattened from the file's
+/// [`ModelEntry`](crate::schema::ModelEntry).
+#[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub id: String,
     pub name: String,
-    #[serde(default)]
     pub provider: ProviderType,
     pub modality: Modality,
-    #[serde(default)]
-    pub architecture: String,
-    #[serde(default)]
     pub model_path: String,
-    #[serde(default)]
     pub upstream_model: Option<String>,
-    #[serde(default)]
     pub api_key: Option<String>,
-    #[serde(default)]
     pub base_url: Option<String>,
-    #[serde(default)]
     pub rate_limit: Option<RateLimitConfig>,
     pub mmproj_path: Option<String>,
-    #[serde(default)]
     pub mtp_path: Option<String>,
-    #[serde(default)]
     pub vae_path: Option<String>,
-    #[serde(default)]
     pub text_encoder_path: Option<String>,
-    #[serde(default)]
     pub llm_vision_path: Option<String>,
-    #[serde(default)]
     pub default_steps: Option<u32>,
-    #[serde(default)]
     pub default_cfg_scale: Option<f32>,
-    #[serde(default)]
     pub default_sample_method: Option<String>,
-    #[serde(default)]
-    pub vision: bool,
-    #[serde(default)]
     pub description: String,
-    #[serde(default)]
     pub bits_per_weight: Option<f64>,
-    #[serde(default)]
     pub total_params: Option<u64>,
-    #[serde(default)]
     pub max_context_length: Option<u32>,
-    #[serde(default)]
-    pub kv_bytes_per_token: Option<u64>,
-    #[serde(default)]
     pub max_resolution: Option<String>,
-    #[serde(default)]
     pub mtp_heads: Option<u32>,
-    #[serde(default)]
     pub capabilities: Option<Vec<String>>,
-    #[serde(default)]
     pub sampling: Option<SamplingConfig>,
-    #[serde(default)]
+    /// `Some` for local models, `None` for cloud models.
+    pub engine: Option<EngineConfig>,
+    pub lora: Vec<LoraConfig>,
     pub runtime: Option<RuntimeConfig>,
 }
 
@@ -537,6 +591,9 @@ impl ModelConfig {
 
         if let Some(sampling) = &self.sampling {
             sampling.validate(&self.id)?;
+        }
+        if let Some(engine) = &self.engine {
+            engine.validate(&self.id)?;
         }
 
         if self.is_local() {
@@ -571,6 +628,20 @@ impl ModelConfig {
         Ok(())
     }
 
+    /// Engines to try, in order: the configured preference first, then the other
+    /// supported engines. Empty for cloud models.
+    pub fn engine_plan(&self) -> Vec<EngineKind> {
+        self.engine
+            .as_ref()
+            .map(EngineConfig::plan)
+            .unwrap_or_default()
+    }
+
+    /// Whether the model accepts image input.
+    pub fn is_vision(&self) -> bool {
+        self.modality == Modality::VisionText
+    }
+
     /// Per-request sampling values layered over this model's configured defaults.
     pub fn effective_sampling(&self, request: &SamplingConfig) -> SamplingConfig {
         match &self.sampling {
@@ -581,7 +652,6 @@ impl ModelConfig {
 
     pub fn mtp_heads(&self) -> Option<u32> {
         self.mtp_heads
-            .or_else(|| self.runtime.as_ref().and_then(|r| r.mtp_heads))
     }
 
     pub fn has_mtp(&self) -> bool {
@@ -598,7 +668,7 @@ impl ModelConfig {
             }
         }
         let mut caps = vec!["Chat".to_string(), "Tool Call".to_string()];
-        if self.vision || self.modality == Modality::VisionText {
+        if self.is_vision() {
             caps.push("Vision".to_string());
         }
         if self.has_mtp() && !caps.iter().any(|c| c.eq_ignore_ascii_case("mtp")) {
@@ -609,12 +679,7 @@ impl ModelConfig {
         {
             caps.push("Text-to-Image".to_string());
         }
-        if (self.modality == Modality::SpeechToText
-            || self.architecture.eq_ignore_ascii_case("crispasr")
-            || self.architecture.eq_ignore_ascii_case("parakeet")
-            || self.architecture.eq_ignore_ascii_case("nemo-speech")
-            || self.architecture.eq_ignore_ascii_case("fastconformer")
-            || self.architecture.eq_ignore_ascii_case("fastconformer-tdt"))
+        if self.modality == Modality::SpeechToText
             && !caps
                 .iter()
                 .any(|c| c.eq_ignore_ascii_case("speech-to-text") || c.eq_ignore_ascii_case("asr"))
@@ -731,105 +796,337 @@ impl ModelConfig {
 }
 
 #[cfg(test)]
-mod sampling_tests {
+mod tests {
     use super::*;
+    use crate::schema::ModelEntry;
 
-    fn cfg(sampling: Option<SamplingConfig>) -> ModelConfig {
-        let mut m: ModelConfig = serde_json::from_str(
-            r#"{"id":"m","name":"M","modality":"Text","model_path":"x.gguf"}"#,
-        )
-        .unwrap();
-        m.sampling = sampling;
-        m
+    fn try_model(json: &str) -> Result<ModelConfig> {
+        ModelConfig::try_from(serde_json::from_str::<ModelEntry>(json)?)
     }
+
+    /// A valid local entry; `more` is spliced in as extra top-level keys.
+    fn local(more: &str) -> Result<ModelConfig> {
+        try_model(&format!(
+            r#"{{"id":"m","name":"M","modality":"Text",
+                "engine":{{"supported":["llama-server"]}},
+                "local":{{"path":"m.gguf"}}{more}}}"#
+        ))
+    }
+
+    fn err(r: Result<ModelConfig>) -> String {
+        format!("{:#}", r.unwrap_err())
+    }
+
+    // ---- sampling
 
     #[test]
     fn request_overrides_config_which_overrides_nothing() {
-        let m = cfg(Some(SamplingConfig {
-            temperature: Some(0.2),
-            top_p: Some(0.9),
-            top_k: Some(20),
-            min_p: None,
-            max_tokens: Some(2048),
-        }));
+        let m =
+            local(r#","sampling":{"temperature":0.2,"top_p":0.9,"top_k":20,"max_tokens":2048}"#)
+                .unwrap();
         let eff = m.effective_sampling(&SamplingConfig {
             temperature: Some(1.1),
-            max_tokens: None,
             ..Default::default()
         });
         assert_eq!(eff.temperature, Some(1.1), "request wins");
         assert_eq!(eff.top_p, Some(0.9), "config fills the gap");
-        assert_eq!(eff.top_k, Some(20));
-        assert_eq!(eff.max_tokens, Some(2048));
-        assert_eq!(eff.min_p, None, "engine default applies later");
+        assert_eq!(
+            (eff.top_k, eff.max_tokens, eff.min_p),
+            (Some(20), Some(2048), None)
+        );
 
-        let bare = cfg(None).effective_sampling(&SamplingConfig::default());
-        assert_eq!(bare, SamplingConfig::default());
+        let bare = local("").unwrap();
+        assert!(
+            bare.sampling.is_none(),
+            "an empty sampling block means no defaults"
+        );
+        assert_eq!(
+            bare.effective_sampling(&SamplingConfig::default()),
+            SamplingConfig::default()
+        );
     }
 
     #[test]
-    fn sampling_block_in_json_is_parsed() {
-        let m: ModelConfig = serde_json::from_str(
-            r#"{"id":"m","name":"M","modality":"Text","model_path":"x",
-                "sampling":{"temperature":0.6,"top_k":20,"max_tokens":4096}}"#,
+    fn nonsense_sampling_values_are_rejected_at_load() {
+        for bad in [
+            r#"{"temperature":-1.0}"#,
+            r#"{"top_p":0.0}"#,
+            r#"{"top_p":1.5}"#,
+            r#"{"min_p":2.0}"#,
+            r#"{"max_tokens":0}"#,
+        ] {
+            assert!(local(&format!(r#","sampling":{bad}"#)).is_err(), "{bad}");
+        }
+        assert!(local(r#","sampling":{"temperature":0.0,"top_p":1.0}"#).is_ok());
+    }
+
+    // ---- engine
+
+    #[test]
+    fn engine_object_orders_the_fallbacks() {
+        let m = try_model(
+            r#"{"id":"p","name":"n","modality":"SpeechToText","local":{"path":"m"},
+                "engine":{"supported":["crispasr","nemo-speech","audio-cpp"],"preferred":"nemo-speech"}}"#,
         )
         .unwrap();
-        let s = m.sampling.unwrap();
         assert_eq!(
-            (s.temperature, s.top_k, s.max_tokens),
-            (Some(0.6), Some(20), Some(4096))
+            m.engine_plan(),
+            vec![
+                EngineKind::NemoSpeech,
+                EngineKind::Crispasr,
+                EngineKind::AudioCpp
+            ],
+            "preferred first, then the rest in listed order"
+        );
+        let no_pref = try_model(
+            r#"{"id":"m","name":"n","modality":"Text","local":{"path":"m"},
+                "engine":{"supported":["llama-server-prism","llama-server"]}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            no_pref.engine_plan()[0],
+            EngineKind::LlamaServerPrism,
+            "defaults to first supported"
         );
     }
 
     #[test]
-    fn nonsense_values_are_rejected_at_load() {
-        for bad in [
-            SamplingConfig {
-                temperature: Some(-1.0),
-                ..Default::default()
-            },
-            SamplingConfig {
-                top_p: Some(0.0),
-                ..Default::default()
-            },
-            SamplingConfig {
-                top_p: Some(1.5),
-                ..Default::default()
-            },
-            SamplingConfig {
-                min_p: Some(2.0),
-                ..Default::default()
-            },
-            SamplingConfig {
-                max_tokens: Some(0),
-                ..Default::default()
-            },
-        ] {
-            assert!(cfg(Some(bad)).validate().is_err());
-        }
+    fn invalid_engine_objects_are_rejected_at_load() {
+        let bad = |engine: &str| {
+            err(try_model(&format!(
+                r#"{{"id":"m","name":"n","modality":"Text","local":{{"path":"m"}},"engine":{engine}}}"#
+            )))
+        };
+        assert!(bad(r#"{"supported":[]}"#).contains("at least one"));
+        assert!(bad(r#"{"supported":["crispasr","crispasr"]}"#).contains("twice"));
         assert!(
-            cfg(Some(SamplingConfig {
-                temperature: Some(0.0),
-                top_p: Some(1.0),
-                ..Default::default()
-            }))
-            .validate()
-            .is_ok()
+            bad(r#"{"supported":["crispasr"],"preferred":"nemo-speech"}"#)
+                .contains("not in engine.supported")
+        );
+        let unknown = bad(r#"{"supported":["fast-engine"]}"#);
+        assert!(
+            unknown.contains("fast-engine") && unknown.contains("llama-server"),
+            "{unknown}"
         );
     }
 
     #[test]
-    fn the_repo_config_still_loads() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/models.json");
-        if path.exists() {
-            // Needs the env vars the config references; skip when absent.
-            if let Err(e) = ModelRegistry::from_file(&path) {
-                let msg = format!("{e:#}");
-                assert!(
-                    msg.contains("environment variable"),
-                    "unexpected failure: {msg}"
-                );
-            }
+    fn local_models_must_name_their_engine() {
+        let e = err(try_model(
+            r#"{"id":"m","name":"n","modality":"Text","local":{"path":"m"}}"#,
+        ));
+        assert!(e.contains("'engine' is required"), "{e}");
+    }
+
+    // ---- structure
+
+    const REMOTE: &str = r#""remote":{"provider":"google","upstream_model":"x","api_key":"k"}"#;
+
+    #[test]
+    fn exactly_one_of_local_or_remote() {
+        let both = err(try_model(&format!(
+            r#"{{"id":"m","name":"n","modality":"Text","engine":{{"supported":["llama-server"]}},"local":{{"path":"p"}},{REMOTE}}}"#
+        )));
+        assert!(both.contains("not both"), "{both}");
+        let neither = err(try_model(r#"{"id":"m","name":"n","modality":"Text"}"#));
+        assert!(neither.contains("needs a 'local' block"), "{neither}");
+    }
+
+    #[test]
+    fn cloud_models_take_no_engine_and_no_extra() {
+        let ok = try_model(&format!(
+            r#"{{"id":"g","name":"n","modality":"Text",{REMOTE}}}"#
+        ))
+        .unwrap();
+        assert!(!ok.is_local() && ok.engine.is_none() && ok.engine_plan().is_empty());
+        let with_engine = err(try_model(&format!(
+            r#"{{"id":"g","name":"n","modality":"Text","engine":{{"supported":["encoder"]}},{REMOTE}}}"#
+        )));
+        assert!(
+            with_engine.contains("only applies to local"),
+            "{with_engine}"
+        );
+        let with_extra = err(try_model(&format!(
+            r#"{{"id":"g","name":"n","modality":"Text",{REMOTE},"extra":{{"mmproj_path":"x"}}}}"#
+        )));
+        assert!(
+            with_extra.contains("not supported on cloud"),
+            "{with_extra}"
+        );
+    }
+
+    #[test]
+    fn remote_blocks_reject_local_provider_and_blank_keys() {
+        let e = err(try_model(
+            r#"{"id":"g","name":"n","modality":"Text","remote":{"provider":"local","upstream_model":"x","api_key":"k"}}"#,
+        ));
+        assert!(e.contains("cannot be 'local'"), "{e}");
+        let blank = err(try_model(
+            r#"{"id":"g","name":"n","modality":"Text","remote":{"provider":"google","upstream_model":"x","api_key":" "}}"#,
+        ));
+        assert!(blank.contains("api_key"), "{blank}");
+    }
+
+    #[test]
+    fn unknown_keys_are_errors_not_silently_ignored() {
+        let top = err(local(r#","vison":true"#));
+        assert!(top.contains("vison"), "{top}");
+        let block = err(try_model(
+            r#"{"id":"m","name":"n","modality":"Text","engine":{"supported":["encoder"]},"local":{"path":"p","gpu_layer":1}}"#,
+        ));
+        assert!(block.contains("gpu_layer"), "{block}");
+    }
+
+    // ---- extra
+
+    #[test]
+    fn extra_is_validated_against_the_models_engines() {
+        let m = local(r#","extra":{"mmproj_path":"mm.gguf","mtp_heads":2}"#).unwrap();
+        assert_eq!(
+            (m.mmproj_path.as_deref(), m.mtp_heads()),
+            (Some("mm.gguf"), Some(2))
+        );
+
+        let wrong_engine = err(local(r#","extra":{"vae_path":"v.safetensors"}"#));
+        assert!(
+            wrong_engine.contains("extra.vae_path") && wrong_engine.contains("mmproj_path"),
+            "{wrong_engine}"
+        );
+
+        let sd = try_model(
+            r#"{"id":"z","name":"n","modality":"ImageGeneration","engine":{"supported":["sd-server"]},
+                "local":{"path":"z"},"extra":{"vae_path":"v","default_steps":8,
+                "lora":[{"name":"a","path":"a.safetensors","scale":0.5}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (sd.default_steps, sd.lora.len(), sd.lora[0].scale),
+            (Some(8), 1, 0.5)
+        );
+
+        let none_allowed = err(try_model(
+            r#"{"id":"w","name":"n","modality":"SpeechToText","engine":{"supported":["crispasr"]},
+                "local":{"path":"w"},"extra":{"mmproj_path":"x"}}"#,
+        ));
+        assert!(
+            none_allowed.contains("Allowed keys: none"),
+            "{none_allowed}"
+        );
+
+        let bad_type = err(local(r#","extra":{"mtp_heads":"two"}"#));
+        assert!(bad_type.contains("invalid extra"), "{bad_type}");
+    }
+
+    #[test]
+    fn local_block_defaults_are_explicit_and_sane() {
+        let m = local("").unwrap();
+        let rt = m.runtime.unwrap();
+        assert_eq!((rt.context_length, rt.gpu_layers), (-1, 99));
+        assert!(
+            rt.extra_args.is_none(),
+            "empty args are not passed to the engine"
+        );
+        let with_args = try_model(
+            r#"{"id":"m","name":"n","modality":"Text","engine":{"supported":["llama-server"]},
+                "local":{"path":"p","args":"-fa on","context_length":4096,"gpu_layers":0}}"#,
+        )
+        .unwrap();
+        let rt = with_args.runtime.unwrap();
+        assert_eq!(
+            (rt.context_length, rt.gpu_layers, rt.extra_args.as_deref()),
+            (4096, 0, Some("-fa on"))
+        );
+    }
+
+    #[test]
+    fn vision_comes_from_the_modality_only() {
+        let v = try_model(
+            r#"{"id":"v","name":"n","modality":"VisionText","engine":{"supported":["llama-server"]},"local":{"path":"p"}}"#,
+        )
+        .unwrap();
+        assert!(v.is_vision() && v.resolved_capabilities().contains(&"Vision".to_string()));
+        assert!(!local("").unwrap().is_vision());
+    }
+
+    // ---- model lookup
+
+    fn registry(models: &[(&str, &str, &str)]) -> ModelRegistry {
+        let mut r = ModelRegistry::new();
+        for (id, name, modality) in models {
+            r.models.push(
+                try_model(&format!(
+                    r#"{{"id":"{id}","name":"{name}","modality":"{modality}",
+                        "engine":{{"supported":["encoder"]}},"local":{{"path":"p"}}}}"#
+                ))
+                .unwrap(),
+            );
         }
+        r
+    }
+
+    #[test]
+    fn find_uses_ids_and_names_and_no_model_specific_shortcuts() {
+        let r = registry(&[
+            ("qwen-9b", "Qwen 9B", "Text"),
+            ("bge-small", "BGE Small", "Embedding"),
+            ("gemini-flash", "Gemini Flash", "Text"),
+        ]);
+        assert_eq!(r.find("qwen-9b").unwrap().id, "qwen-9b");
+        assert_eq!(
+            r.find("QWEN-9B").unwrap().id,
+            "qwen-9b",
+            "case-insensitive id"
+        );
+        assert_eq!(r.find("Qwen 9B").unwrap().id, "qwen-9b", "display name");
+        assert!(r.find("claude-3-opus").is_none(), "no vendor shortcuts");
+        assert!(r.find("gemini").is_none(), "partial names do not match");
+        assert!(r.find("gpt-4o").is_none());
+    }
+
+    #[test]
+    fn find_keeps_only_generic_modality_fallbacks_for_sdk_default_names() {
+        let r = registry(&[
+            ("a", "A", "Text"),
+            ("emb", "E", "Embedding"),
+            ("stt", "S", "SpeechToText"),
+            ("tts", "T", "TextToSpeech"),
+        ]);
+        assert_eq!(r.find("text-embedding-3-small").unwrap().id, "emb");
+        assert_eq!(r.find("whisper-1").unwrap().id, "stt");
+        assert_eq!(r.find("tts-1").unwrap().id, "tts");
+        assert!(
+            r.find("moderation-latest").is_none(),
+            "no model of that modality configured"
+        );
+    }
+
+    // ---- loader
+
+    #[test]
+    fn rate_limit_blocks_reject_the_removed_seconds_key() {
+        let e = err(try_model(
+            r#"{"id":"g","name":"n","modality":"Text","remote":{"provider":"google","upstream_model":"x",
+                "api_key":"k","rate_limit":{"retry_delay_seconds":2}}}"#,
+        ));
+        assert!(e.contains("retry_delay_seconds"), "{e}");
+    }
+
+    #[test]
+    fn the_repo_config_loads() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/models.json");
+        let reg = ModelRegistry::from_file_with_env(
+            &path,
+            &[
+                ("GEMINI_API_KEY".into(), "x".into()),
+                ("OPENROUTER_API_KEY".into(), "x".into()),
+            ],
+        )
+        .unwrap_or_else(|e| panic!("{e:#}"));
+        assert!(
+            reg.models
+                .iter()
+                .filter(|m| m.is_local())
+                .all(|m| !m.engine_plan().is_empty())
+        );
     }
 }

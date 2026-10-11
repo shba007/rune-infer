@@ -111,6 +111,11 @@ Key modules:
 - `config.rs` — `ModelRegistry`, `ModelConfig`, `Modality`, `ProviderType`,
   validation, capability resolution, token budgets. `{{VAR}}` placeholders are
   resolved from the environment (`.env` via dotenvy) at load time.
+- `schema.rs` — the on-disk schema 2 types (`ModelEntry`, `LocalBlock`,
+  `RemoteBlock`), per-engine `extra` validation (`allowed_extra_keys`) and the
+  conversion into the flat `ModelConfig` the rest of the server uses.
+- `migrate.rs` — `rune-infer migrate` (schema 1 → 2); the only place that still
+  infers an engine from model names/architectures.
 - `inference/registry.rs` — engine creation, GPU VRAM detection, context sizing,
   LRU eviction bounded by `max_loaded_models` and `vram_budget_ratio`.
 - `inference/process.rs` — subprocess lifecycle (Windows job objects / unix
@@ -151,22 +156,101 @@ hot-reload is **not implemented yet**.
 
 ## 4. Config
 
-`<home>/config/models.json` (home = `~/.rune-infer`, see §3; `schema_version: 1`) — `server` block (host, port,
-`api_key`, `max_loaded_models`, `idle_unload_seconds`, `vram_budget_ratio`) and
-a `models` array. Per model: `id`, `name`, `modality`, `architecture`,
-`format` (`gguf` | `safetensors` | `cact`), `provider` (`local` default, or
-`openai`/`anthropic`/`google`/`openrouter`/`custom` with `base_url`,
-`upstream_model`, `api_key`, `rate_limit`), paths (`model_path`, `mmproj_path`,
-`vae_path`, `text_encoder_path`, `llm_vision_path`, `mtp_path`), image defaults,
-`capabilities`, size metadata used for budgeting, `sampling`, `runtime`, `lora`.
+`<home>/config/models.json` (home = `~/.rune-infer`, see §3) is **schema 2**.
+Adding a model is a config edit only — no source change: engines are chosen by
+the config, and every model uses the same standard keys.
+
+```json
+{
+  "schema_version": 2,
+  "server": { "host": "127.0.0.1", "port": 8080, "api_key": "{{RUNE_API_KEY}}",
+              "max_loaded_models": 1, "idle_unload_seconds": 300, "vram_budget_ratio": 0.95 },
+  "models": [
+    {
+      "id": "qwen3.8-27b",
+      "name": "Qwen3.8 27B",
+      "description": "Multimodal reasoning model",
+      "modality": "VisionText",
+      "capabilities": ["Chat", "Vision", "Tool Call"],
+      "engine": { "supported": ["llama-server"], "preferred": "llama-server" },
+      "max_context_length": 262144,
+      "sampling": { "temperature": 0.6, "top_p": 0.95, "top_k": 40, "max_tokens": 4096 },
+      "local": {
+        "path": "D:/Models/qwen3.8-27b.gguf",
+        "params": 27000000000, "bits_per_weight": 3.44,
+        "context_length": -1, "gpu_layers": 99, "args": "-fa on"
+      },
+      "extra": { "mmproj_path": "D:/Models/mmproj-BF16.gguf" }
+    },
+    {
+      "id": "gemini-3.7-flash",
+      "name": "Gemini 3.7 Flash",
+      "description": "",
+      "modality": "VisionText",
+      "capabilities": ["Chat", "Vision"],
+      "max_context_length": 1048576,
+      "sampling": {},
+      "remote": {
+        "provider": "google", "upstream_model": "gemini-3.7-flash",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": "{{GEMINI_API_KEY}}",
+        "rate_limit": { "requests_per_minute": 5, "max_concurrent": 2, "retry_delay_ms": 2000 }
+      },
+      "extra": {}
+    }
+  ]
+}
+```
+
+- **Core keys** (every model): `id`, `name`, `description`, `modality`,
+  `capabilities`, `max_context_length`, `sampling`, `extra`. Each model also has
+  exactly one of `local` (own weights) or `remote` (cloud provider). Local
+  models additionally require `engine`; cloud models must not have one (the
+  `remote.provider` adapter handles them). The only keys that differ between
+  models are inside `extra`.
+- **`engine`**: `{ "supported": [...], "preferred": "..." }`. `preferred`
+  (default: first supported) is tried first; if it fails to start, the others
+  are tried in the listed order. Names: `llama-server`, `llama-server-prism`,
+  `sd-server`, `audio-cpp`, `nemo-speech`, `crispasr`, `encoder`, `needle`.
+  Nothing is inferred from names or architectures any more. The engine that
+  started is shown in the dashboard and the load event.
+- **`local`**: `path`, `params`, `bits_per_weight` (the last two only feed the
+  VRAM estimate), `context_length` (`-1` = automatic), `gpu_layers`, `args`
+  (extra command-line arguments passed verbatim to the engine process).
+- **`remote`**: `provider` (`openai` | `anthropic` | `google` | `openrouter` |
+  `custom`), `upstream_model`, `api_key`, `base_url`, `rate_limit`
+  (requests/tokens per minute and day, concurrency, queueing, retries; a single
+  `retry_delay_ms`).
+- **`extra`** holds engine-specific settings and is validated against the
+  model's `supported` engines when the config loads (a key no engine uses is an
+  error that lists the allowed keys): `llama-server*`: `mmproj_path`,
+  `mtp_path`, `mtp_heads`, `max_resolution`; `sd-server`: `vae_path`,
+  `text_encoder_path`, `llm_vision_path`, `default_steps`, `default_cfg_scale`,
+  `default_sample_method`, `max_resolution`, `lora` (a list of
+  `{name, path, scale}` — parsed and validated but **not yet applied** by any
+  engine); other engines take none yet. To support a new engine setting, add
+  the key to `allowed_extra_keys` in `schema.rs`.
+- **Strict parsing:** unknown keys anywhere in a model are errors, so a typo
+  can no longer be silently ignored.
+- **No hardcoded model names in source.** `find()` resolves an exact id, then a
+  case-insensitive id or display name; unknown generic OpenAI-SDK default names
+  (`text-embedding-3-small`, `whisper-1`, `tts-1`, …) fall back to the first
+  model of that modality. Anything else is "model not found".
+- **Upgrading from schema 1:** `rune-infer migrate [--dry-run]` converts the
+  file, keeps a `models.json.v1.bak` backup, validates the result before
+  writing, and lists every engine it had to infer (marking the ones that were
+  matched on a model id) and every key it dropped. A v1 file is refused at
+  startup with a pointer to this command. The name-based inference lives only
+  in `migrate.rs`.
 
 Rules:
 - **Secrets never go inline.** Use `"api_key": "{{GEMINI_API_KEY}}"` style
   references resolved from `.env`/system env. `.env` is gitignored; the
-  pre-commit hook scans for secrets.
+  pre-commit hook scans for secrets. The same templating works for any string,
+  e.g. a shared `{{MODELS_DIR}}` prefix in model paths.
 - The config is expected to **split into multiple files** over time (server
-  settings, model catalog, secrets). Keep schema changes versioned via
-  `schema_version` with a migration function.
+  settings, model catalog, secrets). Bump `schema_version` and add a `migrate`
+  step for any shape change.
 - Env vars used today: `RUNE_HOST`, `RUNE_PORT`, `RUNE_API_KEY`,
   `LLAMA_SERVER_PATH`, `SD_SERVER_PATH`, `CRISPASR_PATH`, `NEMO_SPEECH_PATH`,
   `AUDIO8_PATH`, `S3_*`/`AWS_*`, `RUSTFS_*`, `GH_TOKEN`, provider keys.

@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
-use crate::config::ModelRegistry;
+use crate::config::{
+    EngineConfig, Modality, ModelRegistry, ProviderType, SamplingConfig, ServerConfig,
+};
+use crate::schema::{LocalBlock, ModelEntry, RegistryFile, RemoteBlock, SCHEMA_VERSION};
 
 // ---------------------------------------------------------------------------
 // Prerequisites
@@ -448,101 +451,135 @@ pub fn slugify(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-fn local_model_json(c: &LocalCandidate, gpu: bool) -> Value {
+fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
     let id = slugify(&c.path.file_stem().unwrap_or_default().to_string_lossy());
     let vision = c.mmproj.is_some();
     let mut caps = vec!["Chat", "Tool Call", "Structured Output"];
     if vision {
         caps.push("Vision");
     }
-    json!({
-        "id": id,
-        "name": c.display_name,
-        "architecture": c.architecture,
-        "format": "gguf",
-        "model_path": c.path.to_string_lossy(),
-        "mmproj_path": c.mmproj.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        "vision": vision,
-        "modality": if vision { "VisionText" } else { "Text" },
-        "description": format!("Imported by setup wizard ({} architecture)", c.architecture),
-        "capabilities": caps,
-        "max_context_length": c.context_length,
-        "sampling": { "temperature": 0.7, "top_p": 0.9, "top_k": 40, "min_p": 0.05, "max_tokens": 4096 },
-        "runtime": { "context_length": -1, "gpu_layers": if gpu { 99 } else { 0 }, "extra_args": "" },
-        "lora": []
-    })
+    let kind = crate::migrate::llama_engine_for_architecture(&c.architecture);
+    let mut extra = serde_json::Map::new();
+    if let Some(mm) = &c.mmproj {
+        extra.insert("mmproj_path".into(), json!(mm.to_string_lossy()));
+    }
+    ModelEntry {
+        id,
+        name: c.display_name.clone(),
+        description: format!("Imported by setup wizard ({} architecture)", c.architecture),
+        modality: if vision {
+            Modality::VisionText
+        } else {
+            Modality::Text
+        },
+        capabilities: caps.into_iter().map(String::from).collect(),
+        engine: Some(EngineConfig {
+            supported: vec![kind],
+            preferred: Some(kind),
+        }),
+        max_context_length: c.context_length,
+        sampling: SamplingConfig {
+            temperature: Some(0.7),
+            top_p: Some(0.9),
+            top_k: Some(40),
+            min_p: Some(0.05),
+            max_tokens: Some(4096),
+        },
+        local: Some(LocalBlock {
+            path: c.path.to_string_lossy().into_owned(),
+            params: None,
+            bits_per_weight: None,
+            context_length: -1,
+            gpu_layers: if gpu { 99 } else { 0 },
+            args: String::new(),
+        }),
+        remote: None,
+        extra,
+    }
 }
 
-fn cloud_model_json(c: &CloudChoice) -> Value {
-    json!({
-        "id": format!("{}-{}", c.preset.id_prefix, slugify(&c.upstream_model)),
-        "name": format!("{} · {}", c.preset.label, c.upstream_model),
-        "provider": c.preset.provider,
-        "upstream_model": c.upstream_model,
-        "api_key": format!("{{{{{}}}}}", c.preset.env_var),
-        "base_url": c.preset.base_url,
-        "modality": "VisionText",
-        "vision": true,
-        "description": format!("{} model added by setup wizard", c.preset.label),
-        "capabilities": ["Chat", "Tool Call", "Vision", "Structured Output"]
-    })
+fn cloud_entry(c: &CloudChoice) -> ModelEntry {
+    ModelEntry {
+        id: format!("{}-{}", c.preset.id_prefix, slugify(&c.upstream_model)),
+        name: format!("{} · {}", c.preset.label, c.upstream_model),
+        description: format!("{} model added by setup wizard", c.preset.label),
+        modality: Modality::VisionText,
+        capabilities: ["Chat", "Tool Call", "Vision", "Structured Output"]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        engine: None,
+        max_context_length: None,
+        sampling: SamplingConfig::default(),
+        local: None,
+        remote: Some(RemoteBlock {
+            provider: ProviderType::from_name(c.preset.provider).unwrap_or(ProviderType::Custom),
+            upstream_model: c.upstream_model.clone(),
+            api_key: format!("{{{{{}}}}}", c.preset.env_var),
+            base_url: Some(c.preset.base_url.to_string()),
+            rate_limit: None,
+        }),
+        extra: serde_json::Map::new(),
+    }
 }
 
-/// Merge `plan` into the config JSON at `config_path` (creating it when
-/// absent) and the secrets into `env_path`. Existing models with the same id
-/// are kept untouched. Returns the number of models added.
+/// Merge `plan` into the config at `config_path` (creating it when absent) and
+/// the secrets into `env_path`. Existing models with the same id are kept
+/// untouched. Returns the number of models added.
 pub fn write_setup(plan: &SetupPlan, config_path: &Path, env_path: &Path) -> Result<usize> {
-    let mut root: Value = if config_path.exists() {
-        serde_json::from_str(&std::fs::read_to_string(config_path)?)
+    let mut file: RegistryFile = if config_path.exists() {
+        let text = std::fs::read_to_string(config_path)?;
+        let version = serde_json::from_str::<Value>(&text)
             .context("existing config is not valid JSON; refusing to overwrite it")?
+            .get("schema_version")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        if version != u64::from(SCHEMA_VERSION) {
+            anyhow::bail!(
+                "{} uses an older config schema (version {version}). Run `rune-infer migrate` first, then run setup again.",
+                config_path.display()
+            );
+        }
+        serde_json::from_str(&text)
+            .context("existing config is not valid; refusing to overwrite it")?
     } else {
-        json!({ "schema_version": 1, "server": {}, "models": [] })
+        RegistryFile {
+            schema_version: SCHEMA_VERSION,
+            server: ServerConfig::default(),
+            models: Vec::new(),
+        }
     };
 
-    let server = root
-        .as_object_mut()
-        .context("config root must be an object")?
-        .entry("server")
-        .or_insert_with(|| json!({}));
-    let server = server
-        .as_object_mut()
-        .context("`server` must be an object")?;
-    server.insert("host".into(), json!(plan.exposure.host()));
-    server.insert("port".into(), json!(plan.port));
-    server.insert(
-        "api_key".into(),
-        if plan.server_api_key.is_some() {
-            json!("{{RUNE_API_KEY}}")
-        } else {
-            Value::Null
-        },
-    );
-    server.entry("max_loaded_models").or_insert(json!(1));
-    server.entry("idle_unload_seconds").or_insert(json!(300));
-    server.entry("vram_budget_ratio").or_insert(json!(0.95));
+    file.server.host = plan.exposure.host().to_string();
+    file.server.port = plan.port;
+    file.server.api_key = plan
+        .server_api_key
+        .is_some()
+        .then(|| "{{RUNE_API_KEY}}".to_string());
 
-    let models = root["models"]
-        .as_array_mut()
-        .context("`models` must be an array")?;
     let mut added = 0;
     let new_entries = plan
         .local
         .iter()
-        .map(|c| local_model_json(c, plan.gpu_available))
-        .chain(plan.cloud.iter().map(cloud_model_json));
+        .map(|c| local_entry(c, plan.gpu_available))
+        .chain(plan.cloud.iter().map(cloud_entry));
     for entry in new_entries {
-        let id = entry["id"].as_str().unwrap_or_default().to_string();
-        if models.iter().any(|m| m["id"].as_str() == Some(&id)) {
+        if file.models.iter().any(|m| m.id == entry.id) {
             continue;
         }
-        models.push(entry);
+        file.models.push(entry);
         added += 1;
     }
 
     if let Some(dir) = config_path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(config_path, serde_json::to_string_pretty(&root)? + "\n")?;
+    std::fs::write(
+        config_path,
+        serde_json::to_string_pretty(&file)?
+            + "
+",
+    )?;
 
     let mut secrets: Vec<(String, String)> = plan
         .cloud

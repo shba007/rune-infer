@@ -46,6 +46,12 @@ struct Args {
 enum Command {
     /// Run the interactive setup wizard (API keys, local models, engines)
     Setup,
+    /// Upgrade a schema 1 models.json to the current schema (keeps a .v1.bak backup)
+    Migrate {
+        /// Show what would change without writing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[tokio::main]
@@ -54,6 +60,11 @@ async fn main() -> Result<()> {
 
     let ws =
         Workspace::resolve(args.config.as_deref()).context("Cannot determine working folder")?;
+
+    if let Some(Command::Migrate { dry_run }) = &args.command {
+        return rune_infer::migrate::run(&ws.config_path, *dry_run);
+    }
+
     ws.enter()
         .with_context(|| format!("Cannot use folder {}", ws.root.display()))?;
     let env_result = dotenvy::dotenv();
@@ -221,6 +232,9 @@ async fn run(
                 name: m.name.clone(),
                 modality: m.modality.as_str().to_string(),
                 provider: (!m.is_local()).then(|| m.provider.as_str().to_string()),
+                engine: m
+                    .is_local()
+                    .then(|| m.engine_plan()[0].as_str().to_string()),
             })
             .collect(),
     };

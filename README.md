@@ -148,6 +148,7 @@ Usage: rune-infer [OPTIONS] [COMMAND]
 
 Commands:
   setup    Run the interactive setup wizard (API keys, local models, engines)
+  migrate  Upgrade a schema 1 models.json (--dry-run to preview; keeps a .v1.bak)
 
 Options:
   -c, --config <CONFIG>        Path to models.json [default: ./config/models.json if present,
@@ -168,58 +169,54 @@ config as `"{{NAME}}"` are read from `.env` or the environment.
 
 ## Configuration (`models.json`)
 
-The server configuration resides in `config/models.json`:
+`models.json` is **schema 2**: every model has the same core keys
+(`id`, `name`, `description`, `modality`, `capabilities`, `max_context_length`,
+`sampling`, `extra`) plus a `local` block (your own weights) or a `remote` block
+(a cloud provider). Local models name their `engine`; anything specific to one
+engine goes in `extra`, so adding a model never needs a source change.
 
 ```json
 {
-  "schema_version": 1,
-  "server": {
-    "host": "0.0.0.0",
-    "port": 3423,
-    "api_key": null,
-    "max_loaded_models": 1,
-    "idle_unload_seconds": 300,
-    "vram_budget_ratio": 0.97
-  },
+  "schema_version": 2,
+  "server": { "host": "127.0.0.1", "port": 8080, "api_key": null,
+              "max_loaded_models": 1, "idle_unload_seconds": 300, "vram_budget_ratio": 0.95 },
   "models": [
     {
       "id": "qwen3.8-27b",
       "name": "Qwen3.8 27B",
-      "architecture": "qwen35",
-      "format": "gguf",
-      "model_path": "D:/Models/qwen3.8-27b.gguf",
-      "mmproj_path": "D:/Models/mmproj-F16.gguf",
-      "vision": true,
-      "modality": "VisionText",
       "description": "Multimodal vision-language model",
-      "max_resolution": "4096×4096 (Dynamic 4K)",
-      "capabilities": [
-        "Chat",
-        "Vision",
-        "Reasoning",
-        "Agentic Tasks",
-        "Tool Call",
-        "Structured Output"
-      ],
-      "bits_per_weight": 3.44,
-      "total_params": 27000000000,
+      "modality": "VisionText",
+      "capabilities": ["Chat", "Vision", "Tool Call", "Structured Output"],
+      "engine": { "supported": ["llama-server"], "preferred": "llama-server" },
       "max_context_length": 262144,
-      "sampling": {
-        "temperature": 0.6,
-        "top_p": 0.95,
-        "top_k": 40,
-        "min_p": 0.05,
-        "max_tokens": 4096
-      },
-      "runtime": {
+      "sampling": { "temperature": 0.6, "top_p": 0.95, "top_k": 40, "min_p": 0.05, "max_tokens": 4096 },
+      "local": {
+        "path": "D:/Models/qwen3.8-27b.gguf",
+        "params": 27000000000,
+        "bits_per_weight": 3.44,
         "context_length": -1,
         "gpu_layers": 99,
-        "extra_args": ""
-      }
+        "args": ""
+      },
+      "extra": { "mmproj_path": "D:/Models/mmproj-F16.gguf", "max_resolution": "4096x4096" }
     }
   ]
 }
 ```
+
+Unknown keys are errors, and `extra` is checked against the model's engines
+when the config loads. Cloud keys go in `.env` and are referenced as
+`"api_key": "{{GEMINI_API_KEY}}"`. See [AGENTS.md](AGENTS.md#4-config) for the
+full key reference.
+
+**Upgrading an older (schema 1) file:**
+
+```bash
+rune-infer migrate --dry-run   # preview: engines inferred, keys dropped
+rune-infer migrate             # rewrite in place, keeping models.json.v1.bak
+```
+
+---
 
 ## Logging & Auditing
 

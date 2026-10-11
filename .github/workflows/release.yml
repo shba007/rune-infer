@@ -30,8 +30,12 @@ jobs:
         run: |
           VERSION=$(grep -m1 '^version =' Cargo.toml | cut -d '"' -f2)
           TAG="v$VERSION"
-          git-cliff --current --strip header > RELEASE_NOTES.md
+          # Notes for commits since the last tag, labelled with the new version.
+          # (--current would require $TAG to already exist on this commit.)
+          git-cliff --unreleased --tag "$TAG" --strip header > RELEASE_NOTES.md
 
+          # gh creates the tag on the pushed commit if it does not exist yet.
           gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
             --title "$TAG" \
             --notes-file RELEASE_NOTES.md

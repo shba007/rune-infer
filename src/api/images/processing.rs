@@ -37,12 +37,7 @@ pub async fn image_caption_handler(
 
     let model_id = match request.model {
         Some(ref m) if !m.trim().is_empty() => m.trim().to_string(),
-        _ => match state
-            .config
-            .models
-            .iter()
-            .find(|m| m.vision || m.modality == crate::config::Modality::VisionText)
-        {
+        _ => match state.config.models.iter().find(|m| m.is_vision()) {
             Some(m) => m.id.clone(),
             None => "ornith-1.5-9b".to_string(),
         },

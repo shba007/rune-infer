@@ -27,8 +27,7 @@ pub fn prepare_prompt(
         has_video |= media.iter().any(|m| matches!(m, MediaItem::Video(_)));
     }
 
-    let supports_vision =
-        model_config.vision || model_config.modality == crate::config::Modality::VisionText;
+    let supports_vision = model_config.is_vision();
     if has_media && !supports_vision {
         return Err((
             StatusCode::BAD_REQUEST,

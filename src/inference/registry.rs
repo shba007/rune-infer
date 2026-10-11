@@ -1,4 +1,4 @@
-use crate::config::{ModelConfig, ModelRegistry as ConfigRegistry, ServerConfig};
+use crate::config::{EngineKind, ModelConfig, ModelRegistry as ConfigRegistry, ServerConfig};
 use crate::inference::traits::InferenceEngine;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -88,16 +88,17 @@ impl ModelRegistry {
 
         crate::telemetry::model_loading(&model_config.id);
         let load_started = std::time::Instant::now();
-        let engine =
+        let (engine, engine_kind) =
             Self::create_engine(&model_config, &self.config.server, vram_before).map_err(|e| {
                 crate::telemetry::model_failed(&model_config.id, &e.to_string());
                 format!("Failed to load model '{}': {}", id, e)
             })?;
         let vram_detail = match (vram_before, Self::detect_used_gpu_vram()) {
-            (Some(before), Some(after)) => {
-                format!("+{} VRAM", Self::format_bytes(after.saturating_sub(before)))
-            }
-            _ => String::new(),
+            (Some(before), Some(after)) => format!(
+                "{engine_kind} · +{} VRAM",
+                Self::format_bytes(after.saturating_sub(before))
+            ),
+            _ => engine_kind.to_string(),
         };
         crate::telemetry::model_loaded(
             &model_config.id,
@@ -302,15 +303,11 @@ impl ModelRegistry {
             return 0;
         }
 
-        let base = if let Some(custom) = model.kv_bytes_per_token {
-            custom
-        } else {
-            match model.total_params.unwrap_or(0) {
-                p if p < 2_000_000_000 => 16 * 1024,
-                p if p < 10_000_000_000 => 32 * 1024,
-                p if p < 35_000_000_000 => 64 * 1024,
-                _ => 128 * 1024,
-            }
+        let base = match model.total_params.unwrap_or(0) {
+            p if p < 2_000_000_000 => 16 * 1024,
+            p if p < 10_000_000_000 => 32 * 1024,
+            p if p < 35_000_000_000 => 64 * 1024,
+            _ => 128 * 1024,
         };
 
         let k_mult = Self::parse_cache_type_multiplier(extra_args, "--cache-type-k", "-ctk");
@@ -411,19 +408,69 @@ impl ModelRegistry {
         )
     }
 
+    /// Start an engine for `model`, trying the configured engines in order
+    /// (preferred first) until one starts. Returns the engine and which kind won.
     fn create_engine(
         model: &ModelConfig,
         server: &ServerConfig,
         vram_before: Option<u64>,
-    ) -> Result<Arc<dyn InferenceEngine>, Box<dyn std::error::Error>> {
-        let model_path = std::path::Path::new(&model.model_path);
-        if !model_path.exists() {
+    ) -> Result<(Arc<dyn InferenceEngine>, EngineKind), Box<dyn std::error::Error>> {
+        if !std::path::Path::new(&model.model_path).exists() {
             return Err(format!(
                 "Model '{}' file not found at path: {}",
                 model.id, model.model_path
             )
             .into());
         }
+
+        Self::start_first_working(model, |kind| {
+            Self::build_engine(kind, model, server, vram_before)
+        })
+    }
+
+    /// Walk `model.engine_plan()`, returning the first engine `build` can start.
+    fn start_first_working(
+        model: &ModelConfig,
+        mut build: impl FnMut(
+            EngineKind,
+        ) -> Result<Arc<dyn InferenceEngine>, Box<dyn std::error::Error>>,
+    ) -> Result<(Arc<dyn InferenceEngine>, EngineKind), Box<dyn std::error::Error>> {
+        let plan = model.engine_plan();
+        let mut failures: Vec<String> = Vec::new();
+        for (attempt, kind) in plan.iter().copied().enumerate() {
+            match build(kind) {
+                Ok(engine) => {
+                    if attempt > 0 {
+                        tracing::warn!(
+                            "[ModelRegistry] '{}' fell back to engine '{}' ({})",
+                            model.id,
+                            kind,
+                            failures.join("; ")
+                        );
+                    }
+                    return Ok((engine, kind));
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[ModelRegistry] engine '{}' failed for '{}': {}",
+                        kind,
+                        model.id,
+                        e
+                    );
+                    failures.push(format!("{kind}: {e}"));
+                }
+            }
+        }
+        Err(failures.join("; ").into())
+    }
+
+    fn build_engine(
+        kind: EngineKind,
+        model: &ModelConfig,
+        server: &ServerConfig,
+        vram_before: Option<u64>,
+    ) -> Result<Arc<dyn InferenceEngine>, Box<dyn std::error::Error>> {
+        let model_path = std::path::Path::new(&model.model_path);
 
         let model_vram = std::fs::metadata(&model.model_path)
             .map(|m| m.len())
@@ -437,7 +484,7 @@ impl ModelRegistry {
 
         let capabilities_str = model.resolved_capabilities().join(", ");
 
-        if model.modality == crate::config::Modality::ImageGeneration {
+        if kind == EngineKind::SdServer {
             let engine = crate::inference::engines::sd_server::SdServerEngine::new(model)?;
             let text_encoder_vram = model
                 .text_encoder_path
@@ -510,10 +557,7 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        if model.architecture.eq_ignore_ascii_case("audio8")
-            || model.architecture.eq_ignore_ascii_case("audiocpp")
-            || model.id.to_lowercase().contains("audio8")
-        {
+        if kind == EngineKind::AudioCpp {
             let engine = crate::inference::engines::audio::AudioEngine::new(model)?;
             tracing::info!(
                 "[ModelRegistry] ✓ Successfully loaded Audio engine (audio.cpp): \"{}\"",
@@ -522,13 +566,7 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        if model.architecture.eq_ignore_ascii_case("parakeet")
-            || model.architecture.eq_ignore_ascii_case("nemo-speech")
-            || model.architecture.eq_ignore_ascii_case("fastconformer")
-            || model.architecture.eq_ignore_ascii_case("fastconformer-tdt")
-            || model.id.to_lowercase().contains("parakeet")
-            || model.id.to_lowercase().contains("nemotron-speech")
-        {
+        if kind == EngineKind::NemoSpeech {
             let engine = crate::inference::engines::nemo_speech::NemoSpeechEngine::new(model)?;
             let real_str =
                 if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
@@ -557,11 +595,7 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        if model.modality == crate::config::Modality::SpeechToText
-            || model.modality == crate::config::Modality::TextToSpeech
-            || model.architecture.eq_ignore_ascii_case("crispasr")
-            || model.architecture.eq_ignore_ascii_case("voxtral4b")
-        {
+        if kind == EngineKind::Crispasr {
             let engine = crate::inference::engines::crispasr::CrispAsrEngine::new(model)?;
             let real_str =
                 if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
@@ -590,24 +624,7 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        let is_encoder_path = model.model_path.ends_with(".safetensors")
-            || model.model_path.ends_with(".bin")
-            || model.model_path.ends_with(".onnx");
-
-        let is_encoder_task = model.modality == crate::config::Modality::Embedding
-            || model.modality == crate::config::Modality::Moderation
-            || model.modality == crate::config::Modality::Nlu
-            || model.architecture.eq_ignore_ascii_case("modernbert")
-            || model.architecture.eq_ignore_ascii_case("encoder")
-            || model.id.contains("embedding")
-            || model.id.contains("granite")
-            || model.id.contains("guard")
-            || model.id.contains("intent")
-            || model.id.contains("mmbert");
-
-        if is_encoder_task
-            || (is_encoder_path && model.modality != crate::config::Modality::ImageGeneration)
-        {
+        if kind == EngineKind::Encoder {
             let engine = crate::inference::engines::encoder::EncoderEngine::new(model)?;
             tracing::info!(
                 "[ModelRegistry] ✓ Successfully loaded encoder engine: \"{}\" ({})",
@@ -624,15 +641,15 @@ impl ModelRegistry {
         let mtp_heads = model.mtp_heads();
         let extra_args = model.runtime.as_ref().and_then(|r| r.extra_args.clone());
 
-        let engine: Arc<dyn InferenceEngine> = match model.architecture.as_str() {
-            "cactus-needle-3" => {
+        let engine: Arc<dyn InferenceEngine> = match kind {
+            EngineKind::Needle => {
                 let engine = crate::inference::engines::needle::NeedleEngine::new(
                     model.id.clone(),
                     model_path,
                 )?;
                 Arc::new(engine)
             }
-            "ternary-bonsai" | "bonsai" | "bonsai-vl" | "ternary-bonsai-vl" => {
+            EngineKind::LlamaServerPrism => {
                 let mmproj_path = model.mmproj_path.as_deref().map(std::path::Path::new);
                 let engine = crate::inference::engines::llama_server::LlamaServerEngine::new(
                     model.id.clone(),
@@ -692,7 +709,7 @@ impl ModelRegistry {
         tracing::info!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
         tracing::info!("[ModelRegistry]   • Model:        {}", model_mem_str);
 
-        if projector_vram > 0 || model.vision {
+        if projector_vram > 0 || model.is_vision() {
             let res_str = model
                 .max_resolution
                 .as_deref()
@@ -791,6 +808,76 @@ mod tests {
         assert!(
             !r.evict_idle(Duration::ZERO).is_empty(),
             "idle once released"
+        );
+    }
+
+    fn model_json(path: &str, engine: &str) -> ModelConfig {
+        let entry: crate::schema::ModelEntry = serde_json::from_str(&format!(
+            r#"{{"id":"m","name":"M","modality":"Embedding","local":{{"path":{path:?}}}{engine}}}"#
+        ))
+        .unwrap();
+        ModelConfig::try_from(entry).unwrap()
+    }
+
+    #[test]
+    fn missing_model_file_fails_fast_before_any_engine() {
+        let m = model_json(
+            "Z:/definitely/missing.safetensors",
+            r#","engine":{"supported":["encoder"]}"#,
+        );
+        let err = ModelRegistry::create_engine(&m, &Default::default(), None)
+            .err()
+            .expect("must fail")
+            .to_string();
+        assert!(err.contains("file not found"), "{err}");
+    }
+
+    fn two_engine_model() -> ModelConfig {
+        model_json(
+            "x",
+            r#","engine":{"supported":["crispasr","nemo-speech"],"preferred":"nemo-speech"}"#,
+        )
+    }
+
+    #[test]
+    fn falls_back_to_the_next_supported_engine_when_preferred_fails() {
+        let mut tried = Vec::new();
+        let (engine, kind) = ModelRegistry::start_first_working(&two_engine_model(), |k| {
+            tried.push(k);
+            if k == EngineKind::NemoSpeech {
+                Err("binary missing".into())
+            } else {
+                Ok(Arc::new(Dummy("ok")) as Arc<dyn InferenceEngine>)
+            }
+        })
+        .unwrap();
+        assert_eq!(tried, vec![EngineKind::NemoSpeech, EngineKind::Crispasr]);
+        assert_eq!(kind, EngineKind::Crispasr);
+        assert_eq!(engine.id(), "ok");
+    }
+
+    #[test]
+    fn preferred_engine_that_works_is_the_only_one_started() {
+        let mut tried = Vec::new();
+        let (_, kind) = ModelRegistry::start_first_working(&two_engine_model(), |k| {
+            tried.push(k);
+            Ok(Arc::new(Dummy("ok")) as Arc<dyn InferenceEngine>)
+        })
+        .unwrap();
+        assert_eq!((kind, tried.len()), (EngineKind::NemoSpeech, 1));
+    }
+
+    #[test]
+    fn when_every_engine_fails_the_error_names_each_one() {
+        let err = ModelRegistry::start_first_working(&two_engine_model(), |k| {
+            Err(format!("{k} broke").into())
+        })
+        .err()
+        .expect("all failed")
+        .to_string();
+        assert_eq!(
+            err,
+            "nemo-speech: nemo-speech broke; crispasr: crispasr broke"
         );
     }
 }
