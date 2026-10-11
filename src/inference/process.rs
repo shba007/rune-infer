@@ -40,7 +40,7 @@ fn get_job_object() -> Option<windows_sys::Win32::Foundation::HANDLE> {
 
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if job.is_null() {
-                eprintln!("[Supervisor] Failed to create JobObject");
+                tracing::warn!("[Supervisor] Failed to create JobObject");
                 return None;
             }
 
@@ -54,7 +54,7 @@ fn get_job_object() -> Option<windows_sys::Win32::Foundation::HANDLE> {
             );
 
             if res == 0 {
-                eprintln!("[Supervisor] Failed to set JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE");
+                tracing::warn!("[Supervisor] Failed to set JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE");
                 CloseHandle(job);
                 return None;
             }
@@ -204,9 +204,10 @@ impl Drop for ProcessGuard {
         let _ = self.child.kill();
         let _ = self.child.wait();
         unregister_pid(pid);
-        println!(
+        tracing::info!(
             "[Supervisor] Process {} (PID: {}) terminated and VRAM released.",
-            self.label, pid
+            self.label,
+            pid
         );
     }
 }

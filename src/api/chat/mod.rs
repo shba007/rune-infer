@@ -188,10 +188,31 @@ pub async fn chat_completions_handler(
     }
 
     let task_clone = prepared.task.clone();
+    let model_for_stats = model_config.id.clone();
     let result = tokio::task::spawn_blocking(move || {
-        engine.execute(&task_clone, None).map_err(|e| e.to_string())
+        let gen_started = std::time::Instant::now();
+        let res = engine.execute(&task_clone, None).map_err(|e| e.to_string());
+        (res, gen_started.elapsed())
     })
-    .await;
+    .await
+    .map(|(res, gen_elapsed)| {
+        match &res {
+            Ok(out) => crate::telemetry::record_completion(
+                &model_for_stats,
+                start_time.elapsed().as_millis(),
+                out.usage.prompt_tokens,
+                out.usage.completion_tokens,
+                gen_elapsed.as_millis(),
+            ),
+            Err(e) => crate::telemetry::record_failure(
+                &model_for_stats,
+                500,
+                start_time.elapsed().as_millis(),
+                e,
+            ),
+        }
+        res
+    });
 
     match result {
         Ok(Ok(output)) => match output.response {

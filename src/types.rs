@@ -13,6 +13,12 @@ pub struct ChatCompletionRequest {
     pub top_p: Option<f64>,
     #[serde(default, alias = "max_completion_tokens")]
     pub max_tokens: Option<usize>,
+    /// Non-OpenAI extension (llama.cpp / OpenRouter style).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<u32>,
+    /// Non-OpenAI extension (llama.cpp / OpenRouter style).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_p: Option<f64>,
     #[serde(default, alias = "functions")]
     pub tools: Option<serde_json::Value>,
     #[serde(default)]

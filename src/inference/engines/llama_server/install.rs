@@ -1,7 +1,39 @@
 use super::RuntimeFlavor;
 use crate::inference::engines::download;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+fn copy_companion_cuda_dlls(target_dir: &Path) {
+    #[cfg(windows)]
+    {
+        let companion_dirs = [
+            "bin/llama-prism",
+            "bin/sd-server",
+            "bin/crispasr",
+            "bin/audiocpp",
+            "bin/nemo-speech",
+            "bin",
+        ];
+        for dir in &companion_dirs {
+            let p = Path::new(dir);
+            if let Ok(entries) = std::fs::read_dir(p) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        let name = entry.file_name().to_string_lossy().to_lowercase();
+                        if name.ends_with(".dll") {
+                            let dest = target_dir.join(entry.file_name());
+                            if !dest.exists() {
+                                let _ = std::fs::copy(&path, &dest);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let _ = target_dir;
+}
 
 pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn Error>> {
     let exe_name = if cfg!(windows) {
@@ -30,24 +62,13 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
     let exe_path = base_dir.join(exe_name);
 
     if exe_path.exists() {
-        #[cfg(windows)]
-        {
-            let cuda_dll = base_dir.join("ggml-cuda.dll");
-            if cuda_dll.exists() {
-                let has_cudart = std::fs::read_dir(&base_dir).is_ok_and(|entries| {
-                    entries.flatten().any(|e| {
-                        let name = e.file_name().to_string_lossy().to_lowercase();
-                        name.starts_with("cudart64_") && name.ends_with(".dll")
-                    })
-                });
-                if has_cudart {
-                    return Ok(exe_path);
-                }
-            } else {
-                return Ok(exe_path);
-            }
-        }
-        #[cfg(not(windows))]
+        copy_companion_cuda_dlls(&base_dir);
+        return Ok(exe_path);
+    }
+
+    if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
+        let _ = std::fs::copy(&nested, &exe_path);
+        copy_companion_cuda_dlls(&base_dir);
         return Ok(exe_path);
     }
 
@@ -60,7 +81,7 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
         }
     }
 
-    println!(
+    tracing::info!(
         "[LlamaServerEngine] Runtime '{:?}' resolving dependencies from official releases...",
         flavor
     );
@@ -88,16 +109,14 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
         Ok(resp) => resp.json()?,
         Err(_) => {
             let html_url = match flavor {
-                RuntimeFlavor::Upstream => "https://github.com/ggml-org/llama.cpp/releases",
-                RuntimeFlavor::Prism => "https://github.com/PrismML-Eng/llama.cpp/releases",
+                RuntimeFlavor::Upstream => "https://github.com/ggml-org/llama.cpp/releases/latest",
+                RuntimeFlavor::Prism => "https://github.com/PrismML-Eng/llama.cpp/releases/latest",
             };
             let resp = client.get(html_url).send()?;
-            let tag = resp
-                .url()
-                .as_str()
-                .split("/tag/")
-                .nth(1)
-                .ok_or("Could not determine tag from redirect")?;
+            let final_url = resp.url().as_str();
+            let tag = final_url.split("/tag/").nth(1).ok_or_else(|| {
+                format!("Could not determine release tag from redirect: {final_url}")
+            })?;
 
             let mut direct_urls = Vec::new();
             let host_cuda = download::detect_host_cuda_version();
@@ -136,20 +155,26 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
             }
 
             for (name, url) in direct_urls {
-                download::download_and_extract(
+                let _ = download::download_and_extract(
                     &client,
                     &url,
                     &base_dir,
                     &name,
                     "[LlamaServerEngine]",
-                )?;
+                );
             }
             download::flatten_dlls(&base_dir);
+            copy_companion_cuda_dlls(&base_dir);
             if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
                 let _ = std::fs::copy(&nested, &exe_path);
             }
             download::make_executable(&exe_path)?;
-            return Ok(exe_path);
+            if exe_path.exists() {
+                return Ok(exe_path);
+            }
+            return Err(
+                "Fallback tag extraction did not yield a valid llama-server executable.".into(),
+            );
         }
     };
 
@@ -176,33 +201,64 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
     let mut download_urls = Vec::new();
 
     if cfg!(target_os = "windows") {
-        for asset in assets {
-            let name = asset["name"].as_str().unwrap_or("");
-            if !download::matches_arch(name) {
-                continue;
-            }
-            if !name.starts_with("cudart")
-                && (name.contains("bin-win-cuda") || name.contains("bin-cuda"))
-            {
-                if let Some(parsed_ver) = download::extract_cuda_version(name) {
-                    if host_cuda.is_none() || host_cuda == Some(parsed_ver) {
-                        download_urls.push((
-                            name.to_string(),
-                            asset["browser_download_url"].as_str().unwrap().to_string(),
-                        ));
-                        if let Some(cda) = assets.iter().find(|a| {
-                            let cn = a["name"].as_str().unwrap_or("");
-                            cn.contains("cudart")
-                                && download::extract_cuda_version(cn) == Some(parsed_ver)
-                        }) {
-                            download_urls.push((
-                                cda["name"].as_str().unwrap().to_string(),
-                                cda["browser_download_url"].as_str().unwrap().to_string(),
-                            ));
+        let mut selected_cuda_asset = None;
+        let mut selected_cudart_asset = None;
+
+        if let Some(host) = host_cuda {
+            for asset in assets {
+                let name = asset["name"].as_str().unwrap_or("");
+                if !download::matches_arch(name) {
+                    continue;
+                }
+                let is_cuda_bin = !name.starts_with("cudart")
+                    && (name.contains("bin-win-cuda")
+                        || name.contains("bin-cuda")
+                        || name.contains("bin-win-cu"));
+                if is_cuda_bin {
+                    if let Some(parsed_ver) = download::extract_cuda_version(name) {
+                        if parsed_ver.0 == host.0 {
+                            selected_cuda_asset =
+                                Some((name, asset["browser_download_url"].as_str().unwrap()));
+                            if let Some(cda) = assets.iter().find(|a| {
+                                let cn = a["name"].as_str().unwrap_or("");
+                                cn.contains("cudart")
+                                    && download::extract_cuda_version(cn) == Some(parsed_ver)
+                            }) {
+                                selected_cudart_asset = Some((
+                                    cda["name"].as_str().unwrap(),
+                                    cda["browser_download_url"].as_str().unwrap(),
+                                ));
+                            }
+                            if parsed_ver == host {
+                                break;
+                            }
                         }
-                        break;
                     }
                 }
+            }
+        }
+
+        if let Some((name, url)) = selected_cuda_asset {
+            download_urls.push((name.to_string(), url.to_string()));
+            if let Some((c_name, c_url)) = selected_cudart_asset {
+                download_urls.push((c_name.to_string(), c_url.to_string()));
+            }
+        } else {
+            let fallback_asset = assets.iter().find(|a| {
+                let n = a["name"].as_str().unwrap_or("");
+                download::matches_arch(n)
+                    && (n.contains("bin-win-vulkan")
+                        || n.contains("bin-win-cpu")
+                        || n.contains("bin-win-x64"))
+            });
+            if let Some(fallback) = fallback_asset {
+                download_urls.push((
+                    fallback["name"].as_str().unwrap().to_string(),
+                    fallback["browser_download_url"]
+                        .as_str()
+                        .unwrap()
+                        .to_string(),
+                ));
             }
         }
     } else if cfg!(target_os = "macos") {
@@ -234,16 +290,32 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
         }
     }
 
+    if download_urls.is_empty() {
+        return Err("No compatible llama-server release asset found for this platform. Please set LLAMA_SERVER_PATH in .env".into());
+    }
+
     for (name, url) in download_urls {
         download::download_and_extract(&client, &url, &base_dir, &name, "[LlamaServerEngine]")?;
     }
 
     download::flatten_dlls(&base_dir);
+    copy_companion_cuda_dlls(&base_dir);
+
     if !exe_path.exists() {
         if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
             let _ = std::fs::copy(&nested, &exe_path);
         }
     }
     download::make_executable(&exe_path)?;
+
+    if !exe_path.exists() {
+        return Err(format!(
+            "Could not locate '{}' in '{}' after extraction",
+            exe_name,
+            base_dir.display()
+        )
+        .into());
+    }
+
     Ok(exe_path)
 }

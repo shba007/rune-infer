@@ -1,11 +1,8 @@
 use anyhow::{Context, Result};
-use clap::Parser;
-use std::sync::Arc;
+use clap::{Parser, Subcommand};
 
-use rune_infer::api::{AppState, create_router};
 use rune_infer::config::ModelRegistry;
-use rune_infer::inference::AppState as InferenceAppState;
-use rune_infer::proxy::ProxyService;
+use rune_infer::home::Workspace;
 
 use tracing_subscriber::filter::{EnvFilter, filter_fn};
 use tracing_subscriber::fmt;
@@ -16,9 +13,15 @@ use tracing_subscriber::prelude::*;
 #[command(author = "Rune Infer Team")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "A standalone model server with OpenAI-compatible API and Cloud AI Gateway")]
+#[command(after_help = "Data lives in ~/.rune-infer (override with RUNE_HOME). \
+A ./config/models.json in the current directory takes precedence (dev checkouts).")]
 struct Args {
-    #[arg(short, long, default_value = "config/models.json")]
-    config: String,
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    /// Path to models.json [default: ./config/models.json if present, else ~/.rune-infer/config/models.json]
+    #[arg(short, long, global = true)]
+    config: Option<String>,
 
     #[arg(long)]
     host: Option<String>,
@@ -26,17 +29,53 @@ struct Args {
     #[arg(short, long)]
     port: Option<u16>,
 
-    #[arg(long, default_value = "1")]
-    max_loaded_models: usize,
+    /// Max models kept loaded at once, 0 = unlimited [default: from config]
+    #[arg(long)]
+    max_loaded_models: Option<usize>,
 
-    #[arg(long, default_value = "300")]
-    idle_timeout: u64,
+    /// Unload a model after this many idle seconds, 0 = never [default: from config]
+    #[arg(long)]
+    idle_timeout: Option<u64>,
+
+    /// Run as a plain server without the terminal dashboard (implied when there is no TTY)
+    #[arg(long)]
+    headless: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Run the interactive setup wizard (API keys, local models, engines)
+    Setup,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    let ws =
+        Workspace::resolve(args.config.as_deref()).context("Cannot determine working folder")?;
+    ws.enter()
+        .with_context(|| format!("Cannot use folder {}", ws.root.display()))?;
     let env_result = dotenvy::dotenv();
+
+    #[cfg(feature = "tui")]
+    let tui_mode = !args.headless && rune_infer::tui::is_interactive();
+    #[cfg(not(feature = "tui"))]
+    let tui_mode = false;
+
+    let wants_setup = matches!(args.command, Some(Command::Setup));
+    let needs_setup = wants_setup || !ws.config_exists();
+
+    if needs_setup && !tui_mode {
+        if wants_setup {
+            anyhow::bail!("`rune-infer setup` needs an interactive terminal.");
+        }
+        anyhow::bail!(
+            "No configuration found at {}.\n\
+             Run `rune-infer setup` in a terminal to create one, or copy an example models.json there.",
+            ws.config_path.display()
+        );
+    }
 
     std::fs::create_dir_all("logs").context("Failed to create 'logs' directory")?;
     let file_appender = tracing_appender::rolling::never("logs", "rune-infer.log");
@@ -47,29 +86,33 @@ async fn main() -> Result<()> {
         )
     });
 
-    // Layer 1: Clean persistent file logging (records everything, including child process outputs)
+    // Persistent file log: records everything, including child process output.
     let file_layer = fmt::layer()
         .with_writer(file_appender)
         .with_ansi(false)
         .with_target(true);
 
-    // Layer 2: Colored terminal console logging (filters out verbose llama_server logs)
-    let console_filter = filter_fn(|meta| meta.target() != "llama_server");
-    let stdout_layer = fmt::layer()
-        .with_writer(std::io::stdout)
-        .with_ansi(true)
-        .with_filter(console_filter);
+    // Colored console log only when there is no dashboard to draw over.
+    let stdout_layer = (!tui_mode).then(|| {
+        fmt::layer()
+            .with_writer(std::io::stdout)
+            .with_ansi(true)
+            .with_filter(filter_fn(|meta| meta.target() != "llama_server"))
+    });
+
+    // Structured events for the dashboard / wizard.
+    let (ui_tx, ui_rx) = tokio::sync::mpsc::unbounded_channel();
+    let ui_layer = tui_mode.then(|| rune_infer::telemetry::EventLayer::new(ui_tx));
 
     tracing_subscriber::registry()
         .with(env_filter)
         .with(file_layer)
         .with(stdout_layer)
+        .with(ui_layer)
         .init();
 
-    tracing::info!("Starting Rune Infer (with Cloud AI Gateway)...");
-    tracing::info!("Persistent log audit active at logs/rune-infer.log");
-
-    // Clean up any stale child processes from abnormal previous exits
+    tracing::info!("Starting Rune Infer v{}...", env!("CARGO_PKG_VERSION"));
+    tracing::info!("Working folder: {}", ws.root.display());
     rune_infer::inference::process::cleanup_orphaned_pids();
 
     match env_result {
@@ -77,48 +120,167 @@ async fn main() -> Result<()> {
             "✓ Loaded environment configurations from {}",
             path.display()
         ),
-        Err(e) if e.not_found() => tracing::warn!(
-            "No .env file found in root; continuing with system environment variables"
-        ),
-        Err(e) => tracing::warn!(
-            "Failed to load .env file: {e}; continuing with system environment variables"
-        ),
+        Err(e) if e.not_found() => {
+            tracing::info!("No .env file; using system environment variables")
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load .env file: {e}; continuing with system environment")
+        }
     }
 
-    let config_path = std::path::Path::new(&args.config);
-    let config = ModelRegistry::from_file(config_path).context("Failed to load config")?;
+    run(args, ws, needs_setup, tui_mode, ui_rx).await
+}
+
+#[cfg(feature = "tui")]
+fn finish_terminal(active: bool) {
+    if active {
+        rune_infer::tui::restore_terminal();
+    }
+}
+
+#[cfg(not(feature = "tui"))]
+fn finish_terminal(_active: bool) {}
+
+async fn run(
+    args: Args,
+    ws: Workspace,
+    needs_setup: bool,
+    tui_mode: bool,
+    #[cfg_attr(not(feature = "tui"), allow(unused_mut, unused_variables))]
+    mut ui_rx: tokio::sync::mpsc::UnboundedReceiver<rune_infer::telemetry::UiEvent>,
+) -> Result<()> {
+    #[cfg(feature = "tui")]
+    let mut terminal = tui_mode.then(rune_infer::tui::init_terminal);
+
+    #[cfg(feature = "tui")]
+    if needs_setup {
+        if let Some(term) = terminal.as_mut() {
+            let outcome =
+                tokio::task::block_in_place(|| rune_infer::tui::run_wizard(term, &ws, &mut ui_rx));
+            match outcome {
+                Ok(rune_infer::tui::WizardOutcome::Completed) => {
+                    // Pick up any keys the wizard just saved.
+                    let _ = dotenvy::from_path_override(ws.env_file());
+                }
+                Ok(rune_infer::tui::WizardOutcome::Cancelled) => {
+                    finish_terminal(true);
+                    println!("Setup cancelled — nothing was written.");
+                    return Ok(());
+                }
+                Err(e) => {
+                    finish_terminal(true);
+                    return Err(e);
+                }
+            }
+        }
+    }
+    #[cfg(not(feature = "tui"))]
+    let _ = needs_setup;
+
+    // Everything below may fail with a user-facing message; restore the
+    // terminal first so that message is actually readable.
+    let prepared = prepare(&args, &ws).await;
+    let (config, listener, addr) = match prepared {
+        Ok(p) => p,
+        Err(e) => {
+            finish_terminal(tui_mode);
+            return Err(e);
+        }
+    };
+
+    let auth_enabled = config
+        .server
+        .api_key
+        .clone()
+        .or_else(|| std::env::var("RUNE_API_KEY").ok())
+        .or_else(|| std::env::var("API_KEY").ok())
+        .is_some_and(|k| !k.trim().is_empty());
+    let host = addr.rsplit_once(':').map(|(h, _)| h).unwrap_or("");
+    let exposed = !matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]");
+
+    if exposed && !auth_enabled {
+        tracing::warn!(
+            "Listening on {addr} with NO API key — anyone on the network can use your models. \
+             Set server.api_key (e.g. \"{{{{RUNE_API_KEY}}}}\") or bind to 127.0.0.1."
+        );
+    }
+    tracing::info!("Server listening on {addr}");
+
+    #[cfg(feature = "tui")]
+    let dashboard_data = rune_infer::tui::DashboardInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        addr: addr.clone(),
+        auth_enabled,
+        exposed_to_network: exposed,
+        config_path: ws.config_path.clone(),
+        models: config
+            .models
+            .iter()
+            .map(|m| rune_infer::tui::ModelRow {
+                id: m.id.clone(),
+                name: m.name.clone(),
+                modality: m.modality.as_str().to_string(),
+                provider: (!m.is_local()).then(|| m.provider.as_str().to_string()),
+            })
+            .collect(),
+    };
+
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(rune_infer::server::serve(config, listener, async {
+        let _ = stop_rx.await;
+    }));
+
+    #[cfg(feature = "tui")]
+    if let Some(term) = terminal.as_mut() {
+        let result = tokio::task::block_in_place(|| {
+            rune_infer::tui::run_dashboard(term, dashboard_data, ui_rx)
+        });
+        finish_terminal(true);
+        let _ = stop_tx.send(());
+        shutdown(server).await;
+        println!("Rune Infer stopped.");
+        return result;
+    }
+
+    // Headless: run until Ctrl-C (or the server dies).
+    let mut server = server;
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("Shutdown signal received");
+            let _ = stop_tx.send(());
+            shutdown(server).await;
+        }
+        res = &mut server => {
+            res.context("server task panicked")??;
+        }
+    }
+    tracing::info!("Server stopped");
+    Ok(())
+}
+
+async fn shutdown(server: tokio::task::JoinHandle<Result<()>>) {
+    // In-flight streams can hold the graceful shutdown open; don't wait forever.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(3), server).await;
+}
+
+async fn prepare(
+    args: &Args,
+    ws: &Workspace,
+) -> Result<(ModelRegistry, tokio::net::TcpListener, String)> {
+    let mut config = ModelRegistry::from_file(&ws.config_path)
+        .with_context(|| format!("Failed to load config {}", ws.config_path.display()))?;
+    if let Some(n) = args.max_loaded_models {
+        config.server.max_loaded_models = n;
+    }
+    if let Some(secs) = args.idle_timeout {
+        config.server.idle_unload_seconds = secs;
+    }
 
     let host = args
         .host
         .clone()
         .unwrap_or_else(|| config.server.host.clone());
     let port = args.port.unwrap_or(config.server.port);
-
-    let inference_state = Arc::new(InferenceAppState::new(&config));
-    let proxy_service = Arc::new(ProxyService::new(&config));
-
-    let state = AppState {
-        inference: inference_state.clone(),
-        proxy: proxy_service,
-        config,
-    };
-
-    let app = create_router(state)
-        .layer(tower_http::trace::TraceLayer::new_for_http())
-        .layer(tower::ServiceBuilder::new().layer(tower_http::cors::CorsLayer::permissive()));
-
-    let addr = format!("{}:{}", host, port);
-    tracing::info!(
-        "Server listening on {} (host={} port={} from config)",
-        addr,
-        host,
-        port
-    );
-
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
-
-    tracing::info!("Server stopped");
-
-    Ok(())
+    let listener = rune_infer::server::bind(&host, port).await?;
+    Ok((config, listener, format!("{host}:{port}")))
 }

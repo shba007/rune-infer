@@ -50,9 +50,11 @@ impl LlamaServerEngine {
         let bin_path = install::ensure_binary_installed(flavor)?;
         let port = Self::find_free_port()?;
 
-        println!(
+        tracing::info!(
             "[LlamaServerEngine] Launching managed llama-server ({:?}) for '{}' on port {}...",
-            flavor, id, port
+            flavor,
+            id,
+            port
         );
 
         let mut cmd = Command::new(&bin_path);
@@ -198,6 +200,8 @@ impl InferenceEngine for LlamaServerEngine {
                 max_tokens,
                 temperature,
                 top_p,
+                top_k,
+                min_p,
             } => {
                 let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
                 let stream_mode = on_token.is_some();
@@ -258,6 +262,12 @@ impl InferenceEngine for LlamaServerEngine {
                     "stream": stream_mode,
                     "max_tokens": max_tokens.unwrap_or(16384)
                 });
+                if let Some(k) = top_k {
+                    body["top_k"] = serde_json::json!(k);
+                }
+                if let Some(p) = min_p {
+                    body["min_p"] = serde_json::json!(p);
+                }
 
                 if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
                     body["tools"] = schema.clone();

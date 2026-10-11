@@ -47,7 +47,7 @@ pub fn download_to_file(
     let mut resp = client.get(url).send()?.error_for_status()?;
     let total_size = resp.content_length().unwrap_or(0);
 
-    println!(
+    tracing::info!(
         "{} Downloading {} ({})...",
         prefix,
         filename,
@@ -74,7 +74,7 @@ pub fn download_to_file(
             if last_log.elapsed() >= Duration::from_secs(3) {
                 if total_size > 0 {
                     let pct = (downloaded as f64 / total_size as f64) * 100.0;
-                    println!(
+                    tracing::info!(
                         "{}   -> {} / {} ({:.1}%)",
                         prefix,
                         format_bytes(downloaded),
@@ -82,7 +82,7 @@ pub fn download_to_file(
                         pct
                     );
                 } else {
-                    println!("{}   -> {}", prefix, format_bytes(downloaded));
+                    tracing::info!("{}   -> {}", prefix, format_bytes(downloaded));
                 }
                 last_log = Instant::now();
             }
@@ -105,7 +105,7 @@ pub fn extract_archive(
     let is_tar = filename.ends_with(".tar.gz") || filename.ends_with(".tgz");
     let is_zip = filename.ends_with(".zip");
 
-    println!("{} Extracting {}...", prefix, filename);
+    tracing::info!("{} Extracting {}...", prefix, filename);
 
     let tar_flag = if is_tar { "-xzf" } else { "-xf" };
     if let Ok(status) = Command::new("tar")

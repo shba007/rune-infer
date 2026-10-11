@@ -195,7 +195,9 @@ impl NemoSpeechEngine {
             }
         }
 
-        println!("[NemoSpeechEngine] Resolving NeMo-Speech.cpp runtime from GitHub releases...");
+        tracing::info!(
+            "[NemoSpeechEngine] Resolving NeMo-Speech.cpp runtime from GitHub releases..."
+        );
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
@@ -211,7 +213,7 @@ impl NemoSpeechEngine {
         let release_val: serde_json::Value = match req.send().and_then(|r| r.error_for_status()) {
             Ok(resp) => resp.json()?,
             Err(err) => {
-                eprintln!(
+                tracing::info!(
                     "[NemoSpeechEngine] Direct GitHub API request failed ({err}). Falling back to release tag redirect..."
                 );
                 let html_url = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases";
@@ -227,7 +229,7 @@ impl NemoSpeechEngine {
                     .split("/tag/")
                     .nth(1)
                     .ok_or_else(|| format!("Could not determine tag from URL: {final_url}"))?;
-                println!("[NemoSpeechEngine] Resolved latest tag: {tag}");
+                tracing::info!("[NemoSpeechEngine] Resolved latest tag: {tag}");
                 let api_fallback = format!(
                     "https://api.github.com/repos/NVIDIA/NeMo-Speech.cpp/releases/tags/{tag}"
                 );
@@ -343,7 +345,7 @@ impl NemoSpeechEngine {
             return Err(format!("Could not locate '{}' after extraction", exe_name).into());
         }
 
-        println!(
+        tracing::info!(
             "[NemoSpeechEngine] ✓ NeMo-Speech.cpp runtime installed successfully at {}",
             exe_path.display()
         );

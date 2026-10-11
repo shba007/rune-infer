@@ -1,3 +1,4 @@
+pub mod anthropic;
 pub mod audio;
 pub mod chat;
 pub mod embeddings;
@@ -35,6 +36,7 @@ pub fn create_router(state: AppState) -> Router {
         // Chat & Responses
         .route("/chat/completions", post(chat::chat_completions_handler))
         .route("/responses", post(responses::responses_handler))
+        .route("/messages", post(anthropic::anthropic_messages_handler))
         // Images
         .route(
             "/images/generations",
@@ -81,6 +83,15 @@ pub fn create_router(state: AppState) -> Router {
 
     Router::new()
         .nest("/v1", v1_routes)
+        .route(
+            "/anthropic/v1/messages",
+            post(anthropic::anthropic_messages_handler),
+        )
+        .route(
+            "/anthropic/messages",
+            post(anthropic::anthropic_messages_handler),
+        )
+        .route("/messages", post(anthropic::anthropic_messages_handler))
         .route("/health", get(health_handler))
         .with_state(shared_state)
 }
@@ -97,15 +108,20 @@ async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request, next:
     if let Some(expected) = configured_key {
         if !expected.trim().is_empty() {
             let auth_header = req.headers().get(header::AUTHORIZATION);
+            let x_api_key = req.headers().get("x-api-key");
+
             let is_valid = match auth_header.and_then(|h| h.to_str().ok()) {
                 Some(header_val) => {
                     if let Some(token) = header_val.strip_prefix("Bearer ") {
                         token.trim() == expected.trim()
                     } else {
-                        false
+                        header_val.trim() == expected.trim()
                     }
                 }
-                None => false,
+                None => match x_api_key.and_then(|h| h.to_str().ok()) {
+                    Some(key_val) => key_val.trim() == expected.trim(),
+                    None => false,
+                },
             };
 
             if !is_valid {

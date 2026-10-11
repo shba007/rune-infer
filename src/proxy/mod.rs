@@ -81,6 +81,22 @@ impl ProxyService {
     ) -> Response {
         let controller = self.get_controller(&config.id);
 
+        // Fill unset sampling parameters from the model's configured defaults.
+        let layered = config.effective_sampling(&crate::config::SamplingConfig {
+            temperature: request.temperature,
+            top_p: request.top_p,
+            top_k: request.top_k,
+            min_p: request.min_p,
+            max_tokens: request.max_tokens,
+        });
+        let mut filled = request.clone();
+        filled.temperature = layered.temperature;
+        filled.top_p = layered.top_p;
+        filled.top_k = layered.top_k;
+        filled.min_p = layered.min_p;
+        filled.max_tokens = layered.max_tokens;
+        let request = &filled;
+
         // 1. Acquire queue and rate limit permit (asynchronous wait)
         let _permit = if let Some(ref c) = controller {
             match c.acquire_permit().await {
@@ -127,6 +143,13 @@ impl ProxyService {
 
             match adapters::dispatch_chat(&self.client, config, request).await {
                 Ok(resp) => {
+                    crate::telemetry::record_completion(
+                        &config.id,
+                        start_time.elapsed().as_millis(),
+                        0,
+                        0,
+                        0,
+                    );
                     tracing::info!(
                         target: "audit",
                         status = 200,
@@ -143,6 +166,15 @@ impl ProxyService {
                     let now = Instant::now();
 
                     if !retryable || attempt > max_retries || now >= overall_deadline {
+                        crate::telemetry::record_failure(
+                            &config.id,
+                            err.code
+                                .as_deref()
+                                .and_then(|c| c.parse().ok())
+                                .unwrap_or(500),
+                            start_time.elapsed().as_millis(),
+                            &err.message,
+                        );
                         tracing::warn!(
                             target: "audit",
                             status = err.code.as_deref().unwrap_or("500"),

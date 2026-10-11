@@ -26,9 +26,10 @@ impl SdServerEngine {
         let bin_path = Self::ensure_binary_installed()?;
         let port = Self::find_free_port()?;
 
-        println!(
+        tracing::info!(
             "[SdServerEngine] Launching managed sd-server for '{}' on port {}...",
-            model.id, port
+            model.id,
+            port
         );
 
         let mut cmd = Command::new(&bin_path);
@@ -45,21 +46,21 @@ impl SdServerEngine {
 
         if let Some(ref llm) = model.text_encoder_path {
             if Path::new(llm).exists() {
-                println!("[SdServerEngine] Attaching text encoder / LLM: {}", llm);
+                tracing::info!("[SdServerEngine] Attaching text encoder / LLM: {}", llm);
                 cmd.arg("--llm").arg(llm);
             }
         }
 
         if let Some(ref vae) = model.vae_path {
             if Path::new(vae).exists() {
-                println!("[SdServerEngine] Attaching VAE: {}", vae);
+                tracing::info!("[SdServerEngine] Attaching VAE: {}", vae);
                 cmd.arg("--vae").arg(vae);
             }
         }
 
         if let Some(ref vision) = model.llm_vision_path {
             if Path::new(vision).exists() {
-                println!("[SdServerEngine] Attaching vision tower: {}", vision);
+                tracing::info!("[SdServerEngine] Attaching vision tower: {}", vision);
                 cmd.arg("--llm_vision").arg(vision);
             }
         }
@@ -95,7 +96,7 @@ impl SdServerEngine {
                 let reader = std::io::BufReader::new(pipe);
                 for line in reader.lines().map_while(Result::ok) {
                     // Stream logs so you can see live progress and errors
-                    eprintln!("[sd-server] {}", line);
+                    tracing::info!("[sd-server] {}", line);
                     let mut l = lines_clone.lock().unwrap();
                     if l.len() >= 30 {
                         l.remove(0);
@@ -112,7 +113,7 @@ impl SdServerEngine {
             .timeout(Duration::from_secs(600)) // 10 min timeout for high-res DiT inference
             .build()?;
 
-        println!("[SdServerEngine] Managed sd-server is ready and healthy.");
+        tracing::info!("[SdServerEngine] Managed sd-server is ready and healthy.");
 
         Ok(Self {
             id: model.id.clone(),
@@ -167,7 +168,7 @@ impl SdServerEngine {
             }
         }
 
-        println!("[SdServerEngine] Resolving sd-server runtime from GitHub...");
+        tracing::info!("[SdServerEngine] Resolving sd-server runtime from GitHub...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
@@ -184,7 +185,7 @@ impl SdServerEngine {
         let release_val: serde_json::Value = match req.send().and_then(|r| r.error_for_status()) {
             Ok(resp) => resp.json()?,
             Err(err) => {
-                eprintln!(
+                tracing::info!(
                     "[SdServerEngine] Direct GitHub API request failed ({err}). Falling back to release redirect..."
                 );
                 let html_url = "https://github.com/leejet/stable-diffusion.cpp/releases";
@@ -200,7 +201,7 @@ impl SdServerEngine {
                     .split("/tag/")
                     .nth(1)
                     .ok_or_else(|| format!("Could not determine tag from URL: {final_url}"))?;
-                println!("[SdServerEngine] Resolved latest tag: {tag}");
+                tracing::info!("[SdServerEngine] Resolved latest tag: {tag}");
                 let api_fallback = format!(
                     "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/tags/{tag}"
                 );
@@ -248,12 +249,13 @@ impl SdServerEngine {
 
             if let (Some(ca), Some(cda)) = (cuda_asset, cudart_asset) {
                 if let Some(cuda) = host_cuda {
-                    println!(
+                    tracing::info!(
                         "[SdServerEngine] Host supports CUDA {}.{}. Selected CUDA 12 build (backward-compatible)",
-                        cuda.0, cuda.1
+                        cuda.0,
+                        cuda.1
                     );
                 } else {
-                    println!(
+                    tracing::info!(
                         "[SdServerEngine] Selected Windows CUDA 12 build with cudart dependencies"
                     );
                 }
@@ -331,7 +333,7 @@ impl SdServerEngine {
             return Err(format!("Could not locate '{}' after extraction", exe_name).into());
         }
 
-        println!(
+        tracing::info!(
             "[SdServerEngine] ✓ sd-server installed successfully at {}",
             exe_path.display()
         );
@@ -479,7 +481,7 @@ impl InferenceEngine for SdServerEngine {
                     }
                 }
 
-                println!(
+                tracing::info!(
                     "[SdServerEngine] Generating image ({} steps | CFG: {:.1} | size: {}{}{})...",
                     final_steps,
                     final_cfg,

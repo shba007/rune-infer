@@ -2,7 +2,7 @@ use axum::Json;
 use axum::http::StatusCode;
 
 use super::tools::build_system_prompt;
-use crate::config::ModelConfig;
+use crate::config::{ModelConfig, SamplingConfig};
 use crate::inference::types::InferenceTaskRequest;
 use crate::media::decode_media;
 use crate::types::{ApiError, ChatCompletionRequest, ChatMessage, ErrorResponse, MediaItem};
@@ -254,11 +254,24 @@ pub fn prepare_prompt(
     prompt.push_str("<|im_start|>assistant\n");
 
     let est_text_tokens = ((prompt.len() / 4).max(1)) as u32;
-    let reserved_tokens = request.max_tokens.unwrap_or(16384) as u32;
+    let context_limit = model_config.effective_context_limit();
+    // Without an explicit max_tokens, reserve room for the reply — but never
+    // more than a quarter of the window, or small-context models would reject
+    // every request from clients that omit max_tokens.
+    let sampling = model_config.effective_sampling(&SamplingConfig {
+        temperature: request.temperature,
+        top_p: request.top_p,
+        top_k: request.top_k,
+        min_p: request.min_p,
+        max_tokens: request.max_tokens,
+    });
+    let reserved_tokens = sampling
+        .max_tokens
+        .map(|t| t as u32)
+        .unwrap_or_else(|| 16384.min(context_limit / 4));
     let total_required = est_text_tokens
         .saturating_add(total_media_tokens)
         .saturating_add(reserved_tokens);
-    let context_limit = model_config.effective_context_limit();
 
     if total_required > context_limit {
         let err_msg = format!(
@@ -289,9 +302,11 @@ pub fn prepare_prompt(
             schema: task_schema,
             images,
             messages: augmented_messages,
-            max_tokens: request.max_tokens,
-            temperature: request.temperature,
-            top_p: request.top_p,
+            max_tokens: sampling.max_tokens,
+            temperature: sampling.temperature,
+            top_p: sampling.top_p,
+            top_k: sampling.top_k,
+            min_p: sampling.min_p,
         },
         is_structured_mode,
         image_count,

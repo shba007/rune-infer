@@ -22,7 +22,7 @@ pub struct EncoderEngine {
 impl EncoderEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
         let path = std::path::Path::new(&model.model_path);
-        println!(
+        tracing::info!(
             "[EncoderEngine] Initialized in-process modernbert/encoder runtime for '{}' using '{}'",
             model.id,
             path.display()

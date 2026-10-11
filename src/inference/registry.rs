@@ -2,25 +2,58 @@ use crate::config::{ModelConfig, ModelRegistry as ConfigRegistry, ServerConfig};
 use crate::inference::traits::InferenceEngine;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub struct ModelRegistry {
     config: ConfigRegistry,
     engines: HashMap<String, Arc<dyn InferenceEngine>>,
     lru_keys: Vec<String>,
+    last_used: HashMap<String, Instant>,
 }
 
 impl ModelRegistry {
     pub fn new(config: ConfigRegistry) -> Self {
-        println!(
+        tracing::info!(
             "[ModelRegistry] Initialized model catalog with {} models configured.",
             config.models.len()
         );
-        println!("[ModelRegistry] Lazy loading enabled: No models are preloaded into VRAM/RAM.");
+        tracing::info!(
+            "[ModelRegistry] Lazy loading enabled: No models are preloaded into VRAM/RAM."
+        );
         Self {
             config,
             engines: HashMap::new(),
             lru_keys: Vec::new(),
+            last_used: HashMap::new(),
         }
+    }
+
+    /// Unload engines that have been idle for at least `idle`, returning their
+    /// ids. An engine that is still referenced elsewhere is mid-request: it is
+    /// never evicted and its idle clock restarts.
+    pub fn evict_idle(&mut self, idle: Duration) -> Vec<String> {
+        let now = Instant::now();
+        let mut victims = Vec::new();
+        for (id, engine) in &self.engines {
+            if Arc::strong_count(engine) > 1 {
+                self.last_used.insert(id.clone(), now);
+                continue;
+            }
+            let since = self
+                .last_used
+                .get(id)
+                .map_or(Duration::MAX, |t| now.duration_since(*t));
+            if since >= idle {
+                victims.push(id.clone());
+            }
+        }
+        for id in &victims {
+            self.engines.remove(id);
+            self.last_used.remove(id);
+            self.lru_keys.retain(|k| k != id);
+            crate::telemetry::model_evicted(id, &format!("idle for {}s", idle.as_secs()));
+        }
+        victims
     }
 
     pub fn loaded_models(&self) -> Vec<String> {
@@ -30,6 +63,7 @@ impl ModelRegistry {
     pub fn get_or_load(&mut self, id: &str) -> Result<Arc<dyn InferenceEngine>, String> {
         if let Some(engine) = self.engines.get(id).cloned() {
             self.touch_lru(id);
+            self.last_used.insert(id.to_string(), Instant::now());
             return Ok(engine);
         }
 
@@ -44,18 +78,36 @@ impl ModelRegistry {
             self.evict_lru();
         }
 
-        println!(
+        tracing::info!(
             "[ModelRegistry] Lazy-loading model '{}' ({}) on demand...",
-            model_config.id, model_config.name
+            model_config.id,
+            model_config.name
         );
 
         let vram_before = Self::detect_used_gpu_vram();
 
-        let engine = Self::create_engine(&model_config, &self.config.server, vram_before)
-            .map_err(|e| format!("Failed to load model '{}': {}", id, e))?;
+        crate::telemetry::model_loading(&model_config.id);
+        let load_started = std::time::Instant::now();
+        let engine =
+            Self::create_engine(&model_config, &self.config.server, vram_before).map_err(|e| {
+                crate::telemetry::model_failed(&model_config.id, &e.to_string());
+                format!("Failed to load model '{}': {}", id, e)
+            })?;
+        let vram_detail = match (vram_before, Self::detect_used_gpu_vram()) {
+            (Some(before), Some(after)) => {
+                format!("+{} VRAM", Self::format_bytes(after.saturating_sub(before)))
+            }
+            _ => String::new(),
+        };
+        crate::telemetry::model_loaded(
+            &model_config.id,
+            load_started.elapsed().as_millis(),
+            &vram_detail,
+        );
 
         self.engines.insert(id.to_string(), engine.clone());
         self.lru_keys.push(id.to_string());
+        self.last_used.insert(id.to_string(), Instant::now());
 
         Ok(engine)
     }
@@ -72,10 +124,13 @@ impl ModelRegistry {
             return;
         }
         let victim_id = self.lru_keys.remove(0);
+        self.last_used.remove(&victim_id);
         if let Some(_removed) = self.engines.remove(&victim_id) {
-            println!(
+            crate::telemetry::model_evicted(&victim_id, "least recently used");
+            tracing::info!(
                 "[ModelRegistry] Evicted least-recently-used model '{}' to respect max_loaded_models ({})",
-                victim_id, self.config.server.max_loaded_models
+                victim_id,
+                self.config.server.max_loaded_models
             );
         }
     }
@@ -135,7 +190,7 @@ impl ModelRegistry {
         }
     }
 
-    fn detect_total_gpu_vram() -> Option<u64> {
+    pub fn detect_total_gpu_vram() -> Option<u64> {
         if let Ok(output) = std::process::Command::new("nvidia-smi")
             .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
             .output()
@@ -184,7 +239,7 @@ impl ModelRegistry {
         None
     }
 
-    fn detect_used_gpu_vram() -> Option<u64> {
+    pub fn detect_used_gpu_vram() -> Option<u64> {
         let output = std::process::Command::new("nvidia-smi")
             .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
             .output()
@@ -416,34 +471,37 @@ impl ModelRegistry {
             let cfg = model.default_cfg_scale.unwrap_or(4.0);
             let sampler = model.default_sample_method.as_deref().unwrap_or("euler");
 
-            println!(
+            tracing::info!(
                 "[ModelRegistry] ✓ Successfully loaded engine: \"{}\" ({})",
-                model.id, model.name
+                model.id,
+                model.name
             );
-            println!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
-            println!(
+            tracing::info!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
+            tracing::info!(
                 "[ModelRegistry]   • Model:        {} | {}",
                 param_info,
                 Self::format_bytes(model_vram)
             );
             if text_encoder_vram > 0 {
-                println!(
+                tracing::info!(
                     "[ModelRegistry]   • Text Encoder: {}",
                     Self::format_bytes(text_encoder_vram)
                 );
             }
             if vae_vram > 0 {
-                println!(
+                tracing::info!(
                     "[ModelRegistry]   • VAE:          {}",
                     Self::format_bytes(vae_vram)
                 );
             }
-            println!("[ModelRegistry]   • Resolution:   {}", res_str);
-            println!(
+            tracing::info!("[ModelRegistry]   • Resolution:   {}", res_str);
+            tracing::info!(
                 "[ModelRegistry]   • Sampling:     {} steps | {:.1} CFG | {}",
-                steps, cfg, sampler
+                steps,
+                cfg,
+                sampler
             );
-            println!(
+            tracing::info!(
                 "[ModelRegistry]   • Total VRAM:   Est: {} | {}",
                 Self::format_bytes(total_est),
                 real_str
@@ -457,7 +515,7 @@ impl ModelRegistry {
             || model.id.to_lowercase().contains("audio8")
         {
             let engine = crate::inference::engines::audio::AudioEngine::new(model)?;
-            println!(
+            tracing::info!(
                 "[ModelRegistry] ✓ Successfully loaded Audio engine (audio.cpp): \"{}\"",
                 model.id
             );
@@ -480,17 +538,18 @@ impl ModelRegistry {
                     "Real: N/A".to_string()
                 };
 
-            println!(
+            tracing::info!(
                 "[ModelRegistry] ✓ Successfully loaded NeMo-Speech engine: \"{}\" ({})",
-                model.id, model.name
+                model.id,
+                model.name
             );
-            println!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
-            println!(
+            tracing::info!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
+            tracing::info!(
                 "[ModelRegistry]   • Model:        {} | {}",
                 param_info,
                 Self::format_bytes(model_vram)
             );
-            println!(
+            tracing::info!(
                 "[ModelRegistry]   • Total VRAM:   Est: {} | {}",
                 Self::format_bytes(model_vram + 1024 * 1024 * 1024),
                 real_str
@@ -512,17 +571,18 @@ impl ModelRegistry {
                     "Real: N/A".to_string()
                 };
 
-            println!(
+            tracing::info!(
                 "[ModelRegistry] ✓ Successfully loaded engine: \"{}\" ({})",
-                model.id, model.name
+                model.id,
+                model.name
             );
-            println!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
-            println!(
+            tracing::info!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
+            tracing::info!(
                 "[ModelRegistry]   • Model:        {} | {}",
                 param_info,
                 Self::format_bytes(model_vram)
             );
-            println!(
+            tracing::info!(
                 "[ModelRegistry]   • Total VRAM:   Est: {} | {}",
                 Self::format_bytes(model_vram + 1024 * 1024 * 1024),
                 real_str
@@ -549,9 +609,10 @@ impl ModelRegistry {
             || (is_encoder_path && model.modality != crate::config::Modality::ImageGeneration)
         {
             let engine = crate::inference::engines::encoder::EncoderEngine::new(model)?;
-            println!(
+            tracing::info!(
                 "[ModelRegistry] ✓ Successfully loaded encoder engine: \"{}\" ({})",
-                model.id, model.name
+                model.id,
+                model.name
             );
             return Ok(Arc::new(engine));
         }
@@ -623,19 +684,20 @@ impl ModelRegistry {
             format!("{} | {}", param_info, Self::format_bytes(model_vram))
         };
 
-        println!(
+        tracing::info!(
             "[ModelRegistry] ✓ Successfully loaded engine: \"{}\" ({})",
-            model.id, model.name
+            model.id,
+            model.name
         );
-        println!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
-        println!("[ModelRegistry]   • Model:        {}", model_mem_str);
+        tracing::info!("[ModelRegistry]   • Capabilities: {}", capabilities_str);
+        tracing::info!("[ModelRegistry]   • Model:        {}", model_mem_str);
 
         if projector_vram > 0 || model.vision {
             let res_str = model
                 .max_resolution
                 .as_deref()
                 .unwrap_or("4096×4096 (Dynamic 4K)");
-            println!(
+            tracing::info!(
                 "[ModelRegistry]   • Projector:    {} | {}",
                 res_str,
                 Self::format_bytes(projector_vram)
@@ -646,24 +708,89 @@ impl ModelRegistry {
             let heads_desc = mtp_heads
                 .map(|h| format!("{} heads", h))
                 .unwrap_or_else(|| "auto".to_string());
-            println!(
+            tracing::info!(
                 "[ModelRegistry]   • MTP Draft:    {} | {}",
                 heads_desc,
                 Self::format_bytes(mtp_vram)
             );
         }
 
-        println!(
+        tracing::info!(
             "[ModelRegistry]   • Context:      {} | {}",
             Self::format_tokens(n_ctx),
             Self::format_bytes(context_vram)
         );
-        println!(
+        tracing::info!(
             "[ModelRegistry]   • Total VRAM:   Est: {} | {}",
             Self::format_bytes(total_est),
             real_str
         );
 
         Ok(engine)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::inference::types::{InferenceOutput, InferenceTaskRequest};
+    use std::error::Error;
+
+    struct Dummy(&'static str);
+    impl InferenceEngine for Dummy {
+        fn id(&self) -> &str {
+            self.0
+        }
+        fn execute(
+            &self,
+            _: &InferenceTaskRequest,
+            _: Option<&mut dyn FnMut(&str) -> bool>,
+        ) -> Result<InferenceOutput, Box<dyn Error>> {
+            Err("not used".into())
+        }
+    }
+
+    fn registry_with(ids: &[&'static str]) -> ModelRegistry {
+        let mut r = ModelRegistry::new(ConfigRegistry::default());
+        for id in ids {
+            r.engines.insert(id.to_string(), Arc::new(Dummy(id)));
+            r.lru_keys.push(id.to_string());
+            r.last_used.insert(id.to_string(), Instant::now());
+        }
+        r
+    }
+
+    #[test]
+    fn idle_engines_are_unloaded_and_fresh_ones_kept() {
+        let mut r = registry_with(&["old", "fresh"]);
+        r.last_used
+            .insert("old".into(), Instant::now() - Duration::from_secs(600));
+
+        let gone = r.evict_idle(Duration::from_secs(300));
+        assert_eq!(gone, vec!["old".to_string()]);
+        assert_eq!(r.loaded_models(), vec!["fresh".to_string()]);
+        assert_eq!(r.lru_keys, vec!["fresh".to_string()]);
+        assert!(!r.last_used.contains_key("old"));
+    }
+
+    #[test]
+    fn engine_in_use_is_never_evicted_and_its_clock_restarts() {
+        let mut r = registry_with(&["busy"]);
+        r.last_used
+            .insert("busy".into(), Instant::now() - Duration::from_secs(600));
+        let in_flight = r.engines.get("busy").cloned().unwrap(); // a handler holds it
+
+        assert!(r.evict_idle(Duration::from_secs(300)).is_empty());
+        assert!(r.last_used["busy"].elapsed() < Duration::from_secs(5));
+
+        drop(in_flight);
+        assert!(
+            r.evict_idle(Duration::from_secs(300)).is_empty(),
+            "clock restarted"
+        );
+        assert!(
+            !r.evict_idle(Duration::ZERO).is_empty(),
+            "idle once released"
+        );
     }
 }

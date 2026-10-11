@@ -213,8 +213,23 @@ impl ModelRegistry {
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::from_file_with_env(path, &[])
+    }
+
+    /// Load a config, resolving `{{VAR}}` from `overrides` first and the
+    /// process environment second (used to validate before `.env` is loaded).
+    pub fn from_file_with_env<P: AsRef<Path>>(
+        path: P,
+        overrides: &[(String, String)],
+    ) -> Result<Self> {
         let raw = std::fs::read_to_string(path).context("Failed to read config file")?;
-        let interpolated = interpolate_env_vars(&raw)?;
+        let interpolated = interpolate_with(&raw, &|name| {
+            overrides
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+                .or_else(|| std::env::var(name).ok())
+        })?;
         let registry: ModelRegistry =
             serde_json::from_str(&interpolated).context("Failed to parse config as JSON")?;
         registry.validate()?;
@@ -336,6 +351,11 @@ impl ModelRegistry {
 }
 
 pub fn interpolate_env_vars(raw: &str) -> Result<String> {
+    interpolate_with(raw, &|name| std::env::var(name).ok())
+}
+
+/// Like [`interpolate_env_vars`] but resolving names through `lookup`.
+pub fn interpolate_with(raw: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<String> {
     let mut result = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
 
@@ -359,7 +379,7 @@ pub fn interpolate_env_vars(raw: &str) -> Result<String> {
             }
 
             let var_trimmed = var_name.trim();
-            match std::env::var(var_trimmed) {
+            match lookup(var_trimmed).ok_or(()) {
                 Ok(val) => {
                     let escaped = val.replace('\\', "\\\\").replace('"', "\\\"");
                     result.push_str(&escaped);
@@ -378,6 +398,53 @@ pub fn interpolate_env_vars(raw: &str) -> Result<String> {
     }
 
     Ok(result)
+}
+
+/// Default sampling parameters for a model. Every field is optional; a value
+/// supplied in the request wins, then this config, then the engine's own
+/// built-in default.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SamplingConfig {
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub top_p: Option<f64>,
+    #[serde(default)]
+    pub top_k: Option<u32>,
+    #[serde(default)]
+    pub min_p: Option<f64>,
+    #[serde(default)]
+    pub max_tokens: Option<usize>,
+}
+
+impl SamplingConfig {
+    /// `self` (per-request values) layered over `defaults` (model config).
+    pub fn over(&self, defaults: &SamplingConfig) -> SamplingConfig {
+        SamplingConfig {
+            temperature: self.temperature.or(defaults.temperature),
+            top_p: self.top_p.or(defaults.top_p),
+            top_k: self.top_k.or(defaults.top_k),
+            min_p: self.min_p.or(defaults.min_p),
+            max_tokens: self.max_tokens.or(defaults.max_tokens),
+        }
+    }
+
+    pub fn validate(&self, model_id: &str) -> Result<()> {
+        let bad = |what: &str| anyhow::bail!("Model '{model_id}': invalid sampling.{what}");
+        if self.temperature.is_some_and(|t| !(0.0..=5.0).contains(&t)) {
+            return bad("temperature (expected 0.0 to 5.0)");
+        }
+        if self.top_p.is_some_and(|p| !(p > 0.0 && p <= 1.0)) {
+            return bad("top_p (expected greater than 0 and at most 1)");
+        }
+        if self.min_p.is_some_and(|p| !(0.0..=1.0).contains(&p)) {
+            return bad("min_p (expected 0.0 to 1.0)");
+        }
+        if self.max_tokens == Some(0) {
+            return bad("max_tokens (must be at least 1)");
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -453,6 +520,8 @@ pub struct ModelConfig {
     #[serde(default)]
     pub capabilities: Option<Vec<String>>,
     #[serde(default)]
+    pub sampling: Option<SamplingConfig>,
+    #[serde(default)]
     pub runtime: Option<RuntimeConfig>,
 }
 
@@ -464,6 +533,10 @@ impl ModelConfig {
     pub fn validate(&self) -> Result<()> {
         if self.id.trim().is_empty() {
             anyhow::bail!("Model '{}' has empty id", self.name);
+        }
+
+        if let Some(sampling) = &self.sampling {
+            sampling.validate(&self.id)?;
         }
 
         if self.is_local() {
@@ -496,6 +569,14 @@ impl ModelConfig {
             }
         }
         Ok(())
+    }
+
+    /// Per-request sampling values layered over this model's configured defaults.
+    pub fn effective_sampling(&self, request: &SamplingConfig) -> SamplingConfig {
+        match &self.sampling {
+            Some(defaults) => request.over(defaults),
+            None => request.clone(),
+        }
     }
 
     pub fn mtp_heads(&self) -> Option<u32> {
@@ -646,5 +727,109 @@ impl ModelConfig {
             }
         }
         self.max_context_length.unwrap_or(8192)
+    }
+}
+
+#[cfg(test)]
+mod sampling_tests {
+    use super::*;
+
+    fn cfg(sampling: Option<SamplingConfig>) -> ModelConfig {
+        let mut m: ModelConfig = serde_json::from_str(
+            r#"{"id":"m","name":"M","modality":"Text","model_path":"x.gguf"}"#,
+        )
+        .unwrap();
+        m.sampling = sampling;
+        m
+    }
+
+    #[test]
+    fn request_overrides_config_which_overrides_nothing() {
+        let m = cfg(Some(SamplingConfig {
+            temperature: Some(0.2),
+            top_p: Some(0.9),
+            top_k: Some(20),
+            min_p: None,
+            max_tokens: Some(2048),
+        }));
+        let eff = m.effective_sampling(&SamplingConfig {
+            temperature: Some(1.1),
+            max_tokens: None,
+            ..Default::default()
+        });
+        assert_eq!(eff.temperature, Some(1.1), "request wins");
+        assert_eq!(eff.top_p, Some(0.9), "config fills the gap");
+        assert_eq!(eff.top_k, Some(20));
+        assert_eq!(eff.max_tokens, Some(2048));
+        assert_eq!(eff.min_p, None, "engine default applies later");
+
+        let bare = cfg(None).effective_sampling(&SamplingConfig::default());
+        assert_eq!(bare, SamplingConfig::default());
+    }
+
+    #[test]
+    fn sampling_block_in_json_is_parsed() {
+        let m: ModelConfig = serde_json::from_str(
+            r#"{"id":"m","name":"M","modality":"Text","model_path":"x",
+                "sampling":{"temperature":0.6,"top_k":20,"max_tokens":4096}}"#,
+        )
+        .unwrap();
+        let s = m.sampling.unwrap();
+        assert_eq!(
+            (s.temperature, s.top_k, s.max_tokens),
+            (Some(0.6), Some(20), Some(4096))
+        );
+    }
+
+    #[test]
+    fn nonsense_values_are_rejected_at_load() {
+        for bad in [
+            SamplingConfig {
+                temperature: Some(-1.0),
+                ..Default::default()
+            },
+            SamplingConfig {
+                top_p: Some(0.0),
+                ..Default::default()
+            },
+            SamplingConfig {
+                top_p: Some(1.5),
+                ..Default::default()
+            },
+            SamplingConfig {
+                min_p: Some(2.0),
+                ..Default::default()
+            },
+            SamplingConfig {
+                max_tokens: Some(0),
+                ..Default::default()
+            },
+        ] {
+            assert!(cfg(Some(bad)).validate().is_err());
+        }
+        assert!(
+            cfg(Some(SamplingConfig {
+                temperature: Some(0.0),
+                top_p: Some(1.0),
+                ..Default::default()
+            }))
+            .validate()
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn the_repo_config_still_loads() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/models.json");
+        if path.exists() {
+            // Needs the env vars the config references; skip when absent.
+            if let Err(e) = ModelRegistry::from_file(&path) {
+                let msg = format!("{e:#}");
+                assert!(
+                    msg.contains("environment variable"),
+                    "unexpected failure: {msg}"
+                );
+            }
+        }
     }
 }

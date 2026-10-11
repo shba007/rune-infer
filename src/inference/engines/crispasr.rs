@@ -27,9 +27,10 @@ impl CrispAsrEngine {
             .parent()
             .unwrap_or_else(|| Path::new("bin/crispasr"));
 
-        println!(
+        tracing::info!(
             "[CrispAsrEngine] Launching managed crispasr for '{}' on port {}...",
-            model.id, port
+            model.id,
+            port
         );
 
         let mut cmd = Command::new(&bin_path);
@@ -85,7 +86,7 @@ impl CrispAsrEngine {
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
                 for line in reader.lines().map_while(Result::ok) {
-                    eprintln!("[crispasr] {}", line);
+                    tracing::info!("[crispasr] {}", line);
                     let mut l = lines_clone.lock().unwrap();
                     if l.len() >= 30 {
                         l.remove(0);
@@ -102,7 +103,7 @@ impl CrispAsrEngine {
             .timeout(Duration::from_secs(300))
             .build()?;
 
-        println!("[CrispAsrEngine] Managed crispasr server is ready and healthy.");
+        tracing::info!("[CrispAsrEngine] Managed crispasr server is ready and healthy.");
 
         Ok(Self {
             id: model.id.clone(),
@@ -157,7 +158,7 @@ impl CrispAsrEngine {
             }
         }
 
-        println!("[CrispAsrEngine] Resolving CrispASR runtime from GitHub releases...");
+        tracing::info!("[CrispAsrEngine] Resolving CrispASR runtime from GitHub releases...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
@@ -173,7 +174,7 @@ impl CrispAsrEngine {
         let release_val: serde_json::Value = match req.send().and_then(|r| r.error_for_status()) {
             Ok(resp) => resp.json()?,
             Err(err) => {
-                eprintln!(
+                tracing::info!(
                     "[CrispAsrEngine] Direct GitHub API request failed ({err}). Falling back to release tag redirect..."
                 );
                 let html_url = "https://github.com/CrispStrobe/CrispASR/releases";
@@ -189,7 +190,7 @@ impl CrispAsrEngine {
                     .split("/tag/")
                     .nth(1)
                     .ok_or_else(|| format!("Could not determine tag from URL: {final_url}"))?;
-                println!("[CrispAsrEngine] Resolved latest tag: {tag}");
+                tracing::info!("[CrispAsrEngine] Resolved latest tag: {tag}");
                 let api_fallback = format!(
                     "https://api.github.com/repos/CrispStrobe/CrispASR/releases/tags/{tag}"
                 );
@@ -311,7 +312,7 @@ impl CrispAsrEngine {
             return Err(format!("Could not locate '{}' after extraction", exe_name).into());
         }
 
-        println!(
+        tracing::info!(
             "[CrispAsrEngine] ✓ CrispASR runtime installed successfully at {}",
             exe_path.display()
         );

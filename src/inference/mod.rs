@@ -28,6 +28,15 @@ impl AppState {
         registry.get_or_load(id)
     }
 
+    /// Unload engines idle for at least `idle`; see [`registry::ModelRegistry::evict_idle`].
+    pub fn evict_idle(&self, idle: std::time::Duration) -> Vec<String> {
+        let mut registry = self
+            .registry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        registry.evict_idle(idle)
+    }
+
     pub fn loaded_models(&self) -> Vec<String> {
         let registry = self
             .registry

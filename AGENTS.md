@@ -1,326 +1,247 @@
-A standalone, config-driven, OpenAI-API-compatible model server written in
-Rust. It serves multiple local models (different weights, different
-quantizations) behind one HTTP server, chosen per-request via `model` id —
-similar in spirit to `llama-server`/Ollama/LM Studio, but config-file-first
-and designed from day one to grow into a general local-inference hub
-(text, vision, TTS, STT, image generation, LoRA pipelines).
+# Rune Infer — Project Guide
 
-This document is the source of truth for scope, architecture, and phased
-delivery. Update it whenever a decision below changes.
+Rune Infer is a standalone, config-driven **unified AI gateway** written in Rust,
+shipped as both a **terminal app** (live dashboard + setup wizard) and a
+**library** (`rune_infer::server::serve` embeds the HTTP server; the `tui`
+cargo feature is on by default and can be dropped with
+`default-features = false`).
+It puts local models (GGUF, safetensors, cact) and cloud providers (Gemini,
+OpenAI-compatible, Anthropic, OpenRouter) behind one HTTP endpoint, selected
+per request by the `model` id.
 
----
+**Success for 1.0:** every AI call the owner makes in a day — any modality,
+local or cloud — goes through this one endpoint. It is intended as the
+foundation of a larger Rune ecosystem.
 
-## 1. Decisions locked in for the MVP
-
-| Question | Decision |
-|---|---|
-| Inference backend | Rust FFI bindings to `llama.cpp` via the `llama-cpp-2` crate (`utilityai/llama-cpp-rs`). Not a subprocess wrapper — we link `libllama`/`libmtmd` directly. |
-| Vision | Use `llama-cpp-2`'s `mtmd` module (`MtmdInputChunk`, `MtmdInputChunks`) for image+text models that ship an `mmproj` file. |
-| Model formats | GGUF only for MVP. Safetensors (via `candle` or similar) is a post-MVP milestone — see §7. |
-| Platform | Cross-platform from day one: Windows + Linux, with GPU backend selected at **build time** via Cargo features (`cuda`, `vulkan`, `metal`, `cpu`), matching how `llama-cpp-2`/`llama.cpp` picks backends. One binary per backend combo; document the build matrix. |
-| API surface | OpenAI-compatible `/v1/chat/completions` (streaming + non-streaming), image_url content parts for vision. `/v1/models` for discovery. `/v1/completions` and `/v1/embeddings` are stretch goals, not blocking. |
-| Model swapping | Config-driven, hot-reloadable model *registry* (what models exist and their settings) is P0. Actually swapping which model is *loaded into VRAM* at request time (multi-model concurrency / LRU eviction) is P1 — MVP can start with "one loaded model at a time, switch on demand" and be explicit about that limitation. |
-| Orchestration | This is a **model server**, not an agent/harness. No tool-calling loop, no planning, no multi-step execution. It exposes inference; callers (e.g. Claude Code style clients, custom apps) drive the loop. |
-| Future scope (not MVP, but the config schema & crate boundaries must not preclude them) | TTS, STT, image generation (e.g. z-image + custom LoRA, MiniMax H3-style models), and ComfyUI-like *pipelines* expressed purely as config (chaining model stages, swapping LoRA per request). |
+This document is the source of truth for scope, architecture and direction.
+Update it whenever a decision below changes. (Rewritten 2026-10-11 to match the
+code as built; the original plan assumed in-process `llama-cpp-2` FFI and a
+Cargo workspace, neither of which is how the project turned out.)
 
 ---
 
-## 2. Non-goals (explicitly out of scope)
+## 1. Philosophy
 
-- Not a chat UI. No frontend beyond maybe a minimal `/health` and `/v1/models` JSON.
-- Not a training/fine-tuning tool.
-- Not a model downloader/hub client in the MVP (models are already on disk; paths come from config). A `pull` helper can come later.
-- Not multi-tenant/auth-hardened for the public internet in the MVP — assume trusted local/LAN use, but leave a hook for an API-key header check.
-- Not a distributed/multi-node server. Single process, single machine.
+1. **Breadth is the product.** One server for LLM, vision, video, STT, TTS,
+   image generation/editing, OCR/OMR, NLU, moderation, detection and
+   embeddings. New models/modalities are welcome even if rough.
+2. **Never crash the host.** Pre-flight context/token/VRAM budgeting, engines
+   isolated in subprocesses, reject a request rather than OOM or `SIGABRT`.
+3. **Performance matters**, but never at the cost of rule 2. Per-model request
+   concurrency is *not* a priority yet.
+4. **Config over code.** Adding a model should be a `models.json` edit. A small
+   Rust engine per genuinely novel architecture is acceptable where no upstream
+   tool exists (e.g. `needle`, `nemo_speech`, `encoder`).
+5. **Orchestrate, don't reinvent.** Prefer driving best-in-class upstream
+   engines (`llama-server`, `sd-server`, `crispasr`) as managed subprocesses;
+   write native Rust only where that is the practical option.
+6. **Explicit routing.** The caller names the exact model id. No aliases,
+   fallback chains or capability-based routing (revisit only if asked).
+7. **Pragmatic-superset compatibility.** Unmodified OpenAI and Anthropic SDKs
+   must work. Rune extensions (extra fields, `/v1/inference`) are fine; document
+   unsupported parameters rather than stubbing them silently.
 
 ---
 
-## 3. High-level architecture
+## 2. Scope
+
+### In scope
+- Local inference via managed engine subprocesses + native Rust engines.
+- Cloud proxying with rate limiting, concurrency caps, queueing and retries
+  (`src/proxy/`), so cloud and local models are interchangeable to clients.
+- Auto-installing/downloading **engine binaries** (`llama_server/install.rs`,
+  `engines/download.rs`).
+- Model weight **`pull`** (planned — not yet implemented).
+- Per-request LoRA swapping, multi-model concurrency with VRAM-budgeted LRU
+  and idle unload.
+- Gateway features: usage/cost tracking, metrics, caching/dedupe, remote-model
+  rate limits and retries.
+
+### Non-goals
+- **No agent/orchestration loop.** The server exposes inference primitives;
+  callers compose stages (stt → llm → tts, etc.) and drive tool loops. No
+  config-defined pipelines/DAGs. (`/v1/audio/speech-to-speech` exists as a
+  legacy convenience; do not extend that pattern.)
+- Not a chat UI. Not a training/fine-tuning tool. Not a distributed server —
+  single process, single machine.
+- Not hardened for multi-tenant public internet in the near term (single API
+  key today; per-key quotas are not planned yet).
+
+---
+
+## 3. Architecture (as built)
+
+Single crate `rune-infer` (`src/lib.rs` + `src/main.rs`), axum HTTP server.
 
 ```
-                    ┌─────────────────────────────┐
-                    │        Rune Infer (CLI)         │
-                    │  clap-based entrypoint        │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌───────────────▼───────────────┐
-                    │      Config Loader/Watcher      │
-                    │  models.json -> ModelRegistry   │
-                    │  (serde, validated, hot-reload) │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌───────────────▼───────────────┐
-                    │        HTTP Layer (axum)        │
-                    │  /v1/chat/completions           │
-                    │  /v1/models  /health             │
-                    │  OpenAI request/response types   │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌───────────────▼───────────────┐
-                    │     Engine Manager / Router      │
-                    │  - resolves model id -> config   │
-                    │  - owns loaded-engine cache       │
-                    │  - load/unload/evict policy       │
-                    └───────────────┬───────────────┘
-                                    │
-        ┌───────────────────────────┼───────────────────────────┐
-        │                            │                            │
-┌───────▼────────┐         ┌────────▼────────┐          ┌───────▼────────┐
-│ TextEngine      │         │ VisionEngine     │          │ (future)       │
-│ llama-cpp-2      │         │ llama-cpp-2+mtmd  │          │ TtsEngine,     │
-│ LlamaContext     │         │ image preprocess  │          │ SttEngine,     │
-│ sampling/stream  │         │ + text generation  │          │ ImageGenEngine │
-└──────────────────┘         └──────────────────┘          └────────────────┘
+ clap CLI (main.rs) ── dotenvy ── config.rs (models.json, {{ENV}} templating)
+        │
+   axum router (api.rs) ── auth middleware (Bearer / x-api-key)
+        │   /v1/chat/completions  /v1/responses  /v1/messages (+/anthropic/*)
+        │   /v1/images/*  /v1/audio/*  /v1/embeddings  /v1/moderations
+        │   /v1/nlu/intents  /v1/ocr  /v1/inference  /v1/models  /health
+        │
+   ┌────┴────────────────────────┐
+   │ local model                 │ remote model
+   │ inference/registry.rs       │ proxy/ (controller + adapters:
+   │ lazy load, VRAM budget,     │  openai, anthropic, gemini)
+   │ LRU eviction                │ rate limit, queue, retries
+   └────┬────────────────────────┘
+        │ InferenceEngine trait (inference/traits.rs)
+   engines/: llama_server (subprocess, auto-install), sd_server, crispasr,
+             nemo_speech, audio, needle (cact), encoder (safetensors BERT-style)
 ```
 
-### Key architectural principle: **Engine trait, not a giant match statement**
+Key modules:
+- `home.rs` — workspace resolution (`RUNE_HOME` > `./config/models.json` dev
+  checkout > `~/.rune-infer`). The process `chdir`s into the root so the
+  engines' relative `bin/`, `logs/`, `config/` and `.env` just work.
+- `server.rs` — `bind()` (actionable port errors) and `serve()` with graceful
+  shutdown; used by the CLI and by library embedders.
+- `telemetry.rs` — `tracing` layer converting audit/lifecycle events into typed
+  `UiEvent`s (`RequestRecord`, `ModelEvent`, `LogLine`). Producers call
+  `record_completion/record_failure/model_loading/...`; nothing else needs to
+  know about the UI.
+- `setup.rs` — UI-agnostic first-run logic: prerequisite detection, GGUF header
+  sniffing, local model discovery, cloud provider presets + key validation,
+  config/`.env` merge-writing.
+- `tui/` (feature `tui`) — ratatui + crossterm. `dashboard.rs` (models with
+  load state, VRAM gauge, tok/s + latency sparklines, recent requests, logs),
+  `wizard.rs` (setup), `theme.rs`.
+- `config.rs` — `ModelRegistry`, `ModelConfig`, `Modality`, `ProviderType`,
+  validation, capability resolution, token budgets. `{{VAR}}` placeholders are
+  resolved from the environment (`.env` via dotenvy) at load time.
+- `inference/registry.rs` — engine creation, GPU VRAM detection, context sizing,
+  LRU eviction bounded by `max_loaded_models` and `vram_budget_ratio`.
+- `inference/process.rs` — subprocess lifecycle (Windows job objects / unix
+  libc) so children die with the server.
+- `api/` — one handler module per endpoint family; `api/chat/` splits prompt,
+  tools, stream and response handling. `media.rs` handles image/video input
+  (URL, data URI, local path, S3-compatible streaming) and uses FFmpeg.
+- `proxy/` — cloud adapters translating the internal chat request to each
+  provider.
 
-Every backend (text-llama, vision-llama, later TTS/STT/imagegen) implements a
-common `Engine` trait so the HTTP layer and router never need to know backend
-internals:
+Known issues worth fixing:
+- `cuda`/`vulkan`/`metal` cargo features are empty; engines are fetched at
+  runtime by host detection, so one binary per OS suffices.
+- Local engines swallow load progress; the dashboard shows only
+  loading → loaded/failed with duration and VRAM delta.
+- Throughput is measured around `engine.execute` (prompt processing + decode),
+  not decode-only.
 
-```rust
-#[async_trait]
-pub trait Engine: Send + Sync {
-    fn id(&self) -> &str;
-    fn modality(&self) -> Modality; // Text, VisionText, Tts, Stt, ImageGen, ...
-    async fn generate(&self, req: GenerationRequest) -> Result<GenerationStream>;
-    fn is_loaded(&self) -> bool;
-    async fn unload(&self) -> Result<()>;
-    fn memory_estimate_bytes(&self) -> Option<u64>;
-}
-```
+Behaviour notes:
+- **Sampling** (`temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`) is
+  layered: request value > model `sampling` block > engine default. It applies
+  to local chat/responses and to remote providers (`top_k`/`min_p` are only
+  forwarded when set — avoid them on providers that reject unknown params).
+  `max_tokens` from config also becomes the reply reserve in the context
+  pre-flight, so a low value can truncate long reasoning output.
+- **Idle unload**: `server.idle_unload_seconds` (default 300, `0` = never;
+  `--idle-timeout` overrides) unloads a model with no requests for that long.
+  A model referenced by an in-flight request is never unloaded. The next
+  request pays a cold load. `max_loaded_models` of `0` means unlimited
+  (`--max-loaded-models` overrides).
 
-This is the single most important design decision for future-proofing: the
-router, HTTP handlers, and config loader depend only on this trait and on
-the config schema — never on `llama-cpp-2` types directly outside the
-`engines::llama` module. When TTS/STT/imagegen engines are added later, they
-are new modules implementing the same trait; nothing upstream changes.
-
----
-
-## 4. Crate/module layout
-
-```
-Rune Infer/
-├── Cargo.toml                # workspace root
-├── crates/
-│   ├── Rune Infer-cli/          # binary crate: clap args, main(), wiring
-│   ├── Rune Infer-config/       # config schema, serde types, validation, hot-reload
-│   ├── Rune Infer-api/          # OpenAI-compatible request/response types + axum handlers
-│   ├── Rune Infer-core/         # Engine trait, ModelRegistry, EngineManager/router, errors
-│   ├── Rune Infer-engine-llama/ # llama-cpp-2 wrapper: TextEngine + VisionEngine (mtmd)
-│   └── Rune Infer-engine-*/     # (future) tts, stt, imagegen — same Engine trait
-├── config/
-│   └── models.json           # example / default config
-├── AGENTS.md
-└── README.md
-```
-
-Rationale: splitting `Rune Infer-engine-llama` from `Rune Infer-core` means the
-`unsafe` FFI surface (llama-cpp-2 is explicitly not memory-safe per its own
-docs) is quarantined to one crate, and a future safetensors/candle engine or
-a TTS engine doesn't need to touch it at all.
-
----
-
-## 5. Config schema (v1, extensible)
-
-Config is the product's spine — everything (model swapping, LoRA, future
-pipelines) is expressed here rather than in code. Design it to version
-cleanly.
-
-```json
-{
-  "schema_version": 1,
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8080,
-    "api_key": null,
-    "max_loaded_models": 1,
-    "idle_unload_seconds": 300
-  },
-  "models": [
-    {
-      "id": "oxcoder-9b",
-      "name": "OxCoder 9B",
-      "modality": "text",
-      "architecture": "qwen35",
-      "format": "gguf",
-      "model_path": "D:/Models/.../OxCoder-9B.i1-Q6_K.gguf",
-      "mmproj_path": null,
-      "vision": false,
-      "description": "Code generation and instruction following",
-      "sampling": {
-        "temperature": 0.2,
-        "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.01,
-        "max_tokens": 2048
-      },
-      "runtime": {
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "extra_args": ""
-      },
-      "lora": []
-    },
-    {
-      "id": "qwen2vl-7b",
-      "name": "Qwen2-VL 7B",
-      "modality": "vision-text",
-      "architecture": "qwen2vl",
-      "format": "gguf",
-      "model_path": "D:/Models/qwen2vl-7b-q4_k_m.gguf",
-      "mmproj_path": "D:/Models/qwen2vl-7b-mmproj-f16.gguf",
-      "vision": true,
-      "sampling": { "temperature": 0.7, "top_p": 0.9, "max_tokens": 1024 },
-      "runtime": { "context_length": 8192, "gpu_layers": 99 }
-    }
-  ]
-}
-```
-
-Design notes:
-- `modality` replaces the implicit `vision: bool` as the extensible field
-  (`text`, `vision-text`, `tts`, `stt`, `image-gen`, ...); keep `vision`
-  as a derived/back-compat convenience if you want, but the engine
-  dispatch switches on `modality`.
-- `format`: `"gguf"` for MVP; reserved values `"safetensors"`, `"onnx"` for
-  later so old configs don't need a breaking migration.
-- `lora`: empty array for MVP but present in the schema now — an array of
-  `{ path, scale }` objects. Wiring this to `llama-cpp-2`'s LoRA management
-  API (mentioned in its docs) is a good P1 task since the crate already
-  supports it.
-- `schema_version`: bump and write a small migration function whenever the
-  shape changes — do this from day one, it's cheap now and painful later.
-- Config is loaded once at startup and validated (paths exist, ids unique,
-  architecture/modality combinations sane); file-watching for hot-reload of
-  the *registry* (add/remove/edit model entries) is a P1 nice-to-have via
-  `notify` crate — does not require unloading a running engine unless that
-  specific model's entry changed.
+Known divergences from the idealised design: the trait is synchronous and
+narrow (`execute` with an optional token callback); `Modality` dispatch is
+partly a `match` in `registry.rs`; ``notify` is a dependency but config
+hot-reload is **not implemented yet**.
 
 ---
 
-## 6. API behavior (MVP)
+## 4. Config
 
-- `GET /v1/models` → lists configured models (id, name, modality) regardless
-  of load state.
-- `POST /v1/chat/completions` → OpenAI-shaped body. `model` field selects
-  config entry. Supports:
-  - text-only messages
-  - `content: [{type:"text",...}, {type:"image_url",...}]` for vision models
-  - `stream: true` via SSE, matching OpenAI's `data: {...}\n\n` framing and
-    final `data: [DONE]`
-  - per-request sampling overrides layered on top of the config's
-    `sampling` defaults
-- `GET /health` → process + loaded-model status.
-- Error shape mirrors OpenAI's `{"error": {"message", "type", "code"}}` so
-  existing OpenAI-client SDKs work unmodified against this server.
-- On a chat request for a model that isn't currently loaded: load it
-  (evicting per `max_loaded_models` / LRU if needed), then serve. First
-  request to a "cold" model will be slow (model load time) — document this,
-  consider an optional `/v1/models/{id}/load` warmup endpoint.
+`<home>/config/models.json` (home = `~/.rune-infer`, see §3; `schema_version: 1`) — `server` block (host, port,
+`api_key`, `max_loaded_models`, `idle_unload_seconds`, `vram_budget_ratio`) and
+a `models` array. Per model: `id`, `name`, `modality`, `architecture`,
+`format` (`gguf` | `safetensors` | `cact`), `provider` (`local` default, or
+`openai`/`anthropic`/`google`/`openrouter`/`custom` with `base_url`,
+`upstream_model`, `api_key`, `rate_limit`), paths (`model_path`, `mmproj_path`,
+`vae_path`, `text_encoder_path`, `llm_vision_path`, `mtp_path`), image defaults,
+`capabilities`, size metadata used for budgeting, `sampling`, `runtime`, `lora`.
 
----
-
-## 7. Phased roadmap
-
-**Phase 0 — skeleton**
-- Workspace scaffold, config schema + loader + validation, `/health`,
-  `/v1/models` returning static config data. No inference yet.
-
-**Phase 1 — text MVP**
-- `Rune Infer-engine-llama::TextEngine` wrapping `llama-cpp-2`: load GGUF,
-  single-turn and multi-turn chat via context, greedy + temp/top_p/top_k/min_p
-  sampling, streaming token-by-token over SSE.
-- `/v1/chat/completions` non-streaming + streaming, one model loaded at a
-  time, load-on-demand.
-
-**Phase 2 — vision**
-- `VisionEngine` using `mtmd`: accept `image_url` (http(s) fetch + local
-  `data:` base64), build `MtmdInputChunks`, track `total_positions()` for
-  M-RoPE models correctly, generate text conditioned on image+text.
-
-**Phase 3 — multi-model concurrency & LoRA**
-- `max_loaded_models > 1`, LRU eviction, per-request LoRA application via
-  `llama-cpp-2`'s LoRA adapter API, `idle_unload_seconds`.
-
-**Phase 4 — safetensors backend**
-- New `Rune Infer-engine-candle` (or similar) crate implementing the same
-  `Engine` trait for non-GGUF weights, selected via `format: "safetensors"`.
-
-**Phase 5 — new modalities**
-- `Rune Infer-engine-tts`, `Rune Infer-engine-stt` (e.g. whisper.cpp bindings for
-  STT — note `llama.cpp`'s ecosystem already has Voxtral/whisper mtmd audio
-  support, worth reusing), `Rune Infer-engine-imagegen` (diffusion backends for
-  z-image / MiniMax-H3-style models with LoRA).
-- New OpenAI-compatible endpoints as needed: `/v1/audio/speech`,
-  `/v1/audio/transcriptions`, `/v1/images/generations`.
-
-**Phase 6 — config-only pipelines**
-- Extend schema with a `pipelines` section: named DAGs of stages (e.g.
-  `stt -> text -> tts`, or `text -> image-gen` with a LoRA swap step),
-  each stage referencing a `model.id` and optional per-stage overrides
-  (including LoRA choice). The `Engine` trait + `modality` dispatch from
-  day one is what makes this possible without a rewrite: a pipeline
-  executor just calls `Engine::generate` on each stage in order, no new
-  low-level plumbing required.
+Rules:
+- **Secrets never go inline.** Use `"api_key": "{{GEMINI_API_KEY}}"` style
+  references resolved from `.env`/system env. `.env` is gitignored; the
+  pre-commit hook scans for secrets.
+- The config is expected to **split into multiple files** over time (server
+  settings, model catalog, secrets). Keep schema changes versioned via
+  `schema_version` with a migration function.
+- Env vars used today: `RUNE_HOST`, `RUNE_PORT`, `RUNE_API_KEY`,
+  `LLAMA_SERVER_PATH`, `SD_SERVER_PATH`, `CRISPASR_PATH`, `NEMO_SPEECH_PATH`,
+  `AUDIO8_PATH`, `S3_*`/`AWS_*`, `RUSTFS_*`, `GH_TOKEN`, provider keys.
 
 ---
 
-## 8. Key crates (MVP)
+## 5. API surface
 
-| Purpose | Crate |
-|---|---|
-| Async runtime | `tokio` |
-| HTTP server | `axum` |
-| Streaming (SSE) | `axum::response::sse` |
-| Serialization | `serde`, `serde_json` |
-| CLI parsing | `clap` |
-| LLM inference | `llama-cpp-2` (+ `llama-cpp-sys-2`), feature-gated `cuda`/`vulkan`/`metal` |
-| Config hot-reload (P1) | `notify` |
-| Logging | `tracing`, `tracing-subscriber` |
-| Error handling | `thiserror`, `anyhow` |
-| HTTP client (fetch remote image_url) | `reqwest` |
+OpenAI canonical: chat completions (stream + non-stream, vision, video, tools,
+`response_format` JSON/schema), responses, embeddings, moderations, images
+(generations/edits/variations), audio (transcriptions/translations/speech),
+models, health. Anthropic Messages at `/v1/messages` and `/anthropic/v1/messages`
+so Anthropic SDK clients can target local models. Rune-specific: `/v1/inference`,
+`/v1/nlu/intents`, `/v1/ocr`, `/v1/images/{captions,detections,embeddings,
+recognize,upscales,restorations,style-transfers}`, `/v1/audio/speech-to-speech`.
 
-Build note: `llama-cpp-2` links C++ code, so CI and dev setup need a C/C++
-toolchain (MSVC or clang on Windows, gcc/clang on Linux) and, for GPU
-builds, the relevant SDK (CUDA toolkit, Vulkan SDK). Document exact
-versions in README once pinned; consider prebuilt binaries per backend as
-a release artifact strategy so end users don't need the toolchain.
+Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
+`postman/` documents the surface.
 
 ---
 
-## 9. Open questions to resolve during Phase 0/1
+## 6. Terminal UX & install
 
-1. Multi-turn conversation state: does the server keep any session/context
-   cache keyed by something, or is every request stateless (full messages
-   array resent, as OpenAI does)? Recommend: stateless at the API layer
-   (matches OpenAI semantics), but KV-cache prefix reuse internally as a
-   performance optimization — safe to defer.
-2. Concurrent requests to the *same* loaded model: llama.cpp contexts are
-   generally not free-threaded for a single sequence — decide between (a)
-   a single-request-at-a-time queue per loaded model, or (b) multiple
-   parallel sequences via one context's batch/slot system (more complex,
-   more throughput). Recommend (a) for MVP, revisit in Phase 3.
-3. How strict should OpenAI compatibility be (e.g. do we need `logprobs`,
-   `n>1` completions, `tools`/function-calling passthrough)? Recommend:
-   MVP supports the subset real clients need (chat, streaming, vision
-   content parts, basic sampling params) and documents what's unsupported
-   rather than stubbing it silently.
+- `rune-infer` on a TTY opens the dashboard with the server running inside it;
+  `--headless` (or no TTY: Docker, systemd, CI) runs a plain server with console
+  logs. With no config present it first runs the **setup wizard** (also
+  `rune-infer setup` any time): welcome/system check → network & API key →
+  optional cloud keys (validated, stored in `.env`, config holds `{{VAR}}`) →
+  optional local GGUF discovery (architecture + mmproj auto-detected) →
+  optional `llama-server` pre-download → review → write. Nothing is written
+  before the review; every step is skippable.
+- Secure defaults: wizard binds `127.0.0.1`; choosing the network requires an
+  API key; the dashboard shows a red banner when listening beyond localhost
+  without a key.
+- While the TUI is active nothing may write to stdout/stderr: use `tracing`,
+  never `println!`.
+- Releases publish version-less archives per platform
+  (`rune-infer-{linux-x64,macos-x64,macos-arm64,windows-x64}.{tar.gz,zip}` +
+  `.sha256`) so `releases/latest/download/<name>` works without API calls.
+  `install.sh` / `install.ps1` detect the platform, verify the checksum
+  (abort on mismatch), install to `~/.local/bin` or
+  `%LOCALAPPDATA%\Programs\rune-infer`, and handle upgrades. Env overrides:
+  `RUNE_VERSION`, `RUNE_INSTALL_DIR`, `RUNE_BASE_URL`, `RUNE_NO_MODIFY_PATH`.
+- Known gaps: release binaries are unsigned (SmartScreen/Gatekeeper warn); no
+  Linux/Windows arm64 build; no uninstall script.
 
 ---
 
-## 10. Definition of done for MVP
+## 7. Roadmap (priority order)
 
-- `cargo run --release --features cuda -- --config config/models.json`
-  starts a server that:
-  - Lists configured models at `/v1/models`.
-  - Serves `/v1/chat/completions` (streaming + non-streaming) against at
-    least one text GGUF model and one vision GGUF model (mmproj), loading
-    on first request.
-  - Works against an unmodified OpenAI Python/JS SDK client pointed at
-    `http://localhost:8080/v1`.
-  - Builds and runs on both Windows and Linux with CPU fallback when no
-    GPU feature is enabled.
+1. **Stability & test hardening** — currently one integration-test file
+   (5 tests). Cover config parsing/templating, budgeting, each adapter,
+   handlers; keep CI (`integrate.yml`) green.
+2. **More modalities/models** — video, music, segmentation, more TTS/STT, as
+   upstream engines allow.
+3. **Gateway features** — usage/cost tracking and metrics, caching/request
+   dedupe; extend existing remote rate limiting and retries.
+4. **Packaging & distribution** — *installers, checksummed archives and the
+   wizard are done*; remaining: code signing, arm64 builds, Docker images,
+   model `pull`, cloud/container deployment.
+5. **Per-request LoRA** and **multi-model concurrency + idle unload**
+   (`max_loaded_models > 1`; LRU exists, idle unload and LoRA do not).
+6. **Config hot-reload** and config file splitting.
+
+Deferred: per-model request concurrency / parallel slots.
+
+---
+
+## 8. Working agreements
+
+- **Ask before adding new features or new dependencies/libraries.**
+- Targets: Windows + Linux + macOS. TUI stack is `ratatui` + `crossterm` +
+  `tui-input` (approved); anything else new needs approval first.
+- Conventional commits (enforced by `.cargo-husky` hooks; changelog via
+  `git-cliff`/`cog`). Edition 2024, `rustfmt.toml` respected.
+- Audit log goes to `logs/rune-infer.log`; payload bodies are never logged.
+- Build needs a C/C++ toolchain only if engines are built from source; FFmpeg
+  must be on `PATH` for video input.

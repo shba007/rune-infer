@@ -23,6 +23,10 @@ pub enum InferenceTaskRequest {
         temperature: Option<f64>,
         #[serde(default)]
         top_p: Option<f64>,
+        #[serde(default)]
+        top_k: Option<u32>,
+        #[serde(default)]
+        min_p: Option<f64>,
     },
     ImageGeneration {
         prompt: String,

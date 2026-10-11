@@ -42,7 +42,7 @@ impl NeedleEngine {
             return Ok(exe_path);
         }
 
-        println!("[NeedleEngine] Needle 3 binary not found. Resolving from Hugging Face...");
+        tracing::info!("[NeedleEngine] Needle 3 binary not found. Resolving from Hugging Face...");
         std::fs::create_dir_all(&base_dir)?;
 
         let platform = match (std::env::consts::OS, std::env::consts::ARCH) {
@@ -66,7 +66,7 @@ impl NeedleEngine {
         download::download_to_file(&client, &download_url, &exe_path, "[NeedleEngine]")?;
         download::make_executable(&exe_path)?;
 
-        println!(
+        tracing::info!(
             "[NeedleEngine] ✓ Needle 3 installed at {}",
             exe_path.display()
         );

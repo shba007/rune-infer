@@ -23,7 +23,7 @@ impl AudioEngine {
 
         let bin_path = Self::ensure_binary_installed()?;
 
-        println!(
+        tracing::info!(
             "[AudioEngine] Initialized native audio.cpp ASR engine for '{}'",
             model.id
         );
@@ -76,7 +76,7 @@ impl AudioEngine {
             }
         }
 
-        println!("[AudioEngine] Resolving audio.cpp runtime from GitHub releases...");
+        tracing::info!("[AudioEngine] Resolving audio.cpp runtime from GitHub releases...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
@@ -254,7 +254,7 @@ impl AudioEngine {
         match ffmpeg_status {
             Ok(out) if out.status.success() && out_wav.exists() => Ok(out_wav),
             _ => {
-                eprintln!(
+                tracing::info!(
                     "[AudioEngine] Warning: ffmpeg not detected or conversion failed. Passing raw bytes as fallback."
                 );
                 let fallback = temp_dir.join(format!("fallback_{}.wav", std::process::id()));
@@ -371,7 +371,7 @@ impl InferenceEngine for AudioEngine {
                     .arg("--text-out")
                     .arg(&output_txt_path);
 
-                println!(
+                tracing::info!(
                     "[AudioEngine] Executing audio8_asr with backend '{}' on '{}'...",
                     backend_flag,
                     audio_wav_path.display()
@@ -407,7 +407,7 @@ impl InferenceEngine for AudioEngine {
                 if transcript.is_empty() {
                     let stderr_str = String::from_utf8_lossy(&out.stderr);
                     if !stderr_str.trim().is_empty() {
-                        eprintln!(
+                        tracing::info!(
                             "[AudioEngine] audiocpp_cli stderr output:\n{}",
                             stderr_str.trim()
                         );

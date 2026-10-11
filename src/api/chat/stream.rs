@@ -165,7 +165,25 @@ pub fn handle_chat_stream(
                 .is_ok()
         };
 
-        match engine.execute(&task, Some(&mut on_token)) {
+        let gen_started = std::time::Instant::now();
+        let exec_result = engine.execute(&task, Some(&mut on_token));
+        let gen_elapsed = gen_started.elapsed();
+        match &exec_result {
+            Ok(out) => crate::telemetry::record_completion(
+                &model_id,
+                start_time.elapsed().as_millis(),
+                out.usage.prompt_tokens,
+                out.usage.completion_tokens,
+                gen_elapsed.as_millis(),
+            ),
+            Err(e) => crate::telemetry::record_failure(
+                &model_id,
+                500,
+                start_time.elapsed().as_millis(),
+                &e.to_string(),
+            ),
+        }
+        match exec_result {
             Ok(output) => match output.response {
                 InferenceTaskResponse::ToolCall {
                     content,

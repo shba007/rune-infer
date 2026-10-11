@@ -115,14 +115,25 @@ pub async fn responses_handler(
 
     let tools_val = request.tools.unwrap_or(serde_json::Value::Null);
 
+    let requested = crate::config::SamplingConfig {
+        temperature: request.temperature,
+        ..Default::default()
+    };
+    let sampling = match state.config.find(&model_id) {
+        Some(model_config) => model_config.effective_sampling(&requested),
+        None => requested,
+    };
+
     let task = InferenceTaskRequest::ToolCall {
         prompt: input_text.clone(),
         schema: tools_val,
         images: Vec::new(),
         messages,
-        max_tokens: None,
-        temperature: request.temperature,
-        top_p: None,
+        max_tokens: sampling.max_tokens,
+        temperature: sampling.temperature,
+        top_p: sampling.top_p,
+        top_k: sampling.top_k,
+        min_p: sampling.min_p,
     };
 
     let res =

@@ -40,7 +40,7 @@ jobs:
             target: aarch64-apple-darwin
             ext: ''
 
-          - platform: 'macos-13'
+          - platform: 'macos-15-intel'
             name: macos-x64
             target: x86_64-apple-darwin
             ext: ''
@@ -76,10 +76,45 @@ jobs:
       - name: ⚙️ Build Artifact
         run: cargo build --release --locked --target ${{ matrix.target }} --bin ${{ env.BIN_NAME }}
 
-      - name: ⚙️ Upload Artifact
+      - name: 📦 Package (archive + SHA-256)
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.name }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          SRC="target/${TARGET}/release"
+          NAME="${BIN_NAME}-${PLATFORM}"
+          if [ "$EXT" = ".exe" ]; then
+            ARCHIVE="${NAME}.zip"
+            (cd "$SRC" && 7z a -tzip "$GITHUB_WORKSPACE/dist/$ARCHIVE" "${BIN_NAME}.exe" > /dev/null)
+          else
+            ARCHIVE="${NAME}.tar.gz"
+            tar -C "$SRC" -czf "dist/$ARCHIVE" "${BIN_NAME}"
+          fi
+          (cd dist && (sha256sum "$ARCHIVE" 2>/dev/null || shasum -a 256 "$ARCHIVE") > "$ARCHIVE.sha256")
+          ls -l dist
+
+      - name: ⬆️ Upload release assets
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/${{ matrix.target }}/release/${{ env.BIN_NAME }}${{ matrix.ext }}
-          asset_name: ${{ env.BIN_NAME }}_${{ env.VERSION }}_${{ matrix.name }}${{ matrix.ext }}
+          file: dist/*
+          file_glob: true
+          overwrite: true
+          tag: ${{ env.VERSION }}
+
+  # Make the installers available from the release itself, too.
+  upload-installers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: install.*
+          file_glob: true
+          overwrite: true
           tag: ${{ env.VERSION }}
