@@ -20,6 +20,7 @@ use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
 use super::theme::*;
+use crate::config::EngineKind;
 use crate::home::Workspace;
 use crate::setup::{
     self, CloudChoice, Exposure, LocalCandidate, PROVIDERS, Prerequisites, SetupPlan,
@@ -115,6 +116,7 @@ struct Wizard<'a> {
     local_phase: LocalPhase,
     path_input: Input,
     candidates: Vec<LocalCandidate>,
+    skipped: Vec<setup::Skipped>,
     picks: Vec<bool>,
     local_cursor: usize,
     chosen: Vec<LocalCandidate>,
@@ -215,6 +217,7 @@ impl<'a> Wizard<'a> {
             local_phase: LocalPhase::Path,
             path_input: Input::default(),
             candidates: Vec::new(),
+            skipped: Vec::new(),
             picks: Vec::new(),
             local_cursor: 0,
             chosen: Vec::new(),
@@ -262,7 +265,9 @@ impl<'a> Wizard<'a> {
     }
 
     fn engine_needed(&self) -> bool {
-        !self.chosen.is_empty()
+        self.chosen
+            .iter()
+            .any(|c| c.engine() == EngineKind::LlamaServer)
             && self
                 .prereq
                 .as_ref()
@@ -463,14 +468,22 @@ impl<'a> Wizard<'a> {
                         self.next_after_local();
                         return;
                     }
-                    match setup::discover_gguf(&expand_tilde(&raw)) {
-                        Ok(c) if c.is_empty() => {
-                            self.local_error =
-                                Some("No usable .gguf models found there (mmproj files are attached automatically).".into())
+                    match setup::discover_models(&expand_tilde(&raw)) {
+                        Ok(d) if d.models.is_empty() => {
+                            let why = d
+                                .skipped
+                                .first()
+                                .map(|s| format!(" First skipped file: {}", s.reason))
+                                .unwrap_or_default();
+                            self.local_error = Some(format!(
+                                "No models rune-infer can set up were found there.{why}"
+                            ))
                         }
-                        Ok(c) => {
-                            self.picks = vec![true; c.len()];
-                            self.candidates = c;
+                        Ok(d) => {
+                            // Models that still need companion files start unticked.
+                            self.picks = d.models.iter().map(|c| c.is_ready()).collect();
+                            self.candidates = d.models;
+                            self.skipped = d.skipped;
                             self.local_cursor = 0;
                             self.local_error = None;
                             self.local_phase = LocalPhase::Pick;
@@ -975,10 +988,10 @@ impl<'a> Wizard<'a> {
                         Span::raw(format!("{}  ", c.display_name)),
                         Span::styled(
                             format!(
-                                "{} · {}{}",
-                                c.architecture,
-                                human_bytes(c.size_bytes),
-                                if c.mmproj.is_some() { " · vision" } else { "" }
+                                "{} · {} · {}",
+                                c.kind_label,
+                                c.engine(),
+                                human_bytes(c.size_bytes)
                             ),
                             Style::new().fg(DIM),
                         ),
@@ -987,9 +1000,19 @@ impl<'a> Wizard<'a> {
                 f.render_widget(Paragraph::new(lines), list);
             }
             LocalPhase::Pick => {
-                let mut lines = vec![Line::from("")];
-                let h = area.height.saturating_sub(4) as usize;
+                let block = panel(format!(
+                    " Found {} model(s) · {} file(s) skipped ",
+                    self.candidates.len(),
+                    self.skipped.len()
+                ));
+                let inner = block.inner(area);
+                f.render_widget(block, area);
+                let [list, info] =
+                    Layout::vertical([Constraint::Min(3), Constraint::Length(5)]).areas(inner);
+
+                let h = list.height as usize;
                 let start = self.local_cursor.saturating_sub(h.saturating_sub(1));
+                let mut lines = Vec::new();
                 for (i, c) in self
                     .candidates
                     .iter()
@@ -998,8 +1021,8 @@ impl<'a> Wizard<'a> {
                     .take(h.max(1))
                 {
                     let cur = i == self.local_cursor;
-                    lines.push(Line::from(vec![
-                        Span::styled(if cur { "  ❯ " } else { "    " }, Style::new().fg(ACCENT)),
+                    let mut spans = vec![
+                        Span::styled(if cur { " ❯ " } else { "   " }, Style::new().fg(ACCENT)),
                         Span::styled(
                             if self.picks[i] { "[x] " } else { "[ ] " },
                             Style::new().fg(if self.picks[i] { OK } else { DIM }),
@@ -1007,24 +1030,50 @@ impl<'a> Wizard<'a> {
                         Span::raw(format!("{}  ", c.display_name)),
                         Span::styled(
                             format!(
-                                "{} · {}{}",
-                                c.architecture,
-                                human_bytes(c.size_bytes),
-                                if c.mmproj.is_some() {
-                                    " · +vision"
-                                } else {
-                                    ""
-                                }
+                                "{} · {} · {}",
+                                c.kind_label,
+                                c.engine(),
+                                human_bytes(c.size_bytes)
                             ),
                             Style::new().fg(DIM),
                         ),
-                    ]));
+                    ];
+                    if !c.is_ready() {
+                        spans.push(Span::styled("  ⚠ needs setup", Style::new().fg(WARN)));
+                    }
+                    lines.push(Line::from(spans));
                 }
-                f.render_widget(
-                    Paragraph::new(lines)
-                        .block(panel(format!(" Found {} model(s) ", self.candidates.len()))),
-                    area,
-                );
+                f.render_widget(Paragraph::new(lines), list);
+
+                let mut notes: Vec<Line> = Vec::new();
+                if let Some(c) = self.candidates.get(self.local_cursor) {
+                    if !c.needs.is_empty() {
+                        notes.push(Line::styled(
+                            format!(
+                                " ⚠ add extra.{} to the config before use (unticked by default)",
+                                c.needs.join(", extra.")
+                            ),
+                            Style::new().fg(WARN),
+                        ));
+                    }
+                    for n in &c.notes {
+                        notes.push(Line::styled(format!(" ℹ {n}"), Style::new().fg(DIM)));
+                    }
+                }
+                for s in self.skipped.iter().take(2) {
+                    let name = s.path.file_name().unwrap_or_default().to_string_lossy();
+                    notes.push(Line::styled(
+                        format!(" skipped {name}: {}", s.reason),
+                        Style::new().fg(DIM),
+                    ));
+                }
+                if self.skipped.len() > 2 {
+                    notes.push(Line::styled(
+                        format!(" … and {} more skipped", self.skipped.len() - 2),
+                        Style::new().fg(DIM),
+                    ));
+                }
+                f.render_widget(Paragraph::new(notes).wrap(Wrap { trim: true }), info);
             }
         }
     }
@@ -1128,10 +1177,20 @@ impl<'a> Wizard<'a> {
         }
         for c in &p.local {
             lines.push(bullet(format!(
-                "Local: {}{}",
+                "Local: {}  ({} · {})",
                 c.display_name,
-                if c.mmproj.is_some() { " (vision)" } else { "" }
+                c.kind_label,
+                c.engine()
             )));
+            if !c.needs.is_empty() {
+                lines.push(Line::styled(
+                    format!(
+                        "      ⚠ add extra.{} to the config before first use",
+                        c.needs.join(", extra.")
+                    ),
+                    Style::new().fg(WARN),
+                ));
+            }
         }
         lines.push(Line::from(""));
         lines.push(Line::styled(
@@ -1227,19 +1286,9 @@ mod tests {
     fn full_flow_writes_a_loadable_config_and_every_screen_renders() {
         let ws = temp_ws();
         let model_dir = ws.root.join("models");
-        std::fs::create_dir_all(&model_dir).unwrap();
-        // minimal valid GGUF header: magic, v3, 0 tensors, 1 kv (architecture)
-        let mut g = b"GGUF".to_vec();
-        g.extend(3u32.to_le_bytes());
-        g.extend(0u64.to_le_bytes());
-        g.extend(1u64.to_le_bytes());
-        let arch_key = "general.architecture";
-        g.extend((arch_key.len() as u64).to_le_bytes());
-        g.extend(arch_key.as_bytes());
-        g.extend(8u32.to_le_bytes());
-        g.extend(5u64.to_le_bytes());
-        g.extend(b"llama");
-        std::fs::write(model_dir.join("tiny.gguf"), g).unwrap();
+        crate::detect::testing::Gguf::llm("llama", "Tiny").write(&model_dir.join("tiny.gguf"));
+        // An image model that still needs companion files, to exercise the warning rendering.
+        crate::detect::testing::Gguf::new("lumina2").write(&model_dir.join("img/z-image.gguf"));
 
         let (_tx, rx) = channel();
         let mut w = Wizard::new(&ws, rx);
@@ -1279,6 +1328,38 @@ mod tests {
         let cfg = ModelRegistryProbe::load(&ws);
         assert_eq!(cfg.0, 1, "one local model written");
         assert!(ws.env_file().exists());
+        std::fs::remove_dir_all(&ws.root).ok();
+    }
+
+    /// `RUNE_PROBE_DIR=D:/Models cargo test dump_pick_screen -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn dump_pick_screen() {
+        let Ok(dir) = std::env::var("RUNE_PROBE_DIR") else {
+            return;
+        };
+        let ws = temp_ws();
+        let (_tx, rx) = channel();
+        let mut w = Wizard::new(&ws, rx);
+        w.step = Step::Local;
+        w.local_phase = LocalPhase::Pick;
+        let d = setup::discover_models(std::path::Path::new(&dir)).unwrap();
+        w.picks = d.models.iter().map(|c| c.is_ready()).collect();
+        w.candidates = d.models;
+        w.skipped = d.skipped;
+        w.local_cursor = 14;
+        for (cols, rows) in [(120u16, 32u16), (80, 30)] {
+            let mut t = Terminal::new(TestBackend::new(cols, rows)).unwrap();
+            t.draw(|f| w.draw(f)).unwrap();
+            let buf = t.backend().buffer().clone();
+            println!("---- {cols}x{rows}");
+            for y in 0..rows {
+                let line: String = (0..cols)
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect();
+                println!("{}", line.trim_end());
+            }
+        }
         std::fs::remove_dir_all(&ws.root).ok();
     }
 

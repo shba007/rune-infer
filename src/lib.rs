@@ -1,5 +1,6 @@
 pub mod api;
 pub mod config;
+pub mod detect;
 pub mod home;
 pub mod inference;
 pub mod media;

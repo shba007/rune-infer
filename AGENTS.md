@@ -111,6 +111,13 @@ Key modules:
 - `config.rs` — `ModelRegistry`, `ModelConfig`, `Modality`, `ProviderType`,
   validation, capability resolution, token budgets. `{{VAR}}` placeholders are
   resolved from the environment (`.env` via dotenvy) at load time.
+- `detect.rs` — what a GGUF file actually *is*, read from its header (architecture,
+  distinctive keys such as `audiocpp.model_spec.family` / `prism.*`, and tensor names)
+  rather than its file name: chat / vision chat, image generation, text-to-speech,
+  speech-to-text. It pairs vision projectors by size (`clip.vision.projection_dim`
+  must equal the model's `embedding_length`), attaches MTP draft heads, recognises
+  metadata-less diffusion files by tensor names, and reports every file it skipped
+  and why. Used by the setup wizard.
 - `schema.rs` — the on-disk schema 2 types (`ModelEntry`, `LocalBlock`,
   `RemoteBlock`), per-engine `extra` validation (`allowed_extra_keys`) and the
   conversion into the flat `ModelConfig` the rest of the server uses.
@@ -146,6 +153,15 @@ Behaviour notes:
   A model referenced by an in-flight request is never unloaded. The next
   request pays a cold load. `max_loaded_models` of `0` means unlimited
   (`--max-loaded-models` overrides).
+
+- The wizard cannot find an image model's companion files (VAE, text encoder,
+  `llm_vision_path`): they are separate downloads in other repos. It flags those
+  models, leaves them unticked and says which `extra` keys to add.
+- Detection of language-model fine-tunes for speech ("…TTS", "…ASR") relies on
+  whole-word matches in the name; verify them. Vevo2 is set up as text-to-speech
+  although it also does voice conversion.
+- `rune-infer setup` skips models whose id already exists, so re-running it does
+  not repair entries written by an older, less accurate wizard.
 
 Known divergences from the idealised design: the trait is synchronous and
 narrow (`execute` with an optional token callback); `Modality` dispatch is
@@ -279,7 +295,7 @@ Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
   logs. With no config present it first runs the **setup wizard** (also
   `rune-infer setup` any time): welcome/system check → network & API key →
   optional cloud keys (validated, stored in `.env`, config holds `{{VAR}}`) →
-  optional local GGUF discovery (architecture + mmproj auto-detected) →
+  optional local model discovery (each GGUF is classified from its header; projectors and drafts are attached; incomplete image models start unticked) →
   optional `llama-server` pre-download → review → write. Nothing is written
   before the review; every step is skippable.
 - Secure defaults: wizard binds `127.0.0.1`; choosing the network requires an

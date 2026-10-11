@@ -5,14 +5,13 @@
 //! reused by other front-ends; the interactive wizard lives in `tui::wizard`.
 
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::config::{
-    EngineConfig, Modality, ModelRegistry, ProviderType, SamplingConfig, ServerConfig,
+    EngineConfig, EngineKind, Modality, ModelRegistry, ProviderType, SamplingConfig, ServerConfig,
 };
 use crate::schema::{LocalBlock, ModelEntry, RegistryFile, RemoteBlock, SCHEMA_VERSION};
 
@@ -210,195 +209,10 @@ pub fn validate_provider_key(preset: &ProviderPreset, key: &str) -> Result<(), S
 }
 
 // ---------------------------------------------------------------------------
-// Local model discovery
+// Local model discovery lives in `crate::detect`
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
-pub struct LocalCandidate {
-    pub path: PathBuf,
-    pub size_bytes: u64,
-    pub architecture: String,
-    pub display_name: String,
-    pub context_length: Option<u32>,
-    pub mmproj: Option<PathBuf>,
-}
-
-/// Find GGUF models at `input` (a file, or a folder searched up to 5 levels).
-pub fn discover_gguf(input: &Path) -> Result<Vec<LocalCandidate>> {
-    if !input.exists() {
-        anyhow::bail!("'{}' does not exist", input.display());
-    }
-    let mut files = Vec::new();
-    if input.is_file() {
-        files.push(input.to_path_buf());
-    } else {
-        walk_gguf(input, 0, &mut files);
-    }
-
-    let mut out = Vec::new();
-    for path in files {
-        let fname = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-        if !fname.ends_with(".gguf") || fname.contains("mmproj") {
-            continue;
-        }
-        let Ok(meta) = read_gguf_metadata(&path) else {
-            continue;
-        };
-        out.push(LocalCandidate {
-            size_bytes: std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0),
-            mmproj: find_mmproj(&path),
-            display_name: meta.name.unwrap_or_else(|| {
-                path.file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into()
-            }),
-            architecture: meta.architecture,
-            context_length: meta.context_length,
-            path,
-        });
-    }
-    out.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(out)
-}
-
-fn walk_gguf(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
-    if depth > 5 || out.len() >= 300 {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            walk_gguf(&path, depth + 1, out);
-        } else if path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("gguf"))
-        {
-            out.push(path);
-        }
-    }
-}
-
-fn find_mmproj(model: &Path) -> Option<PathBuf> {
-    let dir = model.parent()?;
-    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .map(|n| n.to_string_lossy().to_lowercase())
-                .is_some_and(|n| n.contains("mmproj") && n.ends_with(".gguf"))
-        })
-        .collect();
-    found.sort_by_key(|p| {
-        // Prefer f16 projectors over quantized/bf16 ones.
-        let n = p.to_string_lossy().to_lowercase();
-        (!n.contains("f16") || n.contains("bf16"), n)
-    });
-    found.into_iter().next()
-}
-
-#[derive(Debug, Default)]
-pub struct GgufMetadata {
-    pub architecture: String,
-    pub name: Option<String>,
-    pub context_length: Option<u32>,
-}
-
-/// Read the handful of GGUF header keys the wizard needs, stopping before the
-/// (huge) tokenizer section.
-pub fn read_gguf_metadata(path: &Path) -> Result<GgufMetadata> {
-    let file = std::fs::File::open(path)?;
-    parse_gguf_metadata(&mut std::io::BufReader::new(file))
-}
-
-fn rd<const N: usize>(r: &mut impl Read) -> Result<[u8; N]> {
-    let mut b = [0u8; N];
-    r.read_exact(&mut b)?;
-    Ok(b)
-}
-fn rd_u32(r: &mut impl Read) -> Result<u32> {
-    Ok(u32::from_le_bytes(rd(r)?))
-}
-fn rd_u64(r: &mut impl Read) -> Result<u64> {
-    Ok(u64::from_le_bytes(rd(r)?))
-}
-fn rd_string(r: &mut impl Read) -> Result<String> {
-    let len = rd_u64(r)? as usize;
-    anyhow::ensure!(len <= 1 << 20, "implausible string length in GGUF header");
-    let mut buf = vec![0u8; len];
-    r.read_exact(&mut buf)?;
-    Ok(String::from_utf8_lossy(&buf).into_owned())
-}
-
-fn skip_value(r: &mut impl Read, ty: u32) -> Result<()> {
-    let fixed = |r: &mut dyn Read, n: u64| -> Result<()> {
-        std::io::copy(&mut r.take(n), &mut std::io::sink())?;
-        Ok(())
-    };
-    match ty {
-        0 | 1 | 7 => fixed(r, 1),
-        2 | 3 => fixed(r, 2),
-        4..=6 => fixed(r, 4),
-        10..=12 => fixed(r, 8),
-        8 => rd_string(r).map(|_| ()),
-        9 => {
-            let elem = rd_u32(r)?;
-            let n = rd_u64(r)?;
-            for _ in 0..n {
-                skip_value(r, elem)?;
-            }
-            Ok(())
-        }
-        _ => anyhow::bail!("unknown GGUF value type {ty}"),
-    }
-}
-
-pub fn parse_gguf_metadata(r: &mut impl Read) -> Result<GgufMetadata> {
-    anyhow::ensure!(&rd::<4>(r)? == b"GGUF", "not a GGUF file");
-    let version = rd_u32(r)?;
-    anyhow::ensure!(
-        (2..=3).contains(&version),
-        "unsupported GGUF version {version}"
-    );
-    let _tensors = rd_u64(r)?;
-    let kv_count = rd_u64(r)?;
-
-    let mut meta = GgufMetadata::default();
-    let mut ctx_key = String::new();
-    for _ in 0..kv_count.min(512) {
-        let key = rd_string(r)?;
-        let ty = rd_u32(r)?;
-        if key.starts_with("tokenizer.") {
-            break;
-        }
-        let wants_u32 = ty == 4 && key == ctx_key;
-        match (key.as_str(), ty) {
-            ("general.architecture", 8) => {
-                meta.architecture = rd_string(r)?;
-                ctx_key = format!("{}.context_length", meta.architecture);
-            }
-            ("general.name", 8) => meta.name = Some(rd_string(r)?),
-            _ if wants_u32 => meta.context_length = Some(rd_u32(r)?),
-            _ => skip_value(r, ty)?,
-        }
-        if !meta.architecture.is_empty() && meta.name.is_some() && meta.context_length.is_some() {
-            break;
-        }
-    }
-    anyhow::ensure!(
-        !meta.architecture.is_empty(),
-        "GGUF has no architecture key"
-    );
-    Ok(meta)
-}
+pub use crate::detect::{Discovery, LocalCandidate, Skipped, discover as discover_models};
 
 // ---------------------------------------------------------------------------
 // Config generation
@@ -453,37 +267,38 @@ pub fn slugify(s: &str) -> String {
 
 fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
     let id = slugify(&c.path.file_stem().unwrap_or_default().to_string_lossy());
-    let vision = c.mmproj.is_some();
-    let mut caps = vec!["Chat", "Tool Call", "Structured Output"];
-    if vision {
-        caps.push("Vision");
-    }
-    let kind = crate::migrate::llama_engine_for_architecture(&c.architecture);
-    let mut extra = serde_json::Map::new();
-    if let Some(mm) = &c.mmproj {
-        extra.insert("mmproj_path".into(), json!(mm.to_string_lossy()));
+    let is_llm = matches!(c.modality, Modality::Text | Modality::VisionText);
+    let mut description = format!(
+        "Imported by setup wizard ({} · {} architecture)",
+        c.kind_label, c.architecture
+    );
+    if !c.needs.is_empty() {
+        description.push_str(&format!(
+            ". Still needs extra.{} before it will run",
+            c.needs.join(", extra.")
+        ));
     }
     ModelEntry {
         id,
         name: c.display_name.clone(),
-        description: format!("Imported by setup wizard ({} architecture)", c.architecture),
-        modality: if vision {
-            Modality::VisionText
-        } else {
-            Modality::Text
-        },
-        capabilities: caps.into_iter().map(String::from).collect(),
+        description,
+        modality: c.modality.clone(),
+        capabilities: c.capabilities.clone(),
         engine: Some(EngineConfig {
-            supported: vec![kind],
-            preferred: Some(kind),
+            supported: c.engines.clone(),
+            preferred: Some(c.engine()),
         }),
-        max_context_length: c.context_length,
-        sampling: SamplingConfig {
-            temperature: Some(0.7),
-            top_p: Some(0.9),
-            top_k: Some(40),
-            min_p: Some(0.05),
-            max_tokens: Some(4096),
+        max_context_length: is_llm.then_some(c.context_length).flatten(),
+        sampling: if is_llm {
+            SamplingConfig {
+                temperature: Some(0.7),
+                top_p: Some(0.9),
+                top_k: Some(40),
+                min_p: Some(0.05),
+                max_tokens: Some(4096),
+            }
+        } else {
+            SamplingConfig::default()
         },
         local: Some(LocalBlock {
             path: c.path.to_string_lossy().into_owned(),
@@ -491,10 +306,15 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
             bits_per_weight: None,
             context_length: -1,
             gpu_layers: if gpu { 99 } else { 0 },
-            args: String::new(),
+            // Every image model in the sample catalog runs with flash attention enabled.
+            args: if c.engine() == EngineKind::SdServer {
+                "--diffusion-fa".to_string()
+            } else {
+                String::new()
+            },
         }),
         remote: None,
-        extra,
+        extra: c.extra.clone(),
     }
 }
 
@@ -563,9 +383,24 @@ pub fn write_setup(plan: &SetupPlan, config_path: &Path, env_path: &Path) -> Res
         .iter()
         .map(|c| local_entry(c, plan.gpu_available))
         .chain(plan.cloud.iter().map(cloud_entry));
-    for entry in new_entries {
-        if file.models.iter().any(|m| m.id == entry.id) {
+    for mut entry in new_entries {
+        // Re-running setup must not duplicate a model it already added, but two
+        // different files that slug to the same id both need to be kept.
+        let same_source = |m: &ModelEntry| {
+            m.id == entry.id
+                && match (&m.local, &entry.local) {
+                    (Some(a), Some(b)) => a.path == b.path,
+                    _ => m.remote.is_some() == entry.remote.is_some(),
+                }
+        };
+        if file.models.iter().any(same_source) {
             continue;
+        }
+        let base = entry.id.clone();
+        let mut n = 2;
+        while file.models.iter().any(|m| m.id == entry.id) {
+            entry.id = format!("{base}-{n}");
+            n += 1;
         }
         file.models.push(entry);
         added += 1;
@@ -646,48 +481,6 @@ pub fn merge_env_file(path: &Path, secrets: &[(String, String)]) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn gguf_bytes(arch: &str, name: &str, ctx: u32) -> Vec<u8> {
-        let mut b = b"GGUF".to_vec();
-        b.extend(3u32.to_le_bytes());
-        b.extend(0u64.to_le_bytes());
-        b.extend(4u64.to_le_bytes());
-        let s = |b: &mut Vec<u8>, v: &str| {
-            b.extend((v.len() as u64).to_le_bytes());
-            b.extend(v.as_bytes());
-        };
-        s(&mut b, "general.architecture");
-        b.extend(8u32.to_le_bytes());
-        s(&mut b, arch);
-        // a value we must skip: array of 2 strings
-        s(&mut b, "general.tags");
-        b.extend(9u32.to_le_bytes());
-        b.extend(8u32.to_le_bytes());
-        b.extend(2u64.to_le_bytes());
-        s(&mut b, "a");
-        s(&mut b, "bb");
-        s(&mut b, "general.name");
-        b.extend(8u32.to_le_bytes());
-        s(&mut b, name);
-        s(&mut b, &format!("{arch}.context_length"));
-        b.extend(4u32.to_le_bytes());
-        b.extend(ctx.to_le_bytes());
-        b
-    }
-
-    #[test]
-    fn parses_gguf_header_and_skips_arrays() {
-        let bytes = gguf_bytes("qwen35", "My Model", 32768);
-        let m = parse_gguf_metadata(&mut bytes.as_slice()).unwrap();
-        assert_eq!(m.architecture, "qwen35");
-        assert_eq!(m.name.as_deref(), Some("My Model"));
-        assert_eq!(m.context_length, Some(32768));
-    }
-
-    #[test]
-    fn rejects_non_gguf() {
-        assert!(parse_gguf_metadata(&mut b"NOPE....".as_slice()).is_err());
-    }
-
     #[test]
     fn slugs() {
         assert_eq!(slugify("OxCoder-9B.i1-Q6_K"), "oxcoder-9b.i1-q6-k");
@@ -723,14 +516,19 @@ mod tests {
     }
 
     #[test]
-    fn written_config_loads_and_validates() {
+    fn written_config_matches_what_each_file_actually_is() {
+        use crate::detect::testing::Gguf;
         let dir = std::env::temp_dir().join(format!("rune-cfg-{}", generate_api_key()));
-        let model = dir.join("m.gguf");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(&model, gguf_bytes("llama", "Tiny", 4096)).unwrap();
+        let models = dir.join("models");
+        Gguf::llm("qwen35", "Chat 9B").write(&models.join("chat/chat-Q6_K.gguf"));
+        Gguf::new("clip").write(&models.join("chat/mmproj-F16.gguf"));
+        Gguf::new("audiocpp")
+            .string("audiocpp.model_spec.family", "voxcpm2")
+            .write(&models.join("voice/voxcpm2-q8_0.gguf"));
+        Gguf::new("lumina2").write(&models.join("img/z-image-Q8_0.gguf"));
 
-        let local = discover_gguf(&model).unwrap();
-        assert_eq!(local.len(), 1);
+        let found = discover_models(&models).unwrap();
+        assert_eq!(found.models.len(), 3);
         let plan = SetupPlan {
             exposure: Exposure::Local,
             port: 8080,
@@ -740,15 +538,109 @@ mod tests {
                 api_key: "secret".into(),
                 upstream_model: "gemini-flash-latest".into(),
             }],
-            local,
+            local: found.models,
+            gpu_available: true,
+        };
+        let cfg = dir.join("config/models.json");
+        assert_eq!(write_setup(&plan, &cfg, &dir.join(".env")).unwrap(), 4);
+        assert_eq!(
+            write_setup(&plan, &cfg, &dir.join(".env")).unwrap(),
+            0,
+            "idempotent"
+        );
+
+        let reg = ModelRegistry::from_file_with_env(
+            &cfg,
+            &[
+                ("GEMINI_API_KEY".into(), "k".into()),
+                ("RUNE_API_KEY".into(), "k".into()),
+            ],
+        )
+        .unwrap();
+        let get = |id: &str| {
+            reg.models
+                .iter()
+                .find(|m| m.id == id)
+                .unwrap_or_else(|| panic!("{id}"))
+        };
+        let chat = get("chat-q6-k");
+        assert_eq!(
+            (chat.modality.clone(), chat.engine_plan()),
+            (Modality::VisionText, vec![EngineKind::LlamaServer])
+        );
+        assert!(
+            chat.mmproj_path
+                .as_deref()
+                .unwrap()
+                .ends_with("mmproj-F16.gguf")
+        );
+        assert!(chat.sampling.is_some());
+        let voice = get("voxcpm2-q8-0");
+        assert_eq!(
+            (voice.modality.clone(), voice.engine_plan()),
+            (Modality::TextToSpeech, vec![EngineKind::AudioCpp])
+        );
+        assert!(
+            voice.sampling.is_none(),
+            "chat sampling defaults are not written for non-chat models"
+        );
+        let img = get("z-image-q8-0");
+        assert_eq!(
+            (img.modality.clone(), img.engine_plan()),
+            (Modality::ImageGeneration, vec![EngineKind::SdServer])
+        );
+        assert!(
+            img.description.contains("extra.vae_path"),
+            "{}",
+            img.description
+        );
+        let raw = std::fs::read_to_string(&cfg).unwrap();
+        assert!(raw.contains("{{GEMINI_API_KEY}}") && !raw.contains("secret"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// `RUNE_PROBE_DIR=D:/Models RUNE_PROBE_OUT=/tmp/out cargo test write_probe_config -- --ignored`
+    #[test]
+    #[ignore]
+    fn write_probe_config() {
+        let (Ok(dir), Ok(out)) = (
+            std::env::var("RUNE_PROBE_DIR"),
+            std::env::var("RUNE_PROBE_OUT"),
+        ) else {
+            return;
+        };
+        let found = discover_models(std::path::Path::new(&dir)).unwrap();
+        let plan = SetupPlan {
+            exposure: Exposure::Local,
+            port: 8080,
+            server_api_key: None,
+            cloud: vec![],
+            local: found.models.into_iter().filter(|c| c.is_ready()).collect(),
+            gpu_available: true,
+        };
+        let out = std::path::PathBuf::from(out);
+        write_setup(&plan, &out.join("config/models.json"), &out.join(".env")).unwrap();
+    }
+
+    #[test]
+    fn different_files_with_the_same_slug_both_survive() {
+        use crate::detect::testing::Gguf;
+        let dir = std::env::temp_dir().join(format!("rune-dup-{}", generate_api_key()));
+        Gguf::llm("llama", "Model A").write(&dir.join("a/model.gguf"));
+        Gguf::llm("llama", "Model B").write(&dir.join("b/model.gguf"));
+        let found = discover_models(&dir).unwrap();
+        let plan = SetupPlan {
+            exposure: Exposure::Local,
+            port: 8080,
+            server_api_key: None,
+            cloud: vec![],
+            local: found.models,
             gpu_available: false,
         };
         let cfg = dir.join("config/models.json");
         assert_eq!(write_setup(&plan, &cfg, &dir.join(".env")).unwrap(), 2);
-        // Re-running is idempotent.
-        assert_eq!(write_setup(&plan, &cfg, &dir.join(".env")).unwrap(), 0);
         let raw = std::fs::read_to_string(&cfg).unwrap();
-        assert!(raw.contains("{{GEMINI_API_KEY}}") && !raw.contains("secret"));
+        assert!(raw.contains("\"id\": \"model\"") && raw.contains("\"id\": \"model-2\""));
         std::fs::remove_dir_all(dir).ok();
     }
 }
