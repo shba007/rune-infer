@@ -211,7 +211,13 @@ Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
   `%LOCALAPPDATA%\Programs\rune-infer`, and handle upgrades. Env overrides:
   `RUNE_VERSION`, `RUNE_INSTALL_DIR`, `RUNE_BASE_URL`, `RUNE_NO_MODIFY_PATH`.
 - Known gaps: release binaries are unsigned (SmartScreen/Gatekeeper warn); no
-  Linux/Windows arm64 build; no uninstall script.
+  uninstall script. `windows-arm64` is built `continue-on-error` (newest
+  target; `install.ps1` falls back to the x64 build under emulation if it is
+  missing). arm64 builds use GitHub's native arm runners, which are free only
+  for public repositories. The runtime engine downloaders are arch-aware on
+  the main path, but several offline fallbacks (llama-server, sd-server,
+  crispasr, nemo-speech) still assume x64 on Linux/Windows - verify before
+  promising arm64 engine support.
 
 ---
 

@@ -79,7 +79,8 @@ curl -fsSL https://raw.githubusercontent.com/shba007/rune-infer/main/install.sh 
 irm https://raw.githubusercontent.com/shba007/rune-infer/main/install.ps1 | iex
 ```
 
-The installer downloads the release for your platform, verifies its SHA-256,
+The installer supports Linux (x64, arm64), macOS (Intel, Apple Silicon) and
+Windows (x64, arm64). It downloads the release for your platform, verifies its SHA-256,
 installs to `~/.local/bin` (or `%LOCALAPPDATA%\Programs\rune-infer`) and adds
 it to your PATH. Re-run it to upgrade. Options (environment variables):
 `RUNE_VERSION=v0.2.0`, `RUNE_INSTALL_DIR=...`, `RUNE_NO_MODIFY_PATH=1`.
