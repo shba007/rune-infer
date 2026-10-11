@@ -2,16 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - 2026-10-07
+## [0.3.0] - 2026-10-11
 
 ### 🚀 Features
 
-- Add NemoSpeechEngine for audio transcription and translation
+- Add terminal dashboard, setup wizard and installers; honor sampling and idle unload
 
 
 ### 🐛 Bug Fixes
 
-- *(chat)* Regession fix chat completions handler with structured prompts and tool validation
+- *(config)* Update server port and adjust model parameters for improved performance
+
+
+### 📚 Documentation
+
+- Document arm64 support and the remaining x64-only engine fallbacks
+
+
+### ⚙️ Miscellaneous Tasks
+
+- *(install)* Make install.sh executable and pin shell scripts to LF
+
+
+## [0.2.0] - 2026-10-07
+
+### 🚀 Features
+
+- Add NemoSpeechEngine for audio transcription and translation by @shba007
+
+
+### 🐛 Bug Fixes
+
+- *(chat)* Regession fix chat completions handler with structured prompts and tool validation by @shba007
 
 
 ## [0.1.0] - 2026-10-06
