@@ -25,12 +25,14 @@ $installDir = Get-Setting 'RUNE_INSTALL_DIR' (Join-Path $env:LOCALAPPDATA 'Progr
 $bin = 'rune-infer'
 
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+$forced = Get-Setting 'RUNE_PLATFORM' ''
+if ($forced) { $arch = @{ 'windows-x64' = 'X64'; 'windows-arm64' = 'Arm64' }[$forced] }
 switch ($arch) {
-    'X64'   { }
-    'Arm64' { Write-Warning 'No native Arm64 build yet; installing the x64 build (runs under emulation).' }
+    'X64'   { $platform = 'windows-x64' }
+    'Arm64' { $platform = 'windows-arm64' }
     default { throw "Unsupported CPU architecture '$arch'. Build from source: cargo install --git https://github.com/$repo" }
 }
-$archive = "$bin-windows-x64.zip"
+$archive = "$bin-$platform.zip"
 
 $base = Get-Setting 'RUNE_BASE_URL' ''
 if ($base) { $base = $base.TrimEnd('/', '\') }
@@ -54,9 +56,18 @@ function Fetch($name, $dest) {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("rune-infer-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
-    Write-Host "Installing Rune Infer (windows-x64, $version)..."
+    Write-Host "Installing Rune Infer ($platform, $version)..."
     $zip = Join-Path $tmp $archive
-    Fetch $archive $zip
+    try { Fetch $archive $zip }
+    catch {
+        if ($platform -ne 'windows-arm64') { throw }
+        # No native arm64 build in this release: Windows on Arm runs x64 binaries under emulation.
+        Write-Warning 'No native Arm64 build in this release; installing the x64 build (runs under emulation).'
+        $platform = 'windows-x64'
+        $archive = "$bin-$platform.zip"
+        $zip = Join-Path $tmp $archive
+        Fetch $archive $zip
+    }
 
     if ((Get-Setting 'RUNE_SKIP_VERIFY' '0') -eq '1') {
         Write-Warning 'Skipping checksum verification.'

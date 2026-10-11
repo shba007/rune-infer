@@ -204,7 +204,7 @@ Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
 - While the TUI is active nothing may write to stdout/stderr: use `tracing`,
   never `println!`.
 - Releases publish version-less archives per platform
-  (`rune-infer-{linux-x64,macos-x64,macos-arm64,windows-x64}.{tar.gz,zip}` +
+  (`rune-infer-{linux-x64,linux-arm64,macos-x64,macos-arm64,windows-x64,windows-arm64}.{tar.gz,zip}` +
   `.sha256`) so `releases/latest/download/<name>` works without API calls.
   `install.sh` / `install.ps1` detect the platform, verify the checksum
   (abort on mismatch), install to `~/.local/bin` or

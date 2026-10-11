@@ -42,7 +42,7 @@ detect_platform() {
 
 PLATFORM=$(detect_platform)
 case "$PLATFORM" in
-  linux-x64|macos-x64|macos-arm64) ;;
+  linux-x64|linux-arm64|macos-x64|macos-arm64) ;;
   *) die "no prebuilt binary for '$PLATFORM'. Build from source: cargo install --git https://github.com/$REPO" ;;
 esac
 

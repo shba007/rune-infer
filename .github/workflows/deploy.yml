@@ -50,11 +50,25 @@ jobs:
             target: x86_64-unknown-linux-gnu
             ext: ''
 
+          # Native arm64 runners (free for public repositories).
+          - platform: 'ubuntu-24.04-arm'
+            name: linux-arm64
+            target: aarch64-unknown-linux-gnu
+            ext: ''
+
           - platform: 'windows-latest'
             name: windows-x64
             target: x86_64-pc-windows-msvc
             ext: '.exe'
 
+          # Newest target: a failure here must not block the other platforms.
+          - platform: 'windows-11-arm'
+            name: windows-arm64
+            target: aarch64-pc-windows-msvc
+            ext: '.exe'
+            experimental: true
+
+    continue-on-error: ${{ matrix.experimental || false }}
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -89,7 +103,7 @@ jobs:
           NAME="${BIN_NAME}-${PLATFORM}"
           if [ "$EXT" = ".exe" ]; then
             ARCHIVE="${NAME}.zip"
-            (cd "$SRC" && 7z a -tzip "$GITHUB_WORKSPACE/dist/$ARCHIVE" "${BIN_NAME}.exe" > /dev/null)
+            pwsh -NoProfile -Command "Compress-Archive -Path '$SRC/${BIN_NAME}.exe' -DestinationPath 'dist/$ARCHIVE'"
           else
             ARCHIVE="${NAME}.tar.gz"
             tar -C "$SRC" -czf "dist/$ARCHIVE" "${BIN_NAME}"
