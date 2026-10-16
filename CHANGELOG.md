@@ -2,11 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-10-16
+
+### 🚀 Features
+
+- Add VRAM budgeting and context sizing engine
+
+
+### 🚜 Refactor
+
+- Model discovery and setup wizard
+
+
 ## [0.4.0] - 2026-10-11
 
 ### 🚀 Features
 
-- *(schema)* Introduce new model registry schema version 2
+- *(schema)* Introduce new model registry schema version 2 by @shba007
 
 
 ## [0.3.0] - 2026-10-11
