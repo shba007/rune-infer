@@ -68,31 +68,7 @@ impl RemoteModelController {
             }
         }
 
-        // 2. Concurrency check: wait for a free semaphore permit
-        let time_left = deadline.saturating_duration_since(Instant::now());
-        if time_left.is_zero() {
-            return Err(ApiError::new(format!(
-                "Queue timeout exceeded waiting for concurrency permit on model '{}'",
-                self.model_id
-            ))
-            .with_type("requests")
-            .with_code("rate_limit_exceeded"));
-        }
-
-        let permit = match tokio::time::timeout(time_left, self.semaphore.acquire()).await {
-            Ok(Ok(p)) => p,
-            _ => {
-                return Err(ApiError::new(format!(
-                    "Model '{}' queue capacity reached. Max concurrent requests ({}) saturated.",
-                    self.model_id,
-                    self.semaphore.available_permits()
-                ))
-                .with_type("requests")
-                .with_code("rate_limit_exceeded"));
-            }
-        };
-
-        // 3. Sliding-window RPM check: ensure we do not exceed requests per minute
+        // 2. Sliding-window RPM check: ensure we do not exceed requests per minute
         loop {
             let now = Instant::now();
             if now >= deadline {
@@ -144,6 +120,36 @@ impl RemoteModelController {
                 break;
             }
         }
+
+        // 3. Concurrency check: wait for a free semaphore permit
+        let time_left = deadline.saturating_duration_since(Instant::now());
+        if time_left.is_zero() {
+            let mut timestamps = self.request_timestamps.lock().await;
+            timestamps.pop_back();
+
+            return Err(ApiError::new(format!(
+                "Queue timeout exceeded waiting for concurrency permit on model '{}'",
+                self.model_id
+            ))
+            .with_type("requests")
+            .with_code("rate_limit_exceeded"));
+        }
+
+        let permit = match tokio::time::timeout(time_left, self.semaphore.acquire()).await {
+            Ok(Ok(p)) => p,
+            _ => {
+                let mut timestamps = self.request_timestamps.lock().await;
+                timestamps.pop_back();
+
+                return Err(ApiError::new(format!(
+                    "Model '{}' queue capacity reached. Max concurrent requests ({}) saturated.",
+                    self.model_id,
+                    self.semaphore.available_permits()
+                ))
+                .with_type("requests")
+                .with_code("rate_limit_exceeded"));
+            }
+        };
 
         Ok(PermitGuard { _permit: permit })
     }

@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -34,7 +34,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: 🛠️ Install Tooling (git-cliff & cargo-edit)
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.87.28
         with:
           tool: git-cliff,cargo-edit
 
@@ -48,7 +48,7 @@ jobs:
         run: cargo fmt --all
 
       - name: 🤖 AutoFix Code
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: 'chore: apply code fixes [skip ci]'
 
@@ -67,7 +67,7 @@ jobs:
           echo "$DELIMITER" >> "$GITHUB_ENV"
 
       - name: 🔀 Create or Update Pull Request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: 'ci(release): update version'
           title: 'ci(release): update version'

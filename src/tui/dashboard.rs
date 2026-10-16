@@ -600,7 +600,7 @@ fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
     if app.requests.is_empty() {
         f.render_widget(
             Paragraph::new(Span::styled(
-                "  Waiting for requests… point an OpenAI/Anthropic client at this server.",
+                "  Waiting for requests… point an OpenAI client at this server.",
                 Style::new().fg(DIM),
             ))
             .block(block),

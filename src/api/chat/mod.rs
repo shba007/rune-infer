@@ -80,6 +80,34 @@ pub async fn chat_completions_handler(
         _ => {}
     }
 
+    match body_val.get("model") {
+        None | Some(serde_json::Value::Null) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new("Missing required field: 'model'")
+                        .with_type("invalid_request_error")
+                        .with_param("model")
+                        .with_code("model_missing"),
+                }),
+            )
+                .into_response();
+        }
+        Some(val) if val.as_str().map(|s| s.trim().is_empty()).unwrap_or(true) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new("Missing required field: 'model'")
+                        .with_type("invalid_request_error")
+                        .with_param("model")
+                        .with_code("model_missing"),
+                }),
+            )
+                .into_response();
+        }
+        _ => {}
+    }
+
     if let Err(err_resp) = tools::validate_tools(&body_val) {
         return err_resp.into_response();
     }

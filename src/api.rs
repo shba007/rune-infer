@@ -1,4 +1,4 @@
-pub mod anthropic;
+// pub mod anthropic;
 pub mod audio;
 pub mod chat;
 pub mod embeddings;
@@ -35,8 +35,7 @@ pub fn create_router(state: AppState) -> Router {
     let v1_routes = Router::new()
         // Chat & Responses
         .route("/chat/completions", post(chat::chat_completions_handler))
-        // .route("/responses", post(responses::responses_handler))
-        .route("/messages", post(anthropic::anthropic_messages_handler))
+        // .route("/messages", post(anthropic::anthropic_messages_handler))
         // Images
         .route(
             "/images/generations",
@@ -83,15 +82,15 @@ pub fn create_router(state: AppState) -> Router {
 
     Router::new()
         .nest("/v1", v1_routes)
-        .route(
-            "/anthropic/v1/messages",
-            post(anthropic::anthropic_messages_handler),
-        )
-        .route(
-            "/anthropic/messages",
-            post(anthropic::anthropic_messages_handler),
-        )
-        .route("/messages", post(anthropic::anthropic_messages_handler))
+        // .route(
+        //     "/anthropic/v1/messages",
+        //     post(anthropic::anthropic_messages_handler),
+        // )
+        // .route(
+        //     "/anthropic/messages",
+        //     post(anthropic::anthropic_messages_handler),
+        // )
+        // .route("/messages", post(anthropic::anthropic_messages_handler))
         .route("/health", get(health_handler))
         .with_state(shared_state)
 }
