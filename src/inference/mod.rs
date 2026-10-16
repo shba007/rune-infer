@@ -1,3 +1,4 @@
+pub mod budget;
 pub mod engines;
 pub mod process;
 pub mod registry;

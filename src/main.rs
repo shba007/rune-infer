@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::collapsible_if)]
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 

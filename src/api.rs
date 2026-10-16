@@ -6,7 +6,7 @@ pub mod images;
 pub mod moderation;
 pub mod nlu;
 pub mod ocr;
-pub mod responses;
+// pub mod responses;
 
 use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -35,7 +35,7 @@ pub fn create_router(state: AppState) -> Router {
     let v1_routes = Router::new()
         // Chat & Responses
         .route("/chat/completions", post(chat::chat_completions_handler))
-        .route("/responses", post(responses::responses_handler))
+        // .route("/responses", post(responses::responses_handler))
         .route("/messages", post(anthropic::anthropic_messages_handler))
         // Images
         .route(

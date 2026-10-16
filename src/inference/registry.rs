@@ -136,276 +136,31 @@ impl ModelRegistry {
         }
     }
 
+    // --- Delegated Formatting & VRAM Helpers ---
+
+    #[inline]
     pub fn format_bytes(bytes: u64) -> String {
-        const KB: f64 = 1024.0;
-        const MB: f64 = KB * 1024.0;
-        const GB: f64 = MB * 1024.0;
-        const TB: f64 = GB * 1024.0;
-
-        let b = bytes as f64;
-        if b >= TB {
-            format!("{:.2} TiB", b / TB)
-        } else if b >= GB {
-            format!("{:.2} GiB", b / GB)
-        } else if b >= MB {
-            format!("{:.2} MiB", b / MB)
-        } else if b >= KB {
-            format!("{:.2} KiB", b / KB)
-        } else {
-            format!("{} B", bytes)
-        }
+        crate::inference::budget::format_bytes(bytes)
     }
 
+    #[inline]
     pub fn format_params(params: u64) -> String {
-        let p = params as f64;
-        if p >= 1_000_000_000.0 {
-            let val = p / 1_000_000_000.0;
-            if (val.fract() * 10.0).round() == 0.0 {
-                format!("{:.0}B", val)
-            } else {
-                format!("{:.1}B", val)
-            }
-        } else if p >= 1_000_000.0 {
-            let val = p / 1_000_000.0;
-            if (val.fract() * 10.0).round() == 0.0 {
-                format!("{:.0}M", val)
-            } else {
-                format!("{:.1}M", val)
-            }
-        } else if p >= 1_000.0 {
-            format!("{:.0}K", p / 1_000.0)
-        } else {
-            format!("{}", params)
-        }
+        crate::inference::budget::format_params(params)
     }
 
+    #[inline]
     pub fn format_tokens(tokens: u32) -> String {
-        if tokens >= 1_000_000 {
-            format!("{:.1}M tokens", tokens as f64 / 1_000_000.0)
-        } else if tokens >= 1024 && tokens.is_multiple_of(1024) {
-            format!("{}K tokens", tokens / 1024)
-        } else if tokens >= 1000 {
-            format!("{:.1}K tokens", tokens as f64 / 1000.0)
-        } else {
-            format!("{} tokens", tokens)
-        }
+        crate::inference::budget::format_tokens(tokens)
     }
 
+    #[inline]
     pub fn detect_total_gpu_vram() -> Option<u64> {
-        if let Ok(output) = std::process::Command::new("nvidia-smi")
-            .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
-            .output()
-        {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                if let Some(line) = text.lines().next() {
-                    if let Ok(mib) = line.trim().parse::<u64>() {
-                        return Some(mib * 1024 * 1024);
-                    }
-                }
-            }
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            if let Ok(output) = std::process::Command::new("sysctl")
-                .args(["-n", "hw.memsize"])
-                .output()
-            {
-                if output.status.success() {
-                    let text = String::from_utf8_lossy(&output.stdout);
-                    if let Ok(bytes) = text.trim().parse::<u64>() {
-                        return Some(bytes);
-                    }
-                }
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
-                for line in content.lines() {
-                    if line.starts_with("MemTotal:") {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 2 {
-                            if let Ok(kb) = parts[1].parse::<u64>() {
-                                return Some(kb * 1024);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        None
+        crate::inference::budget::detect_total_gpu_vram()
     }
 
+    #[inline]
     pub fn detect_used_gpu_vram() -> Option<u64> {
-        let output = std::process::Command::new("nvidia-smi")
-            .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        let text = String::from_utf8_lossy(&output.stdout);
-        let mib: u64 = text.lines().next()?.trim().parse().ok()?;
-        Some(mib * 1024 * 1024)
-    }
-
-    fn estimate_total_layers(model: &ModelConfig) -> u32 {
-        match model.total_params.unwrap_or(0) {
-            0 => 64,
-            p if p < 4_000_000_000 => 28,
-            p if p < 10_000_000_000 => 32,
-            p if p < 18_000_000_000 => 48,
-            p if p < 36_000_000_000 => 64,
-            p if p < 80_000_000_000 => 80,
-            _ => 96,
-        }
-    }
-
-    fn parse_cache_type_multiplier(args: &str, flag_long: &str, flag_short: &str) -> f64 {
-        let tokens: Vec<&str> = args.split_whitespace().collect();
-        for (i, &t) in tokens.iter().enumerate() {
-            let val = if t == flag_long || t == flag_short {
-                tokens.get(i + 1).copied()
-            } else if let Some(stripped) = t.strip_prefix(&format!("{flag_long}=")) {
-                Some(stripped)
-            } else {
-                t.strip_prefix(&format!("{flag_short}="))
-            };
-
-            if let Some(v) = val {
-                let clean = v.to_lowercase();
-                if clean.contains("q4_0") || clean.contains("q4_1") || clean.contains("iq4") {
-                    return 0.28;
-                } else if clean.contains("q5_0") || clean.contains("q5_1") {
-                    return 0.35;
-                } else if clean.contains("q8_0") || clean.contains("fp8") || clean.contains("f8") {
-                    return 0.53;
-                } else if clean.contains("f16") || clean.contains("bf16") {
-                    return 1.0;
-                }
-            }
-        }
-        1.0
-    }
-
-    fn estimate_bytes_per_token(model: &ModelConfig) -> u64 {
-        let extra_args = model
-            .runtime
-            .as_ref()
-            .and_then(|r| r.extra_args.as_deref())
-            .unwrap_or("");
-
-        if extra_args.contains("--no-kv-offload") {
-            return 0;
-        }
-
-        let base = match model.total_params.unwrap_or(0) {
-            p if p < 2_000_000_000 => 16 * 1024,
-            p if p < 10_000_000_000 => 32 * 1024,
-            p if p < 35_000_000_000 => 64 * 1024,
-            _ => 128 * 1024,
-        };
-
-        let k_mult = Self::parse_cache_type_multiplier(extra_args, "--cache-type-k", "-ctk");
-        let v_mult = Self::parse_cache_type_multiplier(extra_args, "--cache-type-v", "-ctv");
-        let quant_mult = (k_mult + v_mult) / 2.0;
-
-        ((base as f64 * quant_mult).max(1024.0)) as u64
-    }
-
-    fn calculate_vram_and_context(
-        model: &ModelConfig,
-        server: &ServerConfig,
-    ) -> (u32, u64, u64, u64, u64, u64) {
-        let total_vram = Self::detect_total_gpu_vram().unwrap_or(24 * 1024 * 1024 * 1024);
-        let budget_ratio = server.vram_budget_ratio.clamp(0.0, 1.0);
-        let budget_bytes = (total_vram as f64 * budget_ratio) as u64;
-
-        let total_model_bytes = std::fs::metadata(&model.model_path)
-            .map(|m| m.len())
-            .unwrap_or_else(|_| {
-                if let (Some(params), Some(bpw)) = (model.total_params, model.bits_per_weight) {
-                    ((params as f64 * bpw) / 8.0) as u64
-                } else {
-                    4 * 1024 * 1024 * 1024
-                }
-            });
-
-        let gpu_layers = model.runtime.as_ref().map(|r| r.gpu_layers).unwrap_or(99);
-        let total_layers = Self::estimate_total_layers(model);
-        let model_vram = if gpu_layers >= total_layers || gpu_layers >= 90 {
-            total_model_bytes
-        } else {
-            let offload_ratio = (gpu_layers as f64 / total_layers as f64).clamp(0.0, 1.0);
-            ((total_model_bytes as f64) * (0.05 + 0.95 * offload_ratio))
-                .min(total_model_bytes as f64) as u64
-        };
-
-        let projector_vram = if let Some(ref mmproj) = model.mmproj_path {
-            std::fs::metadata(mmproj).map(|m| m.len()).unwrap_or(0)
-        } else {
-            0
-        };
-
-        let mtp_vram = if let Some(ref mtp) = model.mtp_path {
-            std::fs::metadata(mtp).map(|m| m.len()).unwrap_or(0)
-        } else {
-            0
-        };
-
-        let bytes_per_token = Self::estimate_bytes_per_token(model);
-        let max_capacity = model.max_context_length.unwrap_or(131072);
-        let configured_ctx = model
-            .runtime
-            .as_ref()
-            .map(|r| r.context_length)
-            .unwrap_or(8192);
-
-        let mtp_headroom = if model.has_mtp() {
-            1536 * 1024 * 1024
-        } else {
-            0
-        };
-
-        let extra_args = model
-            .runtime
-            .as_ref()
-            .and_then(|r| r.extra_args.as_deref())
-            .unwrap_or("");
-        let has_flash_attn = extra_args.contains("-fa") || extra_args.contains("--flash-attn");
-        let overhead_scratch = if has_flash_attn {
-            512 * 1024 * 1024
-        } else {
-            768 * 1024 * 1024
-        };
-
-        let n_ctx = if configured_ctx <= 0 {
-            let remaining_kv = budget_bytes.saturating_sub(
-                model_vram + projector_vram + mtp_vram + overhead_scratch + mtp_headroom,
-            );
-            if let Some(raw_tokens) = remaining_kv.checked_div(bytes_per_token) {
-                let rounded = ((raw_tokens as u32) / 1024) * 1024;
-                rounded.clamp(2048, max_capacity)
-            } else {
-                max_capacity
-            }
-        } else {
-            (configured_ctx as u32).min(max_capacity)
-        };
-
-        let context_vram = (n_ctx as u64) * bytes_per_token;
-        (
-            n_ctx,
-            context_vram,
-            model_vram,
-            projector_vram,
-            mtp_vram,
-            total_vram,
-        )
+        crate::inference::budget::detect_used_gpu_vram()
     }
 
     /// Start an engine for `model`, trying the configured engines in order
@@ -634,8 +389,12 @@ impl ModelRegistry {
             return Ok(Arc::new(engine));
         }
 
-        let (n_ctx, context_vram, model_vram_on_gpu, projector_vram, mtp_vram, _total_vram) =
-            Self::calculate_vram_and_context(model, server);
+        let budget_plan = crate::inference::budget::calculate_budget(model, server);
+        let n_ctx = budget_plan.n_ctx;
+        let context_vram = budget_plan.context_vram_bytes;
+        let model_vram_on_gpu = budget_plan.model_vram_on_gpu_bytes;
+        let projector_vram = budget_plan.projector_vram_bytes;
+        let mtp_vram = budget_plan.mtp_vram_bytes;
         let gpu_layers = model.runtime.as_ref().map(|r| r.gpu_layers);
         let mtp_path = model.mtp_path.as_deref().map(std::path::Path::new);
         let mtp_heads = model.mtp_heads();
@@ -681,7 +440,7 @@ impl ModelRegistry {
             }
         };
 
-        let total_est = model_vram_on_gpu + projector_vram + mtp_vram + context_vram;
+        let total_est = budget_plan.total_estimated_vram_bytes();
         let real_str =
             if let (Some(before), Some(after)) = (vram_before, Self::detect_used_gpu_vram()) {
                 let actual_used = after.saturating_sub(before);
