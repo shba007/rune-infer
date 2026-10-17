@@ -60,22 +60,33 @@ pub async fn document_ocr_handler(
         .map(|c| c.max_dimensions())
         .unwrap_or((4096, 4096));
 
-    let decoded_frames = match decode_media(&image_uri, max_dims) {
-        Ok(frames) if !frames.is_empty() => frames,
-        Ok(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: ApiError::new("Failed to parse image frames from document source.")
-                        .with_type("invalid_request_error")
-                        .with_param("document")
-                        .with_code("invalid_document_image"),
-                }),
-            )
-                .into_response();
-        }
-        Err(err_resp) => return (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
-    };
+    let uri_for_decode = image_uri.clone();
+    let decoded_frames =
+        match tokio::task::spawn_blocking(move || decode_media(&uri_for_decode, max_dims)).await {
+            Ok(Ok(frames)) if !frames.is_empty() => frames,
+            Ok(Ok(_)) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: ApiError::new("Failed to parse image frames from document source.")
+                            .with_type("invalid_request_error")
+                            .with_param("document")
+                            .with_code("invalid_document_image"),
+                    }),
+                )
+                    .into_response();
+            }
+            Ok(Err(err_resp)) => return (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
+            Err(join_err) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(format!("Document decode thread error: {join_err}")),
+                    }),
+                )
+                    .into_response();
+            }
+        };
 
     let (image_bytes, width, height) = decoded_frames.into_iter().next().unwrap();
 

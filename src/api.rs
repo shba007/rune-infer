@@ -95,6 +95,17 @@ pub fn create_router(state: AppState) -> Router {
         .with_state(shared_state)
 }
 
+fn constant_time_eq(provided: &str, expected: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    let h1 = Sha256::digest(provided.as_bytes());
+    let h2 = Sha256::digest(expected.as_bytes());
+    let mut diff = 0u8;
+    for (b1, b2) in h1.iter().zip(h2.iter()) {
+        diff |= b1 ^ b2;
+    }
+    diff == 0 && provided.len() == expected.len()
+}
+
 async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
     let configured_key = state
         .config
@@ -112,13 +123,13 @@ async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request, next:
             let is_valid = match auth_header.and_then(|h| h.to_str().ok()) {
                 Some(header_val) => {
                     if let Some(token) = header_val.strip_prefix("Bearer ") {
-                        token.trim() == expected.trim()
+                        constant_time_eq(token.trim(), expected.trim())
                     } else {
-                        header_val.trim() == expected.trim()
+                        constant_time_eq(header_val.trim(), expected.trim())
                     }
                 }
                 None => match x_api_key.and_then(|h| h.to_str().ok()) {
-                    Some(key_val) => key_val.trim() == expected.trim(),
+                    Some(key_val) => constant_time_eq(key_val.trim(), expected.trim()),
                     None => false,
                 },
             };
@@ -144,7 +155,11 @@ async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request, next:
 
 #[axum::debug_handler]
 async fn health_handler(State(state): State<Arc<AppState>>) -> Response {
-    let is_healthy = state.inference.registry.lock().is_ok();
+    let is_healthy = match state.inference.registry.try_lock() {
+        Ok(_) => true,
+        Err(std::sync::TryLockError::WouldBlock) => true,
+        Err(std::sync::TryLockError::Poisoned(_)) => false,
+    };
     if is_healthy {
         Json(HealthResponse::new()).into_response()
     } else {

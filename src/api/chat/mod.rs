@@ -157,9 +157,24 @@ pub async fn chat_completions_handler(
         return state.proxy.execute_chat(&model_config, &request).await;
     }
 
-    let prepared = match prompt::prepare_prompt(&request, &model_config) {
-        Ok(p) => p,
-        Err(err_resp) => return err_resp.into_response(),
+    let req_for_prep = request.clone();
+    let cfg_for_prep = model_config.clone();
+    let prepared = match tokio::task::spawn_blocking(move || {
+        prompt::prepare_prompt(&req_for_prep, &cfg_for_prep)
+    })
+    .await
+    {
+        Ok(Ok(p)) => p,
+        Ok(Err(err_resp)) => return err_resp.into_response(),
+        Err(join_err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Media preparation thread error: {join_err}")),
+                }),
+            )
+                .into_response();
+        }
     };
 
     let inference = state.inference.clone();

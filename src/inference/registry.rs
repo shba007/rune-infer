@@ -1,14 +1,41 @@
 use crate::config::{EngineKind, ModelConfig, ModelRegistry as ConfigRegistry, ServerConfig};
 use crate::inference::traits::InferenceEngine;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+#[derive(Clone)]
+pub enum LoadState {
+    Loading,
+    Ready(Result<Arc<dyn InferenceEngine>, String>),
+}
+
+pub struct LoadBarrier {
+    pub mutex: Mutex<LoadState>,
+    pub condvar: Condvar,
+}
+
+impl LoadBarrier {
+    pub fn new() -> Self {
+        Self {
+            mutex: Mutex::new(LoadState::Loading),
+            condvar: Condvar::new(),
+        }
+    }
+}
+
+impl Default for LoadBarrier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct ModelRegistry {
-    config: ConfigRegistry,
-    engines: HashMap<String, Arc<dyn InferenceEngine>>,
-    lru_keys: Vec<String>,
-    last_used: HashMap<String, Instant>,
+    pub(crate) config: ConfigRegistry,
+    pub(crate) engines: HashMap<String, Arc<dyn InferenceEngine>>,
+    pub(crate) lru_keys: Vec<String>,
+    pub(crate) last_used: HashMap<String, Instant>,
+    pub(crate) loading: HashMap<String, Arc<LoadBarrier>>,
 }
 
 impl ModelRegistry {
@@ -25,6 +52,7 @@ impl ModelRegistry {
             engines: HashMap::new(),
             lru_keys: Vec::new(),
             last_used: HashMap::new(),
+            loading: HashMap::new(),
         }
     }
 
@@ -60,13 +88,45 @@ impl ModelRegistry {
         self.engines.keys().cloned().collect()
     }
 
-    pub fn get_or_load(&mut self, id: &str) -> Result<Arc<dyn InferenceEngine>, String> {
+    pub fn loading_models(&self) -> Vec<String> {
+        self.loading.keys().cloned().collect()
+    }
+
+    /// Check if a model is already loaded and ready in memory.
+    pub fn get_loaded(&mut self, id: &str) -> Option<Arc<dyn InferenceEngine>> {
         if let Some(engine) = self.engines.get(id).cloned() {
             self.touch_lru(id);
             self.last_used.insert(id.to_string(), Instant::now());
-            return Ok(engine);
+            return Some(engine);
         }
+        if let Some(canonical) = self.config.find(id).map(|m| m.id.clone()) {
+            if let Some(engine) = self.engines.get(&canonical).cloned() {
+                self.touch_lru(&canonical);
+                self.last_used.insert(canonical, Instant::now());
+                return Some(engine);
+            }
+        }
+        None
+    }
 
+    /// Check if a model is currently in the process of being loaded.
+    pub fn get_loading(&self, id: &str) -> Option<Arc<LoadBarrier>> {
+        if let Some(barrier) = self.loading.get(id).cloned() {
+            return Some(barrier);
+        }
+        if let Some(canonical) = self.config.find(id).map(|m| &m.id) {
+            return self.loading.get(canonical).cloned();
+        }
+        None
+    }
+
+    /// Prepare state to load a model: verifies configuration, evicts LRU if capacity
+    /// is reached, registers a LoadBarrier, and returns configurations needed to create
+    /// the engine outside the lock.
+    pub fn prepare_load(
+        &mut self,
+        id: &str,
+    ) -> Result<(ModelConfig, ServerConfig, Option<u64>, Arc<LoadBarrier>), String> {
         let model_config = self
             .config
             .find(id)
@@ -85,14 +145,35 @@ impl ModelRegistry {
         );
 
         let vram_before = Self::detect_used_gpu_vram();
-
         crate::telemetry::model_loading(&model_config.id);
-        let load_started = std::time::Instant::now();
-        let (engine, engine_kind) =
-            Self::create_engine(&model_config, &self.config.server, vram_before).map_err(|e| {
-                crate::telemetry::model_failed(&model_config.id, &e.to_string());
-                format!("Failed to load model '{}': {}", id, e)
-            })?;
+
+        let barrier = Arc::new(LoadBarrier::new());
+        self.loading
+            .insert(model_config.id.clone(), barrier.clone());
+
+        Ok((
+            model_config,
+            self.config.server.clone(),
+            vram_before,
+            barrier,
+        ))
+    }
+
+    /// Record successful load into the registry and telemetry, clearing the loading entry.
+    pub fn finish_load(
+        &mut self,
+        id: &str,
+        engine: Arc<dyn InferenceEngine>,
+        engine_kind: EngineKind,
+        load_started: Instant,
+        vram_before: Option<u64>,
+    ) {
+        let canonical_id = self
+            .config
+            .find(id)
+            .map(|m| m.id.clone())
+            .unwrap_or_else(|| id.to_string());
+
         let vram_detail = match (vram_before, Self::detect_used_gpu_vram()) {
             (Some(before), Some(after)) => format!(
                 "{engine_kind} · +{} VRAM",
@@ -101,30 +182,87 @@ impl ModelRegistry {
             _ => engine_kind.to_string(),
         };
         crate::telemetry::model_loaded(
-            &model_config.id,
+            &canonical_id,
             load_started.elapsed().as_millis(),
             &vram_detail,
         );
 
-        self.engines.insert(id.to_string(), engine.clone());
-        self.lru_keys.push(id.to_string());
-        self.last_used.insert(id.to_string(), Instant::now());
-
-        Ok(engine)
+        self.engines.insert(canonical_id.clone(), engine);
+        self.touch_lru(&canonical_id);
+        self.last_used.insert(canonical_id.clone(), Instant::now());
+        self.loading.remove(&canonical_id);
     }
 
-    fn touch_lru(&mut self, id: &str) {
+    /// Record load failure in telemetry and clear the loading entry.
+    pub fn fail_load(&mut self, id: &str, err_msg: &str) {
+        let canonical_id = self
+            .config
+            .find(id)
+            .map(|m| m.id.clone())
+            .unwrap_or_else(|| id.to_string());
+        crate::telemetry::model_failed(&canonical_id, err_msg);
+        self.loading.remove(&canonical_id);
+    }
+
+    pub fn get_or_load(&mut self, id: &str) -> Result<Arc<dyn InferenceEngine>, String> {
+        if let Some(engine) = self.get_loaded(id) {
+            return Ok(engine);
+        }
+
+        let (model_config, server_config, vram_before, barrier) = self.prepare_load(id)?;
+        let load_started = Instant::now();
+        let canonical_id = model_config.id.clone();
+
+        match Self::create_engine(&model_config, &server_config, vram_before) {
+            Ok((engine, engine_kind)) => {
+                self.finish_load(
+                    &canonical_id,
+                    engine.clone(),
+                    engine_kind,
+                    load_started,
+                    vram_before,
+                );
+                let mut st = barrier.mutex.lock().unwrap_or_else(|p| p.into_inner());
+                *st = LoadState::Ready(Ok(engine.clone()));
+                barrier.condvar.notify_all();
+                Ok(engine)
+            }
+            Err(e) => {
+                let err_msg = format!("Failed to load model '{}': {}", canonical_id, e);
+                self.fail_load(&canonical_id, &err_msg);
+                let mut st = barrier.mutex.lock().unwrap_or_else(|p| p.into_inner());
+                *st = LoadState::Ready(Err(err_msg.clone()));
+                barrier.condvar.notify_all();
+                Err(err_msg)
+            }
+        }
+    }
+
+    pub fn touch_lru(&mut self, id: &str) {
         if let Some(pos) = self.lru_keys.iter().position(|k| k == id) {
             let key = self.lru_keys.remove(pos);
             self.lru_keys.push(key);
+        } else {
+            self.lru_keys.push(id.to_string());
         }
     }
 
-    fn evict_lru(&mut self) {
+    pub fn evict_lru(&mut self) -> Option<String> {
         if self.lru_keys.is_empty() {
-            return;
+            return None;
         }
-        let victim_id = self.lru_keys.remove(0);
+        // Prefer evicting an engine that is not currently referenced by an active request
+        let victim_idx = self
+            .lru_keys
+            .iter()
+            .position(|id| {
+                self.engines
+                    .get(id)
+                    .is_none_or(|eng| Arc::strong_count(eng) <= 1)
+            })
+            .unwrap_or(0);
+
+        let victim_id = self.lru_keys.remove(victim_idx);
         self.last_used.remove(&victim_id);
         if let Some(_removed) = self.engines.remove(&victim_id) {
             crate::telemetry::model_evicted(&victim_id, "least recently used");
@@ -133,6 +271,9 @@ impl ModelRegistry {
                 victim_id,
                 self.config.server.max_loaded_models
             );
+            Some(victim_id)
+        } else {
+            None
         }
     }
 
@@ -165,7 +306,7 @@ impl ModelRegistry {
 
     /// Start an engine for `model`, trying the configured engines in order
     /// (preferred first) until one starts. Returns the engine and which kind won.
-    fn create_engine(
+    pub fn create_engine(
         model: &ModelConfig,
         server: &ServerConfig,
         vram_before: Option<u64>,

@@ -3,7 +3,7 @@ use axum::response::{IntoResponse, Response};
 use std::convert::Infallible;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 
 use super::response::make_chunk;
 use super::tools::convert_to_tool_calls;
@@ -21,7 +21,7 @@ pub fn handle_chat_stream(
     image_count: usize,
     video_count: usize,
 ) -> Response {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let (tx, rx) = tokio::sync::mpsc::channel::<Event>(64);
     let model_id = model_config.id.clone();
 
     let initial_chunk = make_chunk(
@@ -37,8 +37,8 @@ pub fn handle_chat_stream(
         None,
         Usage::default(),
     );
-    let _ =
-        tx.send(Event::default().data(serde_json::to_string(&initial_chunk).unwrap_or_default()));
+    let _ = tx
+        .try_send(Event::default().data(serde_json::to_string(&initial_chunk).unwrap_or_default()));
 
     tokio::task::spawn_blocking(move || {
         let tx_clone = tx.clone();
@@ -77,9 +77,15 @@ pub fn handle_chat_stream(
                             total_tokens: completion_tokens,
                         },
                     );
-                    let _ = tx_clone.send(
-                        Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()),
-                    );
+                    if tx_clone
+                        .blocking_send(
+                            Event::default()
+                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                        )
+                        .is_err()
+                    {
+                        return false;
+                    }
                 }
                 return true;
             }
@@ -106,9 +112,15 @@ pub fn handle_chat_stream(
                             total_tokens: completion_tokens,
                         },
                     );
-                    let _ = tx_clone.send(
-                        Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()),
-                    );
+                    if tx_clone
+                        .blocking_send(
+                            Event::default()
+                                .data(serde_json::to_string(&chunk).unwrap_or_default()),
+                        )
+                        .is_err()
+                    {
+                        return false;
+                    }
                 }
                 return true;
             }
@@ -133,7 +145,9 @@ pub fn handle_chat_stream(
                     },
                 );
                 return tx_clone
-                    .send(Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()))
+                    .blocking_send(
+                        Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()),
+                    )
                     .is_ok();
             }
 
@@ -161,7 +175,9 @@ pub fn handle_chat_stream(
                 },
             );
             tx_clone
-                .send(Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()))
+                .blocking_send(
+                    Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()),
+                )
                 .is_ok()
         };
 
@@ -206,7 +222,7 @@ pub fn handle_chat_stream(
                                         None,
                                         output.usage.clone(),
                                     );
-                                    let _ = tx.send(Event::default().data(
+                                    let _ = tx.blocking_send(Event::default().data(
                                         serde_json::to_string(&text_chunk).unwrap_or_default(),
                                     ));
                                 }
@@ -240,7 +256,7 @@ pub fn handle_chat_stream(
                             None,
                             output.usage.clone(),
                         );
-                        let _ = tx.send(
+                        let _ = tx.blocking_send(
                             Event::default()
                                 .data(serde_json::to_string(&tool_chunk).unwrap_or_default()),
                         );
@@ -258,7 +274,7 @@ pub fn handle_chat_stream(
                             Some("tool_calls".to_string()),
                             output.usage,
                         );
-                        let _ = tx.send(
+                        let _ = tx.blocking_send(
                             Event::default()
                                 .data(serde_json::to_string(&final_chunk).unwrap_or_default()),
                         );
@@ -276,7 +292,7 @@ pub fn handle_chat_stream(
                             Some("stop".to_string()),
                             output.usage,
                         );
-                        let _ = tx.send(
+                        let _ = tx.blocking_send(
                             Event::default()
                                 .data(serde_json::to_string(&chunk).unwrap_or_default()),
                         );
@@ -299,7 +315,7 @@ pub fn handle_chat_stream(
                             None,
                             output.usage.clone(),
                         );
-                        let _ = tx.send(
+                        let _ = tx.blocking_send(
                             Event::default()
                                 .data(serde_json::to_string(&text_chunk).unwrap_or_default()),
                         );
@@ -318,7 +334,7 @@ pub fn handle_chat_stream(
                         Some("stop".to_string()),
                         output.usage,
                     );
-                    let _ = tx.send(
+                    let _ = tx.blocking_send(
                         Event::default()
                             .data(serde_json::to_string(&final_chunk).unwrap_or_default()),
                     );
@@ -331,7 +347,8 @@ pub fn handle_chat_stream(
                             "code": "inference_error"
                         }
                     });
-                    let _ = tx.send(Event::default().event("error").data(err_chunk.to_string()));
+                    let _ = tx
+                        .blocking_send(Event::default().event("error").data(err_chunk.to_string()));
                 }
                 _ => {}
             },
@@ -343,7 +360,8 @@ pub fn handle_chat_stream(
                         "code": "engine_execution_failed"
                     }
                 });
-                let _ = tx.send(Event::default().event("error").data(err_chunk.to_string()));
+                let _ =
+                    tx.blocking_send(Event::default().event("error").data(err_chunk.to_string()));
             }
         }
     });
@@ -357,7 +375,7 @@ pub fn handle_chat_stream(
         "SSE stream started"
     );
 
-    let stream = UnboundedReceiverStream::new(rx);
+    let stream = ReceiverStream::new(rx);
     let done_stream = tokio_stream::once(Ok::<_, Infallible>(Event::default().data("[DONE]")));
     let sse_stream = stream.map(Ok::<_, Infallible>).chain(done_stream);
     let mut resp = Sse::new(sse_stream)

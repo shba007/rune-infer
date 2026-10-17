@@ -230,3 +230,130 @@ async fn test_anthropic_routes_are_disabled() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn test_audio_speech_route() {
+    let mut catalog = ModelRegistry {
+        server: ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+            api_key: None,
+            max_loaded_models: 1,
+            idle_unload_seconds: 300,
+            vram_budget_ratio: 0.95,
+        },
+        ..Default::default()
+    };
+
+    let raw = r#"{
+        "id": "audio8-tts-preview-0.6b",
+        "name": "Audio8 TTS Preview 0.6B",
+        "modality": "TextToSpeech",
+        "capabilities": ["Text-to-Speech"],
+        "engine": { "supported": ["audio-cpp"], "preferred": "audio-cpp" },
+        "sampling": {},
+        "local": {
+            "path": "Cargo.toml",
+            "context_length": -1,
+            "gpu_layers": 99,
+            "args": ""
+        },
+        "extra": {}
+    }"#;
+    let entry: ModelEntry = serde_json::from_str(raw).expect("valid json");
+    catalog
+        .models
+        .push(ModelConfig::try_from(entry).expect("valid model config"));
+
+    let state = AppState {
+        inference: Arc::new(InferenceAppState::new(&catalog)),
+        proxy: Arc::new(ProxyService::new(&catalog)),
+        config: catalog,
+    };
+    let app = create_router(state);
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/audio/speech")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"model":"audio8-tts-preview-0.6b","input":"Testing speech synthesis in Rune Infer","voice":"alloy","response_format":"wav"}"#,
+        ))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers().get("content-type").unwrap(), "audio/wav");
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert!(body.len() > 44);
+    assert_eq!(&body[0..4], b"RIFF");
+    assert_eq!(&body[8..12], b"WAVE");
+}
+
+#[tokio::test]
+async fn test_audio_transcription_route() {
+    let mut catalog = ModelRegistry {
+        server: ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+            api_key: None,
+            max_loaded_models: 1,
+            idle_unload_seconds: 300,
+            vram_budget_ratio: 0.95,
+        },
+        ..Default::default()
+    };
+
+    let raw = r#"{
+        "id": "audio8-asr-infinite",
+        "name": "Edge0 Audio8 ASR Infinite",
+        "modality": "SpeechToText",
+        "capabilities": ["Speech-to-Text"],
+        "engine": { "supported": ["audio-cpp"], "preferred": "audio-cpp" },
+        "sampling": {},
+        "local": {
+            "path": "Cargo.toml",
+            "context_length": -1,
+            "gpu_layers": 99,
+            "args": ""
+        },
+        "extra": {}
+    }"#;
+    let entry: ModelEntry = serde_json::from_str(raw).expect("valid json");
+    catalog
+        .models
+        .push(ModelConfig::try_from(entry).expect("valid model config"));
+
+    let state = AppState {
+        inference: Arc::new(InferenceAppState::new(&catalog)),
+        proxy: Arc::new(ProxyService::new(&catalog)),
+        config: catalog,
+    };
+    let app = create_router(state);
+
+    let boundary = "------------------------boundary123";
+    let wav_bytes = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00";
+    let mut body_bytes = Vec::new();
+    body_bytes.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\naudio8-asr-infinite\r\n").as_bytes());
+    body_bytes.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.wav\"\r\nContent-Type: audio/wav\r\n\r\n").as_bytes());
+    body_bytes.extend_from_slice(wav_bytes);
+    body_bytes.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/audio/transcriptions")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body_bytes))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json.get("text").is_some());
+}

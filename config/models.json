@@ -906,19 +906,20 @@
       ],
       "engine": {
         "supported": [
-          "audio-cpp"
+          "audio-cpp",
+          "crispasr"
         ],
         "preferred": "audio-cpp"
       },
       "max_context_length": null,
       "sampling": {},
       "local": {
-        "path": "D:/Models/huggingface/hub/models--Reza2kn--Audio8-ASR-Infinite-Compressed/snapshots/25be0c71030726ad8b81b87fb333b333bd73ac23/gguf/model.a8m",
+        "path": "D:/Models/huggingface/hub/models--edge0-Audio8-ASR-Infinite/model.safetensors",
         "params": 4100000000,
-        "bits_per_weight": 4.5,
+        "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
+        "args": "--backend voxtral4b"
       },
       "extra": {}
     },
@@ -945,6 +946,36 @@
         "path": "D:/Models/huggingface/hub/models--openai--whisper-large-v3/snapshots/main",
         "params": 1550000000,
         "bits_per_weight": 16.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "extra": {}
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3",
+      "name": "NVIDIA Parakeet TDT 0.6B v3",
+      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
+      "modality": "SpeechToText",
+      "capabilities": [
+        "Speech-to-Text",
+        "Multilingual",
+        "Timestamps",
+        "Punctuation",
+        "FastConformer-TDT"
+      ],
+      "engine": {
+        "supported": [
+          "nemo-speech"
+        ],
+        "preferred": "nemo-speech"
+      },
+      "max_context_length": null,
+      "sampling": {},
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--nvidia--parakeet-tdt-0.6b-v3/snapshots/541d1f99c6b0c3cd0b11a95167540bb8edefd82b/parakeet-tdt-0.6b-v3.q8_0.gguf",
+        "params": 600000000,
+        "bits_per_weight": 8.0,
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
@@ -1138,39 +1169,9 @@
       "max_context_length": null,
       "sampling": {},
       "local": {
-        "path": "D:/Models/huggingface/hub/models--Audio8--Audio8-TTS-Preview-0.6b/snapshots/f07040f3d151f1ba0253bfb92cb2f5dd38b44594/model.safetensors",
+        "path": "D:/Models/huggingface/hub/models--Audio8--Audio8-TTS-Preview-0.6b/snapshots/f07040f3d151f1ba0253bfb92cb2f5dd38b44594/audio8-tts.gguf",
         "params": 600000000,
         "bits_per_weight": 16.0,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--snac-codec D:/Models/huggingface/hub/models--hubertsiuzdak--snac_24khz/snapshots/main"
-      },
-      "extra": {}
-    },
-    {
-      "id": "parakeet-tdt-0.6b-v3",
-      "name": "NVIDIA Parakeet TDT 0.6B v3",
-      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
-      "modality": "SpeechToText",
-      "capabilities": [
-        "Speech-to-Text",
-        "Multilingual",
-        "Timestamps",
-        "Punctuation",
-        "FastConformer-TDT"
-      ],
-      "engine": {
-        "supported": [
-          "nemo-speech"
-        ],
-        "preferred": "nemo-speech"
-      },
-      "max_context_length": null,
-      "sampling": {},
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--nvidia--parakeet-tdt-0.6b-v3/snapshots/541d1f99c6b0c3cd0b11a95167540bb8edefd82b/parakeet-tdt-0.6b-v3.q8_0.gguf",
-        "params": 600000000,
-        "bits_per_weight": 8.0,
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""

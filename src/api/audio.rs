@@ -10,11 +10,36 @@ use crate::types::{ApiError, AudioSpeechRequest, ErrorResponse};
 
 const MAX_AUDIO_UPLOAD_BYTES: usize = 25 * 1024 * 1024; // 25 MB
 
+async fn read_limited_field_bytes(
+    field: &mut axum::extract::multipart::Field<'_>,
+    limit: usize,
+) -> Result<Vec<u8>, (StatusCode, Json<ErrorResponse>)> {
+    let mut bytes = Vec::new();
+    while let Ok(Some(chunk)) = field.chunk().await {
+        if bytes.len() + chunk.len() > limit {
+            return Err((
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(ErrorResponse {
+                    error: ApiError::new(
+                        "Maximum audio file upload size is 25 MB. The uploaded file exceeds this limit.",
+                    )
+                    .with_type("invalid_request_error")
+                    .with_param("file")
+                    .with_code("file_too_large"),
+                }),
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
 #[axum::debug_handler]
 pub async fn audio_transcriptions_handler(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Response {
+    let start_time = std::time::Instant::now();
     let mut file_bytes = Vec::new();
     let mut filename = "audio.wav".to_string();
     let mut model_id: Option<String> = None;
@@ -23,15 +48,16 @@ pub async fn audio_transcriptions_handler(
     let mut temperature: Option<f32> = None;
     let mut response_format: Option<String> = None;
 
-    while let Ok(Some(field)) = multipart.next_field().await {
+    while let Ok(Some(mut field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
             "file" => {
                 if let Some(fname) = field.file_name() {
                     filename = fname.to_string();
                 }
-                if let Ok(bytes) = field.bytes().await {
-                    file_bytes = bytes.to_vec();
+                match read_limited_field_bytes(&mut field, MAX_AUDIO_UPLOAD_BYTES).await {
+                    Ok(bytes) => file_bytes = bytes,
+                    Err(err_resp) => return err_resp.into_response(),
                 }
             }
             "model" => {
@@ -162,47 +188,69 @@ pub async fn audio_transcriptions_handler(
         response_format,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
+    let model_for_stats = target_model.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let gen_started = std::time::Instant::now();
+        let r = engine.execute(&task, None).map_err(|e| e.to_string());
+        (r, gen_started.elapsed())
+    })
+    .await;
 
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Transcription(transcription) => {
-                Json(transcription).into_response()
+    let (exec_res, gen_elapsed) = match res {
+        Ok((r, elapsed)) => (r, elapsed),
+        Err(e) => (
+            Err(format!("Thread join error: {e}")),
+            std::time::Duration::ZERO,
+        ),
+    };
+
+    match exec_res {
+        Ok(output) => {
+            crate::telemetry::record_completion(
+                &model_for_stats,
+                start_time.elapsed().as_millis(),
+                output.usage.prompt_tokens,
+                output.usage.completion_tokens,
+                gen_elapsed.as_millis(),
+            );
+            match output.response {
+                InferenceTaskResponse::Transcription(transcription) => {
+                    Json(transcription).into_response()
+                }
+                InferenceTaskResponse::Text(raw) => {
+                    Json(serde_json::json!({ "text": raw })).into_response()
+                }
+                InferenceTaskResponse::Error(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(e).with_type("server_error"),
+                    }),
+                )
+                    .into_response(),
+                _ => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new("Unexpected response type from ASR engine"),
+                    }),
+                )
+                    .into_response(),
             }
-            InferenceTaskResponse::Text(raw) => {
-                Json(serde_json::json!({ "text": raw })).into_response()
-            }
-            InferenceTaskResponse::Error(e) => (
+        }
+        Err(e) => {
+            crate::telemetry::record_failure(
+                &model_for_stats,
+                500,
+                start_time.elapsed().as_millis(),
+                &e,
+            );
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(e).with_type("server_error"),
                 }),
             )
-                .into_response(),
-            _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new("Unexpected response type from ASR engine"),
-                }),
-            )
-                .into_response(),
-        },
-        Ok(Err(e)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(e.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(e.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
+                .into_response()
+        }
     }
 }
 
@@ -211,6 +259,7 @@ pub async fn audio_translations_handler(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Response {
+    let start_time = std::time::Instant::now();
     let mut file_bytes = Vec::new();
     let mut filename = "audio.wav".to_string();
     let mut model_id: Option<String> = None;
@@ -218,15 +267,16 @@ pub async fn audio_translations_handler(
     let mut temperature: Option<f32> = None;
     let mut response_format: Option<String> = None;
 
-    while let Ok(Some(field)) = multipart.next_field().await {
+    while let Ok(Some(mut field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
             "file" => {
                 if let Some(fname) = field.file_name() {
                     filename = fname.to_string();
                 }
-                if let Ok(bytes) = field.bytes().await {
-                    file_bytes = bytes.to_vec();
+                match read_limited_field_bytes(&mut field, MAX_AUDIO_UPLOAD_BYTES).await {
+                    Ok(bytes) => file_bytes = bytes,
+                    Err(err_resp) => return err_resp.into_response(),
                 }
             }
             "model" => {
@@ -353,45 +403,69 @@ pub async fn audio_translations_handler(
         response_format,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
+    let model_for_stats = target_model.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let gen_started = std::time::Instant::now();
+        let r = engine.execute(&task, None).map_err(|e| e.to_string());
+        (r, gen_started.elapsed())
+    })
+    .await;
 
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Translation(trans) => Json(trans).into_response(),
-            InferenceTaskResponse::Text(raw) => {
-                Json(serde_json::json!({ "text": raw })).into_response()
+    let (exec_res, gen_elapsed) = match res {
+        Ok((r, elapsed)) => (r, elapsed),
+        Err(e) => (
+            Err(format!("Thread join error: {e}")),
+            std::time::Duration::ZERO,
+        ),
+    };
+
+    match exec_res {
+        Ok(output) => {
+            crate::telemetry::record_completion(
+                &model_for_stats,
+                start_time.elapsed().as_millis(),
+                output.usage.prompt_tokens,
+                output.usage.completion_tokens,
+                gen_elapsed.as_millis(),
+            );
+            match output.response {
+                InferenceTaskResponse::Translation(trans) => Json(trans).into_response(),
+                InferenceTaskResponse::Text(raw) => {
+                    Json(serde_json::json!({ "text": raw })).into_response()
+                }
+                InferenceTaskResponse::Error(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(e).with_type("server_error"),
+                    }),
+                )
+                    .into_response(),
+                _ => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(
+                            "Unexpected response type from ASR translation engine",
+                        ),
+                    }),
+                )
+                    .into_response(),
             }
-            InferenceTaskResponse::Error(e) => (
+        }
+        Err(e) => {
+            crate::telemetry::record_failure(
+                &model_for_stats,
+                500,
+                start_time.elapsed().as_millis(),
+                &e,
+            );
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(e).with_type("server_error"),
                 }),
             )
-                .into_response(),
-            _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new("Unexpected response type from ASR translation engine"),
-                }),
-            )
-                .into_response(),
-        },
-        Ok(Err(e)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(e.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(e.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
+                .into_response()
+        }
     }
 }
 
@@ -400,6 +474,7 @@ pub async fn audio_speech_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<AudioSpeechRequest>,
 ) -> Response {
+    let start_time = std::time::Instant::now();
     if request.input.trim().is_empty() || request.input.len() > 4096 {
         return (
             StatusCode::BAD_REQUEST,
@@ -445,6 +520,12 @@ pub async fn audio_speech_handler(
         match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
+                crate::telemetry::record_failure(
+                    &model_id,
+                    404,
+                    start_time.elapsed().as_millis(),
+                    &err.to_string(),
+                );
                 return (
                     StatusCode::NOT_FOUND,
                     Json(ErrorResponse {
@@ -455,6 +536,12 @@ pub async fn audio_speech_handler(
                     .into_response();
             }
             Err(e) => {
+                crate::telemetry::record_failure(
+                    &model_id,
+                    500,
+                    start_time.elapsed().as_millis(),
+                    &e.to_string(),
+                );
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
@@ -476,53 +563,75 @@ pub async fn audio_speech_handler(
         speed: request.speed,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
+    let model_for_stats = model_id.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let gen_started = std::time::Instant::now();
+        let r = engine.execute(&task, None).map_err(|e| e.to_string());
+        (r, gen_started.elapsed())
+    })
+    .await;
 
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Audio(bytes) => {
-                let content_type = match format_str.as_str() {
-                    "mp3" => "audio/mpeg",
-                    "opus" => "audio/opus",
-                    "flac" => "audio/flac",
-                    _ => "audio/wav",
-                };
-                Response::builder()
-                    .header("Content-Type", content_type)
-                    .body(axum::body::Body::from(bytes))
-                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+    let (exec_res, gen_elapsed) = match res {
+        Ok((r, elapsed)) => (r, elapsed),
+        Err(e) => (
+            Err(format!("Thread join error: {e}")),
+            std::time::Duration::ZERO,
+        ),
+    };
+
+    match exec_res {
+        Ok(output) => {
+            crate::telemetry::record_completion(
+                &model_for_stats,
+                start_time.elapsed().as_millis(),
+                output.usage.prompt_tokens,
+                output.usage.completion_tokens,
+                gen_elapsed.as_millis(),
+            );
+            match output.response {
+                InferenceTaskResponse::Audio(bytes) => {
+                    let content_type = match format_str.as_str() {
+                        "mp3" => "audio/mpeg",
+                        "opus" => "audio/opus",
+                        "flac" => "audio/flac",
+                        _ => "audio/wav",
+                    };
+                    Response::builder()
+                        .header("Content-Type", content_type)
+                        .body(axum::body::Body::from(bytes))
+                        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+                }
+                InferenceTaskResponse::Error(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(e).with_type("server_error"),
+                    }),
+                )
+                    .into_response(),
+                _ => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new("Unexpected response type from TTS engine"),
+                    }),
+                )
+                    .into_response(),
             }
-            InferenceTaskResponse::Error(e) => (
+        }
+        Err(e) => {
+            crate::telemetry::record_failure(
+                &model_for_stats,
+                500,
+                start_time.elapsed().as_millis(),
+                &e,
+            );
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(e).with_type("server_error"),
                 }),
             )
-                .into_response(),
-            _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new("Unexpected response type from TTS engine"),
-                }),
-            )
-                .into_response(),
-        },
-        Ok(Err(e)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(e.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(e.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
+                .into_response()
+        }
     }
 }
 
@@ -531,20 +640,20 @@ pub async fn speech_to_speech_handler(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> Response {
+    let start_time = std::time::Instant::now();
     let mut file_bytes = Vec::new();
     let mut model_id: Option<String> = None;
     let mut target_language = "fra".to_string();
     let mut source_language = Some("auto".to_string());
     let mut response_format = Some("wav".to_string());
 
-    while let Ok(Some(field)) = multipart.next_field().await {
+    while let Ok(Some(mut field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
-            "file" => {
-                if let Ok(bytes) = field.bytes().await {
-                    file_bytes = bytes.to_vec();
-                }
-            }
+            "file" => match read_limited_field_bytes(&mut field, MAX_AUDIO_UPLOAD_BYTES).await {
+                Ok(bytes) => file_bytes = bytes,
+                Err(err_resp) => return err_resp.into_response(),
+            },
             "model" => {
                 if let Ok(text) = field.text().await {
                     model_id = Some(text.trim().to_string());
@@ -642,44 +751,66 @@ pub async fn speech_to_speech_handler(
         response_format: response_format.clone(),
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
+    let model_for_stats = target_model.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let gen_started = std::time::Instant::now();
+        let r = engine.execute(&task, None).map_err(|e| e.to_string());
+        (r, gen_started.elapsed())
+    })
+    .await;
 
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Audio(bytes) => Response::builder()
-                .header("Content-Type", "audio/wav")
-                .body(axum::body::Body::from(bytes))
-                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-            InferenceTaskResponse::Error(e) => (
+    let (exec_res, gen_elapsed) = match res {
+        Ok((r, elapsed)) => (r, elapsed),
+        Err(e) => (
+            Err(format!("Thread join error: {e}")),
+            std::time::Duration::ZERO,
+        ),
+    };
+
+    match exec_res {
+        Ok(output) => {
+            crate::telemetry::record_completion(
+                &model_for_stats,
+                start_time.elapsed().as_millis(),
+                output.usage.prompt_tokens,
+                output.usage.completion_tokens,
+                gen_elapsed.as_millis(),
+            );
+            match output.response {
+                InferenceTaskResponse::Audio(bytes) => Response::builder()
+                    .header("Content-Type", "audio/wav")
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                InferenceTaskResponse::Error(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(e).with_type("server_error"),
+                    }),
+                )
+                    .into_response(),
+                _ => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new("Unexpected response type from S2ST engine"),
+                    }),
+                )
+                    .into_response(),
+            }
+        }
+        Err(e) => {
+            crate::telemetry::record_failure(
+                &model_for_stats,
+                500,
+                start_time.elapsed().as_millis(),
+                &e,
+            );
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(e).with_type("server_error"),
                 }),
             )
-                .into_response(),
-            _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new("Unexpected response type from S2ST engine"),
-                }),
-            )
-                .into_response(),
-        },
-        Ok(Err(e)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(e.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(e.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
+                .into_response()
+        }
     }
 }

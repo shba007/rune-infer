@@ -7,6 +7,18 @@ use crate::types::{AudioTranscriptionResponse, AudioTranslationResponse, Usage};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static AUDIO_REQ_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+fn generate_unique_audio_id() -> String {
+    let count = AUDIO_REQ_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{}_{}_{}", std::process::id(), now, count)
+}
 
 pub struct AudioEngine {
     id: String,
@@ -107,7 +119,10 @@ impl AudioEngine {
             let cuda_asset = if host_cuda.is_some() {
                 assets.iter().find(|a| {
                     let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    (n.contains("bin-win-cuda") || n.contains("win-cuda")) && !n.contains("cudart")
+                    (n.contains("bin-windows") || n.contains("bin-win"))
+                        && n.contains("cuda")
+                        && !n.contains("cudart")
+                        && !n.contains("lib-")
                 })
             } else {
                 None
@@ -115,7 +130,9 @@ impl AudioEngine {
 
             let fallback = assets.iter().find(|a| {
                 let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("win-cpu") || (n.contains("windows") && !n.contains("cuda"))
+                (n.contains("bin-windows") || n.contains("bin-win"))
+                    && (n.contains("cpu") || !n.contains("cuda"))
+                    && !n.contains("lib-")
             });
 
             if let Some(target) = cuda_asset.or(fallback) {
@@ -219,20 +236,21 @@ impl AudioEngine {
         audio_bytes: &[u8],
         filename: &str,
         temp_dir: &Path,
+        req_id: &str,
     ) -> Result<PathBuf, Box<dyn Error>> {
         // If the audio already has a standard RIFF/WAVE header, write it directly
         if audio_bytes.len() > 12 && &audio_bytes[0..4] == b"RIFF" && &audio_bytes[8..12] == b"WAVE"
         {
-            let direct_wav = temp_dir.join(format!("direct_{}_{}", std::process::id(), filename));
+            let direct_wav = temp_dir.join(format!("direct_{}_{}", req_id, filename));
             std::fs::write(&direct_wav, audio_bytes)?;
             return Ok(direct_wav);
         }
 
         // For MP3, AAC, OGG, or non-PCM audio, convert to 16 kHz 16-bit mono PCM WAV
-        let raw_input = temp_dir.join(format!("input_{}_{}", std::process::id(), filename));
+        let raw_input = temp_dir.join(format!("input_{}_{}", req_id, filename));
         std::fs::write(&raw_input, audio_bytes)?;
 
-        let out_wav = temp_dir.join(format!("converted_16k_{}.wav", std::process::id()));
+        let out_wav = temp_dir.join(format!("converted_16k_{}.wav", req_id));
 
         let ffmpeg_status = Command::new("ffmpeg")
             .args([
@@ -257,7 +275,7 @@ impl AudioEngine {
                 tracing::info!(
                     "[AudioEngine] Warning: ffmpeg not detected or conversion failed. Passing raw bytes as fallback."
                 );
-                let fallback = temp_dir.join(format!("fallback_{}.wav", std::process::id()));
+                let fallback = temp_dir.join(format!("fallback_{}.wav", req_id));
                 std::fs::write(&fallback, audio_bytes)?;
                 Ok(fallback)
             }
@@ -295,6 +313,37 @@ impl AudioEngine {
         }
         buf
     }
+
+    fn generate_voice_fallback(text: &str, temp_dir: &Path, req_id: &str) -> Vec<u8> {
+        #[cfg(windows)]
+        {
+            let fallback_wav = temp_dir.join(format!("voice_fallback_{}.wav", req_id));
+            let escaped_text = text
+                .replace('"', "\\\"")
+                .replace('$', "`$")
+                .replace('`', "``");
+            let script = format!(
+                "Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.SetOutputToWaveFile('{}'); $synth.Speak(\"{}\"); $synth.Dispose();",
+                fallback_wav.display(),
+                escaped_text
+            );
+            if let Ok(out) = Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .output()
+            {
+                if out.status.success() && fallback_wav.exists() {
+                    if let Ok(bytes) = std::fs::read(&fallback_wav) {
+                        let _ = std::fs::remove_file(&fallback_wav);
+                        if bytes.len() > 44 {
+                            return bytes;
+                        }
+                    }
+                }
+            }
+        }
+        let _ = (text, temp_dir, req_id);
+        Self::generate_sine_wav_fallback(1.5, 16000)
+    }
 }
 
 impl InferenceEngine for AudioEngine {
@@ -316,12 +365,13 @@ impl InferenceEngine for AudioEngine {
                 temperature: _,
                 response_format: _,
             } => {
-                let temp_dir =
-                    std::env::temp_dir().join(format!("rune_audio_{}", std::process::id()));
+                let req_id = generate_unique_audio_id();
+                let temp_dir = std::env::temp_dir().join(format!("rune_audio_{}", req_id));
                 std::fs::create_dir_all(&temp_dir)?;
 
-                let audio_wav_path = Self::ensure_wav_16k(audio_bytes, filename, &temp_dir)?;
-                let output_txt_path = temp_dir.join(format!("out_{}.txt", std::process::id()));
+                let audio_wav_path =
+                    Self::ensure_wav_16k(audio_bytes, filename, &temp_dir, &req_id)?;
+                let output_txt_path = temp_dir.join(format!("out_{}.txt", req_id));
 
                 let bin_dir = self
                     .bin_path
@@ -449,7 +499,97 @@ impl InferenceEngine for AudioEngine {
                 })
             }
             InferenceTaskRequest::AudioSpeech { input, .. } => {
-                let audio_data = Self::generate_sine_wav_fallback(1.5, 16000);
+                let req_id = generate_unique_audio_id();
+                let temp_dir = std::env::temp_dir().join(format!("rune_tts_{}", req_id));
+                let _ = std::fs::create_dir_all(&temp_dir);
+                let output_wav_path = temp_dir.join(format!("out_{}.wav", req_id));
+
+                let bin_dir = self
+                    .bin_path
+                    .parent()
+                    .unwrap_or_else(|| Path::new("bin/audiocpp"));
+
+                let mut cmd = Command::new(&self.bin_path);
+                configure_death_signal(&mut cmd);
+                cmd.current_dir(bin_dir);
+
+                // Build search path for CUDA and runtime DLLs
+                let mut search_paths = vec![bin_dir.to_path_buf()];
+                if let Ok(entries) = std::fs::read_dir("bin") {
+                    for entry in entries.flatten() {
+                        if entry.path().is_dir() {
+                            search_paths.push(entry.path());
+                        }
+                    }
+                }
+                let mut path_env = std::env::join_paths(search_paths)
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                if let Ok(sys_path) = std::env::var("PATH") {
+                    path_env = format!("{};{}", path_env, sys_path);
+                }
+                cmd.env("PATH", path_env);
+
+                let backend_flag = if download::detect_host_cuda_version().is_some() {
+                    "cuda"
+                } else {
+                    "cpu"
+                };
+
+                let family = if self.id.contains("audio8") {
+                    "audio8_tts"
+                } else if self.id.contains("voxcpm") {
+                    "voxcpm2"
+                } else if self.id.contains("fish") {
+                    "fish_audio"
+                } else {
+                    "audio8_tts"
+                };
+
+                cmd.arg("--task")
+                    .arg("tts")
+                    .arg("--family")
+                    .arg(family)
+                    .arg("--model")
+                    .arg(&self.model_path)
+                    .arg("--backend")
+                    .arg(backend_flag)
+                    .arg("--text")
+                    .arg(input)
+                    .arg("--out")
+                    .arg(&output_wav_path);
+
+                tracing::info!(
+                    "[AudioEngine] Synthesizing speech via '{}' ({}) with backend '{}'...",
+                    self.id,
+                    family,
+                    backend_flag
+                );
+
+                let audio_data = match cmd.output() {
+                    Ok(out) if out.status.success() && output_wav_path.exists() => {
+                        std::fs::read(&output_wav_path).unwrap_or_else(|_| {
+                            Self::generate_voice_fallback(input, &temp_dir, &req_id)
+                        })
+                    }
+                    Ok(out) => {
+                        let err_str = String::from_utf8_lossy(&out.stderr);
+                        tracing::warn!(
+                            "[AudioEngine] audiocpp_cli TTS returned code {:?}: {}",
+                            out.status.code(),
+                            err_str.trim()
+                        );
+                        Self::generate_voice_fallback(input, &temp_dir, &req_id)
+                    }
+                    Err(e) => {
+                        tracing::warn!("[AudioEngine] Failed to spawn audiocpp_cli TTS: {}", e);
+                        Self::generate_voice_fallback(input, &temp_dir, &req_id)
+                    }
+                };
+
+                let _ = std::fs::remove_dir_all(&temp_dir);
+
                 let prompt_tokens = (input.len() / 4).max(1) as u32;
                 let completion_tokens = (audio_data.len() / 3200).max(1) as u32;
                 Ok(InferenceOutput {
@@ -468,5 +608,18 @@ impl InferenceEngine for AudioEngine {
             }
             _ => Err("AudioEngine only supports Audio tasks".into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_speech_fallback_synthesis() {
+        let wav = AudioEngine::generate_sine_wav_fallback(0.5, 16000);
+        assert!(wav.len() > 44);
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
     }
 }

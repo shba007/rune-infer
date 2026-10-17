@@ -22,7 +22,7 @@ Rune Infer is a high-performance, single-binary AI model gateway that unifies lo
 
 ### Features
 
-- 🌐 **Unified API Gateway**: Drop-in compatible with standard OpenAI SDK endpoints (`/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/audio/*`, `/v1/images/*`, `/v1/moderations`) and Anthropic Messages (`/v1/messages`, `/anthropic/v1/messages`), alongside direct task execution (`/v1/inference`), intent classification (`/v1/nlu/intents`), and document OCR (`/v1/ocr`).
+- 🌐 **Unified API Gateway**: Drop-in compatible with standard OpenAI SDK endpoints (`/v1/chat/completions`, `/v1/embeddings`, `/v1/audio/*`, `/v1/images/*`, `/v1/moderations`) alongside direct task execution (`/v1/inference`), intent classification (`/v1/nlu/intents`), and document OCR (`/v1/ocr`). *(Note: `/v1/responses` and Anthropic Messages `/v1/messages` are implemented but currently disabled in routing pending schema 2 protocol alignment).*
 - 🛡️ **Host-Safe Context & Token Budgeting**: Pre-flight validation computes exact text tokens, visual patch tokens ($28 \times 28$), 3D spatiotemporal video tubelets, and output reserves before execution—rejecting out-of-bounds requests with HTTP 400 before native GGML aborts (`SIGABRT`).
 - ⚡ **Orchestrated Engine Backends**: Seamlessly drives 8 managed subprocesses and native Rust engines (`llama-server`, `llama-server-prism`, `sd-server`, `audio-cpp`, `nemo-speech`, `crispasr`, native safetensors `encoder`, and Cactus `needle`) across 15 modalities with automatic binary discovery and runtime fallback order.
 - 🔄 **Cloud Routing & Proxy Resilience**: Unified cloud adapters for OpenAI, Anthropic, Google Gemini, OpenRouter, and custom endpoints featuring token-bucket rate limiting, concurrency gates, queue timeouts, and automatic retries.
@@ -339,8 +339,8 @@ All endpoints except `/health` require authentication when `server.api_key` or `
 | `/v1/models` | `GET` | List configured models with capability flags and MTP draft headers (`x-mtp-available`). |
 | `/v1/models/{model}` | `GET` | Retrieve metadata and capabilities for a specific model ID. |
 | `/v1/chat/completions` | `POST` | OpenAI-compatible chat completion. Supports SSE streaming (`stream: true`), multimodal inputs, tools, and JSON schema. |
-| `/v1/responses` | `POST` | Direct response generation endpoint (`CreateResponseRequest`). |
-| `/v1/messages`<br>`/anthropic/v1/messages` | `POST` | Anthropic Messages API compatible endpoint for direct use with Anthropic SDKs. |
+| `/v1/responses` | `POST` | *(Disabled in schema 2)* Direct response generation endpoint (`CreateResponseRequest`). |
+| `/v1/messages`<br>`/anthropic/v1/messages` | `POST` | *(Disabled in schema 2)* Anthropic Messages API compatible endpoint for direct use with Anthropic SDKs. |
 | `/v1/embeddings` | `POST` | Text embeddings generation (supported by native `encoder` or remote providers). |
 | `/v1/moderations` | `POST` | Content safety moderation checks. |
 | `/v1/nlu/intents` | `POST` | Zero-shot intent and entity classification. |

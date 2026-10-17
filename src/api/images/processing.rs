@@ -43,8 +43,13 @@ pub async fn image_caption_handler(
         },
     };
 
-    let decoded_frames = match decode_media(&image_uri, (2048, 2048)) {
-        Ok(frames) if !frames.is_empty() => frames,
+    let uri_for_decode = image_uri.clone();
+    let decoded_frames = match tokio::task::spawn_blocking(move || {
+        decode_media(&uri_for_decode, (2048, 2048))
+    })
+    .await
+    {
+        Ok(Ok(frames)) if !frames.is_empty() => frames,
         _ => return StatusCode::BAD_REQUEST.into_response(),
     };
 

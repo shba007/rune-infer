@@ -416,7 +416,37 @@ fn draw_models(f: &mut Frame, area: Rect, app: &App) {
 
     let header = Row::new(["", "Model", "Type", "Source", "Reqs", "Err", "tok/s"])
         .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD));
-    let rows = app.models.iter().map(|m| {
+
+    // Prioritize display order: Loading -> Loaded -> Failed -> Active (requests > 0) -> Idle
+    let mut display_indices: Vec<usize> = (0..app.models.len()).collect();
+    display_indices.sort_by(|&a, &b| {
+        let ma = &app.models[a];
+        let mb = &app.models[b];
+
+        let priority_a = match &ma.status {
+            Status::Loading(_) => 0,
+            Status::Loaded { .. } => 1,
+            Status::Failed(_) => 2,
+            Status::Idle if ma.requests > 0 => 3,
+            Status::Idle => 4,
+        };
+        let priority_b = match &mb.status {
+            Status::Loading(_) => 0,
+            Status::Loaded { .. } => 1,
+            Status::Failed(_) => 2,
+            Status::Idle if mb.requests > 0 => 3,
+            Status::Idle => 4,
+        };
+
+        priority_a
+            .cmp(&priority_b)
+            .then_with(|| mb.last_used.cmp(&ma.last_used))
+            .then_with(|| mb.requests.cmp(&ma.requests))
+            .then_with(|| a.cmp(&b))
+    });
+
+    let rows = display_indices.into_iter().map(|idx| {
+        let m = &app.models[idx];
         let (icon, color, extra) = match &m.status {
             Status::Idle => ("○".to_string(), DIM, String::new()),
             Status::Loading(since) => (

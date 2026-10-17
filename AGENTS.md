@@ -276,10 +276,11 @@ Rules:
 ## 5. API surface
 
 OpenAI canonical: chat completions (stream + non-stream, vision, video, tools,
-`response_format` JSON/schema), responses, embeddings, moderations, images
+`response_format` JSON/schema), embeddings, moderations, images
 (generations/edits/variations), audio (transcriptions/translations/speech),
-models, health. Anthropic Messages at `/v1/messages` and `/anthropic/v1/messages`
-so Anthropic SDK clients can target local models. Rune-specific: `/v1/inference`,
+models, health. (Note: `/v1/responses` and Anthropic Messages at `/v1/messages`
+and `/anthropic/v1/messages` are implemented but currently disabled in schema 2
+routing pending full protocol alignment). Rune-specific: `/v1/inference`,
 `/v1/nlu/intents`, `/v1/ocr`, `/v1/images/{captions,detections,embeddings,
 recognize,upscales,restorations,style-transfers}`, `/v1/audio/speech-to-speech`.
 
