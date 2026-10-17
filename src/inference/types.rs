@@ -1,9 +1,9 @@
 use crate::types::{
-    AudioTranscriptionResponse, AudioTranslationResponse, ChatMessage, DetectObjectsResponse,
-    DocumentOcrResponse, EmbeddingResponse, ImageCaptionResponse, ImageEmbeddingsResponse,
-    ImageGenerationResponse, ImageRestorationResponse, ImageStyleTransferResponse,
-    ImageUpscaleResponse, ModerationResponse, NluIntentResponse, RecognizeObjectsResponse,
-    RecognizeTarget, RegionCrop, Usage,
+    AudioDiarizationResponse, AudioTranscriptionResponse, AudioTranslationResponse, ChatMessage,
+    DetectObjectsResponse, DocumentOcrResponse, EmbeddingResponse, ImageCaptionResponse,
+    ImageEmbeddingsResponse, ImageGenerationResponse, ImageRestorationResponse,
+    ImageStyleTransferResponse, ImageUpscaleResponse, ModerationResponse, NluIntentResponse,
+    RecognizeObjectsResponse, RecognizeTarget, RegionCrop, Usage,
 };
 use serde::{Deserialize, Serialize};
 
@@ -64,6 +64,14 @@ pub enum InferenceTaskRequest {
         target_language: String,
         source_language: Option<String>,
         response_format: Option<String>,
+    },
+    AudioDiarization {
+        audio_bytes: Vec<u8>,
+        filename: String,
+        #[serde(default)]
+        speaker_threshold: Option<f32>,
+        #[serde(default)]
+        max_speakers: Option<usize>,
     },
     Embedding {
         model: Option<String>,
@@ -149,6 +157,7 @@ pub enum InferenceTaskResponse {
     Audio(Vec<u8>),
     Transcription(AudioTranscriptionResponse),
     Translation(AudioTranslationResponse),
+    Diarization(AudioDiarizationResponse),
     Embedding(EmbeddingResponse),
     Moderation(ModerationResponse),
     NluIntent(NluIntentResponse),

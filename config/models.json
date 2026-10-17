@@ -140,7 +140,7 @@
         "max_tokens": 2048
       },
       "local": {
-        "path": "D:/Models/gguf/needle3.cact",
+        "path": "D:/Models/huggingface/hub/models--Cactus-Compute--needle3/needle3.cact",
         "params": 121000000,
         "bits_per_weight": 2.0,
         "context_length": -1,
@@ -176,7 +176,7 @@
         "max_tokens": 4096
       },
       "local": {
-        "path": "D:/Models/gguf/Qwen3.5-0.8B-BF16.gguf",
+        "path": "D:/Models/huggingface/hub/models--Qwen--Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-BF16.gguf",
         "params": 873000000,
         "bits_per_weight": 16.0,
         "context_length": -1,
@@ -794,7 +794,7 @@
       "max_context_length": null,
       "sampling": {},
       "local": {
-        "path": "D:/Models/gguf/acestep_v1.5_turbo.safetensors",
+        "path": "D:/Models/huggingface/hub/models--ACE-Step--Ace-Step1.5/acestep_v1.5_turbo.safetensors",
         "params": 4500000000,
         "bits_per_weight": 8.0,
         "context_length": -1,
@@ -894,65 +894,6 @@
       "extra": {}
     },
     {
-      "id": "audio8-asr-infinite",
-      "name": "Edge0 Audio8 ASR Infinite",
-      "description": "Infinite 24/7 rolling-KV streaming ASR with 80ms clock and semantic VAD based on Voxtral Realtime 4B + Qwen2.5-3B",
-      "modality": "SpeechToText",
-      "capabilities": [
-        "Speech-to-Text",
-        "Streaming",
-        "Realtime",
-        "Semantic VAD"
-      ],
-      "engine": {
-        "supported": [
-          "audio-cpp",
-          "crispasr"
-        ],
-        "preferred": "audio-cpp"
-      },
-      "max_context_length": null,
-      "sampling": {},
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--edge0-Audio8-ASR-Infinite/model.safetensors",
-        "params": 4100000000,
-        "bits_per_weight": 16.0,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--backend voxtral4b"
-      },
-      "extra": {}
-    },
-    {
-      "id": "whisper-large-v3",
-      "name": "Whisper Large v3",
-      "description": "OpenAI Whisper Large v3 multilingual speech-to-text transcription and translation engine",
-      "modality": "SpeechToText",
-      "capabilities": [
-        "Speech-to-Text",
-        "Multilingual",
-        "Timestamps",
-        "Translation"
-      ],
-      "engine": {
-        "supported": [
-          "crispasr"
-        ],
-        "preferred": "crispasr"
-      },
-      "max_context_length": null,
-      "sampling": {},
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--openai--whisper-large-v3/snapshots/main",
-        "params": 1550000000,
-        "bits_per_weight": 16.0,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "extra": {}
-    },
-    {
       "id": "parakeet-tdt-0.6b-v3",
       "name": "NVIDIA Parakeet TDT 0.6B v3",
       "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
@@ -983,6 +924,124 @@
       "extra": {}
     },
     {
+      "id": "audio8-asr-infinite",
+      "name": "Edge0 Audio8 ASR Infinite",
+      "description": "Infinite 24/7 rolling-KV streaming ASR with 80ms clock and semantic VAD based on Voxtral Realtime 4B + Qwen2.5-3B",
+      "modality": "SpeechToText",
+      "capabilities": [
+        "Speech-to-Text",
+        "Streaming",
+        "Realtime",
+        "Semantic VAD"
+      ],
+      "engine": {
+        "supported": [
+          "audio-cpp",
+          "crispasr"
+        ],
+        "preferred": "audio-cpp"
+      },
+      "max_context_length": null,
+      "sampling": {},
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--edge0-Audio8-ASR-Infinite/model.safetensors",
+        "params": 4100000000,
+        "bits_per_weight": 16.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--backend voxtral4b"
+      },
+      "extra": {}
+    },
+    {
+      "id": "bangla-asr",
+      "name": "BanglaASR (Whisper Small Fine-tuned)",
+      "description": "Fine-tuned Whisper Small ASR model achieving 4.58% WER on conversational Bengali speech",
+      "modality": "SpeechToText",
+      "capabilities": [
+        "Speech-to-Text",
+        "Bengali",
+        "Low WER",
+        "Timestamps"
+      ],
+      "engine": {
+        "supported": [
+          "crispasr"
+        ],
+        "preferred": "crispasr"
+      },
+      "max_context_length": null,
+      "sampling": {},
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--bangla-speech-processing--BanglaASR/ggml-model.bin",
+        "params": 244000000,
+        "bits_per_weight": 16.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--vad -vp 250 -vsd 400"
+      },
+      "extra": {}
+    },
+    {
+      "id": "indicwhisper-bengali",
+      "name": "AI4Bharat IndicWhisper Bengali",
+      "description": "Multilingual Whisper model fine-tuned for Indic speech-to-text transcription with Silero VAD",
+      "modality": "SpeechToText",
+      "capabilities": [
+        "Speech-to-Text",
+        "Bengali",
+        "Low WER",
+        "Timestamps"
+      ],
+      "engine": {
+        "supported": [
+          "crispasr"
+        ],
+        "preferred": "crispasr"
+      },
+      "max_context_length": null,
+      "sampling": {},
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--bangla-speech-processing--BanglaASR/ggml-model.bin",
+        "params": 244000000,
+        "bits_per_weight": 16.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--vad -vp 250 -vsd 400"
+      },
+      "extra": {}
+    },
+    {
+      "id": "whisper-large-v3",
+      "name": "Whisper Large v3",
+      "description": "OpenAI Whisper Large v3 Turbo multilingual speech-to-text transcription and translation engine with Silero VAD",
+      "modality": "SpeechToText",
+      "capabilities": [
+        "Speech-to-Text",
+        "Multilingual",
+        "Bengali",
+        "Timestamps",
+        "Translation"
+      ],
+      "engine": {
+        "supported": [
+          "crispasr"
+        ],
+        "preferred": "crispasr"
+      },
+      "max_context_length": null,
+      "sampling": {},
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--openai--whisper-large-v3-turbo/ggml-large-v3-turbo.bin",
+        "params": 809000000,
+        "bits_per_weight": 16.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--vad"
+      },
+      "extra": {}
+    },
+    {
       "id": "qwen3-tts-1.7b-gguf",
       "name": "Qwen3 1.7B Multilingual TTS (GGUF)",
       "description": "High-fidelity multilingual streaming speech synthesis foundation model in native GGUF",
@@ -1002,7 +1061,7 @@
       "max_context_length": null,
       "sampling": {},
       "local": {
-        "path": "D:/Models/gguf/qwen3-1.7B-Multilingual-TTS-f16.gguf",
+        "path": "D:/Models/huggingface/hub/models--mradermacher--Qwen3-1.7B-Multilingual-TTS-GGUF/qwen3-1.7B-Multilingual-TTS-f16.gguf",
         "params": 1700000000,
         "bits_per_weight": 16.0,
         "context_length": -1,
@@ -1200,6 +1259,35 @@
         "path": "D:/Models/huggingface/hub/models--mys--laya-GGUF/snapshots/main/laya-q8_0.gguf",
         "params": 450000000,
         "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "extra": {}
+    },
+    {
+      "id": "nemotron-3-diarization",
+      "name": "NVIDIA Nemotron-3 Diarization",
+      "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",
+      "modality": "SpeechAnalysis",
+      "capabilities": [
+        "Speech-Analysis",
+        "Speaker-Diarization",
+        "Multi-Speaker",
+        "Timestamps"
+      ],
+      "engine": {
+        "supported": [
+          "audio-cpp"
+        ],
+        "preferred": "audio-cpp"
+      },
+      "max_context_length": null,
+      "sampling": {},
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--nvidia--Nemotron-3-Diarization/nemotron-3-diarization-q8_0.gguf",
+        "params": 100000000,
+        "bits_per_weight": 8.0,
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""

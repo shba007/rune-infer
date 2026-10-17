@@ -8,7 +8,7 @@ pub mod nlu;
 pub mod ocr;
 // pub mod responses;
 
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{Next, from_fn_with_state};
 use axum::response::{IntoResponse, Response};
@@ -65,6 +65,10 @@ pub fn create_router(state: AppState) -> Router {
             "/audio/translations",
             post(audio::audio_translations_handler),
         )
+        .route(
+            "/audio/diarizations",
+            post(audio::audio_diarization_handler),
+        )
         .route("/audio/speech", post(audio::audio_speech_handler))
         .route(
             "/audio/speech-to-speech",
@@ -92,6 +96,7 @@ pub fn create_router(state: AppState) -> Router {
         // )
         // .route("/messages", post(anthropic::anthropic_messages_handler))
         .route("/health", get(health_handler))
+        .layer(DefaultBodyLimit::max(128 * 1024 * 1024))
         .with_state(shared_state)
 }
 

@@ -145,6 +145,12 @@ pub enum Modality {
     ImageUpscale,
     #[serde(alias = "style_transfer", alias = "style")]
     ImageStyleTransfer,
+    #[serde(
+        alias = "SpeechAnalysis",
+        alias = "diarization",
+        alias = "speaker_diarization"
+    )]
+    SpeechAnalysis,
 }
 
 impl Modality {
@@ -165,6 +171,7 @@ impl Modality {
             Modality::ImageRestoration => "image-restoration",
             Modality::ImageUpscale => "image-upscale",
             Modality::ImageStyleTransfer => "image-style-transfer",
+            Modality::SpeechAnalysis => "speech-analysis",
         }
     }
 }
@@ -323,6 +330,8 @@ impl ModelRegistry {
                     Modality::SpeechToSpeech
                 } else if has(&["detection"]) {
                     Modality::ObjectDetection
+                } else if has(&["diar", "diariz", "nemotron", "speaker"]) {
+                    Modality::SpeechAnalysis
                 } else {
                     return None;
                 };

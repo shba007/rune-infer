@@ -214,18 +214,34 @@ impl CrispAsrEngine {
         };
 
         let host_cuda = download::detect_host_cuda_version();
-        let mut download_urls = Vec::new();
+        let mut download_urls: Vec<(String, String)> = Vec::new();
 
         let cudart_asset = assets.iter().find(|a| {
             let n = a["name"].as_str().unwrap_or("").to_lowercase();
-            n.contains("cudart") && n.contains("win")
+            if let Some(ref ver) = host_cuda {
+                if ver.0 >= 13 {
+                    return n.contains("cudart") && n.contains("13");
+                }
+            }
+            n.contains("cudart") && (n.contains("12") || n.contains("win"))
         });
 
         if cfg!(target_os = "windows") {
-            let cuda_asset = if host_cuda.is_some() {
-                assets.iter().find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    n.contains("win-cuda") || (n.contains("windows") && n.contains("cuda"))
+            let cuda_asset = if let Some(ref ver) = host_cuda {
+                if ver.0 >= 13 {
+                    assets.iter().find(|a| {
+                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
+                        n.contains("windows") && n.contains("cuda13")
+                    })
+                } else {
+                    None
+                }
+                .or_else(|| {
+                    assets.iter().find(|a| {
+                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
+                        (n.contains("win-cuda") || (n.contains("windows") && n.contains("cuda")))
+                            && !n.contains("cuda13")
+                    })
                 })
             } else {
                 None
@@ -261,10 +277,21 @@ impl CrispAsrEngine {
                 ));
             }
         } else {
-            let cuda_asset = if host_cuda.is_some() {
-                assets.iter().find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    n.contains("linux-cuda") || (n.contains("linux") && n.contains("cuda"))
+            let cuda_asset = if let Some(ref ver) = host_cuda {
+                if ver.0 >= 13 {
+                    assets.iter().find(|a| {
+                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
+                        n.contains("linux") && n.contains("cuda13")
+                    })
+                } else {
+                    None
+                }
+                .or_else(|| {
+                    assets.iter().find(|a| {
+                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
+                        (n.contains("linux-cuda") || (n.contains("linux") && n.contains("cuda")))
+                            && !n.contains("cuda13")
+                    })
                 })
             } else {
                 None
@@ -450,6 +477,8 @@ impl InferenceEngine for CrispAsrEngine {
                     duration: parsed.get("duration").and_then(|d| d.as_f64()),
                     segments: parsed.get("segments").cloned(),
                     words: parsed.get("words").cloned(),
+                    speakers: None,
+                    speaker_activity: None,
                 };
 
                 let prompt_tokens = (audio_bytes.len() / 3200).max(1) as u32;

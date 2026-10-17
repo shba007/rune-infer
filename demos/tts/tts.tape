@@ -2,7 +2,9 @@
 # Requirements: https://github.com/charmbracelet/vhs
 #
 # To render this tape into docs/demo_tts.gif:
-#   vhs demo_tts.tape
+#   vhs demos/tts/tts.tape
+# Or run:
+#   .\demos\record.ps1 -Name tts
 
 Output docs/demo_tts.gif
 
@@ -19,7 +21,7 @@ Set Theme "Catppuccin Mocha"
 Hide
 Type "$env:RUNE_API_KEY = 'rune-demo-secure-key'"
 Enter
-Type "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File .\scripts\demo_tts_driver.ps1' -WindowStyle Hidden"
+Type "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File .\demos\tts\driver.ps1' -WindowStyle Hidden"
 Enter
 Type ".\target\release\rune-infer.exe --config config/models.json"
 Enter

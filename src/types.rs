@@ -498,6 +498,40 @@ pub struct AudioTranscriptionResponse {
     pub segments: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub words: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speakers: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker_activity: Option<std::collections::BTreeMap<String, Vec<SpeakerActivityInterval>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioDiarizationSegment {
+    pub id: usize,
+    pub speaker: String,
+    pub start: f64,
+    pub end: f64,
+    pub duration: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeakerActivityInterval {
+    pub start: f64,
+    pub end: f64,
+    pub duration: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioDiarizationResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    pub duration: f64,
+    pub speakers: Vec<String>,
+    pub segments: Vec<AudioDiarizationSegment>,
+    pub speaker_activity: std::collections::BTreeMap<String, Vec<SpeakerActivityInterval>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

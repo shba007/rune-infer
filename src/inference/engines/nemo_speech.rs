@@ -683,6 +683,8 @@ impl InferenceEngine for NemoSpeechEngine {
                     duration: parsed.get("duration").and_then(|d| d.as_f64()),
                     segments: parsed.get("segments").cloned(),
                     words: parsed.get("words").cloned(),
+                    speakers: None,
+                    speaker_activity: None,
                 };
 
                 let prompt_tokens = (audio_bytes.len() / 3200).max(1) as u32;

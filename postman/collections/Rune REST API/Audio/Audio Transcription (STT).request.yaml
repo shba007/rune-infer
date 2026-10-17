@@ -25,5 +25,9 @@ body:
       key: temperature
       value: "0.0"
       disabled: false
+    - type: text
+      key: diarization
+      value: "true"
+      disabled: true
 examples: .resources/Audio Transcription (STT).resources/examples
 order: 4000

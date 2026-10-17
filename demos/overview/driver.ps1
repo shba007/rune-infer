@@ -1,10 +1,22 @@
-# scripts/demo_driver.ps1
-# Automates demo requests for VHS screencast recording
+# demos/overview/driver.ps1
+# Automates demo requests for VHS screencast recording (Dashboard, Lazy-load, and LRU swap)
 
-# 1. Brief pause for dashboard to appear on screen
-Start-Sleep -Seconds 2
+# Import shared helper utilities
+$helpersPath = Join-Path $PSScriptRoot "..\common\driver_helpers.ps1"
+if (Test-Path $helpersPath) {
+    . $helpersPath
+}
 
+# 1. Wait for dashboard / server to be fully responsive
 $serverUrl = "http://127.0.0.1:8081/v1/chat/completions"
+$healthUrl = "http://127.0.0.1:8081/health"
+
+if (Get-Command Wait-RuneServer -ErrorAction SilentlyContinue) {
+    $null = Wait-RuneServer -Url $healthUrl -TimeoutSeconds 15
+} else {
+    Start-Sleep -Seconds 2
+}
+
 $headers = @{
     "Authorization" = "Bearer rune-demo-secure-key"
 }
