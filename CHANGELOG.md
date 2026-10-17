@@ -2,16 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-10-17
+
+### 🚀 Features
+
+- Eliminate model load lock contention, enforce bounded SSE backpressure, and fix audio8-asr-infinite model path
+
+- Add audio diarization functionality and update models
+
+
+### 🐛 Bug Fixes
+
+- Update actions/checkout and other dependencies in workflows, upgraded performence of model load/unload
+
+
 ## [0.5.0] - 2026-10-16
 
 ### 🚀 Features
 
-- Add VRAM budgeting and context sizing engine
+- Add VRAM budgeting and context sizing engine by @shba007
 
 
 ### 🚜 Refactor
 
-- Model discovery and setup wizard
+- Model discovery and setup wizard by @shba007
 
 
 ## [0.4.0] - 2026-10-11
