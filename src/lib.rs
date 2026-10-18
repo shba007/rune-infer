@@ -22,6 +22,6 @@ pub use config::{
 };
 pub use proxy::ProxyService;
 pub use types::{
-    ApiError, ChatCompletionRequest, Choice, ChoiceDelta, HealthResponse, ModelInfo,
-    ModelsResponse, SseResponse,
+    ApiError, ChatCompletionRequest, Choice, ChoiceDelta, HealthResponse, LivezResponse, ModelInfo,
+    ModelsResponse, ReadyzResponse, SseResponse,
 };

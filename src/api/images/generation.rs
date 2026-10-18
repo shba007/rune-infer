@@ -52,7 +52,7 @@ pub async fn image_generation_handler(
     let model_id = match &request.model {
         Some(m) if !m.trim().is_empty() => m.clone(),
         _ => match state
-            .config
+            .config()
             .models
             .iter()
             .find(|m| m.modality == crate::config::Modality::ImageGeneration)
@@ -73,7 +73,7 @@ pub async fn image_generation_handler(
         },
     };
 
-    let model_config = match state.config.find(&model_id) {
+    let model_config = match state.config().find(&model_id) {
         Some(c) => c.clone(),
         None => {
             return (
@@ -226,7 +226,7 @@ pub async fn image_edit_handler(
     }
 
     let model_id = state
-        .config
+        .config()
         .models
         .iter()
         .find(|m| m.modality == crate::config::Modality::ImageGeneration)

@@ -119,7 +119,7 @@ pub async fn responses_handler(
         temperature: request.temperature,
         ..Default::default()
     };
-    let sampling = match state.config.find(&model_id) {
+    let sampling = match state.config().find(&model_id) {
         Some(model_config) => model_config.effective_sampling(&requested),
         None => requested,
     };
@@ -127,6 +127,7 @@ pub async fn responses_handler(
     let task = InferenceTaskRequest::ToolCall {
         prompt: input_text.clone(),
         schema: tools_val,
+        tool_choice: None,
         images: Vec::new(),
         messages,
         max_tokens: sampling.max_tokens,

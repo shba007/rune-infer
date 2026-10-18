@@ -226,6 +226,75 @@ impl ModelRegistry {
         }
     }
 
+    pub fn from_files<P1: AsRef<Path>, P2: AsRef<Path>>(
+        server_path: P1,
+        catalog_path: P2,
+    ) -> Result<Self> {
+        Self::from_files_with_env(server_path, catalog_path, &[])
+    }
+
+    pub fn from_files_with_env<P1: AsRef<Path>, P2: AsRef<Path>>(
+        server_path: P1,
+        catalog_path: P2,
+        overrides: &[(String, String)],
+    ) -> Result<Self> {
+        let server_path = server_path.as_ref();
+        let catalog_path = catalog_path.as_ref();
+
+        let raw_server = std::fs::read_to_string(server_path)
+            .with_context(|| format!("Failed to read server config: {}", server_path.display()))?;
+        let raw_catalog = std::fs::read_to_string(catalog_path).with_context(|| {
+            format!("Failed to read catalog config: {}", catalog_path.display())
+        })?;
+
+        let lookup = |name: &str| {
+            overrides
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+                .or_else(|| std::env::var(name).ok())
+        };
+
+        let interp_server = interpolate_with(&raw_server, &lookup)?;
+        let interp_catalog = interpolate_with(&raw_catalog, &lookup)?;
+
+        let server_file: crate::schema::ServerFile = serde_json::from_str(&interp_server)
+            .with_context(|| format!("Invalid server config at {}", server_path.display()))?;
+        if server_file.schema_version != crate::schema::SCHEMA_VERSION {
+            anyhow::bail!(
+                "{} uses schema_version {} but rune-infer requires schema_version {}. Run `rune-infer migrate`.",
+                server_path.display(),
+                server_file.schema_version,
+                crate::schema::SCHEMA_VERSION
+            );
+        }
+
+        let catalog_file: crate::schema::CatalogFile = serde_json::from_str(&interp_catalog)
+            .with_context(|| format!("Invalid catalog config at {}", catalog_path.display()))?;
+        if catalog_file.schema_version != crate::schema::SCHEMA_VERSION {
+            anyhow::bail!(
+                "{} uses schema_version {} but rune-infer requires schema_version {}. Run `rune-infer migrate`.",
+                catalog_path.display(),
+                catalog_file.schema_version,
+                crate::schema::SCHEMA_VERSION
+            );
+        }
+
+        let models = catalog_file
+            .models
+            .into_iter()
+            .map(ModelConfig::try_from)
+            .collect::<Result<Vec<_>>>()?;
+
+        let registry = Self {
+            schema_version: crate::schema::SCHEMA_VERSION,
+            server: server_file.server,
+            models,
+        };
+        registry.validate()?;
+        Ok(registry)
+    }
+
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         Self::from_file_with_env(path, &[])
     }
@@ -237,6 +306,18 @@ impl ModelRegistry {
         overrides: &[(String, String)],
     ) -> Result<Self> {
         let path = path.as_ref();
+        if path.file_name().is_some_and(|n| n == "server.json") {
+            let cat = path.parent().unwrap_or(Path::new(".")).join("catalog.json");
+            if cat.exists() {
+                return Self::from_files_with_env(path, &cat, overrides);
+            }
+        } else if path.file_name().is_some_and(|n| n == "catalog.json") {
+            let srv = path.parent().unwrap_or(Path::new(".")).join("server.json");
+            if srv.exists() {
+                return Self::from_files_with_env(&srv, path, overrides);
+            }
+        }
+
         let path_display = Some(path.display().to_string());
         let raw = std::fs::read_to_string(path).context("Failed to read config file")?;
         let interpolated = interpolate_with(&raw, &|name| {
@@ -260,7 +341,7 @@ impl ModelRegistry {
         }
         let version: Version =
             serde_json::from_str(json).context("Failed to parse config as JSON")?;
-        if version.schema_version != crate::schema::SCHEMA_VERSION {
+        if version.schema_version != crate::schema::SCHEMA_VERSION && version.schema_version != 2 {
             anyhow::bail!(
                 "{} uses config schema_version {} but this rune-infer needs {}. Run `rune-infer migrate{}` to upgrade it (a backup is kept).",
                 origin.unwrap_or("The config"),
@@ -279,7 +360,7 @@ impl ModelRegistry {
             .map(ModelConfig::try_from)
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
-            schema_version: file.schema_version,
+            schema_version: crate::schema::SCHEMA_VERSION,
             server: file.server,
             models,
         })
@@ -310,6 +391,16 @@ impl ModelRegistry {
                 self.models
                     .iter()
                     .find(|m| m.id.eq_ignore_ascii_case(id) || m.name.eq_ignore_ascii_case(id))
+            })
+            .or_else(|| {
+                self.models.iter().find(|m| {
+                    id.split_once('/').is_some_and(|(_, short)| {
+                        m.id.eq_ignore_ascii_case(short) || m.name.eq_ignore_ascii_case(short)
+                    }) || m
+                        .id
+                        .split_once('/')
+                        .is_some_and(|(_, short)| short.eq_ignore_ascii_case(id))
+                })
             })
             .or_else(|| {
                 let lower = id.to_lowercase();
@@ -1122,9 +1213,12 @@ mod tests {
 
     #[test]
     fn the_repo_config_loads() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/models.json");
-        let reg = ModelRegistry::from_file_with_env(
-            &path,
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config");
+        let server_path = dir.join("server.json");
+        let catalog_path = dir.join("catalog.json");
+        let reg = ModelRegistry::from_files_with_env(
+            &server_path,
+            &catalog_path,
             &[
                 ("GEMINI_API_KEY".into(), "x".into()),
                 ("OPENROUTER_API_KEY".into(), "x".into()),

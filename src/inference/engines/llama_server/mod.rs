@@ -195,6 +195,7 @@ impl InferenceEngine for LlamaServerEngine {
             InferenceTaskRequest::ToolCall {
                 prompt,
                 schema,
+                tool_choice,
                 images,
                 messages,
                 max_tokens,
@@ -271,6 +272,9 @@ impl InferenceEngine for LlamaServerEngine {
 
                 if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
                     body["tools"] = schema.clone();
+                    if let Some(tc) = tool_choice {
+                        body["tool_choice"] = tc.clone();
+                    }
                 } else if schema.is_object() && !schema.as_object().is_none_or(|o| o.is_empty()) {
                     body["response_format"] = serde_json::json!({
                         "type": "json_schema",
@@ -551,7 +555,152 @@ impl InferenceEngine for LlamaServerEngine {
                     usage: Usage::new(85, 12),
                 })
             }
+            InferenceTaskRequest::Embedding {
+                model,
+                input,
+                dimensions,
+            } => {
+                let endpoint = format!("http://127.0.0.1:{}/v1/embeddings", self.port);
+                let mut body = serde_json::json!({
+                    "model": model.clone().unwrap_or_else(|| self.id.clone()),
+                    "input": input,
+                });
+                if let Some(dim) = dimensions {
+                    body["dimensions"] = serde_json::json!(dim);
+                }
+                let resp = self.client.post(&endpoint).json(&body).send()?;
+                if !resp.status().is_success() {
+                    let err_text = resp.text().unwrap_or_default();
+                    return Err(format!("llama-server embedding request failed: {err_text}").into());
+                }
+                let mut result: crate::types::EmbeddingResponse = resp.json()?;
+                if let Some(dim) = dimensions {
+                    for item in &mut result.data {
+                        if item.embedding.len() > *dim {
+                            item.embedding.truncate(*dim);
+                        }
+                    }
+                }
+                let usage = result.usage.clone();
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Embedding(result),
+                    usage,
+                })
+            }
+            InferenceTaskRequest::ImageGrounding {
+                model,
+                image_bytes,
+                query,
+                width,
+                height,
+            } => {
+                let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
+                let mime = if image_bytes.starts_with(b"\x89PNG") {
+                    "image/png"
+                } else {
+                    "image/jpeg"
+                };
+                let b64 = base64::engine::general_purpose::STANDARD.encode(image_bytes);
+                let prompt_text = format!(
+                    "Locate the UI element or target '{}' in this image. Output ONLY the bounding box in normalized [0, 1000] coordinates format: [ymin, xmin, ymax, xmax]. Do not include any other text.",
+                    query
+                );
+
+                let body = serde_json::json!({
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            { "type": "text", "text": prompt_text },
+                            { "type": "image_url", "image_url": { "url": format!("data:{mime};base64,{b64}") } }
+                        ]
+                    }],
+                    "max_tokens": 64,
+                    "temperature": 0.0,
+                    "stream": false
+                });
+
+                let resp = self.client.post(&endpoint).json(&body).send()?;
+                let result: serde_json::Value = resp.json()?;
+                let raw_content = result["choices"][0]["message"]["content"]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim();
+
+                let (box_2d, conf) = parse_grounding_coordinates(raw_content);
+                let center_x = (box_2d[1] + box_2d[3]) / 2;
+                let center_y = (box_2d[0] + box_2d[2]) / 2;
+                let px_x = ((center_x as f64 / 1000.0) * *width as f64).round() as u32;
+                let px_y = ((center_y as f64 / 1000.0) * *height as f64).round() as u32;
+                let box_normalized = [
+                    box_2d[0] as f64 / 1000.0,
+                    box_2d[1] as f64 / 1000.0,
+                    box_2d[2] as f64 / 1000.0,
+                    box_2d[3] as f64 / 1000.0,
+                ];
+
+                let created = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Grounding(
+                        crate::types::ImageGroundingResponse {
+                            id: format!(
+                                "ground_{}",
+                                hex::encode(&Sha256::digest(image_bytes)[..8])
+                            ),
+                            object: "image.grounding".to_string(),
+                            created,
+                            model: model.clone().unwrap_or_else(|| self.id.clone()),
+                            query: query.clone(),
+                            point: [center_x, center_y],
+                            point_pixels: [px_x, px_y],
+                            box_2d,
+                            box_normalized,
+                            image_width: *width,
+                            image_height: *height,
+                            confidence: conf,
+                        },
+                    ),
+                    usage: Usage::new(128, 16),
+                })
+            }
             _ => Err("LlamaServerEngine does not support this task type".into()),
         }
+    }
+}
+
+fn parse_grounding_coordinates(raw: &str) -> ([u32; 4], f64) {
+    if let (Some(start), Some(end)) = (raw.find("<|box_start|>"), raw.find("<|box_end|>")) {
+        let inside = &raw[start + "<|box_start|>".len()..end];
+        let nums: Vec<u32> = inside
+            .split(|c: char| !c.is_ascii_digit())
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        if nums.len() >= 4 {
+            return ([nums[0], nums[1], nums[2], nums[3]], 0.95);
+        }
+    }
+
+    if let (Some(start), Some(end)) = (raw.find('['), raw.rfind(']')) {
+        let inside = &raw[start + 1..end];
+        let nums: Vec<u32> = inside
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        if nums.len() >= 4 {
+            return ([nums[0], nums[1], nums[2], nums[3]], 0.92);
+        }
+    }
+
+    let nums: Vec<u32> = raw
+        .split(|c: char| !c.is_ascii_digit())
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    if nums.len() >= 4 {
+        ([nums[0], nums[1], nums[2], nums[3]], 0.85)
+    } else {
+        ([500, 500, 500, 500], 0.5)
     }
 }

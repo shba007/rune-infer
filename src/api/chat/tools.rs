@@ -41,6 +41,7 @@ pub fn build_system_prompt(
     has_tools: bool,
     tools_value: &serde_json::Value,
     has_video: bool,
+    tool_choice: Option<&serde_json::Value>,
 ) -> String {
     if is_structured_mode {
         format!(
@@ -49,15 +50,39 @@ pub fn build_system_prompt(
         )
     } else if has_tools {
         let tools_json = serde_json::to_string_pretty(tools_value).unwrap_or_default();
+        let requirement = match tool_choice {
+            Some(serde_json::Value::String(s)) if s == "required" => {
+                "\nCRITICAL INSTRUCTION: You MUST call one or more tools from Available Tools. Do NOT respond with plain text without calling a tool.\n"
+            }
+            Some(serde_json::Value::Object(o)) => {
+                if let Some(func_name) = o
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                {
+                    Box::leak(
+                        format!(
+                            "\nCRITICAL INSTRUCTION: You MUST call the tool '{}'. Do NOT respond with plain text without calling this tool.\n",
+                            func_name
+                        )
+                        .into_boxed_str(),
+                    )
+                } else {
+                    "\nCRITICAL INSTRUCTION: You MUST call a tool.\n"
+                }
+            }
+            _ => "",
+        };
         format!(
             "You are a helpful assistant with access to tools.\n\
             When calling a tool, reply ONLY with a <tool_call> block containing a JSON array:\n\
             <tool_call>\n\
             [{{\"name\": \"tool_name\", \"arguments\": {{...}}}}]\n\
-            </tool_call>\n\n\
+            </tool_call>\n\
+            {}\n\
             Available Tools:\n\
             {}",
-            tools_json
+            requirement, tools_json
         )
     } else if has_video {
         "You are a helpful assistant with native video understanding capabilities. Analyze the video sequence directly, observing temporal motion, continuity, actions, and timestamps.".to_string()

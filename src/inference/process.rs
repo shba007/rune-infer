@@ -64,12 +64,16 @@ fn get_job_object() -> Option<windows_sys::Win32::Foundation::HANDLE> {
         .map(|h| h.0)
 }
 
+static PID_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub fn configure_death_signal(_cmd: &mut Command) {
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::process::CommandExt;
         unsafe {
             _cmd.pre_exec(|| {
+                // Ensure child process is placed in its own process group
+                libc::setpgid(0, 0);
                 if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                     return Err(std::io::Error::last_os_error());
                 }
@@ -106,6 +110,7 @@ pub fn attach_to_supervisor(child: &Child) {
 }
 
 pub fn register_pid(pid: u32) {
+    let _lock = PID_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let _ = fs::create_dir_all("logs");
     if let Ok(mut file) = fs::OpenOptions::new()
         .create(true)
@@ -117,6 +122,7 @@ pub fn register_pid(pid: u32) {
 }
 
 pub fn unregister_pid(pid: u32) {
+    let _lock = PID_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path = Path::new("logs/.active_pids");
     if !path.exists() {
         return;
@@ -136,6 +142,7 @@ pub fn unregister_pid(pid: u32) {
 }
 
 pub fn cleanup_orphaned_pids() {
+    let _lock = PID_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path = Path::new("logs/.active_pids");
     if !path.exists() {
         return;
@@ -150,7 +157,7 @@ pub fn cleanup_orphaned_pids() {
     let _ = fs::remove_file(path);
 }
 
-fn kill_pid(pid: u32) {
+pub fn kill_pid(pid: u32) {
     #[cfg(windows)]
     {
         let _ = Command::new("taskkill")
@@ -161,8 +168,10 @@ fn kill_pid(pid: u32) {
     {
         unsafe {
             let pid_t = pid as libc::pid_t;
-            let _ = libc::kill(-pid_t, libc::SIGKILL);
-            let _ = libc::kill(pid_t, libc::SIGKILL);
+            if pid_t > 1 {
+                let _ = libc::kill(-pid_t, libc::SIGKILL);
+                let _ = libc::kill(pid_t, libc::SIGKILL);
+            }
         }
     }
 }

@@ -364,8 +364,8 @@ pub fn migrate_json(json: &str) -> Result<Migration> {
     })
 }
 
-fn backup_path(config: &Path) -> PathBuf {
-    let base = format!("{}.v1.bak", config.display());
+fn backup_path(config: &Path, ver: u64) -> PathBuf {
+    let base = format!("{}.v{ver}.bak", config.display());
     let mut candidate = PathBuf::from(&base);
     let mut n = 1;
     while candidate.exists() {
@@ -375,9 +375,22 @@ fn backup_path(config: &Path) -> PathBuf {
     candidate
 }
 
-/// Entry point for `rune-infer migrate`. Prints a report; writes the upgraded
-/// file (keeping a backup of the original) unless `dry_run`.
+/// Entry point for `rune-infer migrate`. Prints a report; splits and writes the upgraded
+/// schema 3 files (config/server.json and config/catalog.json) unless `dry_run`.
 pub fn run(config: &Path, dry_run: bool) -> Result<()> {
+    let cfg_dir = config.parent().unwrap_or(Path::new("."));
+    let server_path = cfg_dir.join("server.json");
+    let catalog_path = cfg_dir.join("catalog.json");
+
+    if server_path.exists() && catalog_path.exists() && !config.exists() {
+        println!(
+            "{} and {} are already schema {SCHEMA_VERSION}; nothing to do.",
+            server_path.display(),
+            catalog_path.display()
+        );
+        return Ok(());
+    }
+
     let raw = std::fs::read_to_string(config)
         .with_context(|| format!("Cannot read {}", config.display()))?;
     let version = serde_json::from_str::<Value>(&raw)
@@ -385,48 +398,100 @@ pub fn run(config: &Path, dry_run: bool) -> Result<()> {
         .get("schema_version")
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    if version == u64::from(SCHEMA_VERSION) {
+
+    let (registry_file, notes) = if version <= 1 {
+        let migration = migrate_json(&raw)?;
+        (migration.file, migration.notes)
+    } else if version == 2 {
+        let file: RegistryFile = serde_json::from_str(&raw)
+            .with_context(|| format!("Invalid schema 2 file at {}", config.display()))?;
+        (
+            file,
+            vec!["Decoupled unified models.json into server.json and catalog.json".to_string()],
+        )
+    } else if version == u64::from(SCHEMA_VERSION) {
         println!(
             "{} is already schema {SCHEMA_VERSION}; nothing to do.",
             config.display()
         );
         return Ok(());
-    }
+    } else {
+        anyhow::bail!(
+            "Unsupported schema version {version} in {}",
+            config.display()
+        );
+    };
 
-    let migration = migrate_json(&raw)?;
-    let local = migration
-        .file
+    let local = registry_file
         .models
         .iter()
         .filter(|m| m.local.is_some())
         .count();
-    let remote = migration.file.models.len() - local;
+    let remote = registry_file.models.len() - local;
     println!(
-        "Migrating {} ({} local, {} cloud models) to schema {SCHEMA_VERSION}",
+        "Migrating {} ({} local, {} cloud models) to schema {SCHEMA_VERSION} (decoupled server.json and catalog.json)",
         config.display(),
         local,
         remote
     );
-    for note in &migration.notes {
+    for note in &notes {
         println!("  - {note}");
     }
 
-    // Prove the result loads before touching anything on disk.
-    let output = serde_json::to_string_pretty(&migration.file)? + "\n";
-    let check = crate::config::interpolate_with(&output, &|_| Some("placeholder".to_string()))?;
-    crate::config::ModelRegistry::from_json(&check, None)
-        .and_then(|r| r.validate().map(|()| r))
+    let server_file = crate::schema::ServerFile {
+        schema_version: SCHEMA_VERSION,
+        server: registry_file.server,
+    };
+    let catalog_file = crate::schema::CatalogFile {
+        schema_version: SCHEMA_VERSION,
+        models: registry_file.models,
+    };
+
+    let server_output = serde_json::to_string_pretty(&server_file)? + "\n";
+    let catalog_output = serde_json::to_string_pretty(&catalog_file)? + "\n";
+
+    // Validate that the decoupled outputs load properly before touching anything on disk
+    let check_server =
+        crate::config::interpolate_with(&server_output, &|_| Some("placeholder".to_string()))?;
+    let check_catalog =
+        crate::config::interpolate_with(&catalog_output, &|_| Some("placeholder".to_string()))?;
+    let test_server: crate::schema::ServerFile = serde_json::from_str(&check_server)?;
+    let test_catalog: crate::schema::CatalogFile = serde_json::from_str(&check_catalog)?;
+    let models = test_catalog
+        .models
+        .into_iter()
+        .map(crate::config::ModelConfig::try_from)
+        .collect::<Result<Vec<_>>>()?;
+    let registry = crate::config::ModelRegistry {
+        schema_version: SCHEMA_VERSION,
+        server: test_server.server,
+        models,
+    };
+    registry
+        .validate()
         .context("The migrated config does not validate; the original was left untouched")?;
 
     if dry_run {
-        println!("Dry run: no files written.");
+        println!(
+            "Dry run: would write {} and {}",
+            server_path.display(),
+            catalog_path.display()
+        );
         return Ok(());
     }
-    let backup = backup_path(config);
+
+    let backup = backup_path(config, version);
     std::fs::copy(config, &backup)
         .with_context(|| format!("Cannot write backup {}", backup.display()))?;
-    std::fs::write(config, output).with_context(|| format!("Cannot write {}", config.display()))?;
-    println!("Done. Original saved as {}", backup.display());
+    std::fs::write(&server_path, server_output)
+        .with_context(|| format!("Cannot write {}", server_path.display()))?;
+    std::fs::write(&catalog_path, catalog_output)
+        .with_context(|| format!("Cannot write {}", catalog_path.display()))?;
+    let _ = std::fs::remove_file(config);
+
+    println!("Done. Server settings written to {}", server_path.display());
+    println!("Done. Model catalog written to {}", catalog_path.display());
+    println!("Original saved as {}", backup.display());
     Ok(())
 }
 
@@ -642,10 +707,15 @@ mod tests {
 
         run(&cfg, false).unwrap();
         assert!(dir.join("models.json.v1.bak").exists());
-        let upgraded = std::fs::read_to_string(&cfg).unwrap();
-        assert!(upgraded.contains("\"schema_version\": 2"));
+        let server_cfg = std::fs::read_to_string(dir.join("server.json")).unwrap();
+        let catalog_cfg = std::fs::read_to_string(dir.join("catalog.json")).unwrap();
+        assert!(server_cfg.contains("\"schema_version\": 3"));
+        assert!(catalog_cfg.contains("\"schema_version\": 3"));
         run(&cfg, false).unwrap(); // second run is a no-op
-        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), upgraded);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("server.json")).unwrap(),
+            server_cfg
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 }

@@ -106,11 +106,9 @@ fn router_chat_request_in_memory(bencher: divan::Bencher) {
     };
     catalog.models.push(sample_qwen_config());
 
-    let state = AppState {
-        inference: Arc::new(InferenceAppState::new(&catalog)),
-        proxy: Arc::new(ProxyService::new(&catalog)),
-        config: catalog,
-    };
+    let inference = Arc::new(InferenceAppState::new(&catalog));
+    let proxy = Arc::new(ProxyService::new(&catalog));
+    let state = AppState::new(inference, proxy, catalog);
     let app = create_router(state);
 
     bencher.bench_local(|| {

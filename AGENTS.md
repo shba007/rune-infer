@@ -172,15 +172,26 @@ hot-reload is **not implemented yet**.
 
 ## 4. Config
 
-`<home>/config/models.json` (home = `~/.rune-infer`, see §3) is **schema 2**.
-Adding a model is a config edit only — no source change: engines are chosen by
-the config, and every model uses the same standard keys.
+`<home>/config/` (home = `~/.rune-infer`, see §3) uses **schema 3**, decoupled
+into `server.json` (host, port, security limits) and `catalog.json` (model entries).
+Adding a model is a `catalog.json` edit only — no source change and no server
+restart needed (runtime hot-reload detects changes every 2s).
 
+`config/server.json`:
 ```json
 {
-  "schema_version": 2,
-  "server": { "host": "127.0.0.1", "port": 8080, "api_key": "{{RUNE_API_KEY}}",
-              "max_loaded_models": 1, "idle_unload_seconds": 300, "vram_budget_ratio": 0.95 },
+  "schema_version": 3,
+  "server": {
+    "host": "127.0.0.1", "port": 8080, "api_key": "{{RUNE_API_KEY}}",
+    "max_loaded_models": 1, "idle_unload_seconds": 300, "vram_budget_ratio": 0.95
+  }
+}
+```
+
+`config/catalog.json`:
+```json
+{
+  "schema_version": 3,
   "models": [
     {
       "id": "qwen3.8-27b",
@@ -252,12 +263,13 @@ the config, and every model uses the same standard keys.
   case-insensitive id or display name; unknown generic OpenAI-SDK default names
   (`text-embedding-3-small`, `whisper-1`, `tts-1`, …) fall back to the first
   model of that modality. Anything else is "model not found".
-- **Upgrading from schema 1:** `rune-infer migrate [--dry-run]` converts the
-  file, keeps a `models.json.v1.bak` backup, validates the result before
-  writing, and lists every engine it had to infer (marking the ones that were
-  matched on a model id) and every key it dropped. A v1 file is refused at
-  startup with a pointer to this command. The name-based inference lives only
-  in `migrate.rs`.
+- **Upgrading from schema 1 & 2:** `rune-infer migrate [--dry-run]` splits the
+  unified `models.json` into `config/server.json` and `config/catalog.json`, keeps
+  a `models.json.v2.bak` backup, and validates the result before writing. A
+  legacy configuration is refused at startup with a pointer to this command.
+- **Runtime Hot-Reload:** `server::serve_with_paths` polls filesystem metadata
+  every 2 seconds. When `catalog.json` or `server.json` is modified, the router
+  reloads without interrupting in-flight requests or restarting the process.
 
 Rules:
 - **Secrets never go inline.** Use `"api_key": "{{GEMINI_API_KEY}}"` style

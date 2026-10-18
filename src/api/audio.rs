@@ -49,6 +49,25 @@ async fn read_limited_field_bytes(
     Ok(bytes)
 }
 
+fn sanitize_filename(raw: &str) -> String {
+    let path = std::path::Path::new(raw);
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("audio.wav");
+
+    let sanitized: String = name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
+        .collect();
+
+    if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
+        "audio.wav".to_string()
+    } else {
+        sanitized
+    }
+}
+
 #[axum::debug_handler]
 pub async fn audio_transcriptions_handler(
     State(state): State<Arc<AppState>>,
@@ -69,7 +88,7 @@ pub async fn audio_transcriptions_handler(
         match name.as_str() {
             "file" => {
                 if let Some(fname) = field.file_name() {
-                    filename = fname.to_string();
+                    filename = sanitize_filename(fname);
                 }
                 match read_limited_field_bytes(&mut field, MAX_AUDIO_UPLOAD_BYTES).await {
                     Ok(bytes) => file_bytes = bytes,
@@ -142,7 +161,7 @@ pub async fn audio_transcriptions_handler(
     let target_model = match model_id {
         Some(ref m) if !m.is_empty() => m.clone(),
         _ => match state
-            .config
+            .config()
             .models
             .iter()
             .find(|m| m.modality == crate::config::Modality::SpeechToText)
@@ -238,7 +257,7 @@ pub async fn audio_transcriptions_handler(
             if diarize {
                 if let InferenceTaskResponse::Transcription(ref mut trans) = output.response {
                     let diar_model_id = state
-                        .config
+                        .config()
                         .models
                         .iter()
                         .find(|m| m.modality == crate::config::Modality::SpeechAnalysis)
@@ -381,7 +400,7 @@ pub async fn audio_translations_handler(
         match name.as_str() {
             "file" => {
                 if let Some(fname) = field.file_name() {
-                    filename = fname.to_string();
+                    filename = sanitize_filename(fname);
                 }
                 match read_limited_field_bytes(&mut field, MAX_AUDIO_UPLOAD_BYTES).await {
                     Ok(bytes) => file_bytes = bytes,
@@ -443,7 +462,7 @@ pub async fn audio_translations_handler(
     let target_model = match model_id {
         Some(ref m) if !m.is_empty() => m.clone(),
         _ => match state
-            .config
+            .config()
             .models
             .iter()
             .find(|m| m.modality == crate::config::Modality::SpeechToText)
@@ -602,7 +621,7 @@ pub async fn audio_speech_handler(
     let model_id = match &request.model {
         Some(m) if !m.is_empty() => m.clone(),
         _ => match state
-            .config
+            .config()
             .models
             .iter()
             .find(|m| m.modality == crate::config::Modality::TextToSpeech)
@@ -817,7 +836,7 @@ pub async fn speech_to_speech_handler(
 
     let target_model = match model_id {
         Some(ref m) if !m.is_empty() => m.clone(),
-        _ => match state.config.models.iter().find(|m| {
+        _ => match state.config().models.iter().find(|m| {
             m.modality == crate::config::Modality::SpeechToSpeech
                 || m.id.contains("seamless")
                 || m.id.contains("s2st")
@@ -1108,7 +1127,7 @@ pub async fn audio_diarization_handler(
         match name.as_str() {
             "file" => {
                 if let Some(fname) = field.file_name() {
-                    filename = fname.to_string();
+                    filename = sanitize_filename(fname);
                 }
                 match read_limited_field_bytes(&mut field, MAX_AUDIO_UPLOAD_BYTES).await {
                     Ok(bytes) => file_bytes = bytes,
@@ -1189,7 +1208,7 @@ pub async fn audio_diarization_handler(
     let target_model = match model_id {
         Some(ref m) if !m.is_empty() => m.clone(),
         _ => match state
-            .config
+            .config()
             .models
             .iter()
             .find(|m| m.modality == crate::config::Modality::SpeechAnalysis)
@@ -1267,9 +1286,8 @@ pub async fn audio_diarization_handler(
         Ok(mut output) => {
             if let InferenceTaskResponse::Diarization(ref mut diarization) = output.response {
                 let target_asr_model = asr_model.unwrap_or_else(|| {
-                    state
-                        .config
-                        .models
+                    let cfg = state.config();
+                    cfg.models
                         .iter()
                         .find(|m| {
                             m.modality == crate::config::Modality::SpeechToText
@@ -1277,9 +1295,7 @@ pub async fn audio_diarization_handler(
                                     || m.name.to_lowercase().contains("whisper"))
                         })
                         .or_else(|| {
-                            state
-                                .config
-                                .models
+                            cfg.models
                                 .iter()
                                 .find(|m| m.modality == crate::config::Modality::SpeechToText)
                         })

@@ -41,8 +41,11 @@ jobs:
       - name: ⚙️ Build Artifact
         run: cargo build
 
-      - name: 🧹 Lint Code
-        run: cargo clippy --all-targets || echo "Linting failed, but continuing"
+      - name: 🧪 Run Test Suite
+        run: cargo test --all-targets
+
+      - name: 🧹 Lint Code (Clippy)
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: 🧼 Format Code
         run: cargo fmt --all

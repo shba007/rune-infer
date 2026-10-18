@@ -31,7 +31,21 @@ use crate::config::{
     RuntimeConfig, SamplingConfig, ServerConfig,
 };
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServerFile {
+    pub schema_version: u32,
+    pub server: ServerConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogFile {
+    pub schema_version: u32,
+    pub models: Vec<ModelEntry>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

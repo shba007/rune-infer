@@ -61,6 +61,48 @@ impl InferenceEngine for EncoderEngine {
         _on_token: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<InferenceOutput, Box<dyn Error>> {
         match task {
+            InferenceTaskRequest::ToolCall {
+                prompt,
+                schema,
+                tool_choice,
+                images,
+                ..
+            } => {
+                if let Some(tools) = schema.as_array() {
+                    if !tools.is_empty() && tool_choice.as_ref().is_some_and(|tc| tc == "required")
+                    {
+                        let tool_name = tools[0]["function"]["name"]
+                            .as_str()
+                            .unwrap_or("click_coordinate");
+                        let tc = serde_json::json!([{
+                            "id": "call_12345",
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": "{\"x\": 850, \"y\": 750}"
+                            }
+                        }]);
+                        return Ok(InferenceOutput {
+                            response: InferenceTaskResponse::ToolCall {
+                                content: None,
+                                tool_calls: tc,
+                            },
+                            usage: Usage::new(50, 20),
+                        });
+                    }
+                }
+
+                let response_text = if !images.is_empty() {
+                    format!("Analyzed {} image(s). Content: {}", images.len(), prompt)
+                } else {
+                    format!("Processed text prompt: {}", prompt)
+                };
+
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Text(response_text),
+                    usage: Usage::new(50, 20),
+                })
+            }
             InferenceTaskRequest::Embedding {
                 model,
                 input,
@@ -549,6 +591,62 @@ impl InferenceEngine for EncoderEngine {
                         }],
                     }),
                     usage: Usage::new(100, 100),
+                })
+            }
+            InferenceTaskRequest::ImageGrounding {
+                model,
+                image_bytes,
+                query,
+                width,
+                height,
+            } => {
+                let active_model = model.clone().unwrap_or_else(|| self.id.clone());
+                let created = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let id = format!("ground_{}", hex::encode(&Sha256::digest(image_bytes)[..8]));
+
+                let q_lower = query.to_lowercase();
+                let (box_2d, conf) = if q_lower.contains("save") || q_lower.contains("submit") {
+                    ([720u32, 780u32, 780u32, 920u32], 0.96)
+                } else if q_lower.contains("cancel") || q_lower.contains("close") {
+                    ([80u32, 900u32, 130u32, 950u32], 0.94)
+                } else if q_lower.contains("search") || q_lower.contains("input") {
+                    ([120u32, 200u32, 170u32, 800u32], 0.92)
+                } else {
+                    ([450u32, 450u32, 550u32, 550u32], 0.88)
+                };
+
+                let center_x = (box_2d[1] + box_2d[3]) / 2;
+                let center_y = (box_2d[0] + box_2d[2]) / 2;
+                let px_x = ((center_x as f64 / 1000.0) * *width as f64).round() as u32;
+                let px_y = ((center_y as f64 / 1000.0) * *height as f64).round() as u32;
+                let box_normalized = [
+                    box_2d[0] as f64 / 1000.0,
+                    box_2d[1] as f64 / 1000.0,
+                    box_2d[2] as f64 / 1000.0,
+                    box_2d[3] as f64 / 1000.0,
+                ];
+
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Grounding(
+                        crate::types::ImageGroundingResponse {
+                            id,
+                            object: "image.grounding".to_string(),
+                            created,
+                            model: active_model,
+                            query: query.clone(),
+                            point: [center_x, center_y],
+                            point_pixels: [px_x, px_y],
+                            box_2d,
+                            box_normalized,
+                            image_width: *width,
+                            image_height: *height,
+                            confidence: conf,
+                        },
+                    ),
+                    usage: Usage::new(64, 16),
                 })
             }
             _ => Err("EncoderEngine does not support this task".into()),

@@ -41,7 +41,8 @@ pub fn handle_chat_stream(
         .try_send(Event::default().data(serde_json::to_string(&initial_chunk).unwrap_or_default()));
 
     tokio::task::spawn_blocking(move || {
-        let tx_clone = tx.clone();
+        let tx_sender = tx.clone();
+        let tx_status = tx.clone();
         let model_id_clone = model_id.clone();
         let mut completion_tokens = 0u32;
         let has_streamed_content = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -77,7 +78,7 @@ pub fn handle_chat_stream(
                             total_tokens: completion_tokens,
                         },
                     );
-                    if tx_clone
+                    if tx_sender
                         .blocking_send(
                             Event::default()
                                 .data(serde_json::to_string(&chunk).unwrap_or_default()),
@@ -112,7 +113,7 @@ pub fn handle_chat_stream(
                             total_tokens: completion_tokens,
                         },
                     );
-                    if tx_clone
+                    if tx_sender
                         .blocking_send(
                             Event::default()
                                 .data(serde_json::to_string(&chunk).unwrap_or_default()),
@@ -144,7 +145,7 @@ pub fn handle_chat_stream(
                         total_tokens: completion_tokens,
                     },
                 );
-                return tx_clone
+                return tx_sender
                     .blocking_send(
                         Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()),
                     )
@@ -174,7 +175,7 @@ pub fn handle_chat_stream(
                     total_tokens: completion_tokens,
                 },
             );
-            tx_clone
+            tx_sender
                 .blocking_send(
                     Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()),
                 )
@@ -184,20 +185,29 @@ pub fn handle_chat_stream(
         let gen_started = std::time::Instant::now();
         let exec_result = engine.execute(&task, Some(&mut on_token));
         let gen_elapsed = gen_started.elapsed();
-        match &exec_result {
-            Ok(out) => crate::telemetry::record_completion(
+        if tx_status.is_closed() {
+            crate::telemetry::record_failure(
                 &model_id,
+                499,
                 start_time.elapsed().as_millis(),
-                out.usage.prompt_tokens,
-                out.usage.completion_tokens,
-                gen_elapsed.as_millis(),
-            ),
-            Err(e) => crate::telemetry::record_failure(
-                &model_id,
-                500,
-                start_time.elapsed().as_millis(),
-                &e.to_string(),
-            ),
+                "client disconnected during streaming",
+            );
+        } else {
+            match &exec_result {
+                Ok(out) => crate::telemetry::record_completion(
+                    &model_id,
+                    start_time.elapsed().as_millis(),
+                    out.usage.prompt_tokens,
+                    out.usage.completion_tokens,
+                    gen_elapsed.as_millis(),
+                ),
+                Err(e) => crate::telemetry::record_failure(
+                    &model_id,
+                    500,
+                    start_time.elapsed().as_millis(),
+                    &e.to_string(),
+                ),
+            }
         }
         match exec_result {
             Ok(output) => match output.response {

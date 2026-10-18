@@ -1,4 +1,31 @@
 services:
+  rune-infer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rune-infer-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - RUNE_HOST=0.0.0.0
+      - RUNE_PORT=8080
+      - RUNE_API_KEY=${RUNE_API_KEY:-rune-dev-key}
+      - RUSTFS_ENDPOINT=http://rustfs:9000
+      - RUSTFS_ACCESS_KEY=rustfsadmin
+      - RUSTFS_SECRET_KEY=rustfsadmin
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+    depends_on:
+      - rustfs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/livez"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   rustfs:
     image: rustfs/rustfs:latest
     container_name: rune-infer-bucket-storage

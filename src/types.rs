@@ -445,7 +445,7 @@ impl ModelInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthResponse {
     pub status: String,
     pub service: String,
@@ -484,6 +484,56 @@ impl HealthResponse {
     pub fn with_loaded_models(mut self, models: Vec<String>) -> Self {
         self.loaded_models = Some(models);
         self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LivezResponse {
+    pub status: String,
+    pub service: String,
+    pub version: String,
+}
+
+impl Default for LivezResponse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LivezResponse {
+    pub fn new() -> Self {
+        Self {
+            status: "alive".to_string(),
+            service: "rune-infer".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadyzResponse {
+    pub status: String,
+    pub service: String,
+    pub version: String,
+    pub models_configured: usize,
+    pub models_loaded: Vec<String>,
+    pub models_loading: Vec<String>,
+}
+
+impl ReadyzResponse {
+    pub fn new(
+        models_configured: usize,
+        models_loaded: Vec<String>,
+        models_loading: Vec<String>,
+    ) -> Self {
+        Self {
+            status: "ready".to_string(),
+            service: "rune-infer".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            models_configured,
+            models_loaded,
+            models_loading,
+        }
     }
 }
 
@@ -1048,4 +1098,33 @@ pub struct ImageStyleTransferRequest {
 pub struct ImageStyleTransferResponse {
     pub created: u64,
     pub data: Vec<ImageData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageGroundingRequest {
+    #[serde(default)]
+    pub model: Option<String>,
+    pub image: Option<String>,
+    #[serde(alias = "target", alias = "prompt")]
+    pub query: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageGroundingResponse {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub query: String,
+    /// Click coordinates in normalized [0, 1000] scale: [x, y]
+    pub point: [u32; 2],
+    /// Click coordinates in actual image pixel space: [px_x, px_y]
+    pub point_pixels: [u32; 2],
+    /// Bounding box in normalized [0, 1000] scale: [ymin, xmin, ymax, xmax] (Qwen-VL format)
+    pub box_2d: [u32; 4],
+    /// Bounding box normalized between 0.0 and 1.0: [ymin, xmin, ymax, xmax]
+    pub box_normalized: [f64; 4],
+    pub image_width: u32,
+    pub image_height: u32,
+    pub confidence: f64,
 }

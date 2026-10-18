@@ -1,16 +1,14 @@
 $kind: http-request
-name: Create Embedding
-url: '{{base_url}}/v1/embeddings'
+url: "{{base_url}}/v1/embeddings"
 method: POST
 headers:
-  - key: Content-Type
-    value: application/json
+  Content-Type: application/json
 body:
   type: json
   content: |-
     {
       "model": "{{embedding_model}}",
-      "input": "Rune Infer high performance embeddings in Rust",
+      "input": "Rune Infer high performance system in Rust",
       "encoding_format": "float"
     }
 examples: .resources/Create Embedding.resources/examples

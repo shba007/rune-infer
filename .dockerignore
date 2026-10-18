@@ -1,0 +1,31 @@
+# Git & CI
+.git
+.gitignore
+.github
+
+# Build artifacts
+target
+Cargo.lock.bak
+
+# Secrets & Environment
+.env
+.env.*
+!.env.example
+
+# Logs and runtime data
+logs
+*.log
+bin/
+
+# Models and heavy weights
+*.gguf
+*.safetensors
+*.bin
+*.onnx
+models/
+
+# Documentation & temporary files
+*.md
+!README.md
+postman/
+tmp/

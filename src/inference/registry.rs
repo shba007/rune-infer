@@ -92,6 +92,10 @@ impl ModelRegistry {
         self.loading.keys().cloned().collect()
     }
 
+    pub fn reload_catalog(&mut self, new_config: ConfigRegistry) {
+        self.config = new_config;
+    }
+
     /// Check if a model is already loaded and ready in memory.
     pub fn get_loaded(&mut self, id: &str) -> Option<Arc<dyn InferenceEngine>> {
         if let Some(engine) = self.engines.get(id).cloned() {
@@ -539,7 +543,14 @@ impl ModelRegistry {
         let gpu_layers = model.runtime.as_ref().map(|r| r.gpu_layers);
         let mtp_path = model.mtp_path.as_deref().map(std::path::Path::new);
         let mtp_heads = model.mtp_heads();
-        let extra_args = model.runtime.as_ref().and_then(|r| r.extra_args.clone());
+        let mut extra_args = model.runtime.as_ref().and_then(|r| r.extra_args.clone());
+        if model.modality == crate::config::Modality::Embedding {
+            let mut args = extra_args.unwrap_or_default();
+            if !args.contains("--embedding") && !args.contains("-embd") {
+                args = format!("--embedding {args}").trim().to_string();
+            }
+            extra_args = Some(args);
+        }
 
         let engine: Arc<dyn InferenceEngine> = match kind {
             EngineKind::Needle => {

@@ -253,16 +253,10 @@ impl CrispAsrEngine {
             });
 
             if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push((
-                    target["name"].as_str().unwrap().to_string(),
-                    target["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(target)?);
                 if target == cuda_asset.unwrap_or(target) {
                     if let Some(cda) = cudart_asset {
-                        download_urls.push((
-                            cda["name"].as_str().unwrap().to_string(),
-                            cda["browser_download_url"].as_str().unwrap().to_string(),
-                        ));
+                        download_urls.push(download::extract_release_asset_info(cda)?);
                     }
                 }
             }
@@ -271,10 +265,7 @@ impl CrispAsrEngine {
                 let n = a["name"].as_str().unwrap_or("").to_lowercase();
                 n.contains("macos") || n.contains("darwin")
             }) {
-                download_urls.push((
-                    asset["name"].as_str().unwrap().to_string(),
-                    asset["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(asset)?);
             }
         } else {
             let cuda_asset = if let Some(ref ver) = host_cuda {
@@ -303,10 +294,7 @@ impl CrispAsrEngine {
             });
 
             if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push((
-                    target["name"].as_str().unwrap().to_string(),
-                    target["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(target)?);
             }
         }
 

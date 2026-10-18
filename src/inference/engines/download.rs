@@ -297,3 +297,17 @@ pub fn extract_cuda_version(filename: &str) -> Option<(u32, u32)> {
     }
     None
 }
+
+pub fn extract_release_asset_info(
+    val: &serde_json::Value,
+) -> Result<(String, String), Box<dyn Error>> {
+    let name = val["name"]
+        .as_str()
+        .ok_or("GitHub release asset is missing 'name' field")?
+        .to_string();
+    let url = val["browser_download_url"]
+        .as_str()
+        .ok_or("GitHub release asset is missing 'browser_download_url' field")?
+        .to_string();
+    Ok((name, url))
+}

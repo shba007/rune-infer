@@ -109,6 +109,7 @@ pub fn prepare_prompt(
         has_tools,
         &tools_value,
         has_video,
+        request.tool_choice.as_ref(),
     );
 
     let max_dims = model_config.max_dimensions();
@@ -299,6 +300,7 @@ pub fn prepare_prompt(
         task: InferenceTaskRequest::ToolCall {
             prompt,
             schema: task_schema,
+            tool_choice: request.tool_choice.clone(),
             images,
             messages: augmented_messages,
             max_tokens: sampling.max_tokens,

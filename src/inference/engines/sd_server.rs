@@ -259,14 +259,8 @@ impl SdServerEngine {
                         "[SdServerEngine] Selected Windows CUDA 12 build with cudart dependencies"
                     );
                 }
-                download_urls.push((
-                    ca["name"].as_str().unwrap().to_string(),
-                    ca["browser_download_url"].as_str().unwrap().to_string(),
-                ));
-                download_urls.push((
-                    cda["name"].as_str().unwrap().to_string(),
-                    cda["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(ca)?);
+                download_urls.push(download::extract_release_asset_info(cda)?);
             } else {
                 let fallback = assets
                     .iter()
@@ -275,13 +269,7 @@ impl SdServerEngine {
                         n.contains("bin-win-vulkan") || n.contains("bin-win-cpu")
                     })
                     .ok_or("No matching Windows binary asset found")?;
-                download_urls.push((
-                    fallback["name"].as_str().unwrap().to_string(),
-                    fallback["browser_download_url"]
-                        .as_str()
-                        .unwrap()
-                        .to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(fallback)?);
             }
         } else if cfg!(target_os = "macos") {
             let asset = assets
@@ -291,10 +279,7 @@ impl SdServerEngine {
                     n.contains("bin-darwin-macos") || n.contains("bin-macos")
                 })
                 .ok_or("No matching macOS asset found")?;
-            download_urls.push((
-                asset["name"].as_str().unwrap().to_string(),
-                asset["browser_download_url"].as_str().unwrap().to_string(),
-            ));
+            download_urls.push(download::extract_release_asset_info(asset)?);
         } else {
             let asset = assets
                 .iter()
@@ -303,10 +288,7 @@ impl SdServerEngine {
                     n.contains("bin-linux-ubuntu") && (n.contains("vulkan") || !n.contains("rocm"))
                 })
                 .ok_or("No matching Linux asset found")?;
-            download_urls.push((
-                asset["name"].as_str().unwrap().to_string(),
-                asset["browser_download_url"].as_str().unwrap().to_string(),
-            ));
+            download_urls.push(download::extract_release_asset_info(asset)?);
         }
 
         for (archive_name, download_url) in download_urls {

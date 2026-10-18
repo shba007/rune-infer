@@ -8,7 +8,8 @@ use crate::api::AppState;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
 use crate::media::decode_media;
 use crate::types::{
-    ApiError, DetectObjectsRequest, ErrorResponse, ImageEmbeddingsRequest, RecognizeObjectsRequest,
+    ApiError, DetectObjectsRequest, ErrorResponse, ImageEmbeddingsRequest, ImageGroundingRequest,
+    RecognizeObjectsRequest,
 };
 
 #[axum::debug_handler]
@@ -197,5 +198,142 @@ pub async fn recognize_objects_handler(
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
         _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[axum::debug_handler]
+pub async fn image_grounding_handler(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ImageGroundingRequest>,
+) -> Response {
+    if request.query.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new(
+                    "'query' (or 'target') is a required non-empty string parameter specifying what UI element or object to locate.",
+                )
+                .with_type("invalid_request_error")
+                .with_param("query")
+                .with_code("missing_query"),
+            }),
+        )
+            .into_response();
+    }
+
+    let image_uri = match request.image {
+        Some(ref img) if !img.trim().is_empty() => img.trim().to_string(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new(
+                        "'image' is a required string field containing an image URL or base64 data URI.",
+                    )
+                    .with_type("invalid_request_error")
+                    .with_param("image")
+                    .with_code("missing_required_image"),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let model_id = match request.model {
+        Some(ref m) if !m.trim().is_empty() => m.trim().to_string(),
+        _ => match state.config().models.iter().find(|m| m.is_vision()) {
+            Some(m) => m.id.clone(),
+            None => "qwen3.8-27b".to_string(),
+        },
+    };
+
+    let uri_for_decode = image_uri.clone();
+    let decoded_frames = match tokio::task::spawn_blocking(move || {
+        decode_media(&uri_for_decode, (4096, 4096))
+    })
+    .await
+    {
+        Ok(Ok(frames)) if !frames.is_empty() => frames,
+        Ok(Err(err_resp)) => return (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: ApiError::new("Failed to decode provided image for visual grounding.")
+                        .with_type("invalid_request_error"),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let (image_bytes, w, h) = decoded_frames.into_iter().next().unwrap();
+    let task = InferenceTaskRequest::ImageGrounding {
+        model: Some(model_id.clone()),
+        image_bytes,
+        query: request.query,
+        width: w,
+        height: h,
+    };
+
+    let inference = state.inference.clone();
+    let target_model = model_id.clone();
+    let engine =
+        match tokio::task::spawn_blocking(move || inference.get_engine(&target_model)).await {
+            Ok(Ok(e)) => e,
+            Ok(Err(err)) => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: ApiError::new(format!(
+                            "Vision model '{}' failed to load: {err}",
+                            model_id
+                        ))
+                        .with_type("invalid_request_error")
+                        .with_code("model_not_found"),
+                    }),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(format!("Thread execution error: {e}")),
+                    }),
+                )
+                    .into_response();
+            }
+        };
+
+    let res =
+        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
+            .await;
+
+    match res {
+        Ok(Ok(output)) => match output.response {
+            InferenceTaskResponse::Grounding(grounding) => Json(grounding).into_response(),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new("Unexpected response type from vision grounding engine"),
+                }),
+            )
+                .into_response(),
+        },
+        Ok(Err(err)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: ApiError::new(err).with_type("server_error"),
+            }),
+        )
+            .into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: ApiError::new(err.to_string()),
+            }),
+        )
+            .into_response(),
     }
 }

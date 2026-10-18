@@ -14,7 +14,9 @@
 use std::path::{Path, PathBuf};
 
 pub const HOME_ENV: &str = "RUNE_HOME";
-pub const DEFAULT_CONFIG_REL: &str = "config/models.json";
+pub const DEFAULT_SERVER_REL: &str = "config/server.json";
+pub const DEFAULT_CATALOG_REL: &str = "config/catalog.json";
+pub const LEGACY_CONFIG_REL: &str = "config/models.json";
 
 /// `$RUNE_HOME`, else `~/.rune-infer`.
 pub fn rune_home() -> PathBuf {
@@ -38,45 +40,99 @@ fn user_home() -> PathBuf {
 pub struct Workspace {
     /// Directory the process runs in (config/, bin/, logs/ and .env live here).
     pub root: PathBuf,
-    /// Absolute path of the config file (may not exist yet).
-    pub config_path: PathBuf,
+    /// Absolute path of server.json (schema 3).
+    pub server_path: PathBuf,
+    /// Absolute path of catalog.json (schema 3).
+    pub catalog_path: PathBuf,
+    /// Absolute path of legacy models.json (schema 1 & 2).
+    pub legacy_config_path: PathBuf,
 }
 
 impl Workspace {
     /// Pick the workspace.
     ///
-    /// * `--config <path>` given: honoured as-is; the root is the config's
-    ///   grandparent when it is named `config/<file>`, otherwise its parent.
+    /// * `--config <path>` given: honoured as-is; root is inferred.
     /// * `RUNE_HOME` set: that folder.
-    /// * `./config/models.json` exists in the current directory: dev checkout.
+    /// * `./config/server.json` or `./config/models.json` exists in current dir: dev checkout.
     /// * otherwise `~/.rune-infer`.
     pub fn resolve(explicit_config: Option<&str>) -> std::io::Result<Self> {
         let cwd = std::env::current_dir()?;
 
         if let Some(raw) = explicit_config {
-            let config_path = absolutize(&cwd, Path::new(raw));
-            let parent = config_path.parent().unwrap_or(&cwd).to_path_buf();
+            let path = absolutize(&cwd, Path::new(raw));
+            if path.is_dir() {
+                let root = if path.file_name().is_some_and(|n| n == "config") {
+                    path.parent().unwrap_or(&path).to_path_buf()
+                } else {
+                    path.clone()
+                };
+                let cfg_dir = if path.file_name().is_some_and(|n| n == "config") {
+                    path
+                } else {
+                    root.join("config")
+                };
+                return Ok(Self {
+                    server_path: cfg_dir.join("server.json"),
+                    catalog_path: cfg_dir.join("catalog.json"),
+                    legacy_config_path: cfg_dir.join("models.json"),
+                    root,
+                });
+            }
+
+            let parent = path.parent().unwrap_or(&cwd).to_path_buf();
             let root = if parent.file_name().is_some_and(|n| n == "config") {
                 parent.parent().unwrap_or(&parent).to_path_buf()
             } else {
-                parent
+                parent.clone()
             };
-            return Ok(Self { root, config_path });
+
+            let (server_path, catalog_path, legacy_config_path) =
+                match path.file_name().and_then(|n| n.to_str()) {
+                    Some("server.json") => (
+                        path.clone(),
+                        parent.join("catalog.json"),
+                        parent.join("models.json"),
+                    ),
+                    Some("catalog.json") => (
+                        parent.join("server.json"),
+                        path.clone(),
+                        parent.join("models.json"),
+                    ),
+                    _ => (
+                        parent.join("server.json"),
+                        parent.join("catalog.json"),
+                        path.clone(),
+                    ),
+                };
+
+            return Ok(Self {
+                root,
+                server_path,
+                catalog_path,
+                legacy_config_path,
+            });
         }
 
         // An explicit RUNE_HOME always wins over implicit ./config detection.
         let home_forced = std::env::var_os(HOME_ENV).is_some_and(|v| !v.is_empty());
-        let local = cwd.join(DEFAULT_CONFIG_REL);
-        if !home_forced && local.exists() {
+        let local_server = cwd.join(DEFAULT_SERVER_REL);
+        let local_catalog = cwd.join(DEFAULT_CATALOG_REL);
+        let local_legacy = cwd.join(LEGACY_CONFIG_REL);
+
+        if !home_forced && (local_server.exists() || local_legacy.exists()) {
             return Ok(Self {
                 root: cwd,
-                config_path: local,
+                server_path: local_server,
+                catalog_path: local_catalog,
+                legacy_config_path: local_legacy,
             });
         }
 
         let root = rune_home();
         Ok(Self {
-            config_path: root.join("config").join("models.json"),
+            server_path: root.join("config").join("server.json"),
+            catalog_path: root.join("config").join("catalog.json"),
+            legacy_config_path: root.join("config").join("models.json"),
             root,
         })
     }
@@ -93,7 +149,11 @@ impl Workspace {
     }
 
     pub fn config_exists(&self) -> bool {
-        self.config_path.exists()
+        self.server_path.exists() && self.catalog_path.exists()
+    }
+
+    pub fn legacy_config_exists(&self) -> bool {
+        self.legacy_config_path.exists()
     }
 }
 

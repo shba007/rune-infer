@@ -568,7 +568,12 @@ impl<'a> Wizard<'a> {
                 }
             }
             KeyCode::Enter => {
-                match setup::write_setup(&self.plan(), &self.ws.config_path, &self.ws.env_file()) {
+                match setup::write_setup(
+                    &self.plan(),
+                    &self.ws.server_path,
+                    &self.ws.catalog_path,
+                    &self.ws.env_file(),
+                ) {
                     Ok(_) => return Flow::Finish,
                     Err(e) => self.review_error = Some(format!("{e:#}")),
                 }
@@ -1194,7 +1199,11 @@ impl<'a> Wizard<'a> {
         }
         lines.push(Line::from(""));
         lines.push(Line::styled(
-            format!("  Config: {}", self.ws.config_path.display()),
+            format!("  Catalog: {}", self.ws.catalog_path.display()),
+            Style::new().fg(DIM),
+        ));
+        lines.push(Line::styled(
+            format!("  Server:  {}", self.ws.server_path.display()),
             Style::new().fg(DIM),
         ));
         lines.push(Line::styled(
@@ -1277,7 +1286,9 @@ mod tests {
         let root = std::env::temp_dir().join(format!("rune-wiz-{}", setup::generate_api_key()));
         std::fs::create_dir_all(&root).unwrap();
         Workspace {
-            config_path: root.join("config").join("models.json"),
+            server_path: root.join("config").join("server.json"),
+            catalog_path: root.join("config").join("catalog.json"),
+            legacy_config_path: root.join("config").join("models.json"),
             root,
         }
     }
@@ -1409,8 +1420,12 @@ mod tests {
                 .filter_map(|l| l.split_once('='))
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
-            let reg =
-                crate::config::ModelRegistry::from_file_with_env(&ws.config_path, &pairs).unwrap();
+            let reg = crate::config::ModelRegistry::from_files_with_env(
+                &ws.server_path,
+                &ws.catalog_path,
+                &pairs,
+            )
+            .unwrap();
             Self(reg.models.len())
         }
     }

@@ -31,7 +31,7 @@ pub async fn nlu_intents_handler(
 
     let model_id = match request.model {
         Some(ref m) if !m.trim().is_empty() => m.trim().to_string(),
-        _ => match state.config.models.iter().find(|m| {
+        _ => match state.config().models.iter().find(|m| {
             m.modality == crate::config::Modality::Nlu
                 || m.id.contains("nlu")
                 || m.id.contains("intent")

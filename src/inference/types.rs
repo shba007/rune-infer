@@ -1,9 +1,9 @@
 use crate::types::{
     AudioDiarizationResponse, AudioTranscriptionResponse, AudioTranslationResponse, ChatMessage,
     DetectObjectsResponse, DocumentOcrResponse, EmbeddingResponse, ImageCaptionResponse,
-    ImageEmbeddingsResponse, ImageGenerationResponse, ImageRestorationResponse,
-    ImageStyleTransferResponse, ImageUpscaleResponse, ModerationResponse, NluIntentResponse,
-    RecognizeObjectsResponse, RecognizeTarget, RegionCrop, Usage,
+    ImageEmbeddingsResponse, ImageGenerationResponse, ImageGroundingResponse,
+    ImageRestorationResponse, ImageStyleTransferResponse, ImageUpscaleResponse, ModerationResponse,
+    NluIntentResponse, RecognizeObjectsResponse, RecognizeTarget, RegionCrop, Usage,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,8 @@ pub enum InferenceTaskRequest {
     ToolCall {
         prompt: String,
         schema: serde_json::Value,
+        #[serde(default)]
+        tool_choice: Option<serde_json::Value>,
         #[serde(default)]
         images: Vec<Vec<u8>>,
         #[serde(default)]
@@ -143,6 +145,13 @@ pub enum InferenceTaskRequest {
         strength: f32,
         response_format: Option<String>,
     },
+    ImageGrounding {
+        model: Option<String>,
+        image_bytes: Vec<u8>,
+        query: String,
+        width: u32,
+        height: u32,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,6 +178,7 @@ pub enum InferenceTaskResponse {
     Upscale(ImageUpscaleResponse),
     Restoration(ImageRestorationResponse),
     StyleTransfer(ImageStyleTransferResponse),
+    Grounding(ImageGroundingResponse),
     Error(String),
 }
 

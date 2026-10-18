@@ -217,20 +217,22 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
                 if is_cuda_bin {
                     if let Some(parsed_ver) = download::extract_cuda_version(name) {
                         if parsed_ver.0 == host.0 {
-                            selected_cuda_asset =
-                                Some((name, asset["browser_download_url"].as_str().unwrap()));
-                            if let Some(cda) = assets.iter().find(|a| {
-                                let cn = a["name"].as_str().unwrap_or("");
-                                cn.contains("cudart")
-                                    && download::extract_cuda_version(cn) == Some(parsed_ver)
-                            }) {
-                                selected_cudart_asset = Some((
-                                    cda["name"].as_str().unwrap(),
-                                    cda["browser_download_url"].as_str().unwrap(),
-                                ));
-                            }
-                            if parsed_ver == host {
-                                break;
+                            if let Some(url) = asset["browser_download_url"].as_str() {
+                                selected_cuda_asset = Some((name, url));
+                                if let Some(cda) = assets.iter().find(|a| {
+                                    let cn = a["name"].as_str().unwrap_or("");
+                                    cn.contains("cudart")
+                                        && download::extract_cuda_version(cn) == Some(parsed_ver)
+                                }) {
+                                    if let (Some(cn), Some(cu)) =
+                                        (cda["name"].as_str(), cda["browser_download_url"].as_str())
+                                    {
+                                        selected_cudart_asset = Some((cn, cu));
+                                    }
+                                }
+                                if parsed_ver == host {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -252,13 +254,9 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
                         || n.contains("bin-win-x64"))
             });
             if let Some(fallback) = fallback_asset {
-                download_urls.push((
-                    fallback["name"].as_str().unwrap().to_string(),
-                    fallback["browser_download_url"]
-                        .as_str()
-                        .unwrap()
-                        .to_string(),
-                ));
+                if let Ok(info) = download::extract_release_asset_info(fallback) {
+                    download_urls.push(info);
+                }
             }
         }
     } else if cfg!(target_os = "macos") {
@@ -273,20 +271,18 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
                 .unwrap_or("")
                 .contains(&format!("bin-macos-{arch}"))
         }) {
-            download_urls.push((
-                asset["name"].as_str().unwrap().to_string(),
-                asset["browser_download_url"].as_str().unwrap().to_string(),
-            ));
+            if let Ok(info) = download::extract_release_asset_info(asset) {
+                download_urls.push(info);
+            }
         }
     } else {
         if let Some(asset) = assets.iter().find(|a| {
             let n = a["name"].as_str().unwrap_or("");
             download::matches_arch(n) && (n.contains("bin-linux") || n.contains("bin-ubuntu"))
         }) {
-            download_urls.push((
-                asset["name"].as_str().unwrap().to_string(),
-                asset["browser_download_url"].as_str().unwrap().to_string(),
-            ));
+            if let Ok(info) = download::extract_release_asset_info(asset) {
+                download_urls.push(info);
+            }
         }
     }
 

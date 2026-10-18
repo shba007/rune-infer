@@ -139,20 +139,14 @@ impl AudioEngine {
             });
 
             if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push((
-                    target["name"].as_str().unwrap().to_string(),
-                    target["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(target)?);
             }
         } else if cfg!(target_os = "macos") {
             if let Some(asset) = assets.iter().find(|a| {
                 let n = a["name"].as_str().unwrap_or("").to_lowercase();
                 n.contains("macos") || n.contains("darwin")
             }) {
-                download_urls.push((
-                    asset["name"].as_str().unwrap().to_string(),
-                    asset["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(asset)?);
             }
         } else {
             let cuda_asset = if host_cuda.is_some() {
@@ -170,10 +164,7 @@ impl AudioEngine {
             });
 
             if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push((
-                    target["name"].as_str().unwrap().to_string(),
-                    target["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(target)?);
             }
         }
 
@@ -277,32 +268,34 @@ impl AudioEngine {
                 pos += 8 + chunk_size;
             }
 
+            let safe_filename = std::path::Path::new(filename)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("audio.wav");
+
             if is_16k_mono_pcm {
-                let direct_wav = temp_dir.join(format!("direct_{}_{}", req_id, filename));
+                let direct_wav = temp_dir.join(format!("direct_{}_{}", req_id, safe_filename));
                 std::fs::write(&direct_wav, audio_bytes)?;
                 return Ok(direct_wav);
             }
         }
 
         // For MP3, AAC, OGG, or non-PCM audio, convert to 16 kHz 16-bit mono PCM WAV
-        let raw_input = temp_dir.join(format!("input_{}_{}", req_id, filename));
+        let safe_filename = std::path::Path::new(filename)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("audio.wav");
+        let raw_input = temp_dir.join(format!("input_{}_{}", req_id, safe_filename));
         std::fs::write(&raw_input, audio_bytes)?;
 
         let out_wav = temp_dir.join(format!("converted_16k_{}.wav", req_id));
 
         let ffmpeg_status = Command::new("ffmpeg")
-            .args([
-                "-y",
-                "-i",
-                raw_input.to_str().unwrap(),
-                "-ar",
-                "16000",
-                "-ac",
-                "1",
-                "-c:a",
-                "pcm_s16le",
-                out_wav.to_str().unwrap(),
-            ])
+            .arg("-y")
+            .arg("-i")
+            .arg(&raw_input)
+            .args(["-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le"])
+            .arg(&out_wav)
             .output();
 
         let _ = std::fs::remove_file(&raw_input);

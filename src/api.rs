@@ -20,13 +20,43 @@ use std::sync::Arc;
 use crate::config::ModelRegistry;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
 use crate::proxy::ProxyService;
-use crate::types::{ApiError, ErrorResponse, HealthResponse, ModelInfo, ModelsResponse};
+use crate::types::{
+    ApiError, ErrorResponse, HealthResponse, LivezResponse, ModelInfo, ModelsResponse,
+    ReadyzResponse,
+};
 
 #[derive(Clone)]
 pub struct AppState {
     pub inference: Arc<crate::inference::AppState>,
     pub proxy: Arc<ProxyService>,
-    pub config: ModelRegistry,
+    pub config: Arc<std::sync::RwLock<ModelRegistry>>,
+}
+
+impl AppState {
+    pub fn new(
+        inference: Arc<crate::inference::AppState>,
+        proxy: Arc<ProxyService>,
+        config: ModelRegistry,
+    ) -> Self {
+        Self {
+            inference,
+            proxy,
+            config: Arc::new(std::sync::RwLock::new(config)),
+        }
+    }
+
+    pub fn config(&self) -> std::sync::RwLockReadGuard<'_, ModelRegistry> {
+        self.config.read().unwrap_or_else(|p| p.into_inner())
+    }
+
+    pub fn reload_catalog(&self, new_config: ModelRegistry) {
+        if let Ok(mut reg) = self.inference.registry.lock() {
+            reg.reload_catalog(new_config.clone());
+        }
+        if let Ok(mut cfg) = self.config.write() {
+            *cfg = new_config;
+        }
+    }
 }
 
 pub fn create_router(state: AppState) -> Router {
@@ -56,6 +86,7 @@ pub fn create_router(state: AppState) -> Router {
             "/images/style-transfers",
             post(images::image_style_transfer_handler),
         )
+        .route("/images/grounding", post(images::image_grounding_handler))
         // Audio
         .route(
             "/audio/transcriptions",
@@ -96,6 +127,8 @@ pub fn create_router(state: AppState) -> Router {
         // )
         // .route("/messages", post(anthropic::anthropic_messages_handler))
         .route("/health", get(health_handler))
+        .route("/livez", get(livez_handler))
+        .route("/readyz", get(readyz_handler))
         .layer(DefaultBodyLimit::max(128 * 1024 * 1024))
         .with_state(shared_state)
 }
@@ -113,7 +146,7 @@ fn constant_time_eq(provided: &str, expected: &str) -> bool {
 
 async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
     let configured_key = state
-        .config
+        .config()
         .server
         .api_key
         .clone()
@@ -160,25 +193,58 @@ async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request, next:
 
 #[axum::debug_handler]
 async fn health_handler(State(state): State<Arc<AppState>>) -> Response {
-    let is_healthy = match state.inference.registry.try_lock() {
-        Ok(_) => true,
-        Err(std::sync::TryLockError::WouldBlock) => true,
-        Err(std::sync::TryLockError::Poisoned(_)) => false,
-    };
-    if is_healthy {
-        Json(HealthResponse::new()).into_response()
-    } else {
-        (
+    match state.inference.registry.try_lock() {
+        Ok(reg) => {
+            let loaded = reg.loaded_models();
+            let mut res = HealthResponse::new();
+            if !loaded.is_empty() {
+                res = res.with_loaded_models(loaded);
+            }
+            Json(res).into_response()
+        }
+        Err(std::sync::TryLockError::WouldBlock) => {
+            // Registry is active servicing or loading a model, but not poisoned
+            Json(HealthResponse::new()).into_response()
+        }
+        Err(std::sync::TryLockError::Poisoned(_)) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ErrorResponse {
-                error: ApiError::new(
-                    "Model execution runtime is currently unready or out of memory.",
-                )
-                .with_type("server_error")
-                .with_code("runtime_unhealthy"),
+                error: ApiError::new("Model execution runtime is currently unready or poisoned.")
+                    .with_type("server_error")
+                    .with_code("runtime_unhealthy"),
             }),
         )
-            .into_response()
+            .into_response(),
+    }
+}
+
+#[axum::debug_handler]
+async fn livez_handler() -> Response {
+    Json(LivezResponse::new()).into_response()
+}
+
+#[axum::debug_handler]
+async fn readyz_handler(State(state): State<Arc<AppState>>) -> Response {
+    match state.inference.registry.try_lock() {
+        Ok(reg) => {
+            let configured = reg.config.models.len();
+            let loaded = reg.loaded_models();
+            let loading = reg.loading_models();
+            Json(ReadyzResponse::new(configured, loaded, loading)).into_response()
+        }
+        Err(std::sync::TryLockError::WouldBlock) => {
+            let configured = state.config().models.len();
+            Json(ReadyzResponse::new(configured, Vec::new(), Vec::new())).into_response()
+        }
+        Err(std::sync::TryLockError::Poisoned(_)) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: ApiError::new("Model execution runtime registry is poisoned.")
+                    .with_type("server_error")
+                    .with_code("runtime_poisoned"),
+            }),
+        )
+            .into_response(),
     }
 }
 
@@ -186,7 +252,7 @@ async fn health_handler(State(state): State<Arc<AppState>>) -> Response {
 async fn models_handler(State(state): State<Arc<AppState>>) -> Response {
     let mut mtp_models = Vec::new();
     let data = state
-        .config
+        .config()
         .models
         .iter()
         .map(|m| {
@@ -226,7 +292,7 @@ async fn retrieve_model_handler(
     State(state): State<Arc<AppState>>,
     Path(model_id): Path<String>,
 ) -> Response {
-    if let Some(m) = state.config.find(&model_id) {
+    if let Some(m) = state.config().find(&model_id) {
         let heads = m.mtp_heads();
         let model_info = ModelInfo::new(&m.id)
             .with_mtp_heads(heads)

@@ -1,14 +1,35 @@
 {
-  "schema_version": 2,
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8081,
-    "api_key": null,
-    "max_loaded_models": 1,
-    "idle_unload_seconds": 300,
-    "vram_budget_ratio": 0.95
-  },
+  "schema_version": 3,
   "models": [
+    {
+      "id": "google/embeddinggemma-2",
+      "name": "Google EmbeddingGemma 2",
+      "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
+      "modality": "Embedding",
+      "capabilities": [
+        "Text Embeddings",
+        "Semantic Search",
+        "Code Retrieval",
+        "Matryoshka Representations"
+      ],
+      "engine": {
+        "supported": [
+          "llama-server"
+        ],
+        "preferred": "llama-server"
+      },
+      "max_context_length": 8192,
+      "sampling": {},
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--google--embeddinggemma-2/snapshots/main/embeddinggemma-2.gguf",
+        "params": 740000000,
+        "bits_per_weight": 8.0,
+        "context_length": 8192,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "extra": {}
+    },
     {
       "id": "granite-embedding-311m-multilingual-r2",
       "name": "Granite Embedding 311M Multilingual R2",

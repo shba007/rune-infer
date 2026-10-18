@@ -429,6 +429,24 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
         }
         return Classified::Model(d);
     }
+    if arch == "embeddinggemma"
+        || arch == "embedding_gemma"
+        || (arch.starts_with("gemma")
+            && (lower_name.contains("embedding")
+                || info
+                    .name
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains("embedding")))
+    {
+        return Classified::Model(det(
+            Modality::Embedding,
+            vec![EngineKind::LlamaServer],
+            "embedding",
+            vec!["Embedding"],
+        ));
+    }
     if EMBEDDING_ARCHS.contains(&arch.as_str()) || info.has_pooling {
         return Classified::Skip(
             "embedding model in GGUF form — use a safetensors embedding model with the encoder engine"

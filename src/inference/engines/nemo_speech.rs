@@ -274,20 +274,14 @@ impl NemoSpeechEngine {
             });
 
             if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push((
-                    target["name"].as_str().unwrap().to_string(),
-                    target["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(target)?);
             }
         } else if cfg!(target_os = "macos") {
             if let Some(asset) = assets.iter().find(|a| {
                 let n = a["name"].as_str().unwrap_or("").to_lowercase();
                 n.contains("macos") || n.contains("darwin")
             }) {
-                download_urls.push((
-                    asset["name"].as_str().unwrap().to_string(),
-                    asset["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(asset)?);
             }
         } else {
             let cuda_asset = if host_cuda.is_some() {
@@ -305,10 +299,7 @@ impl NemoSpeechEngine {
             });
 
             if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push((
-                    target["name"].as_str().unwrap().to_string(),
-                    target["browser_download_url"].as_str().unwrap().to_string(),
-                ));
+                download_urls.push(download::extract_release_asset_info(target)?);
             }
         }
 

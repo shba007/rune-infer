@@ -138,7 +138,7 @@ pub async fn chat_completions_handler(
             .into_response();
     }
 
-    let model_config = match state.config.find(&request.model) {
+    let model_config = match state.config().find(&request.model) {
         Some(c) => c.clone(),
         None => {
             return (
@@ -230,29 +230,53 @@ pub async fn chat_completions_handler(
         );
     }
 
+    let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancel_flag_clone = cancel_flag.clone();
+
+    struct CancelOnDrop(Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for CancelOnDrop {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    let _cancel_guard = CancelOnDrop(cancel_flag.clone());
+
     let task_clone = prepared.task.clone();
     let model_for_stats = model_config.id.clone();
     let result = tokio::task::spawn_blocking(move || {
         let gen_started = std::time::Instant::now();
-        let res = engine.execute(&task_clone, None).map_err(|e| e.to_string());
+        let mut on_token =
+            |_: &str| -> bool { !cancel_flag_clone.load(std::sync::atomic::Ordering::Relaxed) };
+        let res = engine
+            .execute(&task_clone, Some(&mut on_token))
+            .map_err(|e| e.to_string());
         (res, gen_started.elapsed())
     })
     .await
     .map(|(res, gen_elapsed)| {
-        match &res {
-            Ok(out) => crate::telemetry::record_completion(
+        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            crate::telemetry::record_failure(
                 &model_for_stats,
+                499,
                 start_time.elapsed().as_millis(),
-                out.usage.prompt_tokens,
-                out.usage.completion_tokens,
-                gen_elapsed.as_millis(),
-            ),
-            Err(e) => crate::telemetry::record_failure(
-                &model_for_stats,
-                500,
-                start_time.elapsed().as_millis(),
-                e,
-            ),
+                "client disconnected during execution",
+            );
+        } else {
+            match &res {
+                Ok(out) => crate::telemetry::record_completion(
+                    &model_for_stats,
+                    start_time.elapsed().as_millis(),
+                    out.usage.prompt_tokens,
+                    out.usage.completion_tokens,
+                    gen_elapsed.as_millis(),
+                ),
+                Err(e) => crate::telemetry::record_failure(
+                    &model_for_stats,
+                    500,
+                    start_time.elapsed().as_millis(),
+                    e,
+                ),
+            }
         }
         res
     });

@@ -12,6 +12,8 @@ use crate::config::ModelRegistry;
 use crate::inference::AppState as InferenceAppState;
 use crate::proxy::ProxyService;
 
+use std::path::{Path, PathBuf};
+
 /// Bind `host:port`, turning the common failure modes into actionable errors.
 pub async fn bind(host: &str, port: u16) -> Result<TcpListener> {
     let addr = format!("{host}:{port}");
@@ -33,12 +35,24 @@ pub async fn serve(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
+    serve_with_paths(config, None, None, listener, shutdown).await
+}
+
+/// Serve the API with optional configuration paths to watch for live catalog hot-reloading.
+pub async fn serve_with_paths(
+    config: ModelRegistry,
+    server_path: Option<PathBuf>,
+    catalog_path: Option<PathBuf>,
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     let inference = Arc::new(InferenceAppState::new(&config));
     let reaper = spawn_idle_reaper(inference.clone(), config.server.idle_unload_seconds);
-    let state = AppState {
-        inference,
-        proxy: Arc::new(ProxyService::new(&config)),
-        config,
+    let state = AppState::new(inference, Arc::new(ProxyService::new(&config)), config);
+
+    let watcher = match (server_path, catalog_path) {
+        (Some(srv), Some(cat)) => Some(spawn_config_watcher(state.clone(), srv, cat)),
+        _ => None,
     };
 
     let app = create_router(state)
@@ -52,7 +66,56 @@ pub async fn serve(
     if let Some(handle) = reaper {
         handle.abort();
     }
+    if let Some(handle) = watcher {
+        handle.abort();
+    }
     result
+}
+
+fn get_file_mtime(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+fn get_max_mtime(srv: &Path, cat: &Path) -> Option<std::time::SystemTime> {
+    match (get_file_mtime(srv), get_file_mtime(cat)) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
+fn spawn_config_watcher(
+    state: AppState,
+    server_path: PathBuf,
+    catalog_path: PathBuf,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(2));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut last_mtime = get_max_mtime(&server_path, &catalog_path);
+
+        loop {
+            interval.tick().await;
+            let current_mtime = get_max_mtime(&server_path, &catalog_path);
+            if current_mtime.is_some() && current_mtime != last_mtime {
+                last_mtime = current_mtime;
+                match ModelRegistry::from_files(&server_path, &catalog_path) {
+                    Ok(new_config) => {
+                        state.reload_catalog(new_config);
+                        tracing::info!(
+                            "Configuration hot-reloaded successfully from {} and {}",
+                            server_path.display(),
+                            catalog_path.display()
+                        );
+                    }
+                    Err(err) => {
+                        tracing::error!("Failed to reload configuration: {err:#}");
+                    }
+                }
+            }
+        }
+    })
 }
 
 /// Periodically unload models that have not been used for `idle_secs`

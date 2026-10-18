@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::config::{
     EngineConfig, EngineKind, Modality, ModelRegistry, ProviderType, SamplingConfig, ServerConfig,
 };
-use crate::schema::{LocalBlock, ModelEntry, RegistryFile, RemoteBlock, SCHEMA_VERSION};
+use crate::schema::{CatalogFile, LocalBlock, ModelEntry, RemoteBlock, SCHEMA_VERSION, ServerFile};
 
 // ---------------------------------------------------------------------------
 // Prerequisites
@@ -343,39 +343,65 @@ fn cloud_entry(c: &CloudChoice) -> ModelEntry {
     }
 }
 
-/// Merge `plan` into the config at `config_path` (creating it when absent) and
+/// Merge `plan` into `server_path` and `catalog_path` (creating them when absent) and
 /// the secrets into `env_path`. Existing models with the same id are kept
 /// untouched. Returns the number of models added.
-pub fn write_setup(plan: &SetupPlan, config_path: &Path, env_path: &Path) -> Result<usize> {
-    let mut file: RegistryFile = if config_path.exists() {
-        let text = std::fs::read_to_string(config_path)?;
+pub fn write_setup(
+    plan: &SetupPlan,
+    server_path: &Path,
+    catalog_path: &Path,
+    env_path: &Path,
+) -> Result<usize> {
+    let mut server_file: ServerFile = if server_path.exists() {
+        let text = std::fs::read_to_string(server_path)?;
         let version = serde_json::from_str::<Value>(&text)
-            .context("existing config is not valid JSON; refusing to overwrite it")?
+            .context("existing server config is not valid JSON; refusing to overwrite it")?
             .get("schema_version")
             .and_then(Value::as_u64)
             .unwrap_or(0);
         if version != u64::from(SCHEMA_VERSION) {
             anyhow::bail!(
                 "{} uses an older config schema (version {version}). Run `rune-infer migrate` first, then run setup again.",
-                config_path.display()
+                server_path.display()
             );
         }
         serde_json::from_str(&text)
-            .context("existing config is not valid; refusing to overwrite it")?
+            .context("existing server config is not valid; refusing to overwrite it")?
     } else {
-        RegistryFile {
+        ServerFile {
             schema_version: SCHEMA_VERSION,
             server: ServerConfig::default(),
-            models: Vec::new(),
         }
     };
 
-    file.server.host = plan.exposure.host().to_string();
-    file.server.port = plan.port;
-    file.server.api_key = plan
+    server_file.server.host = plan.exposure.host().to_string();
+    server_file.server.port = plan.port;
+    server_file.server.api_key = plan
         .server_api_key
         .is_some()
         .then(|| "{{RUNE_API_KEY}}".to_string());
+
+    let mut catalog_file: CatalogFile = if catalog_path.exists() {
+        let text = std::fs::read_to_string(catalog_path)?;
+        let version = serde_json::from_str::<Value>(&text)
+            .context("existing catalog config is not valid JSON; refusing to overwrite it")?
+            .get("schema_version")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        if version != u64::from(SCHEMA_VERSION) {
+            anyhow::bail!(
+                "{} uses an older config schema (version {version}). Run `rune-infer migrate` first, then run setup again.",
+                catalog_path.display()
+            );
+        }
+        serde_json::from_str(&text)
+            .context("existing catalog config is not valid; refusing to overwrite it")?
+    } else {
+        CatalogFile {
+            schema_version: SCHEMA_VERSION,
+            models: Vec::new(),
+        }
+    };
 
     let mut added = 0;
     let new_entries = plan
@@ -393,27 +419,33 @@ pub fn write_setup(plan: &SetupPlan, config_path: &Path, env_path: &Path) -> Res
                     _ => m.remote.is_some() == entry.remote.is_some(),
                 }
         };
-        if file.models.iter().any(same_source) {
+        if catalog_file.models.iter().any(same_source) {
             continue;
         }
         let base = entry.id.clone();
         let mut n = 2;
-        while file.models.iter().any(|m| m.id == entry.id) {
+        while catalog_file.models.iter().any(|m| m.id == entry.id) {
             entry.id = format!("{base}-{n}");
             n += 1;
         }
-        file.models.push(entry);
+        catalog_file.models.push(entry);
         added += 1;
     }
 
-    if let Some(dir) = config_path.parent() {
+    if let Some(dir) = server_path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(
-        config_path,
-        serde_json::to_string_pretty(&file)?
-            + "
-",
+        server_path,
+        serde_json::to_string_pretty(&server_file)? + "\n",
+    )?;
+
+    if let Some(dir) = catalog_path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(
+        catalog_path,
+        serde_json::to_string_pretty(&catalog_file)? + "\n",
     )?;
 
     let mut secrets: Vec<(String, String)> = plan
@@ -427,7 +459,7 @@ pub fn write_setup(plan: &SetupPlan, config_path: &Path, env_path: &Path) -> Res
     merge_env_file(env_path, &secrets)?;
 
     // Fail now (not at next start-up) if what we wrote doesn't load.
-    ModelRegistry::from_file_with_env(config_path, &secrets)
+    ModelRegistry::from_files_with_env(server_path, catalog_path, &secrets)
         .context("generated config failed validation")?;
     Ok(added)
 }
@@ -541,16 +573,21 @@ mod tests {
             local: found.models,
             gpu_available: true,
         };
-        let cfg = dir.join("config/models.json");
-        assert_eq!(write_setup(&plan, &cfg, &dir.join(".env")).unwrap(), 4);
+        let srv = dir.join("config/server.json");
+        let cat = dir.join("config/catalog.json");
         assert_eq!(
-            write_setup(&plan, &cfg, &dir.join(".env")).unwrap(),
+            write_setup(&plan, &srv, &cat, &dir.join(".env")).unwrap(),
+            4
+        );
+        assert_eq!(
+            write_setup(&plan, &srv, &cat, &dir.join(".env")).unwrap(),
             0,
             "idempotent"
         );
 
-        let reg = ModelRegistry::from_file_with_env(
-            &cfg,
+        let reg = ModelRegistry::from_files_with_env(
+            &srv,
+            &cat,
             &[
                 ("GEMINI_API_KEY".into(), "k".into()),
                 ("RUNE_API_KEY".into(), "k".into()),
@@ -594,7 +631,7 @@ mod tests {
             "{}",
             img.description
         );
-        let raw = std::fs::read_to_string(&cfg).unwrap();
+        let raw = std::fs::read_to_string(&cat).unwrap();
         assert!(raw.contains("{{GEMINI_API_KEY}}") && !raw.contains("secret"));
         std::fs::remove_dir_all(dir).ok();
     }
@@ -619,7 +656,13 @@ mod tests {
             gpu_available: true,
         };
         let out = std::path::PathBuf::from(out);
-        write_setup(&plan, &out.join("config/models.json"), &out.join(".env")).unwrap();
+        write_setup(
+            &plan,
+            &out.join("config/server.json"),
+            &out.join("config/catalog.json"),
+            &out.join(".env"),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -637,9 +680,13 @@ mod tests {
             local: found.models,
             gpu_available: false,
         };
-        let cfg = dir.join("config/models.json");
-        assert_eq!(write_setup(&plan, &cfg, &dir.join(".env")).unwrap(), 2);
-        let raw = std::fs::read_to_string(&cfg).unwrap();
+        let srv = dir.join("config/server.json");
+        let cat = dir.join("config/catalog.json");
+        assert_eq!(
+            write_setup(&plan, &srv, &cat, &dir.join(".env")).unwrap(),
+            2
+        );
+        let raw = std::fs::read_to_string(&cat).unwrap();
         assert!(raw.contains("\"id\": \"model\"") && raw.contains("\"id\": \"model-2\""));
         std::fs::remove_dir_all(dir).ok();
     }

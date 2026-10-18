@@ -42,6 +42,10 @@ struct Args {
     /// Run as a plain server without the terminal dashboard (implied when there is no TTY)
     #[arg(long)]
     headless: bool,
+
+    /// Allow binding to a non-localhost address without an API key (INSECURE)
+    #[arg(long)]
+    insecure_no_auth: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -64,7 +68,7 @@ async fn main() -> Result<()> {
         Workspace::resolve(args.config.as_deref()).context("Cannot determine working folder")?;
 
     if let Some(Command::Migrate { dry_run }) = &args.command {
-        return rune_infer::migrate::run(&ws.config_path, *dry_run);
+        return rune_infer::migrate::run(&ws.legacy_config_path, *dry_run);
     }
 
     ws.enter()
@@ -77,16 +81,26 @@ async fn main() -> Result<()> {
     let tui_mode = false;
 
     let wants_setup = matches!(args.command, Some(Command::Setup));
-    let needs_setup = wants_setup || !ws.config_exists();
+    let needs_setup = wants_setup || (!ws.config_exists() && !ws.legacy_config_exists());
+
+    if !ws.config_exists() && ws.legacy_config_exists() {
+        anyhow::bail!(
+            "Found legacy configuration at {}.\n\
+             Schema 3 splits configuration into server.json and catalog.json.\n\
+             Run `rune-infer migrate` to automatically upgrade your configuration.",
+            ws.legacy_config_path.display()
+        );
+    }
 
     if needs_setup && !tui_mode {
         if wants_setup {
             anyhow::bail!("`rune-infer setup` needs an interactive terminal.");
         }
         anyhow::bail!(
-            "No configuration found at {}.\n\
-             Run `rune-infer setup` in a terminal to create one, or copy an example models.json there.",
-            ws.config_path.display()
+            "No configuration found at {} and {}.\n\
+             Run `rune-infer setup` in a terminal to create one, or copy an example configuration there.",
+            ws.server_path.display(),
+            ws.catalog_path.display()
         );
     }
 
@@ -212,9 +226,24 @@ async fn run(
     let exposed = !matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]");
 
     if exposed && !auth_enabled {
+        let allow_insecure = args.insecure_no_auth
+            || std::env::var("RUNE_INSECURE_NO_AUTH")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+
+        if !allow_insecure {
+            finish_terminal(tui_mode);
+            anyhow::bail!(
+                "SECURITY ERROR: Server is configured to listen on '{addr}' without an API key.\n\
+                 Anyone on your network or internet can access your models and resources.\n\
+                 To fix:\n\
+                   1. Bind to localhost: set server.host to \"127.0.0.1\" (or pass --host 127.0.0.1)\n\
+                   2. Set an API key: set server.api_key (e.g. \"{{{{RUNE_API_KEY}}}}\") or RUNE_API_KEY in .env\n\
+                   3. Explicitly override (UNSAFE): pass --insecure-no-auth"
+            );
+        }
         tracing::warn!(
-            "Listening on {addr} with NO API key — anyone on the network can use your models. \
-             Set server.api_key (e.g. \"{{{{RUNE_API_KEY}}}}\") or bind to 127.0.0.1."
+            "Listening on {addr} with NO API key (--insecure-no-auth active) — anyone on the network can use your models."
         );
     }
     tracing::info!("Server listening on {addr}");
@@ -225,7 +254,7 @@ async fn run(
         addr: addr.clone(),
         auth_enabled,
         exposed_to_network: exposed,
-        config_path: ws.config_path.clone(),
+        config_path: ws.catalog_path.clone(),
         models: config
             .models
             .iter()
@@ -242,9 +271,15 @@ async fn run(
     };
 
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let server = tokio::spawn(rune_infer::server::serve(config, listener, async {
-        let _ = stop_rx.await;
-    }));
+    let server = tokio::spawn(rune_infer::server::serve_with_paths(
+        config,
+        Some(ws.server_path.clone()),
+        Some(ws.catalog_path.clone()),
+        listener,
+        async {
+            let _ = stop_rx.await;
+        },
+    ));
 
     #[cfg(feature = "tui")]
     if let Some(term) = terminal.as_mut() {
@@ -258,11 +293,11 @@ async fn run(
         return result;
     }
 
-    // Headless: run until Ctrl-C (or the server dies).
+    // Headless: run until Ctrl-C or SIGTERM (or the server dies).
     let mut server = server;
     tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            tracing::info!("Shutdown signal received");
+        _ = wait_for_shutdown_signal() => {
+            tracing::info!("Graceful shutdown initiated...");
             let _ = stop_tx.send(());
             shutdown(server).await;
         }
@@ -274,17 +309,52 @@ async fn run(
     Ok(())
 }
 
+async fn wait_for_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sigterm = signal(SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("Received SIGINT (Ctrl-C) shutdown signal");
+            }
+            _ = async {
+                if let Some(ref mut s) = sigterm {
+                    s.recv().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                tracing::info!("Received SIGTERM shutdown signal");
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("Received Ctrl-C shutdown signal");
+    }
+}
+
 async fn shutdown(server: tokio::task::JoinHandle<Result<()>>) {
-    // In-flight streams can hold the graceful shutdown open; don't wait forever.
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(3), server).await;
+    // In-flight streams can hold the graceful shutdown open; allow a sensible 10s drain timeout.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(10), server).await;
+    // Clean up any remaining registered child engine processes on shutdown
+    rune_infer::inference::process::cleanup_orphaned_pids();
 }
 
 async fn prepare(
     args: &Args,
     ws: &Workspace,
 ) -> Result<(ModelRegistry, tokio::net::TcpListener, String)> {
-    let mut config = ModelRegistry::from_file(&ws.config_path)
-        .with_context(|| format!("Failed to load config {}", ws.config_path.display()))?;
+    let mut config =
+        ModelRegistry::from_files(&ws.server_path, &ws.catalog_path).with_context(|| {
+            format!(
+                "Failed to load config from {} and {}",
+                ws.server_path.display(),
+                ws.catalog_path.display()
+            )
+        })?;
     if let Some(n) = args.max_loaded_models {
         config.server.max_loaded_models = n;
     }

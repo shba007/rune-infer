@@ -1,6 +1,7 @@
 use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
+use std::net::{IpAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 
 use crate::types::{ApiError, ErrorResponse};
@@ -98,6 +99,105 @@ pub fn resolve_media_source(raw_url: &str) -> String {
     }
 }
 
+pub fn is_ssrf_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ipv4) => {
+            ipv4.is_loopback()
+                || ipv4.is_private()
+                || ipv4.is_link_local()
+                || ipv4.is_broadcast()
+                || ipv4.is_documentation()
+                || ipv4.is_unspecified()
+        }
+        IpAddr::V6(ipv6) => {
+            ipv6.is_loopback()
+                || ipv6.is_unspecified()
+                || ipv6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| is_ssrf_blocked_ip(IpAddr::V4(v4)))
+        }
+    }
+}
+
+pub fn is_local_files_allowed() -> bool {
+    std::env::var("RUNE_ALLOW_LOCAL_FILES")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+pub fn is_internal_media_allowed() -> bool {
+    std::env::var("RUNE_ALLOW_INTERNAL_MEDIA")
+        .or_else(|_| std::env::var("RUNE_ALLOW_LOCAL_FILES"))
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+pub fn validate_url_for_ssrf(url_str: &str) -> Result<(), ErrorResponse> {
+    if is_internal_media_allowed() {
+        return Ok(());
+    }
+
+    if let Some(s3) = S3Config::from_env() {
+        if url_str.starts_with(s3.endpoint.trim_end_matches('/')) {
+            return Ok(());
+        }
+    }
+
+    let parsed = reqwest::Url::parse(url_str).map_err(|e| ErrorResponse {
+        error: ApiError::new(format!("Invalid URL '{url_str}': {e}"))
+            .with_type("invalid_request_error")
+            .with_code("invalid_url"),
+    })?;
+
+    let host = parsed.host_str().ok_or_else(|| ErrorResponse {
+        error: ApiError::new(format!("URL missing host: '{url_str}'"))
+            .with_type("invalid_request_error")
+            .with_code("invalid_url"),
+    })?;
+
+    if host.eq_ignore_ascii_case("localhost")
+        || host.ends_with(".localhost")
+        || host.eq_ignore_ascii_case("metadata.google.internal")
+        || host.eq_ignore_ascii_case("instance-data")
+    {
+        return Err(ErrorResponse {
+            error: ApiError::new(format!(
+                "Access to local/private host '{host}' is forbidden for security (SSRF protection)."
+            ))
+            .with_type("invalid_request_error")
+            .with_code("ssrf_blocked"),
+        });
+    }
+
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_ssrf_blocked_ip(ip) {
+            return Err(ErrorResponse {
+                error: ApiError::new(format!(
+                    "Access to private IP '{ip}' is forbidden for security (SSRF protection)."
+                ))
+                .with_type("invalid_request_error")
+                .with_code("ssrf_blocked"),
+            });
+        }
+    } else if let Ok(addrs) = format!("{host}:{port}").to_socket_addrs() {
+        for socket_addr in addrs {
+            if is_ssrf_blocked_ip(socket_addr.ip()) {
+                return Err(ErrorResponse {
+                    error: ApiError::new(format!(
+                        "Host '{host}' resolves to private IP '{}' which is forbidden for security (SSRF protection).",
+                        socket_addr.ip()
+                    ))
+                    .with_type("invalid_request_error")
+                    .with_code("ssrf_blocked"),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn ensure_temp_dir(sub: &str) -> Result<PathBuf, ErrorResponse> {
     let dir = std::env::temp_dir().join("rune_infer").join(sub);
     std::fs::create_dir_all(&dir).map_err(|e| ErrorResponse {
@@ -192,6 +292,7 @@ pub fn is_video_format(url_or_path: &str) -> bool {
 
 pub fn download_remote_to_temp_file(url: &str) -> Result<PathBuf, ErrorResponse> {
     let target_url = resolve_media_source(url);
+    validate_url_for_ssrf(&target_url)?;
     let temp_dir = ensure_temp_dir("downloads")?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -242,6 +343,7 @@ pub fn download_remote_to_temp_file(url: &str) -> Result<PathBuf, ErrorResponse>
 
 pub fn download_remote_bytes(url: &str) -> Result<Vec<u8>, ErrorResponse> {
     let target_url = resolve_media_source(url);
+    validate_url_for_ssrf(&target_url)?;
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .build()
@@ -424,6 +526,15 @@ pub fn decode_media(
             let _ = std::fs::remove_file(&temp_video);
             frames
         } else {
+            if !is_local_files_allowed() {
+                return Err(ErrorResponse {
+                    error: ApiError::new(
+                        "Local filesystem paths are not permitted in media URLs. Provide a data URI ('data:video/...') or remote URL ('https://...'). To allow local files for scripting, set RUNE_ALLOW_LOCAL_FILES=true."
+                    )
+                    .with_type("invalid_request_error")
+                    .with_code("local_files_disabled"),
+                });
+            }
             let path = Path::new(url);
             if !path.exists() {
                 return Err(ErrorResponse {
@@ -477,6 +588,15 @@ pub fn decode_media(
         let processed = process_image_bytes(&bytes, max_dims)?;
         Ok(vec![processed])
     } else {
+        if !is_local_files_allowed() {
+            return Err(ErrorResponse {
+                error: ApiError::new(
+                    "Local filesystem paths are not permitted in media URLs. Provide a data URI ('data:image/...') or remote URL ('https://...'). To allow local files for scripting, set RUNE_ALLOW_LOCAL_FILES=true."
+                )
+                .with_type("invalid_request_error")
+                .with_code("local_files_disabled"),
+            });
+        }
         match std::fs::read(url) {
             Ok(bytes) => {
                 let processed = process_image_bytes(&bytes, max_dims)?;

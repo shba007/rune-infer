@@ -97,7 +97,7 @@ pub async fn anthropic_messages_handler(
             .into_response();
     }
 
-    let model_config = match state.config.find(&payload.model) {
+    let model_config = match state.config().find(&payload.model) {
         Some(c) => c.clone(),
         None => {
             return (

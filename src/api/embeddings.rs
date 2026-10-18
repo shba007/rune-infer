@@ -50,7 +50,7 @@ pub async fn embeddings_handler(
 
     let model_id = match request.model {
         Some(ref m) if !m.trim().is_empty() => m.trim().to_string(),
-        _ => match state.config.models.iter().find(|m| {
+        _ => match state.config().models.iter().find(|m| {
             m.modality == crate::config::Modality::Embedding
                 || m.id.contains("embedding")
                 || m.name.to_lowercase().contains("embedding")

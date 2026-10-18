@@ -45,11 +45,9 @@ fn create_test_app(api_key: Option<String>) -> axum::Router {
     };
     catalog.models.push(sample_model_config());
 
-    let state = AppState {
-        inference: Arc::new(InferenceAppState::new(&catalog)),
-        proxy: Arc::new(ProxyService::new(&catalog)),
-        config: catalog,
-    };
+    let inference = Arc::new(InferenceAppState::new(&catalog));
+    let proxy = Arc::new(ProxyService::new(&catalog));
+    let state = AppState::new(inference, proxy, catalog);
     create_router(state)
 }
 
@@ -265,11 +263,9 @@ async fn test_audio_speech_route() {
         .models
         .push(ModelConfig::try_from(entry).expect("valid model config"));
 
-    let state = AppState {
-        inference: Arc::new(InferenceAppState::new(&catalog)),
-        proxy: Arc::new(ProxyService::new(&catalog)),
-        config: catalog,
-    };
+    let inference = Arc::new(InferenceAppState::new(&catalog));
+    let proxy = Arc::new(ProxyService::new(&catalog));
+    let state = AppState::new(inference, proxy, catalog);
     let app = create_router(state);
 
     let req = Request::builder()
@@ -325,11 +321,9 @@ async fn test_audio_transcription_route() {
         .models
         .push(ModelConfig::try_from(entry).expect("valid model config"));
 
-    let state = AppState {
-        inference: Arc::new(InferenceAppState::new(&catalog)),
-        proxy: Arc::new(ProxyService::new(&catalog)),
-        config: catalog,
-    };
+    let inference = Arc::new(InferenceAppState::new(&catalog));
+    let proxy = Arc::new(ProxyService::new(&catalog));
+    let state = AppState::new(inference, proxy, catalog);
     let app = create_router(state);
 
     let boundary = "------------------------boundary123";
