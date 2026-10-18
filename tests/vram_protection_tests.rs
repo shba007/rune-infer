@@ -58,7 +58,7 @@ fn create_test_catalog() -> ModelRegistry {
                 "extra": {}
             },
             {
-                "id": "ternary-bonsai-2-27b",
+                "id": "ternary-bonsai-2-27b-pq2-0",
                 "name": "Ternary Bonsai-2 27B",
                 "modality": "VisionText",
                 "capabilities": ["Chat", "Vision"],
@@ -66,7 +66,7 @@ fn create_test_catalog() -> ModelRegistry {
                 "max_context_length": 262144,
                 "sampling": { "temperature": 0.7, "max_tokens": 2048 },
                 "local": {
-                    "path": "D:/Models/ternary-bonsai-2-27b.gguf",
+                    "path": "D:/Models/ternary-bonsai-2-27b-pq2-0.gguf",
                     "params": 27000000000,
                     "bits_per_weight": 2.13,
                     "context_length": -1,
@@ -85,7 +85,7 @@ fn create_test_catalog() -> ModelRegistry {
 fn test_vram_protection_budget_enforcement() {
     let catalog = create_test_catalog();
     let qwen = catalog.find("qwen3.8-27b").unwrap();
-    let bonsai = catalog.find("ternary-bonsai-2-27b").unwrap();
+    let bonsai = catalog.find("ternary-bonsai-2-27b-pq2-0").unwrap();
 
     let qwen_plan = calculate_budget(qwen, &catalog.server);
     let bonsai_plan = calculate_budget(bonsai, &catalog.server);
@@ -120,7 +120,7 @@ fn test_lru_graceful_model_swapping_prevents_oom() {
         id: "qwen3.8-27b".to_string(),
     });
     let bonsai_engine = Arc::new(MockEngine {
-        id: "ternary-bonsai-2-27b".to_string(),
+        id: "ternary-bonsai-2-27b-pq2-0".to_string(),
     });
 
     // Start with empty registry

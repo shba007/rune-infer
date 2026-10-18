@@ -3,7 +3,7 @@ description: Comprehensive API collection for Rune Infer — an OpenAI-compatibl
 variables:
   base_url: http://127.0.0.1:8080
   api_key: sk-rune-local-test-key
-  chat_model: ornith-1.5-9b
+  chat_model: ternary-bonsai-2-27b-pq2-0
   vision_model: qwen3.8-27b
   image_model: z-image
   asr_model: parakeet-tdt-0.6b-v3

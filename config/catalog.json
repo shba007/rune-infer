@@ -390,7 +390,7 @@
         "bits_per_weight": 4.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
       },
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",
@@ -398,7 +398,7 @@
       }
     },
     {
-      "id": "ternary-bonsai-2-27b",
+      "id": "ternary-bonsai-2-27b-pq2-0",
       "name": "Ternary Bonsai-2 27B",
       "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
       "modality": "VisionText",
@@ -429,7 +429,7 @@
         "bits_per_weight": 2.13,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
       },
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",

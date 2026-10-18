@@ -74,7 +74,7 @@ Micro-benchmarked using [Divan](https://github.com/nvzqz/divan) on `POST /v1/cha
 
 ### 2. VRAM Protection & OOM Crash Prevention Test
 
-Tested with **`qwen3.8-27b`** (~13.8 GiB) and **`ternary-bonsai-2-27b`** (~8.5 GiB) under a **16 GiB VRAM ceiling**:
+Tested with **`qwen3.8-27b`** (~13.8 GiB) and **`ternary-bonsai-2-27b-pq2-0`** (~8.5 GiB) under a **16 GiB VRAM ceiling**:
 
 | Runner / Gateway Architecture | Concurrent / Sequential Heavy Requests | Combined VRAM Attempted | Host Outcome |
 |:---|:---|:---:|:---|

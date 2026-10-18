@@ -41,7 +41,7 @@ Start-Sleep -Milliseconds 2500
 
 # 4. Second Request: Ternary Bonsai 27B (triggers LRU model swap)
 $bodyBonsai = @{
-    model = "ternary-bonsai-2-27b"
+    model = "ternary-bonsai-2-27b-pq2-0"
     messages = @(
         @{ role = "user"; content = "Explain how LRU eviction prevents CUDA out-of-memory errors." }
     )

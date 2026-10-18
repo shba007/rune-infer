@@ -70,9 +70,20 @@ impl LlamaServerEngine {
             .arg(n_ctx.unwrap_or(32768).to_string())
             .arg("-ngl")
             .arg(n_gpu_layers.unwrap_or(99).to_string())
-            .arg("--jinja")
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
+            .arg("--jinja");
+
+        let extras_str = extra_args.as_deref().unwrap_or("");
+        if !extras_str.contains("-fa")
+            && !extras_str.contains("--flash-attn")
+            && n_gpu_layers.unwrap_or(99) > 0
+        {
+            cmd.arg("-fa").arg("on");
+        }
+        if !extras_str.contains("-np") && !extras_str.contains("--parallel") {
+            cmd.arg("--parallel").arg("1");
+        }
+
+        cmd.stdout(Stdio::null()).stderr(Stdio::piped());
 
         if let Some(ref mmproj) = mmproj_path {
             let path = mmproj.as_ref();

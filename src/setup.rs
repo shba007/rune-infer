@@ -303,13 +303,39 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
         },
         local: Some(LocalBlock {
             path: c.path.to_string_lossy().into_owned(),
-            params: None,
+            params: {
+                let s = format!("{} {}", c.display_name, c.architecture).to_lowercase();
+                if s.contains("70b") {
+                    Some(70_000_000_000)
+                } else if s.contains("32b") {
+                    Some(32_000_000_000)
+                } else if s.contains("27b") {
+                    Some(27_000_000_000)
+                } else if s.contains("14b") {
+                    Some(14_000_000_000)
+                } else if s.contains("9b") || s.contains("8b") {
+                    Some(8_000_000_000)
+                } else if s.contains("7b") {
+                    Some(7_000_000_000)
+                } else if s.contains("3b") || s.contains("4b") {
+                    Some(3_500_000_000)
+                } else {
+                    None
+                }
+            },
             bits_per_weight: None,
             context_length: -1,
             gpu_layers: if gpu { 99 } else { 0 },
-            // Every image model in the sample catalog runs with flash attention enabled.
+            // Enable flash attention and quantized KV cache for performance and VRAM safety
             args: if c.engine() == EngineKind::SdServer {
                 "--diffusion-fa".to_string()
+            } else if gpu
+                && matches!(
+                    c.engine(),
+                    EngineKind::LlamaServer | EngineKind::LlamaServerPrism
+                )
+            {
+                "-fa on --cache-type-k q8_0 --cache-type-v q8_0".to_string()
             } else {
                 String::new()
             },

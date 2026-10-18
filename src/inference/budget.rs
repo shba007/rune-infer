@@ -164,10 +164,51 @@ pub fn detect_used_gpu_vram() -> Option<u64> {
     Some(mib * 1024 * 1024)
 }
 
+/// Heuristic parameter estimation from model metadata, id, name, or file size.
+pub fn heuristic_model_params(model: &ModelConfig) -> u64 {
+    if let Some(p) = model.total_params {
+        if p > 0 {
+            return p;
+        }
+    }
+
+    let text = format!("{} {} {}", model.id, model.name, model.model_path).to_lowercase();
+    if text.contains("70b") {
+        70_000_000_000
+    } else if text.contains("32b") {
+        32_000_000_000
+    } else if text.contains("27b") {
+        27_000_000_000
+    } else if text.contains("14b") {
+        14_000_000_000
+    } else if text.contains("9b") || text.contains("8b") {
+        8_000_000_000
+    } else if text.contains("7b") {
+        7_000_000_000
+    } else if text.contains("3b") || text.contains("4b") {
+        3_500_000_000
+    } else if text.contains("1.5b") || text.contains("1b") || text.contains("0.8b") {
+        1_500_000_000
+    } else {
+        let file_size = std::fs::metadata(&model.model_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        if file_size >= 12 * 1024 * 1024 * 1024 {
+            32_000_000_000
+        } else if file_size >= 5 * 1024 * 1024 * 1024 {
+            27_000_000_000
+        } else if file_size >= 2 * 1024 * 1024 * 1024 {
+            7_000_000_000
+        } else {
+            1_500_000_000
+        }
+    }
+}
+
 /// Heuristic estimate of model layers by parameter count when metadata is not provided.
 pub fn estimate_total_layers(model: &ModelConfig) -> u32 {
-    match model.total_params.unwrap_or(0) {
-        0 => 64,
+    let params = heuristic_model_params(model);
+    match params {
         p if p < 4_000_000_000 => 28,
         p if p < 10_000_000_000 => 32,
         p if p < 18_000_000_000 => 48,
@@ -217,7 +258,8 @@ pub fn estimate_bytes_per_token(model: &ModelConfig) -> u64 {
         return 0;
     }
 
-    let base = match model.total_params.unwrap_or(0) {
+    let params = heuristic_model_params(model);
+    let base = match params {
         p if p < 2_000_000_000 => 16 * 1024,
         p if p < 10_000_000_000 => 32 * 1024,
         p if p < 35_000_000_000 => 64 * 1024,
@@ -303,9 +345,10 @@ pub fn calculate_budget(model: &ModelConfig, server: &ServerConfig) -> VramBudge
 
         if let Some(raw_tokens) = remaining_kv.checked_div(bytes_per_token) {
             let rounded = ((raw_tokens as u32) / 1024) * 1024;
-            rounded.clamp(2048, max_capacity)
+            let auto_cap = max_capacity.min(65536);
+            rounded.clamp(2048, auto_cap)
         } else {
-            max_capacity
+            max_capacity.min(65536)
         }
     } else {
         (configured_ctx as u32).min(max_capacity)
