@@ -135,6 +135,9 @@ pub async fn responses_handler(
         top_p: sampling.top_p,
         top_k: sampling.top_k,
         min_p: sampling.min_p,
+        reasoning_effort: sampling.reasoning_effort,
+        thinking: None,
+        chat_template_kwargs: None,
     };
 
     let res =

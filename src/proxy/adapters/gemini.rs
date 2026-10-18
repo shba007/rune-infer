@@ -281,6 +281,55 @@ pub async fn execute_chat(
         }
     }
 
+    // Handle thinkingConfig for Gemini (e.g. Gemini 2.0/2.5 Flash Thinking)
+    let normalized_thinking = request.normalized_thinking();
+    let effective_thinking = if normalized_thinking != crate::types::NormalizedThinking::Unspecified
+    {
+        normalized_thinking
+    } else if let Some(effort) = config
+        .sampling
+        .as_ref()
+        .and_then(|s| s.reasoning_effort.as_deref())
+    {
+        if effort.eq_ignore_ascii_case("none")
+            || effort.eq_ignore_ascii_case("disabled")
+            || effort.eq_ignore_ascii_case("off")
+        {
+            crate::types::NormalizedThinking::Disabled
+        } else {
+            crate::types::NormalizedThinking::Enabled {
+                effort: Some(effort.to_string()),
+                budget_tokens: None,
+            }
+        }
+    } else {
+        crate::types::NormalizedThinking::Unspecified
+    };
+
+    match effective_thinking {
+        crate::types::NormalizedThinking::Disabled => {
+            body["generationConfig"]["thinkingConfig"] = serde_json::json!({
+                "thinkingBudget": 0
+            });
+        }
+        crate::types::NormalizedThinking::Enabled {
+            effort,
+            budget_tokens,
+        } => {
+            let budget = budget_tokens
+                .map(|b| b as i64)
+                .unwrap_or(match effort.as_deref() {
+                    Some("low") => 1024,
+                    Some("high") => 16384,
+                    _ => 4096,
+                });
+            body["generationConfig"]["thinkingConfig"] = serde_json::json!({
+                "thinkingBudget": budget
+            });
+        }
+        crate::types::NormalizedThinking::Unspecified => {}
+    }
+
     if !system_instruction_parts.is_empty() {
         body["systemInstruction"] = serde_json::json!({
             "parts": system_instruction_parts

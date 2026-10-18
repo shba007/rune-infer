@@ -25,6 +25,83 @@ pub struct ChatCompletionRequest {
     pub tool_choice: Option<serde_json::Value>,
     #[serde(default)]
     pub response_format: Option<ResponseFormat>,
+    /// Reasoning effort level: "none", "low", "medium", "high"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    /// Anthropic-style thinking configuration or boolean: `{"type": "enabled", "budget_tokens": ...}`, `{"type": "disabled"}`, or `true`/`false`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<serde_json::Value>,
+    /// Chat template kwargs for llama-server / jinja templates (e.g. `{"thinking": false}`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NormalizedThinking {
+    Disabled,
+    Enabled {
+        effort: Option<String>,
+        budget_tokens: Option<u32>,
+    },
+    Unspecified,
+}
+
+impl ChatCompletionRequest {
+    pub fn normalized_thinking(&self) -> NormalizedThinking {
+        if let Some(ref val) = self.thinking {
+            if let Some(b) = val.as_bool() {
+                if !b {
+                    return NormalizedThinking::Disabled;
+                } else {
+                    return NormalizedThinking::Enabled {
+                        effort: self.reasoning_effort.clone(),
+                        budget_tokens: None,
+                    };
+                }
+            } else if let Some(obj) = val.as_object() {
+                let typ = obj.get("type").and_then(|v| v.as_str());
+                if typ == Some("disabled") {
+                    return NormalizedThinking::Disabled;
+                } else if typ == Some("enabled") {
+                    let budget = obj
+                        .get("budget_tokens")
+                        .and_then(|v| v.as_u64())
+                        .map(|b| b as u32);
+                    return NormalizedThinking::Enabled {
+                        effort: self.reasoning_effort.clone(),
+                        budget_tokens: budget,
+                    };
+                }
+            }
+        }
+
+        if let Some(ref val) = self.chat_template_kwargs {
+            if let Some(obj) = val.as_object() {
+                if obj.get("thinking") == Some(&serde_json::Value::Bool(false)) {
+                    return NormalizedThinking::Disabled;
+                } else if obj.get("thinking") == Some(&serde_json::Value::Bool(true)) {
+                    return NormalizedThinking::Enabled {
+                        effort: self.reasoning_effort.clone(),
+                        budget_tokens: None,
+                    };
+                }
+            }
+        }
+
+        if let Some(ref effort) = self.reasoning_effort {
+            let eff_lower = effort.to_lowercase();
+            if eff_lower == "none" || eff_lower == "disabled" || eff_lower == "off" {
+                return NormalizedThinking::Disabled;
+            } else {
+                return NormalizedThinking::Enabled {
+                    effort: Some(eff_lower),
+                    budget_tokens: None,
+                };
+            }
+        }
+
+        NormalizedThinking::Unspecified
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

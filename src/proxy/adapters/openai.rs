@@ -34,6 +34,28 @@ pub async fn execute_chat(
             "model".to_string(),
             serde_json::Value::String(upstream_model),
         );
+
+        // If reasoning_effort wasn't explicitly set in request, check catalog sampling default
+        if !obj.contains_key("reasoning_effort") {
+            if let Some(effort) = config
+                .sampling
+                .as_ref()
+                .and_then(|s| s.reasoning_effort.as_ref())
+            {
+                obj.insert(
+                    "reasoning_effort".to_string(),
+                    serde_json::Value::String(effort.clone()),
+                );
+            }
+        }
+
+        // If client provided thinking: false or disabled, normalize reasoning_effort to "none"
+        if request.normalized_thinking() == crate::types::NormalizedThinking::Disabled {
+            obj.insert(
+                "reasoning_effort".to_string(),
+                serde_json::Value::String("none".to_string()),
+            );
+        }
     }
 
     let mut req_builder = client

@@ -197,6 +197,61 @@ pub async fn execute_chat(
         body["tools"] = serde_json::Value::Array(anthropic_tools);
     }
 
+    // Handle thinking mode for Anthropic (e.g. Claude 3.7 Sonnet)
+    let normalized_thinking = request.normalized_thinking();
+    let effective_thinking = if normalized_thinking != crate::types::NormalizedThinking::Unspecified
+    {
+        normalized_thinking
+    } else if let Some(effort) = config
+        .sampling
+        .as_ref()
+        .and_then(|s| s.reasoning_effort.as_deref())
+    {
+        if effort.eq_ignore_ascii_case("none")
+            || effort.eq_ignore_ascii_case("disabled")
+            || effort.eq_ignore_ascii_case("off")
+        {
+            crate::types::NormalizedThinking::Disabled
+        } else {
+            crate::types::NormalizedThinking::Enabled {
+                effort: Some(effort.to_string()),
+                budget_tokens: None,
+            }
+        }
+    } else {
+        crate::types::NormalizedThinking::Unspecified
+    };
+
+    match effective_thinking {
+        crate::types::NormalizedThinking::Disabled => {
+            body["thinking"] = serde_json::json!({ "type": "disabled" });
+        }
+        crate::types::NormalizedThinking::Enabled {
+            effort,
+            budget_tokens,
+        } => {
+            let budget = budget_tokens.unwrap_or(match effort.as_deref() {
+                Some("low") => 1024,
+                Some("high") => 16384,
+                _ => 4096,
+            });
+            body["thinking"] = serde_json::json!({
+                "type": "enabled",
+                "budget_tokens": budget
+            });
+            let cur_max = body["max_tokens"].as_u64().unwrap_or(4096) as u32;
+            if cur_max <= budget {
+                body["max_tokens"] = serde_json::json!(budget + 4096);
+            }
+            body["temperature"] = serde_json::json!(1.0);
+        }
+        crate::types::NormalizedThinking::Unspecified => {
+            if let Some(ref raw_thinking) = request.thinking {
+                body["thinking"] = raw_thinking.clone();
+            }
+        }
+    }
+
     let resp = client
         .post(&endpoint)
         .header("x-api-key", api_key)

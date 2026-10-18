@@ -296,6 +296,7 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
                 top_k: Some(40),
                 min_p: Some(0.05),
                 max_tokens: Some(4096),
+                reasoning_effort: None,
             }
         } else {
             SamplingConfig::default()

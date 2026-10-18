@@ -103,7 +103,22 @@ pub fn prepare_prompt(
         serde_json::json!({})
     };
 
-    let default_tool_system = build_system_prompt(
+    let sampling = model_config.effective_sampling(&SamplingConfig {
+        temperature: request.temperature,
+        top_p: request.top_p,
+        top_k: request.top_k,
+        min_p: request.min_p,
+        max_tokens: request.max_tokens,
+        reasoning_effort: request.reasoning_effort.clone(),
+    });
+
+    let is_thinking_disabled = request.normalized_thinking()
+        == crate::types::NormalizedThinking::Disabled
+        || sampling.reasoning_effort.as_deref() == Some("none")
+        || sampling.reasoning_effort.as_deref() == Some("disabled")
+        || sampling.reasoning_effort.as_deref() == Some("off");
+
+    let mut default_tool_system = build_system_prompt(
         is_structured_mode,
         &structured_schema,
         has_tools,
@@ -111,6 +126,16 @@ pub fn prepare_prompt(
         has_video,
         request.tool_choice.as_ref(),
     );
+
+    if is_thinking_disabled {
+        let no_think = "Do not output any <think> tags or reasoning steps. Output only the final response directly.";
+        if default_tool_system.is_empty() {
+            default_tool_system = no_think.to_string();
+        } else {
+            default_tool_system.push_str("\n\n");
+            default_tool_system.push_str(no_think);
+        }
+    }
 
     let max_dims = model_config.max_dimensions();
     let mut total_media_tokens = 0u32;
@@ -122,7 +147,7 @@ pub fn prepare_prompt(
     let mut augmented_messages = request.messages.clone();
 
     let has_system = request.messages.iter().any(|m| m.role == "system");
-    if !has_system && (has_tools || is_structured_mode || has_video) {
+    if !has_system && (has_tools || is_structured_mode || has_video || is_thinking_disabled) {
         prompt.push_str(&format!(
             "<|im_start|>system\n{}<|im_end|>\n",
             default_tool_system
@@ -258,13 +283,6 @@ pub fn prepare_prompt(
     // Without an explicit max_tokens, reserve room for the reply — but never
     // more than a quarter of the window, or small-context models would reject
     // every request from clients that omit max_tokens.
-    let sampling = model_config.effective_sampling(&SamplingConfig {
-        temperature: request.temperature,
-        top_p: request.top_p,
-        top_k: request.top_k,
-        min_p: request.min_p,
-        max_tokens: request.max_tokens,
-    });
     let reserved_tokens = sampling
         .max_tokens
         .map(|t| t as u32)
@@ -308,6 +326,9 @@ pub fn prepare_prompt(
             top_p: sampling.top_p,
             top_k: sampling.top_k,
             min_p: sampling.min_p,
+            reasoning_effort: sampling.reasoning_effort,
+            thinking: request.thinking.clone(),
+            chat_template_kwargs: request.chat_template_kwargs.clone(),
         },
         is_structured_mode,
         image_count,

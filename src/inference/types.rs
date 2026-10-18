@@ -29,6 +29,12 @@ pub enum InferenceTaskRequest {
         top_k: Option<u32>,
         #[serde(default)]
         min_p: Option<f64>,
+        #[serde(default)]
+        reasoning_effort: Option<String>,
+        #[serde(default)]
+        thinking: Option<serde_json::Value>,
+        #[serde(default)]
+        chat_template_kwargs: Option<serde_json::Value>,
     },
     ImageGeneration {
         prompt: String,

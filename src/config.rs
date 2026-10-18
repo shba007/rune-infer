@@ -588,6 +588,8 @@ pub struct SamplingConfig {
     pub min_p: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
 }
 
 impl SamplingConfig {
@@ -599,6 +601,10 @@ impl SamplingConfig {
             top_k: self.top_k.or(defaults.top_k),
             min_p: self.min_p.or(defaults.min_p),
             max_tokens: self.max_tokens.or(defaults.max_tokens),
+            reasoning_effort: self
+                .reasoning_effort
+                .clone()
+                .or_else(|| defaults.reasoning_effort.clone()),
         }
     }
 
@@ -615,6 +621,12 @@ impl SamplingConfig {
         }
         if self.max_tokens == Some(0) {
             return bad("max_tokens (must be at least 1)");
+        }
+        if let Some(ref effort) = self.reasoning_effort {
+            let valid = ["none", "low", "medium", "high", "disabled", "off"];
+            if !valid.contains(&effort.to_lowercase().as_str()) {
+                return bad("reasoning_effort (expected one of: none, low, medium, high)");
+            }
         }
         Ok(())
     }

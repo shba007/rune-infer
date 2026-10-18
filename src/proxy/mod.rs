@@ -88,6 +88,7 @@ impl ProxyService {
             top_k: request.top_k,
             min_p: request.min_p,
             max_tokens: request.max_tokens,
+            reasoning_effort: request.reasoning_effort.clone(),
         });
         let mut filled = request.clone();
         filled.temperature = layered.temperature;
@@ -95,6 +96,7 @@ impl ProxyService {
         filled.top_k = layered.top_k;
         filled.min_p = layered.min_p;
         filled.max_tokens = layered.max_tokens;
+        filled.reasoning_effort = layered.reasoning_effort;
         let request = &filled;
 
         // 1. Acquire queue and rate limit permit (asynchronous wait)

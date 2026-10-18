@@ -203,6 +203,9 @@ impl InferenceEngine for LlamaServerEngine {
                 top_p,
                 top_k,
                 min_p,
+                reasoning_effort,
+                thinking,
+                chat_template_kwargs,
             } => {
                 let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
                 let stream_mode = on_token.is_some();
@@ -268,6 +271,45 @@ impl InferenceEngine for LlamaServerEngine {
                 }
                 if let Some(p) = min_p {
                     body["min_p"] = serde_json::json!(p);
+                }
+
+                // Handle thinking / reasoning controls for llama-server
+                let is_disabled = reasoning_effort
+                    .as_deref()
+                    .is_some_and(|e| e == "none" || e == "disabled" || e == "off")
+                    || thinking.as_ref().is_some_and(|t| {
+                        t.as_bool() == Some(false)
+                            || t.get("type").and_then(|v| v.as_str()) == Some("disabled")
+                    })
+                    || chat_template_kwargs.as_ref().is_some_and(|c| {
+                        c.get("thinking") == Some(&serde_json::Value::Bool(false))
+                    });
+
+                let mut kwargs = chat_template_kwargs
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                if !kwargs.is_object() {
+                    kwargs = serde_json::json!({});
+                }
+
+                if is_disabled {
+                    kwargs["thinking"] = serde_json::Value::Bool(false);
+                    body["chat_template_kwargs"] = kwargs;
+                    body["reasoning_effort"] = serde_json::json!("none");
+                } else {
+                    if let Some(effort) = reasoning_effort {
+                        body["reasoning_effort"] = serde_json::json!(effort);
+                    }
+                    if let Some(t) = thinking {
+                        if t.as_bool() == Some(true)
+                            || t.get("type").and_then(|v| v.as_str()) == Some("enabled")
+                        {
+                            kwargs["thinking"] = serde_json::Value::Bool(true);
+                            body["chat_template_kwargs"] = kwargs;
+                        }
+                    } else if !kwargs.as_object().unwrap().is_empty() {
+                        body["chat_template_kwargs"] = kwargs;
+                    }
                 }
 
                 if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
