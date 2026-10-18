@@ -14,7 +14,9 @@ pub async fn decisions_handler(
     State(state): State<Arc<AppState>>,
     Json(request): Json<DecisionRequest>,
 ) -> Response {
-    if request.questions.is_empty() {
+    let (text, image_uris) = request.extract_state_and_images();
+    let questions = request.questions.into_vec();
+    if questions.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -29,7 +31,6 @@ pub async fn decisions_handler(
             .into_response();
     }
 
-    let (text, image_uris) = request.state.split_text_and_images();
     if text.trim().is_empty() && image_uris.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -44,7 +45,11 @@ pub async fn decisions_handler(
     }
 
     let model_id = match request.model {
-        Some(ref m) if !m.trim().is_empty() => m.trim().to_string(),
+        Some(ref m) if !m.trim().is_empty() => state
+            .config()
+            .find(m.trim())
+            .map(|c| c.id.clone())
+            .unwrap_or_else(|| m.trim().to_string()),
         _ => match state.config().models.iter().find(|m| {
             m.modality == crate::config::Modality::Decision
                 || m.is_decision()
@@ -137,7 +142,7 @@ pub async fn decisions_handler(
         model: Some(model_id),
         text,
         images: decoded_images,
-        questions: request.questions,
+        questions,
     };
 
     let res =

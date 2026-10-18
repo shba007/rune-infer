@@ -725,12 +725,248 @@ impl InferenceEngine for LlamaServerEngine {
                 images,
                 questions,
             } => {
+                let systemone_endpoint = format!("http://127.0.0.1:{}/v1/systemone", self.port);
+
+                let mut b64_images = Vec::new();
+                for frame in images {
+                    let mime = if frame.starts_with(b"\x89PNG") {
+                        "image/png"
+                    } else {
+                        "image/jpeg"
+                    };
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(frame);
+                    b64_images.push(format!("data:{mime};base64,{b64}"));
+                }
+
+                let mut questions_map = serde_json::Map::new();
+                for q in questions {
+                    let mut q_obj = serde_json::Map::new();
+                    q_obj.insert(
+                        "type".to_string(),
+                        serde_json::Value::String(q.r#type.clone()),
+                    );
+                    q_obj.insert(
+                        "instructions".to_string(),
+                        serde_json::Value::String(q.instruction.clone()),
+                    );
+
+                    if let Some(ref crit) = q.criteria {
+                        let formatted_crit = if q.r#type == "choice" && crit.is_array() {
+                            let mut crit_obj = serde_json::Map::new();
+                            if let Some(arr) = crit.as_array() {
+                                for item in arr {
+                                    if let Some(s) = item.as_str() {
+                                        crit_obj.insert(
+                                            s.to_string(),
+                                            serde_json::Value::String(s.to_string()),
+                                        );
+                                    }
+                                }
+                            }
+                            serde_json::Value::Object(crit_obj)
+                        } else {
+                            crit.clone()
+                        };
+                        q_obj.insert("criteria".to_string(), formatted_crit);
+                    }
+                    questions_map.insert(q.name.clone(), serde_json::Value::Object(q_obj));
+                }
+
+                let state_text = if text.trim().is_empty() {
+                    "Evaluate input state and visual frames."
+                } else {
+                    text.as_str()
+                };
+
+                let systemone_body = serde_json::json!({
+                    "state": state_text,
+                    "images": b64_images,
+                    "questions": questions_map
+                });
+
+                let systemone_res = self
+                    .client
+                    .post(&systemone_endpoint)
+                    .json(&systemone_body)
+                    .send();
+
+                if let Ok(resp) = systemone_res {
+                    if resp.status().is_success() {
+                        if let Ok(result) = resp.json::<serde_json::Value>() {
+                            let raw_answers = result.get("answers").and_then(|v| v.as_object());
+                            let mut answers = std::collections::HashMap::new();
+
+                            for q in questions {
+                                let ans_val = raw_answers
+                                    .and_then(|a| a.get(&q.name))
+                                    .unwrap_or(&serde_json::Value::Null);
+
+                                match q.r#type.as_str() {
+                                    "noul" => {
+                                        let noul_prob = ans_val
+                                            .get("noul")
+                                            .and_then(|v| v.as_f64())
+                                            .or_else(|| ans_val.as_f64())
+                                            .unwrap_or(0.5);
+                                        let decision = noul_prob >= 0.5;
+                                        answers.insert(
+                                            q.name.clone(),
+                                            crate::types::DecisionAnswer::Noul {
+                                                decision,
+                                                probability: (noul_prob * 10000.0).round()
+                                                    / 10000.0,
+                                            },
+                                        );
+                                    }
+                                    "choice" => {
+                                        let choice_str = ans_val
+                                            .get("choice")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string();
+                                        let confidence = ans_val
+                                            .get("confidence")
+                                            .and_then(|v| v.as_f64())
+                                            .unwrap_or(0.9);
+                                        let mut probs = std::collections::HashMap::new();
+                                        if let Some(raw_probs) =
+                                            ans_val.get("probabilities").and_then(|v| v.as_object())
+                                        {
+                                            for (k, v) in raw_probs {
+                                                if let Some(p) = v.as_f64() {
+                                                    probs.insert(
+                                                        k.clone(),
+                                                        (p * 10000.0).round() / 10000.0,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        if probs.is_empty() {
+                                            probs.insert(choice_str.clone(), confidence);
+                                        }
+                                        answers.insert(
+                                            q.name.clone(),
+                                            crate::types::DecisionAnswer::Choice {
+                                                decision: choice_str,
+                                                confidence: (confidence * 10000.0).round()
+                                                    / 10000.0,
+                                                probabilities: probs,
+                                            },
+                                        );
+                                    }
+                                    "score" => {
+                                        let score = ans_val
+                                            .get("score")
+                                            .and_then(|v| v.as_f64())
+                                            .unwrap_or(0.0);
+                                        let mut legend_map = std::collections::HashMap::new();
+                                        if let Some(raw_leg) =
+                                            ans_val.get("legend").and_then(|v| v.as_object())
+                                        {
+                                            for (k, v) in raw_leg {
+                                                if let Some(s) = v.as_str() {
+                                                    legend_map.insert(k.clone(), s.to_string());
+                                                }
+                                            }
+                                        }
+                                        let nearest_idx = score.round() as i64;
+                                        let level = legend_map
+                                            .get(&nearest_idx.to_string())
+                                            .cloned()
+                                            .or_else(|| {
+                                                ans_val
+                                                    .get("level")
+                                                    .and_then(|v| v.as_str())
+                                                    .map(String::from)
+                                            })
+                                            .unwrap_or_else(|| format!("Level {nearest_idx}"));
+
+                                        let mut probs = std::collections::HashMap::new();
+                                        if let Some(raw_probs) =
+                                            ans_val.get("probabilities").and_then(|v| v.as_object())
+                                        {
+                                            for (k, v) in raw_probs {
+                                                let label = legend_map
+                                                    .get(k)
+                                                    .cloned()
+                                                    .unwrap_or_else(|| k.clone());
+                                                if let Some(p) = v.as_f64() {
+                                                    probs.insert(
+                                                        label,
+                                                        (p * 10000.0).round() / 10000.0,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        answers.insert(
+                                            q.name.clone(),
+                                            crate::types::DecisionAnswer::Score {
+                                                level,
+                                                score: (score * 10000.0).round() / 10000.0,
+                                                probabilities: probs,
+                                            },
+                                        );
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            let input_tokens = result
+                                .get("usage")
+                                .and_then(|u| {
+                                    u.get("input_tokens").or_else(|| u.get("prompt_tokens"))
+                                })
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(128)
+                                as u32;
+
+                            let created = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs();
+
+                            return Ok(InferenceOutput {
+                                response: InferenceTaskResponse::Decision(
+                                    crate::types::DecisionResponse {
+                                        id: format!(
+                                            "dec_{}",
+                                            hex::encode(&Sha256::digest(text.as_bytes())[..8])
+                                        ),
+                                        object: "decision".to_string(),
+                                        created,
+                                        model: model.clone().unwrap_or_else(|| self.id.clone()),
+                                        answers,
+                                        usage: Usage {
+                                            prompt_tokens: input_tokens,
+                                            completion_tokens: 0,
+                                            total_tokens: input_tokens,
+                                        },
+                                    },
+                                ),
+                                usage: Usage {
+                                    prompt_tokens: input_tokens,
+                                    completion_tokens: 0,
+                                    total_tokens: input_tokens,
+                                },
+                            });
+                        }
+                    } else {
+                        let status = resp.status();
+                        let err_text = resp.text().unwrap_or_default();
+                        tracing::warn!(target: "llama_server", "Systemone endpoint returned {status}: {err_text}, falling back to chat/completions");
+                    }
+                }
+
+                // Fallback to /v1/chat/completions
                 let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
                 let mut content_parts = Vec::new();
 
                 let mut q_prompt = String::new();
                 q_prompt.push_str("State to evaluate:\n");
                 q_prompt.push_str(text);
+                for _ in images {
+                    q_prompt.push_str("\n<image>");
+                }
                 q_prompt.push_str("\n\nAnswer each of the following decision questions. Output ONLY a valid JSON object where keys are the question names:\n");
 
                 for q in questions {
@@ -915,7 +1151,12 @@ impl InferenceEngine for LlamaServerEngine {
                     .unwrap_or_default()
                     .as_secs();
 
-                let prompt_tokens = (text.len() / 4).max(1) as u32;
+                let prompt_tokens = result
+                    .get("usage")
+                    .and_then(|u| u.get("prompt_tokens"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or_else(|| ((text.len() / 4).max(1) + images.len() * 576) as u64)
+                    as u32;
 
                 Ok(InferenceOutput {
                     response: InferenceTaskResponse::Decision(crate::types::DecisionResponse {

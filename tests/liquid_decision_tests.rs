@@ -341,3 +341,120 @@ async fn test_api_v1_decisions_empty_state_validation() {
     let res: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(res["error"]["code"], "empty_state");
 }
+
+#[tokio::test]
+async fn test_api_v1_decisions_top_level_images_and_screenshot() {
+    let app = create_test_app();
+    let img_uri = sample_png_base64();
+
+    let payload = serde_json::json!({
+        "model": "liquid-d1-3b",
+        "state": "Evaluate current application UI screenshot.",
+        "images": [img_uri.clone()],
+        "questions": [
+            {
+                "name": "dialog_open",
+                "type": "noul",
+                "instruction": "Is an active dialogue modal visible?"
+            }
+        ]
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/decisions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let res: DecisionResponse = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(res.model, "liquid-d1-3b");
+    assert!(res.answers.contains_key("dialog_open"));
+    // Verify prompt tokens account for image frames (> 256 tokens)
+    assert!(res.usage.prompt_tokens >= 256);
+}
+
+#[tokio::test]
+async fn test_api_v1_decisions_state_only_images_no_text() {
+    let app = create_test_app();
+    let img_uri = sample_png_base64();
+
+    let payload = serde_json::json!({
+        "model": "d1-3b",
+        "state": {
+            "images": [img_uri]
+        },
+        "questions": [
+            {
+                "name": "is_alert_visible",
+                "type": "noul",
+                "instructions": "Is an alert popup visible in the image?"
+            }
+        ]
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/decisions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let res: DecisionResponse = serde_json::from_slice(&body).unwrap();
+
+    // Canonical model ID should be liquid-d1-3b
+    assert_eq!(res.model, "liquid-d1-3b");
+    assert!(res.answers.contains_key("is_alert_visible"));
+    assert!(res.usage.prompt_tokens >= 256);
+}
+
+#[tokio::test]
+async fn test_api_v1_decisions_questions_as_map_with_instructions_plural() {
+    let app = create_test_app();
+    let img_uri = sample_png_base64();
+
+    let payload = serde_json::json!({
+        "model": "d1-3b-q8-0",
+        "state": {
+            "screenshot": img_uri
+        },
+        "questions": {
+            "popup_detected": {
+                "type": "noul",
+                "instructions": "Is a popup modal displayed?"
+            },
+            "suggested_action": {
+                "type": "choice",
+                "instructions": "Select next best automated action",
+                "criteria": ["wait_for_load", "dismiss_popup", "proceed"]
+            }
+        }
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/decisions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let res: DecisionResponse = serde_json::from_slice(&body).unwrap();
+
+    // Canonical model ID should resolve from alias "d1-3b-q8-0" to "liquid-d1-3b"
+    assert_eq!(res.model, "liquid-d1-3b");
+    assert!(res.answers.contains_key("popup_detected"));
+    assert!(res.answers.contains_key("suggested_action"));
+}

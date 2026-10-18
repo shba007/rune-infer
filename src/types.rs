@@ -942,7 +942,69 @@ pub struct DecisionRequest {
     #[serde(default)]
     pub model: Option<String>,
     pub state: DecisionState,
-    pub questions: Vec<DecisionQuestion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screenshot: Option<String>,
+    pub questions: DecisionQuestions,
+}
+
+impl DecisionRequest {
+    pub fn extract_state_and_images(&self) -> (String, Vec<String>) {
+        let (text, mut images) = self.state.split_text_and_images();
+        if let Some(ref imgs) = self.images {
+            images.extend(imgs.clone());
+        }
+        if let Some(ref img) = self.image {
+            images.push(img.clone());
+        }
+        if let Some(ref sc) = self.screenshot {
+            images.push(sc.clone());
+        }
+        (text, images)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DecisionQuestions {
+    List(Vec<DecisionQuestion>),
+    Map(HashMap<String, RawDecisionQuestion>),
+}
+
+impl DecisionQuestions {
+    pub fn into_vec(self) -> Vec<DecisionQuestion> {
+        match self {
+            DecisionQuestions::List(list) => list,
+            DecisionQuestions::Map(map) => map
+                .into_iter()
+                .map(|(name, raw)| DecisionQuestion {
+                    name,
+                    r#type: raw.r#type,
+                    instruction: raw.instruction,
+                    criteria: raw.criteria,
+                })
+                .collect(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            DecisionQuestions::List(list) => list.is_empty(),
+            DecisionQuestions::Map(map) => map.is_empty(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RawDecisionQuestion {
+    pub r#type: String, // "noul" | "choice" | "score"
+    #[serde(alias = "instructions", alias = "prompt", alias = "description")]
+    pub instruction: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criteria: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -950,9 +1012,14 @@ pub struct DecisionRequest {
 pub enum DecisionState {
     Text(String),
     Multimodal {
-        text: String,
         #[serde(default)]
-        images: Vec<String>,
+        text: Option<String>,
+        #[serde(default)]
+        images: Option<Vec<String>>,
+        #[serde(default)]
+        image: Option<String>,
+        #[serde(default)]
+        screenshot: Option<String>,
     },
     Json(serde_json::Value),
 }
@@ -961,23 +1028,69 @@ impl DecisionState {
     pub fn split_text_and_images(&self) -> (String, Vec<String>) {
         match self {
             DecisionState::Text(t) => (t.clone(), Vec::new()),
-            DecisionState::Multimodal { text, images } => (text.clone(), images.clone()),
-            DecisionState::Json(v) => (
+            DecisionState::Multimodal {
+                text,
+                images,
+                image,
+                screenshot,
+            } => {
+                let mut img_list = Vec::new();
+                if let Some(imgs) = images {
+                    img_list.extend(imgs.clone());
+                }
+                if let Some(img) = image {
+                    img_list.push(img.clone());
+                }
+                if let Some(sc) = screenshot {
+                    img_list.push(sc.clone());
+                }
+                (text.clone().unwrap_or_default(), img_list)
+            }
+            DecisionState::Json(v) => {
                 if let Some(s) = v.as_str() {
-                    s.to_string()
+                    (s.to_string(), Vec::new())
+                } else if let Some(map) = v.as_object() {
+                    let mut text_parts = Vec::new();
+                    let mut img_list = Vec::new();
+                    for (k, val) in map {
+                        if k == "images" {
+                            if let Some(arr) = val.as_array() {
+                                for item in arr {
+                                    if let Some(s) = item.as_str() {
+                                        img_list.push(s.to_string());
+                                    }
+                                }
+                            }
+                        } else if k == "image" || k == "screenshot" {
+                            if let Some(s) = val.as_str() {
+                                img_list.push(s.to_string());
+                            }
+                        } else if k == "text" {
+                            if let Some(s) = val.as_str() {
+                                text_parts.push(s.to_string());
+                            }
+                        } else {
+                            text_parts.push(format!("{}: {}", k, val));
+                        }
+                    }
+                    (text_parts.join("\n"), img_list)
                 } else {
-                    serde_json::to_string_pretty(v).unwrap_or_default()
-                },
-                Vec::new(),
-            ),
+                    (
+                        serde_json::to_string_pretty(v).unwrap_or_default(),
+                        Vec::new(),
+                    )
+                }
+            }
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionQuestion {
+    #[serde(default)]
     pub name: String,
     pub r#type: String, // "noul" | "choice" | "score"
+    #[serde(alias = "instructions", alias = "prompt", alias = "description")]
     pub instruction: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub criteria: Option<serde_json::Value>,
