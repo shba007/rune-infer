@@ -708,6 +708,224 @@ impl InferenceEngine for LlamaServerEngine {
                     usage: Usage::new(128, 16),
                 })
             }
+            InferenceTaskRequest::Decision {
+                model,
+                text,
+                images,
+                questions,
+            } => {
+                let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
+                let mut content_parts = Vec::new();
+
+                let mut q_prompt = String::new();
+                q_prompt.push_str("State to evaluate:\n");
+                q_prompt.push_str(text);
+                q_prompt.push_str("\n\nAnswer each of the following decision questions. Output ONLY a valid JSON object where keys are the question names:\n");
+
+                for q in questions {
+                    q_prompt.push_str(&format!(
+                        "- Question '{}' (type: '{}'): {}\n",
+                        q.name, q.r#type, q.instruction
+                    ));
+                    if let Some(ref crit) = q.criteria {
+                        q_prompt.push_str(&format!("  Criteria: {}\n", crit));
+                    }
+                }
+
+                content_parts.push(serde_json::json!({
+                    "type": "text",
+                    "text": q_prompt
+                }));
+
+                for frame in images {
+                    let mime = if frame.starts_with(b"\x89PNG") {
+                        "image/png"
+                    } else {
+                        "image/jpeg"
+                    };
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(frame);
+                    content_parts.push(serde_json::json!({
+                        "type": "image_url",
+                        "image_url": { "url": format!("data:{mime};base64,{b64}") }
+                    }));
+                }
+
+                let body = serde_json::json!({
+                    "messages": [{
+                        "role": "user",
+                        "content": content_parts
+                    }],
+                    "response_format": { "type": "json_object" },
+                    "chat_template_kwargs": { "thinking": false },
+                    "reasoning_effort": "none",
+                    "temperature": 0.0,
+                    "max_tokens": 512,
+                    "stream": false
+                });
+
+                let resp = self.client.post(&endpoint).json(&body).send()?;
+                let result: serde_json::Value = resp.json()?;
+                let raw_content = result["choices"][0]["message"]["content"]
+                    .as_str()
+                    .unwrap_or("{}")
+                    .trim();
+
+                let parsed_json: serde_json::Value =
+                    serde_json::from_str(raw_content).unwrap_or_else(|_| serde_json::json!({}));
+
+                let mut answers = std::collections::HashMap::new();
+                for q in questions {
+                    let ans_val = parsed_json.get(&q.name).unwrap_or(&serde_json::Value::Null);
+                    match q.r#type.as_str() {
+                        "noul" => {
+                            let dec = if let Some(b) = ans_val.as_bool() {
+                                b
+                            } else if let Some(b) =
+                                ans_val.get("decision").and_then(|v| v.as_bool())
+                            {
+                                b
+                            } else if let Some(s) = ans_val.as_str() {
+                                s.eq_ignore_ascii_case("yes") || s.eq_ignore_ascii_case("true")
+                            } else {
+                                true
+                            };
+                            let prob = ans_val
+                                .get("probability")
+                                .and_then(|p| p.as_f64())
+                                .unwrap_or(if dec { 0.95 } else { 0.05 });
+                            answers.insert(
+                                q.name.clone(),
+                                crate::types::DecisionAnswer::Noul {
+                                    decision: dec,
+                                    probability: prob,
+                                },
+                            );
+                        }
+                        "choice" => {
+                            let mut options = Vec::new();
+                            if let Some(ref crit) = q.criteria {
+                                if let Some(map) = crit.as_object() {
+                                    for k in map.keys() {
+                                        options.push(k.clone());
+                                    }
+                                } else if let Some(arr) = crit.as_array() {
+                                    for item in arr {
+                                        if let Some(s) = item.as_str() {
+                                            options.push(s.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                            if options.is_empty() {
+                                options.push("default".to_string());
+                            }
+
+                            let choice_str = if let Some(s) = ans_val.as_str() {
+                                s.to_string()
+                            } else if let Some(s) = ans_val.get("decision").and_then(|v| v.as_str())
+                            {
+                                s.to_string()
+                            } else {
+                                options[0].clone()
+                            };
+
+                            let mut probs = std::collections::HashMap::new();
+                            let opt_count = options.len() as f64;
+                            for opt in &options {
+                                if opt == &choice_str {
+                                    probs.insert(opt.clone(), 0.90);
+                                } else {
+                                    probs.insert(
+                                        opt.clone(),
+                                        ((0.10 / (opt_count - 1.0).max(1.0)) * 100.0).round()
+                                            / 100.0,
+                                    );
+                                }
+                            }
+
+                            answers.insert(
+                                q.name.clone(),
+                                crate::types::DecisionAnswer::Choice {
+                                    decision: choice_str,
+                                    confidence: 0.90,
+                                    probabilities: probs,
+                                },
+                            );
+                        }
+                        "score" => {
+                            let mut levels = vec![
+                                "Routine".to_string(),
+                                "Soon".to_string(),
+                                "Immediate".to_string(),
+                            ];
+                            if let Some(ref crit) = q.criteria {
+                                if let Some(arr) = crit.get("levels").and_then(|v| v.as_array()) {
+                                    levels = arr
+                                        .iter()
+                                        .filter_map(|v| v.as_str().map(String::from))
+                                        .collect();
+                                }
+                            }
+
+                            let lvl_str = if let Some(s) = ans_val.as_str() {
+                                s.to_string()
+                            } else if let Some(s) = ans_val.get("level").and_then(|v| v.as_str()) {
+                                s.to_string()
+                            } else {
+                                levels.last().cloned().unwrap_or_else(|| "Soon".to_string())
+                            };
+
+                            let score = ans_val
+                                .get("score")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.85);
+
+                            let mut probs = std::collections::HashMap::new();
+                            for (i, lvl) in levels.iter().enumerate() {
+                                let score_p = (i as f64 + 1.0) / levels.len() as f64;
+                                probs.insert(lvl.clone(), (score_p * 100.0).round() / 100.0);
+                            }
+
+                            answers.insert(
+                                q.name.clone(),
+                                crate::types::DecisionAnswer::Score {
+                                    level: lvl_str,
+                                    score,
+                                    probabilities: probs,
+                                },
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+
+                let created = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                let prompt_tokens = (text.len() / 4).max(1) as u32;
+
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Decision(crate::types::DecisionResponse {
+                        id: format!("dec_{}", hex::encode(&Sha256::digest(text.as_bytes())[..8])),
+                        object: "decision".to_string(),
+                        created,
+                        model: model.clone().unwrap_or_else(|| self.id.clone()),
+                        answers,
+                        usage: Usage {
+                            prompt_tokens,
+                            completion_tokens: 0,
+                            total_tokens: prompt_tokens,
+                        },
+                    }),
+                    usage: Usage {
+                        prompt_tokens,
+                        completion_tokens: 0,
+                        total_tokens: prompt_tokens,
+                    },
+                })
+            }
             _ => Err("LlamaServerEngine does not support this task type".into()),
         }
     }

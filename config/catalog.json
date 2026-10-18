@@ -2,6 +2,37 @@
   "schema_version": 3,
   "models": [
     {
+      "id": "liquid-d1-3b",
+      "name": "Liquid AI d1-3B",
+      "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",
+      "modality": "Decision",
+      "capabilities": [
+        "Decision",
+        "System1",
+        "Classification",
+        "Scoring",
+        "Vision"
+      ],
+      "engine": {
+        "supported": [
+          "llama-server",
+          "encoder"
+        ],
+        "preferred": "llama-server"
+      },
+      "max_context_length": 32768,
+      "sampling": {},
+      "local": {
+        "path": "D:/Models/liquid-d1-3b.gguf",
+        "params": 3120000000,
+        "bits_per_weight": 4.5,
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "extra": {}
+    },
+    {
       "id": "google/embeddinggemma-2",
       "name": "Google EmbeddingGemma 2",
       "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",

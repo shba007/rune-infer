@@ -1,9 +1,10 @@
 use crate::types::{
     AudioDiarizationResponse, AudioTranscriptionResponse, AudioTranslationResponse, ChatMessage,
-    DetectObjectsResponse, DocumentOcrResponse, EmbeddingResponse, ImageCaptionResponse,
-    ImageEmbeddingsResponse, ImageGenerationResponse, ImageGroundingResponse,
-    ImageRestorationResponse, ImageStyleTransferResponse, ImageUpscaleResponse, ModerationResponse,
-    NluIntentResponse, RecognizeObjectsResponse, RecognizeTarget, RegionCrop, Usage,
+    DecisionQuestion, DecisionResponse, DetectObjectsResponse, DocumentOcrResponse,
+    EmbeddingResponse, ImageCaptionResponse, ImageEmbeddingsResponse, ImageGenerationResponse,
+    ImageGroundingResponse, ImageRestorationResponse, ImageStyleTransferResponse,
+    ImageUpscaleResponse, ModerationResponse, NluIntentResponse, RecognizeObjectsResponse,
+    RecognizeTarget, RegionCrop, Usage,
 };
 use serde::{Deserialize, Serialize};
 
@@ -158,6 +159,12 @@ pub enum InferenceTaskRequest {
         width: u32,
         height: u32,
     },
+    Decision {
+        model: Option<String>,
+        text: String,
+        images: Vec<Vec<u8>>,
+        questions: Vec<DecisionQuestion>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,6 +192,7 @@ pub enum InferenceTaskResponse {
     Restoration(ImageRestorationResponse),
     StyleTransfer(ImageStyleTransferResponse),
     Grounding(ImageGroundingResponse),
+    Decision(DecisionResponse),
     Error(String),
 }
 

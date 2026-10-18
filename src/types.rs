@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 
@@ -931,6 +933,83 @@ pub struct NluIntentResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intent: Option<NluIntent>,
     pub entities: Vec<NluEntity>,
+}
+
+// --- System 1 Decision Model Types (e.g. Liquid AI d1-3B) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionRequest {
+    #[serde(default)]
+    pub model: Option<String>,
+    pub state: DecisionState,
+    pub questions: Vec<DecisionQuestion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DecisionState {
+    Text(String),
+    Multimodal {
+        text: String,
+        #[serde(default)]
+        images: Vec<String>,
+    },
+    Json(serde_json::Value),
+}
+
+impl DecisionState {
+    pub fn split_text_and_images(&self) -> (String, Vec<String>) {
+        match self {
+            DecisionState::Text(t) => (t.clone(), Vec::new()),
+            DecisionState::Multimodal { text, images } => (text.clone(), images.clone()),
+            DecisionState::Json(v) => (
+                if let Some(s) = v.as_str() {
+                    s.to_string()
+                } else {
+                    serde_json::to_string_pretty(v).unwrap_or_default()
+                },
+                Vec::new(),
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionQuestion {
+    pub name: String,
+    pub r#type: String, // "noul" | "choice" | "score"
+    pub instruction: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criteria: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionResponse {
+    pub id: String,
+    pub object: String, // "decision"
+    pub created: u64,
+    pub model: String,
+    pub answers: HashMap<String, DecisionAnswer>,
+    pub usage: Usage,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum DecisionAnswer {
+    Noul {
+        decision: bool,
+        probability: f64,
+    },
+    Choice {
+        decision: String,
+        confidence: f64,
+        probabilities: HashMap<String, f64>,
+    },
+    Score {
+        level: String,
+        score: f64,
+        probabilities: HashMap<String, f64>,
+    },
 }
 
 // --- Additional Postman Schemas ---

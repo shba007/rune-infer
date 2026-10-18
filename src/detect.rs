@@ -227,6 +227,10 @@ const VISION_LM_ARCHS: &[&str] = &[
     "pixtral",
     "smolvlm",
     "idefics3",
+    "lfm",
+    "lfm2",
+    "lfm2.5",
+    "lfm2_5",
 ];
 const EMBEDDING_ARCHS: &[&str] = &[
     "bert",
@@ -446,6 +450,23 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
             "embedding",
             vec!["Embedding"],
         ));
+    }
+    if arch == "lfm"
+        || arch == "lfm2"
+        || arch == "lfm2.5"
+        || arch == "lfm2_5"
+        || arch.contains("liquid")
+        || lower_name.contains("d1-3b")
+        || lower_name.contains("liquid-d1")
+    {
+        let mut d = det(
+            Modality::Decision,
+            vec![EngineKind::LlamaServer],
+            "decision model",
+            vec!["Decision", "System1", "Classification", "Scoring", "Vision"],
+        );
+        d.class = Class::Llm;
+        return Classified::Model(d);
     }
     if EMBEDDING_ARCHS.contains(&arch.as_str()) || info.has_pooling {
         return Classified::Skip(
@@ -692,9 +713,13 @@ fn pair_projectors(
         if let Some(best) = options.first() {
             c.extra
                 .insert("mmproj_path".into(), json!(best.to_string_lossy()));
-            c.modality = Modality::VisionText;
-            c.capabilities.push("Vision".into());
-            c.kind_label = "vision chat model";
+            if c.modality != Modality::Decision {
+                c.modality = Modality::VisionText;
+                c.kind_label = "vision chat model";
+            }
+            if !c.capabilities.iter().any(|cap| cap == "Vision") {
+                c.capabilities.push("Vision".into());
+            }
             c.notes
                 .retain(|n| !n.starts_with("vision-language model, but no matching"));
         } else if !ambiguous[i].is_empty() {
@@ -1077,6 +1102,16 @@ mod tests {
         );
         let w = model(cls(&Gguf::new("whisper"), "w.gguf"));
         assert_eq!(w.engines, vec![EngineKind::Crispasr]);
+    }
+
+    #[test]
+    fn decision_models_are_recognized() {
+        let d = model(cls(&Gguf::new("lfm2.5"), "d1-3b-q4_k_m.gguf"));
+        assert_eq!(d.modality, Modality::Decision);
+        assert_eq!(d.engines, vec![EngineKind::LlamaServer]);
+        assert_eq!(d.kind_label, "decision model");
+        assert!(d.capabilities.contains(&"Decision"));
+        assert!(d.capabilities.contains(&"System1"));
     }
 
     #[test]

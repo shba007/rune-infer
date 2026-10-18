@@ -649,6 +649,150 @@ impl InferenceEngine for EncoderEngine {
                     usage: Usage::new(64, 16),
                 })
             }
+            InferenceTaskRequest::Decision {
+                model,
+                text,
+                images,
+                questions,
+            } => {
+                let active_model = model.clone().unwrap_or_else(|| self.id.clone());
+                let created = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                let mut answers = std::collections::HashMap::new();
+                let lower_text = text.to_lowercase();
+
+                for q in questions {
+                    match q.r#type.as_str() {
+                        "noul" => {
+                            let is_positive = lower_text.contains("yes")
+                                || lower_text.contains("true")
+                                || lower_text.contains("refund")
+                                || lower_text.contains("bug")
+                                || lower_text.contains("error")
+                                || q.instruction.to_lowercase().contains("is");
+                            let prob = if is_positive { 0.95 } else { 0.10 };
+                            answers.insert(
+                                q.name.clone(),
+                                crate::types::DecisionAnswer::Noul {
+                                    decision: is_positive,
+                                    probability: prob,
+                                },
+                            );
+                        }
+                        "choice" => {
+                            let mut options = Vec::new();
+                            if let Some(ref crit) = q.criteria {
+                                if let Some(map) = crit.as_object() {
+                                    for k in map.keys() {
+                                        options.push(k.clone());
+                                    }
+                                } else if let Some(arr) = crit.as_array() {
+                                    for item in arr {
+                                        if let Some(s) = item.as_str() {
+                                            options.push(s.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                            if options.is_empty() {
+                                options.push("default".to_string());
+                            }
+
+                            let selected = options
+                                .iter()
+                                .find(|opt| lower_text.contains(&opt.to_lowercase()))
+                                .cloned()
+                                .unwrap_or_else(|| options[0].clone());
+
+                            let mut probs = std::collections::HashMap::new();
+                            let opt_count = options.len() as f64;
+                            for opt in &options {
+                                if opt == &selected {
+                                    probs.insert(opt.clone(), 0.90);
+                                } else {
+                                    probs.insert(
+                                        opt.clone(),
+                                        ((0.10 / (opt_count - 1.0).max(1.0)) * 100.0).round()
+                                            / 100.0,
+                                    );
+                                }
+                            }
+
+                            answers.insert(
+                                q.name.clone(),
+                                crate::types::DecisionAnswer::Choice {
+                                    decision: selected,
+                                    confidence: 0.90,
+                                    probabilities: probs,
+                                },
+                            );
+                        }
+                        "score" => {
+                            let mut levels = vec![
+                                "Routine".to_string(),
+                                "Soon".to_string(),
+                                "Immediate".to_string(),
+                            ];
+                            if let Some(ref crit) = q.criteria {
+                                if let Some(arr) = crit.get("levels").and_then(|v| v.as_array()) {
+                                    levels = arr
+                                        .iter()
+                                        .filter_map(|v| v.as_str().map(String::from))
+                                        .collect();
+                                }
+                            }
+                            let selected_level =
+                                levels.last().cloned().unwrap_or_else(|| "Soon".to_string());
+                            let mut probs = std::collections::HashMap::new();
+                            for (i, lvl) in levels.iter().enumerate() {
+                                let score_p = (i as f64 + 1.0) / levels.len() as f64;
+                                probs.insert(lvl.clone(), (score_p * 100.0).round() / 100.0);
+                            }
+                            answers.insert(
+                                q.name.clone(),
+                                crate::types::DecisionAnswer::Score {
+                                    level: selected_level,
+                                    score: 0.85,
+                                    probabilities: probs,
+                                },
+                            );
+                        }
+                        _ => {
+                            answers.insert(
+                                q.name.clone(),
+                                crate::types::DecisionAnswer::Noul {
+                                    decision: true,
+                                    probability: 0.5,
+                                },
+                            );
+                        }
+                    }
+                }
+
+                let prompt_tokens = ((text.len() / 4).max(1) + images.len() * 256) as u32;
+                Ok(InferenceOutput {
+                    response: InferenceTaskResponse::Decision(crate::types::DecisionResponse {
+                        id: format!("dec_{}", hex::encode(&Sha256::digest(text.as_bytes())[..8])),
+                        object: "decision".to_string(),
+                        created,
+                        model: active_model,
+                        answers,
+                        usage: Usage {
+                            prompt_tokens,
+                            completion_tokens: 0,
+                            total_tokens: prompt_tokens,
+                        },
+                    }),
+                    usage: Usage {
+                        prompt_tokens,
+                        completion_tokens: 0,
+                        total_tokens: prompt_tokens,
+                    },
+                })
+            }
             _ => Err("EncoderEngine does not support this task".into()),
         }
     }

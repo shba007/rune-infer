@@ -151,6 +151,13 @@ pub enum Modality {
         alias = "speaker_diarization"
     )]
     SpeechAnalysis,
+    #[serde(
+        alias = "decision",
+        alias = "decisions",
+        alias = "system1",
+        alias = "system_one"
+    )]
+    Decision,
 }
 
 impl Modality {
@@ -172,6 +179,7 @@ impl Modality {
             Modality::ImageUpscale => "image-upscale",
             Modality::ImageStyleTransfer => "image-style-transfer",
             Modality::SpeechAnalysis => "speech-analysis",
+            Modality::Decision => "decision",
         }
     }
 }
@@ -423,6 +431,8 @@ impl ModelRegistry {
                     Modality::ObjectDetection
                 } else if has(&["diar", "diariz", "nemotron", "speaker"]) {
                     Modality::SpeechAnalysis
+                } else if has(&["decision", "system1", "d1-3b"]) {
+                    Modality::Decision
                 } else {
                     return None;
                 };
@@ -752,6 +762,17 @@ impl ModelConfig {
     /// Whether the model accepts image input.
     pub fn is_vision(&self) -> bool {
         self.modality == Modality::VisionText
+            || (self.modality == Modality::Decision
+                && self
+                    .capabilities
+                    .as_ref()
+                    .map(|caps| caps.iter().any(|c| c.eq_ignore_ascii_case("vision")))
+                    .unwrap_or(false))
+    }
+
+    /// Whether the model is a fast System 1 decision model.
+    pub fn is_decision(&self) -> bool {
+        self.modality == Modality::Decision
     }
 
     /// Per-request sampling values layered over this model's configured defaults.

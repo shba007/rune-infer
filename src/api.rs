@@ -1,6 +1,7 @@
 // pub mod anthropic;
 pub mod audio;
 pub mod chat;
+pub mod decisions;
 pub mod embeddings;
 pub mod images;
 pub mod moderation;
@@ -113,6 +114,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/moderations", post(moderation::moderations_handler))
         .route("/nlu/intents", post(nlu::nlu_intents_handler))
         .route("/ocr", post(ocr::document_ocr_handler))
+        .route("/decisions", post(decisions::decisions_handler))
         .layer(from_fn_with_state(shared_state.clone(), auth_middleware));
 
     Router::new()

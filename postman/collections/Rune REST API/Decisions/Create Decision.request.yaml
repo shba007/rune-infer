@@ -1,0 +1,40 @@
+$kind: http-request
+name: Create Decision
+url: '{{base_url}}/v1/decisions'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "liquid-d1-3b",
+      "state": {
+        "text": "User requests deployment of container build to production cluster with active traffic.",
+        "images": [
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        ]
+      },
+      "questions": [
+        {
+          "name": "routing",
+          "type": "choice",
+          "instruction": "Select routing path for execution",
+          "criteria": ["canary_rollout", "blue_green", "immediate_switch"]
+        },
+        {
+          "name": "requires_approval",
+          "type": "noul",
+          "instruction": "Does this action require manual principal engineer signoff?"
+        },
+        {
+          "name": "risk_score",
+          "type": "score",
+          "instruction": "Assess systemic risk level of deployment"
+        }
+      ]
+    }
+order: 11000
