@@ -1,5 +1,11 @@
 $kind: http-request
 name: Detect Image Objects
+description: |-
+  Performs open-vocabulary object detection, category classification, segmentation masks, pose keypoints, and face attributes.
+  
+  **Coordinate format conventions:**
+  - `box`: Normalized bounding box `[0.0, 1.0]`. **`x` and `y` represent the CENTRE of the box**, not the top-left corner (`{ x: center_x, y: center_y, width: w, height: h }` in YOLO format).
+  - `bbox_pixels`: Absolute bounding box in image pixel coordinates using corners: `{ x_min, y_min, x_max, y_max }`.
 url: '{{base_url}}/v1/images/detections'
 method: POST
 headers:

@@ -1,5 +1,19 @@
 $kind: http-request
 name: Chat Completions (Reasoning & Thinking)
+description: |-
+  Generates chat completions with chain-of-thought reasoning from reasoning models (e.g. Qwen, DeepSeek-R1, Claude 3.7 Sonnet, Gemini 2.0/2.5 Thinking, OpenAI o-series).
+  
+  **How to control Thinking / Reasoning:**
+  - **Enable Thinking:**
+    - `"reasoning_effort": "low" | "medium" | "high"`
+    - OR `"thinking": { "type": "enabled", "budget_tokens": 2048 }` (or `"thinking": true`)
+  
+  - **Switch Thinking OFF (3 supported options):**
+    - Option 1 (OpenAI convention): `"reasoning_effort": "none"` (also accepts `"disabled"` or `"off"`)
+    - Option 2 (Anthropic convention): `"thinking": { "type": "disabled" }` (or `"thinking": false`)
+    - Option 3 (vLLM / Jinja template convention): `"chat_template_kwargs": { "thinking": false }`
+  
+  When thinking is disabled, the server instructs llama-server (`chat_template_kwargs.thinking = false`, `reasoning_effort = "none"`), Anthropic (`thinking: { type: "disabled" }`), Gemini (`thinkingBudget: 0`), and OpenAI (`reasoning_effort = "none"`).
 url: '{{base_url}}/v1/chat/completions'
 method: POST
 headers:

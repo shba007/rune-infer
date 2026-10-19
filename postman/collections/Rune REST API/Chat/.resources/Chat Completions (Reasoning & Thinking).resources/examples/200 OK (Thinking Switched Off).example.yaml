@@ -1,0 +1,55 @@
+$kind: http-example
+name: 200 OK (Thinking Switched Off)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "gemma-4-12b-it",
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 25 * 4?"
+          }
+        ],
+        "reasoning_effort": "none",
+        "thinking": false
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "chatcmpl-nothink-01J9R4T8Q4M",
+        "object": "chat.completion",
+        "created": 1727827730,
+        "model": "gemma-4-12b-it",
+        "system_fingerprint": "fp_rune_rust_v1",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "25 * 4 = 100."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 8,
+          "total_tokens": 20
+        }
+      }
+order: 2620

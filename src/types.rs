@@ -1231,14 +1231,21 @@ pub struct DetectObjectsRequest {
     pub features: Option<Vec<String>>,
 }
 
+/// Bounding box normalized between 0.0 and 1.0 (YOLO format).
+/// NOTE: `x` and `y` represent the CENTRE of the bounding box, not the top-left corner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionBox {
+    /// Normalized center X coordinate [0.0, 1.0]
     pub x: f64,
+    /// Normalized center Y coordinate [0.0, 1.0]
     pub y: f64,
+    /// Normalized box width [0.0, 1.0]
     pub width: f64,
+    /// Normalized box height [0.0, 1.0]
     pub height: f64,
 }
 
+/// Absolute bounding box in image pixel space using corner coordinates [x_min, y_min, x_max, y_max].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionBboxPixels {
     pub x_min: u32,

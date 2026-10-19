@@ -1,5 +1,13 @@
 $kind: http-request
 name: Image Grounding
+description: |-
+  Locates UI elements or objects described by text query and returns grounding coordinates.
+  
+  **Coordinate format conventions:**
+  - `box_2d`: Normalized to `[0, 1000]` integer scale (**NOT in pixels**). Order is `[ymin, xmin, ymax, xmax]` (standard Qwen-VL / Florence-2 format).
+  - `box_normalized`: Bounding box scaled to `[0.0, 1.0]` float range: `[ymin, xmin, ymax, xmax]`.
+  - `point`: Click coordinates normalized to `[0, 1000]` integer scale: `[x, y]`.
+  - `point_pixels`: Click coordinates in actual image pixel space: `[px_x, px_y]`.
 url: '{{base_url}}/v1/images/grounding'
 method: POST
 headers:
