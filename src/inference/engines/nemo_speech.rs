@@ -36,7 +36,15 @@ impl NemoSpeechEngine {
             port
         );
 
-        let mut cmd = Command::new(&bin_path);
+        let abs_bin_path = if bin_path.is_absolute() {
+            bin_path.clone()
+        } else if let Ok(cwd) = std::env::current_dir() {
+            cwd.join(&bin_path)
+        } else {
+            bin_path.clone()
+        };
+
+        let mut cmd = Command::new(&abs_bin_path);
         configure_death_signal(&mut cmd);
         cmd.current_dir(bin_dir);
 
@@ -49,15 +57,14 @@ impl NemoSpeechEngine {
                 }
             }
         }
-        let mut path_env = std::env::join_paths(search_paths)
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
         if let Ok(sys_path) = std::env::var("PATH") {
-            path_env = format!("{};{}", path_env, sys_path);
+            search_paths.extend(std::env::split_paths(&sys_path));
         }
-        cmd.env("PATH", &path_env);
-        cmd.env("Path", &path_env);
+        if let Ok(path_env) = std::env::join_paths(search_paths) {
+            cmd.env("PATH", &path_env);
+            #[cfg(windows)]
+            cmd.env("Path", &path_env);
+        }
 
         // Launch in server mode with loaded ASR model
         cmd.arg("serve")
