@@ -1,0 +1,68 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{base_url}}/v1/audio/diarizations'
+  method: POST
+  headers:
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: formdata
+    content:
+      - key: file
+        type: file
+        src: sample.wav
+      - key: model
+        type: text
+        value: nemotron-3-diarization
+      - key: speaker_threshold
+        type: text
+        value: '0.5'
+      - key: language
+        type: text
+        value: en
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "text": "Hello, thank you for joining the meeting today. Glad to be here, let us review the agenda.",
+        "duration": 5.42,
+        "speakers": [
+          "SPEAKER_00",
+          "SPEAKER_01"
+        ],
+        "segments": [
+          {
+            "start": 0.0,
+            "end": 2.5,
+            "speaker": "SPEAKER_00",
+            "text": "Hello, thank you for joining the meeting today."
+          },
+          {
+            "start": 2.6,
+            "end": 5.4,
+            "speaker": "SPEAKER_01",
+            "text": "Glad to be here, let us review the agenda."
+          }
+        ],
+        "speaker_activity": {
+          "SPEAKER_00": [
+            {
+              "start": 0.0,
+              "end": 2.5
+            }
+          ],
+          "SPEAKER_01": [
+            {
+              "start": 2.6,
+              "end": 5.4
+            }
+          ]
+        }
+      }
+order: 4250

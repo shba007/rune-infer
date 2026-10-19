@@ -1,0 +1,38 @@
+$kind: http-request
+name: Execute Task
+url: '{{base_url}}/v1/inference?engine=encoder'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "ToolCall": {
+        "prompt": "Click the submit button.",
+        "schema": [
+          {
+            "type": "function",
+            "function": {
+              "name": "click_coordinate",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "x": { "type": "number" },
+                  "y": { "type": "number" }
+                },
+                "required": ["x", "y"]
+              }
+            }
+          }
+        ],
+        "tool_choice": "required",
+        "images": [],
+        "audios": []
+      }
+    }
+examples: .resources/Execute Task.resources/examples
+order: 10000

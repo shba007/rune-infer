@@ -1,0 +1,36 @@
+$kind: http-example
+name: 200 OK (Omni Model with Capabilities)
+request:
+  url: '{{base_url}}/v1/models/{{omni_model}}'
+  method: GET
+  headers:
+    - key: Accept
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "gemma-4-12b-it",
+        "object": "model",
+        "created": 1727827200,
+        "owned_by": "rune-infer",
+        "capabilities": [
+          "Chat",
+          "Vision",
+          "Audio",
+          "Video",
+          "Omni",
+          "Tool Call"
+        ],
+        "permission": [],
+        "root": "gemma-4-12b-it",
+        "parent": null
+      }
+order: 1250

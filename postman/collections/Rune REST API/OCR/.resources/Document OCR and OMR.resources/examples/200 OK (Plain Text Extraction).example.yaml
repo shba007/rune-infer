@@ -1,0 +1,59 @@
+$kind: http-example
+name: 200 OK (Plain Text Extraction)
+request:
+  url: '{{base_url}}/v1/ocr'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "got-ocr-2.0",
+        "document": {
+          "type": "image_url",
+          "image_url": "https://example.com/documents/invoice-001.png"
+        },
+        "features": [
+          "text"
+        ],
+        "response_format": "text"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "ocr_01J9R4T8Q9M1K8",
+        "object": "ocr.analysis",
+        "created": 1727827605,
+        "model": "got-ocr-2.0",
+        "text": "INVOICE #INV-2026-081\nDate: 2026-10-15\nTotal Amount Due: $1,450.00\nPayment Terms: Net 30",
+        "pages": [
+          {
+            "page": 1,
+            "dimensions": {
+              "width": 1200,
+              "height": 1600
+            },
+            "lines": [
+              {
+                "text": "INVOICE #INV-2026-081",
+                "bbox": [50, 40, 320, 80]
+              },
+              {
+                "text": "Total Amount Due: $1,450.00",
+                "bbox": [50, 90, 410, 130]
+              }
+            ]
+          }
+        ]
+      }
+order: 6050

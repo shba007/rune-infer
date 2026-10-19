@@ -1,11 +1,43 @@
 $kind: http-example
-name: 200 OK (Tool Call)
+name: 200 OK (Tool Call Triggered)
 request:
   url: '{{base_url}}/v1/chat/completions'
   method: POST
   headers:
     - key: Content-Type
       value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "qwen3.5-0.8b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is the current weather in Amsterdam?"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_current_weather",
+              "description": "Get the current weather for a location",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "location": { "type": "string" },
+                  "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+                },
+                "required": ["location"]
+              }
+            }
+          }
+        ],
+        "tool_choice": "auto"
+      }
 response:
   statusCode: 200
   statusText: OK

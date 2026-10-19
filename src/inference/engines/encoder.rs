@@ -66,6 +66,7 @@ impl InferenceEngine for EncoderEngine {
                 schema,
                 tool_choice,
                 images,
+                audios,
                 ..
             } => {
                 if let Some(tools) = schema.as_array() {
@@ -92,8 +93,17 @@ impl InferenceEngine for EncoderEngine {
                     }
                 }
 
-                let response_text = if !images.is_empty() {
+                let response_text = if !images.is_empty() && !audios.is_empty() {
+                    format!(
+                        "Analyzed {} image(s) and {} audio(s). Content: {}",
+                        images.len(),
+                        audios.len(),
+                        prompt
+                    )
+                } else if !images.is_empty() {
                     format!("Analyzed {} image(s). Content: {}", images.len(), prompt)
+                } else if !audios.is_empty() {
+                    format!("Analyzed {} audio(s). Content: {}", audios.len(), prompt)
                 } else {
                     format!("Processed text prompt: {}", prompt)
                 };

@@ -1,11 +1,37 @@
 $kind: http-example
-name: 200 OK
+name: 200 OK (Base64 Image Data URI)
 request:
   url: '{{base_url}}/v1/chat/completions'
   method: POST
   headers:
     - key: Content-Type
       value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "qwen3.8-27b",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "What is in this image?"
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                  "detail": "high"
+                }
+              }
+            ]
+          }
+        ]
+      }
 response:
   statusCode: 200
   statusText: OK
@@ -18,7 +44,7 @@ response:
         "id": "chatcmpl-vision-001",
         "object": "chat.completion",
         "created": 1727827295,
-        "model": "ornith-1.5-9b",
+        "model": "qwen3.8-27b",
         "system_fingerprint": "fp_rune_rust_v1",
         "choices": [
           {

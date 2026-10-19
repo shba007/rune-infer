@@ -1,9 +1,14 @@
 $kind: http-request
-name: Health Check
+name: Health and Probes Check
 url: '{{base_url}}/health'
 method: GET
 headers:
   - key: Accept
     value: application/json
+params:
+  - key: probe
+    value: live
+    description: "Optional probe type: 'live' (or 'livez') for liveness check, 'ready' (or 'readyz') for readiness check, or omit for standard health."
+    disabled: true
 examples: .resources/Health Check.resources/examples
 order: 1000

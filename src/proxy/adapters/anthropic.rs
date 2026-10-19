@@ -98,8 +98,8 @@ pub async fn execute_chat(
 
         for item in media_items {
             let url = match item {
-                crate::types::MediaItem::Image(u) => u,
-                crate::types::MediaItem::Video(u) => u,
+                crate::types::MediaItem::Image(u) | crate::types::MediaItem::Video(u) => u,
+                crate::types::MediaItem::Audio { .. } => continue,
             };
 
             if let Some((mime, b64)) = parse_data_uri(&url) {

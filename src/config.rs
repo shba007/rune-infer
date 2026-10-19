@@ -120,6 +120,13 @@ impl Default for RateLimitConfig {
 pub enum Modality {
     Text,
     VisionText,
+    #[serde(
+        alias = "omni",
+        alias = "Omni",
+        alias = "multimodal",
+        alias = "Multimodal"
+    )]
+    Omni,
     ImageGeneration,
     #[serde(alias = "AudioToText", alias = "AudioTranscription")]
     SpeechToText,
@@ -165,6 +172,7 @@ impl Modality {
         match self {
             Modality::Text => "text",
             Modality::VisionText => "vision-text",
+            Modality::Omni => "omni",
             Modality::ImageGeneration => "image-generation",
             Modality::SpeechToText => "speech-to-text",
             Modality::TextToSpeech => "text-to-speech",
@@ -386,6 +394,15 @@ impl ModelRegistry {
         Ok(())
     }
 
+    fn clean_model_slug(s: &str) -> &str {
+        let after_slash = s.split_once('/').map(|(_, r)| r).unwrap_or(s);
+        after_slash
+            .strip_suffix("-GGUF")
+            .or_else(|| after_slash.strip_suffix("-gguf"))
+            .or_else(|| after_slash.strip_suffix(".gguf"))
+            .unwrap_or(after_slash)
+    }
+
     /// Resolve a requested model name: exact id, then case-insensitive id or
     /// display name. If nothing matches, generic OpenAI-SDK default names
     /// ("text-embedding-3-small", "whisper-1", "tts-1", ...) fall back to the
@@ -401,13 +418,17 @@ impl ModelRegistry {
                     .find(|m| m.id.eq_ignore_ascii_case(id) || m.name.eq_ignore_ascii_case(id))
             })
             .or_else(|| {
+                let req_clean = Self::clean_model_slug(id);
                 self.models.iter().find(|m| {
-                    id.split_once('/').is_some_and(|(_, short)| {
-                        m.id.eq_ignore_ascii_case(short) || m.name.eq_ignore_ascii_case(short)
-                    }) || m
-                        .id
-                        .split_once('/')
-                        .is_some_and(|(_, short)| short.eq_ignore_ascii_case(id))
+                    let m_clean = Self::clean_model_slug(&m.id);
+                    m_clean.eq_ignore_ascii_case(req_clean)
+                        || m.name.eq_ignore_ascii_case(req_clean)
+                        || id.split_once('/').is_some_and(|(_, short)| {
+                            m.id.eq_ignore_ascii_case(short) || m.name.eq_ignore_ascii_case(short)
+                        })
+                        || m.id
+                            .split_once('/')
+                            .is_some_and(|(_, short)| short.eq_ignore_ascii_case(id))
                 })
             })
             .or_else(|| {
@@ -433,6 +454,8 @@ impl ModelRegistry {
                     Modality::SpeechAnalysis
                 } else if has(&["decision", "system1", "d1-3b"]) {
                     Modality::Decision
+                } else if has(&["omni", "multimodal"]) {
+                    Modality::Omni
                 } else {
                     return None;
                 };
@@ -762,12 +785,51 @@ impl ModelConfig {
     /// Whether the model accepts image input.
     pub fn is_vision(&self) -> bool {
         self.modality == Modality::VisionText
+            || self.modality == Modality::Omni
             || (self.modality == Modality::Decision
                 && self
                     .capabilities
                     .as_ref()
                     .map(|caps| caps.iter().any(|c| c.eq_ignore_ascii_case("vision")))
                     .unwrap_or(false))
+    }
+
+    /// Whether the model accepts audio input.
+    pub fn supports_audio(&self) -> bool {
+        self.modality == Modality::Omni
+            || self.modality == Modality::SpeechToText
+            || self.modality == Modality::SpeechAnalysis
+            || self.modality == Modality::SpeechToSpeech
+            || self
+                .capabilities
+                .as_ref()
+                .map(|caps| {
+                    caps.iter().any(|c| {
+                        let lc = c.to_ascii_lowercase();
+                        lc == "audio"
+                            || lc == "speech"
+                            || lc == "speech-to-text"
+                            || lc == "audio-input"
+                            || lc == "omni"
+                            || lc == "multimodal"
+                    })
+                })
+                .unwrap_or(false)
+    }
+
+    /// Whether the model is an omni multimodal model (text, image, audio, video).
+    pub fn is_omni(&self) -> bool {
+        self.modality == Modality::Omni
+            || self
+                .capabilities
+                .as_ref()
+                .map(|caps| {
+                    caps.iter().any(|c| {
+                        let lc = c.to_ascii_lowercase();
+                        lc == "omni" || lc == "multimodal"
+                    })
+                })
+                .unwrap_or(false)
     }
 
     /// Whether the model is a fast System 1 decision model.
@@ -803,6 +865,17 @@ impl ModelConfig {
         let mut caps = vec!["Chat".to_string(), "Tool Call".to_string()];
         if self.is_vision() {
             caps.push("Vision".to_string());
+        }
+        if self.is_omni() {
+            if !caps.iter().any(|c| c.eq_ignore_ascii_case("audio")) {
+                caps.push("Audio".to_string());
+            }
+            if !caps.iter().any(|c| c.eq_ignore_ascii_case("video")) {
+                caps.push("Video".to_string());
+            }
+            if !caps.iter().any(|c| c.eq_ignore_ascii_case("omni")) {
+                caps.push("Omni".to_string());
+            }
         }
         if self.has_mtp() && !caps.iter().any(|c| c.eq_ignore_ascii_case("mtp")) {
             caps.push("MTP".to_string());
@@ -1231,6 +1304,31 @@ mod tests {
             r.find("moderation-latest").is_none(),
             "no model of that modality configured"
         );
+    }
+
+    #[test]
+    fn omni_modality_capabilities_and_find_resolution() {
+        let r = registry(&[("gemma-4-12b-it", "Gemma 4 12B IT", "Omni")]);
+        let m = r.find("gemma-4-12b-it").expect("finds by exact id");
+        assert!(m.is_omni());
+        assert!(m.is_vision());
+        assert!(m.supports_audio());
+        let caps = m.resolved_capabilities();
+        assert!(caps.contains(&"Vision".to_string()));
+        assert!(caps.contains(&"Audio".to_string()));
+        assert!(caps.contains(&"Video".to_string()));
+        assert!(caps.contains(&"Omni".to_string()));
+
+        // Slug / repo resolution tests
+        assert_eq!(
+            r.find("unsloth/gemma-4-12b-it-GGUF").unwrap().id,
+            "gemma-4-12b-it"
+        );
+        assert_eq!(
+            r.find("unsloth/gemma-4-12b-it").unwrap().id,
+            "gemma-4-12b-it"
+        );
+        assert_eq!(r.find("gemma-4-12b-it-GGUF").unwrap().id, "gemma-4-12b-it");
     }
 
     // ---- loader

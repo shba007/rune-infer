@@ -1,0 +1,54 @@
+$kind: http-example
+name: 200 OK (Element Grounding)
+request:
+  url: '{{base_url}}/v1/images/grounding'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "grounding-dino-base",
+        "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "query": "Save button"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "grd_01J9R4T8Q4M999",
+        "object": "image.grounding",
+        "model": "grounding-dino-base",
+        "query": "Save button",
+        "point": [
+          0.85,
+          0.75
+        ],
+        "point_pixels": [
+          870,
+          768
+        ],
+        "box_2d": [
+          740,
+          830,
+          796,
+          910
+        ],
+        "box_normalized": [
+          0.72,
+          0.81,
+          0.78,
+          0.89
+        ],
+        "confidence": 0.95
+      }
+order: 3350

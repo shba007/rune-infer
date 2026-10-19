@@ -1,7 +1,7 @@
 $kind: http-example
-name: 200 OK
+name: 200 OK (Ready Probe)
 request:
-  url: '{{base_url}}/health'
+  url: '{{base_url}}/health?probe=ready'
   method: GET
   headers:
     - key: Accept
@@ -15,9 +15,13 @@ response:
     type: json
     content: |-
       {
-        "status": "ok",
+        "status": "ready",
         "service": "rune-infer",
-        "version": "0.1.0",
-        "backend": "candle-cuda"
+        "version": "0.6.0",
+        "models_configured": 43,
+        "models_loaded": [
+          "gemma-4-12b-it"
+        ],
+        "models_loading": []
       }
-order: 1000
+order: 1020

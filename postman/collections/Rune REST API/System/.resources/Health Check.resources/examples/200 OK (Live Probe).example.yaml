@@ -1,0 +1,22 @@
+$kind: http-example
+name: 200 OK (Live Probe)
+request:
+  url: '{{base_url}}/health?probe=live'
+  method: GET
+  headers:
+    - key: Accept
+      value: application/json
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "status": "alive",
+        "service": "rune-infer",
+        "version": "0.6.0"
+      }
+order: 1010

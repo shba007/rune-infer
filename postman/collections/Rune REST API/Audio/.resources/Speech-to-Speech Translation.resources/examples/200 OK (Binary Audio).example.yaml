@@ -1,0 +1,36 @@
+$kind: http-example
+name: 200 OK (Binary Audio)
+request:
+  url: '{{base_url}}/v1/audio/speech-to-speech'
+  method: POST
+  headers:
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: formdata
+    content:
+      - key: file
+        type: file
+        src: input_speech.wav
+      - key: model
+        type: text
+        value: '{{s2st_model}}'
+      - key: source_language
+        type: text
+        value: eng
+      - key: target_language
+        type: text
+        value: fra
+      - key: response_format
+        type: text
+        value: wav
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: audio/wav
+    transfer-encoding: chunked
+  body:
+    type: text
+    content: '<binary audio stream: RIFF (little-endian) data, WAVE audio, Microsoft PCM, 16 bit, mono 24000 Hz>'
+order: 4300

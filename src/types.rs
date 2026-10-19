@@ -128,6 +128,7 @@ pub struct JsonSchemaDefinition {
 pub enum MediaItem {
     Image(String),
     Video(String),
+    Audio { data: String, format: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,6 +177,12 @@ impl ChatMessage {
                     if let Some(vid) = &p.video_url {
                         media_items.push(MediaItem::Video(vid.url.clone()));
                     }
+                    if let Some(audio) = &p.input_audio {
+                        media_items.push(MediaItem::Audio {
+                            data: audio.data.clone(),
+                            format: audio.format.clone(),
+                        });
+                    }
                 }
                 (text.trim().to_string(), media_items)
             }
@@ -186,12 +193,31 @@ impl ChatMessage {
         let (text, items) = self.split_text_and_media();
         let urls = items
             .into_iter()
-            .map(|item| match item {
-                MediaItem::Image(url) => url,
-                MediaItem::Video(url) => url,
+            .filter_map(|item| match item {
+                MediaItem::Image(url) => Some(url),
+                MediaItem::Video(url) => Some(url),
+                MediaItem::Audio { .. } => None,
             })
             .collect();
         (text, urls)
+    }
+
+    pub fn audio_items(&self) -> Vec<InputAudioContent> {
+        let (_, items) = self.split_text_and_media();
+        items
+            .into_iter()
+            .filter_map(|item| match item {
+                MediaItem::Audio { data, format } => Some(InputAudioContent { data, format }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn has_audio(&self) -> bool {
+        let (_, items) = self.split_text_and_media();
+        items
+            .iter()
+            .any(|item| matches!(item, MediaItem::Audio { .. }))
     }
 }
 
@@ -202,8 +228,9 @@ pub enum MessageContent {
     Parts(Vec<ContentPart>),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContentPart {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -211,14 +238,22 @@ pub struct ContentPart {
     pub image_url: Option<ImageUrlContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_url: Option<VideoUrlContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_audio: Option<InputAudioContent>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputAudioContent {
+    pub data: String,
+    pub format: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImageUrlContent {
     pub url: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VideoUrlContent {
     pub url: String,
 }

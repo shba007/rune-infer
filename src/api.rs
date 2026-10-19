@@ -127,10 +127,7 @@ pub fn create_router(state: AppState) -> Router {
         //     "/anthropic/messages",
         //     post(anthropic::anthropic_messages_handler),
         // )
-        // .route("/messages", post(anthropic::anthropic_messages_handler))
         .route("/health", get(health_handler))
-        .route("/livez", get(livez_handler))
-        .route("/readyz", get(readyz_handler))
         .layer(DefaultBodyLimit::max(128 * 1024 * 1024))
         .with_state(shared_state)
 }
@@ -193,60 +190,76 @@ async fn auth_middleware(State(state): State<Arc<AppState>>, req: Request, next:
     next.run(req).await
 }
 
+#[derive(Deserialize, Default)]
+struct HealthProbeQuery {
+    probe: Option<String>,
+    #[serde(rename = "type")]
+    probe_type: Option<String>,
+    check: Option<String>,
+}
+
 #[axum::debug_handler]
-async fn health_handler(State(state): State<Arc<AppState>>) -> Response {
-    match state.inference.registry.try_lock() {
-        Ok(reg) => {
-            let loaded = reg.loaded_models();
-            let mut res = HealthResponse::new();
-            if !loaded.is_empty() {
-                res = res.with_loaded_models(loaded);
+async fn health_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<HealthProbeQuery>,
+) -> Response {
+    let mode = query
+        .probe
+        .as_deref()
+        .or(query.probe_type.as_deref())
+        .or(query.check.as_deref())
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+
+    match mode.as_str() {
+        "live" | "livez" | "liveness" => Json(LivezResponse::new()).into_response(),
+        "ready" | "readyz" | "readiness" => match state.inference.registry.try_lock() {
+            Ok(reg) => {
+                let configured = reg.config.models.len();
+                let loaded = reg.loaded_models();
+                let loading = reg.loading_models();
+                Json(ReadyzResponse::new(configured, loaded, loading)).into_response()
             }
-            Json(res).into_response()
-        }
-        Err(std::sync::TryLockError::WouldBlock) => {
-            // Registry is active servicing or loading a model, but not poisoned
-            Json(HealthResponse::new()).into_response()
-        }
-        Err(std::sync::TryLockError::Poisoned(_)) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ErrorResponse {
-                error: ApiError::new("Model execution runtime is currently unready or poisoned.")
+            Err(std::sync::TryLockError::WouldBlock) => {
+                let configured = state.config().models.len();
+                Json(ReadyzResponse::new(configured, Vec::new(), Vec::new())).into_response()
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ErrorResponse {
+                    error: ApiError::new("Model execution runtime registry is poisoned.")
+                        .with_type("server_error")
+                        .with_code("runtime_poisoned"),
+                }),
+            )
+                .into_response(),
+        },
+        _ => match state.inference.registry.try_lock() {
+            Ok(reg) => {
+                let loaded = reg.loaded_models();
+                let mut res = HealthResponse::new();
+                if !loaded.is_empty() {
+                    res = res.with_loaded_models(loaded);
+                }
+                Json(res).into_response()
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                // Registry is active servicing or loading a model, but not poisoned
+                Json(HealthResponse::new()).into_response()
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ErrorResponse {
+                    error: ApiError::new(
+                        "Model execution runtime is currently unready or poisoned.",
+                    )
                     .with_type("server_error")
                     .with_code("runtime_unhealthy"),
-            }),
-        )
-            .into_response(),
-    }
-}
-
-#[axum::debug_handler]
-async fn livez_handler() -> Response {
-    Json(LivezResponse::new()).into_response()
-}
-
-#[axum::debug_handler]
-async fn readyz_handler(State(state): State<Arc<AppState>>) -> Response {
-    match state.inference.registry.try_lock() {
-        Ok(reg) => {
-            let configured = reg.config.models.len();
-            let loaded = reg.loaded_models();
-            let loading = reg.loading_models();
-            Json(ReadyzResponse::new(configured, loaded, loading)).into_response()
-        }
-        Err(std::sync::TryLockError::WouldBlock) => {
-            let configured = state.config().models.len();
-            Json(ReadyzResponse::new(configured, Vec::new(), Vec::new())).into_response()
-        }
-        Err(std::sync::TryLockError::Poisoned(_)) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(ErrorResponse {
-                error: ApiError::new("Model execution runtime registry is poisoned.")
-                    .with_type("server_error")
-                    .with_code("runtime_poisoned"),
-            }),
-        )
-            .into_response(),
+                }),
+            )
+                .into_response(),
+        },
     }
 }
 

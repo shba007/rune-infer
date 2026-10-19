@@ -19,6 +19,8 @@ pub enum InferenceTaskRequest {
         #[serde(default)]
         images: Vec<Vec<u8>>,
         #[serde(default)]
+        audios: Vec<Vec<u8>>,
+        #[serde(default)]
         messages: Vec<ChatMessage>,
         #[serde(default)]
         max_tokens: Option<usize>,

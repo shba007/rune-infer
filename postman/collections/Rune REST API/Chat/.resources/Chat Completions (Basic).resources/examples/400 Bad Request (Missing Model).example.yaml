@@ -1,0 +1,36 @@
+$kind: http-example
+name: 400 Bad Request (Missing Model)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hello world"
+          }
+        ]
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "Missing required field: 'model'",
+          "type": "invalid_request_error",
+          "param": "model",
+          "code": "model_missing"
+        }
+      }
+order: 2015

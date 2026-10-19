@@ -1,0 +1,47 @@
+$kind: http-example
+name: 400 Bad Request (Unsupported Audio Format)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "gemma-4-12b-it",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "input_audio",
+                "input_audio": {
+                  "data": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQAAAAA=",
+                  "format": "flac"
+                }
+              }
+            ]
+          }
+        ]
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "Unsupported audio format 'flac' in 'messages[0].content'. Supported formats are 'wav' and 'mp3'.",
+          "type": "invalid_request_error",
+          "param": "input_audio.format",
+          "code": "unsupported_audio_format"
+        }
+      }
+order: 2520

@@ -1,0 +1,81 @@
+$kind: http-example
+name: 200 OK (Batch Text Moderation)
+request:
+  url: '{{base_url}}/v1/moderations'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "gliguard-LLMGuardrails-300M",
+        "input": [
+          "I love building open-source developer tools in Rust.",
+          "I will hack into your database and delete everything."
+        ]
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "modr-90df6b1c3f",
+        "model": "gliguard-LLMGuardrails-300M",
+        "results": [
+          {
+            "flagged": false,
+            "categories": {
+              "sexual": false,
+              "hate": false,
+              "harassment": false,
+              "self-harm": false,
+              "sexual/minors": false,
+              "hate/threatening": false,
+              "violence/graphic": false,
+              "violence": false
+            },
+            "category_scores": {
+              "sexual": 0.00001,
+              "hate": 0.00002,
+              "harassment": 0.00005,
+              "self-harm": 0.00001,
+              "sexual/minors": 0.00000,
+              "hate/threatening": 0.00001,
+              "violence/graphic": 0.00002,
+              "violence": 0.00004
+            }
+          },
+          {
+            "flagged": true,
+            "categories": {
+              "sexual": false,
+              "hate": false,
+              "harassment": true,
+              "self-harm": false,
+              "sexual/minors": false,
+              "hate/threatening": true,
+              "violence/graphic": false,
+              "violence": false
+            },
+            "category_scores": {
+              "sexual": 0.00002,
+              "hate": 0.00034,
+              "harassment": 0.91245,
+              "self-harm": 0.00001,
+              "sexual/minors": 0.00000,
+              "hate/threatening": 0.88412,
+              "violence/graphic": 0.00015,
+              "violence": 0.12450
+            }
+          }
+        ]
+      }
+order: 5150

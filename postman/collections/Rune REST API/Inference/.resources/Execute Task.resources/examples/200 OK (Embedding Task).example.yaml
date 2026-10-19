@@ -1,0 +1,60 @@
+$kind: http-example
+name: 200 OK (Embedding Task)
+request:
+  url: '{{base_url}}/v1/inference?engine=encoder'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "Embedding": {
+          "model": "granite-embedding-311m-multilingual-r2",
+          "input": [
+            "Semantic search query text"
+          ],
+          "dimensions": 256
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "response": {
+          "Embedding": {
+            "object": "list",
+            "data": [
+              {
+                "object": "embedding",
+                "index": 0,
+                "embedding": [
+                  0.0341,
+                  -0.0125,
+                  0.0512,
+                  -0.0084
+                ]
+              }
+            ],
+            "model": "granite-embedding-311m-multilingual-r2",
+            "usage": {
+              "prompt_tokens": 5,
+              "total_tokens": 5
+            }
+          }
+        },
+        "usage": {
+          "prompt_tokens": 5,
+          "completion_tokens": 0,
+          "total_tokens": 5
+        }
+      }
+order: 10050

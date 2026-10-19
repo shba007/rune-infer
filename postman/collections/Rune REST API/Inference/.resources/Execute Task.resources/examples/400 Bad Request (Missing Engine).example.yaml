@@ -1,0 +1,34 @@
+$kind: http-example
+name: 400 Bad Request (Missing Engine)
+request:
+  url: '{{base_url}}/v1/inference'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "ToolCall": {
+          "prompt": "Hello",
+          "schema": [],
+          "tool_choice": "none",
+          "images": [],
+          "audios": []
+        }
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "Error": "Missing required query parameter: 'engine'"
+      }
+order: 10100

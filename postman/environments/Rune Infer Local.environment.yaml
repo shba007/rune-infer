@@ -1,0 +1,44 @@
+name: Rune Infer Local
+values:
+  - key: base_url
+    value: 'http://127.0.0.1:8080'
+  - key: api_key
+    value: sk-rune-local-test-key
+  - key: chat_model
+    value: gemma-4-12b-it
+  - key: omni_model
+    value: gemma-4-12b-it
+  - key: vision_model
+    value: qwen3.8-27b
+  - key: image_model
+    value: z-image
+  - key: asr_model
+    value: parakeet-tdt-0.6b-v3
+  - key: tts_model
+    value: audio8-tts-preview-0.6b
+  - key: embedding_model
+    value: granite-embedding-311m-multilingual-r2
+  - key: moderation_model
+    value: gliguard-LLMGuardrails-300M
+  - key: decision_model
+    value: liquid-d1-3b
+  - key: detection_model
+    value: yolo-11x-detection
+  - key: grounding_model
+    value: grounding-dino-base
+  - key: image_embedding_model
+    value: clip-vit-large-patch14
+  - key: ocr_model
+    value: got-ocr-2.0
+  - key: upscale_model
+    value: real-esrgan-x4plus
+  - key: restoration_model
+    value: codeformer-v0.1
+  - key: style_model
+    value: neural-style-v2
+  - key: nlu_model
+    value: mmbert32k-intent-classifier-merged
+  - key: s2st_model
+    value: seamless-m4t-v2-large
+  - key: diarization_model
+    value: nemotron-3-diarization

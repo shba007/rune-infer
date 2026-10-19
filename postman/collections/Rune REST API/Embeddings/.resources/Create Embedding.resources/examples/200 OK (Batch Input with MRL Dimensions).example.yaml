@@ -1,0 +1,60 @@
+$kind: http-example
+name: 200 OK (Batch Input with MRL Dimensions)
+request:
+  url: '{{base_url}}/v1/embeddings'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "granite-embedding-311m-multilingual-r2",
+        "input": [
+          "First text passage for dense semantic retrieval",
+          "Second text passage comparing algorithmic performance"
+        ],
+        "dimensions": 256
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "object": "list",
+        "data": [
+          {
+            "object": "embedding",
+            "index": 0,
+            "embedding": [
+              0.0214,
+              -0.0381,
+              0.0192,
+              -0.0054
+            ]
+          },
+          {
+            "object": "embedding",
+            "index": 1,
+            "embedding": [
+              -0.0128,
+              0.0452,
+              -0.0211,
+              0.0319
+            ]
+          }
+        ],
+        "model": "granite-embedding-311m-multilingual-r2",
+        "usage": {
+          "prompt_tokens": 16,
+          "total_tokens": 16
+        }
+      }
+order: 5050

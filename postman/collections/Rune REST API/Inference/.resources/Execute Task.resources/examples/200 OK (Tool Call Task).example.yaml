@@ -1,0 +1,68 @@
+$kind: http-example
+name: 200 OK (Tool Call Task)
+request:
+  url: '{{base_url}}/v1/inference?engine=encoder'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "ToolCall": {
+          "prompt": "Click the submit button.",
+          "schema": [
+            {
+              "type": "function",
+              "function": {
+                "name": "click_coordinate",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "x": { "type": "number" },
+                    "y": { "type": "number" }
+                  },
+                  "required": ["x", "y"]
+                }
+              }
+            }
+          ],
+          "tool_choice": "required",
+          "images": [],
+          "audios": []
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "response": {
+          "ToolCall": {
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_12345",
+                "type": "function",
+                "function": {
+                  "name": "click_coordinate",
+                  "arguments": "{\"x\": 850, \"y\": 750}"
+                }
+              }
+            ]
+          }
+        },
+        "usage": {
+          "prompt_tokens": 50,
+          "completion_tokens": 20,
+          "total_tokens": 70
+        }
+      }
+order: 10000

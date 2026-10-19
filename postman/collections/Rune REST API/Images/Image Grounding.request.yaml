@@ -11,8 +11,9 @@ body:
   type: json
   content: |-
     {
-      "model": "{{vision_model}}",
+      "model": "{{grounding_model}}",
       "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
       "query": "Save button"
     }
+examples: .resources/Image Grounding.resources/examples
 order: 3350

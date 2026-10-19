@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::http::StatusCode;
+use base64::Engine;
 
 use super::tools::build_system_prompt;
 use crate::config::{ModelConfig, SamplingConfig};
@@ -12,6 +13,7 @@ pub struct PreparedPrompt {
     pub is_structured_mode: bool,
     pub image_count: usize,
     pub video_count: usize,
+    pub audio_count: usize,
 }
 
 pub fn prepare_prompt(
@@ -19,16 +21,19 @@ pub fn prepare_prompt(
     model_config: &ModelConfig,
 ) -> Result<PreparedPrompt, (StatusCode, Json<ErrorResponse>)> {
     let mut has_video = false;
-    let mut has_media = false;
+    let mut has_image = false;
+    let mut has_audio = false;
 
     for msg in &request.messages {
         let (_, media) = msg.split_text_and_media();
-        has_media |= !media.is_empty();
         has_video |= media.iter().any(|m| matches!(m, MediaItem::Video(_)));
+        has_image |= media.iter().any(|m| matches!(m, MediaItem::Image(_)));
+        has_audio |= media.iter().any(|m| matches!(m, MediaItem::Audio { .. }));
     }
 
+    let has_vision = has_image || has_video;
     let supports_vision = model_config.is_vision();
-    if has_media && !supports_vision {
+    if has_vision && !supports_vision {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -38,6 +43,20 @@ pub fn prepare_prompt(
                 ))
                 .with_type("invalid_request_error")
                 .with_code("model_vision_unsupported"),
+            }),
+        ));
+    }
+
+    if has_audio && !model_config.is_vision() && !model_config.supports_audio() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new(format!(
+                    "Model '{}' does not support audio inputs.",
+                    model_config.id
+                ))
+                .with_type("invalid_request_error")
+                .with_code("model_audio_unsupported"),
             }),
         ));
     }
@@ -141,9 +160,11 @@ pub fn prepare_prompt(
     let mut total_media_tokens = 0u32;
     let mut image_count = 0usize;
     let mut video_count = 0usize;
+    let mut audio_count = 0usize;
 
     let mut prompt = String::new();
     let mut images = Vec::new();
+    let mut audios = Vec::new();
     let mut augmented_messages = request.messages.clone();
 
     let has_system = request.messages.iter().any(|m| m.role == "system");
@@ -270,6 +291,64 @@ pub fn prepare_prompt(
                         }
                     }
                 }
+                MediaItem::Audio { data, format } => {
+                    audio_count += 1;
+                    let fmt_lower = format.trim().to_ascii_lowercase();
+                    if fmt_lower != "wav" && fmt_lower != "mp3" {
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            Json(ErrorResponse {
+                                error: ApiError::new(format!(
+                                    "Unsupported audio format '{format}' in 'messages[{}].content'. Supported formats are 'wav' and 'mp3'.",
+                                    m_idx
+                                ))
+                                .with_type("invalid_request_error")
+                                .with_param("input_audio.format")
+                                .with_code("unsupported_audio_format"),
+                            }),
+                        ));
+                    }
+
+                    let audio_bytes =
+                        match base64::engine::general_purpose::STANDARD.decode(data.trim()) {
+                            Ok(b) => b,
+                            Err(_) => {
+                                return Err((
+                                    StatusCode::BAD_REQUEST,
+                                    Json(ErrorResponse {
+                                        error: ApiError::new(format!(
+                                            "Invalid base64 audio data in 'messages[{}].content'.",
+                                            m_idx
+                                        ))
+                                        .with_type("invalid_request_error")
+                                        .with_param("input_audio.data")
+                                        .with_code("invalid_audio_format"),
+                                    }),
+                                ));
+                            }
+                        };
+
+                    if audio_bytes.len() > 50 * 1024 * 1024 {
+                        return Err((
+                            StatusCode::PAYLOAD_TOO_LARGE,
+                            Json(ErrorResponse {
+                                error: ApiError::new(
+                                    "Audio payload exceeds maximum supported size of 50MB.",
+                                )
+                                .with_type("invalid_request_error")
+                                .with_code("audio_payload_too_large"),
+                            }),
+                        ));
+                    }
+
+                    let est_audio_tokens = ((audio_bytes.len() / 640).clamp(64, 4096)) as u32;
+                    total_media_tokens = total_media_tokens.saturating_add(est_audio_tokens);
+
+                    audios.push(audio_bytes);
+                    media_blocks.push_str(&format!(
+                        "\nAudio {audio_count}:\n<|audio_start|><__media__><|audio_end|>\n"
+                    ));
+                }
             }
         }
 
@@ -320,6 +399,7 @@ pub fn prepare_prompt(
             schema: task_schema,
             tool_choice: request.tool_choice.clone(),
             images,
+            audios,
             messages: augmented_messages,
             max_tokens: sampling.max_tokens,
             temperature: sampling.temperature,
@@ -333,5 +413,6 @@ pub fn prepare_prompt(
         is_structured_mode,
         image_count,
         video_count,
+        audio_count,
     })
 }

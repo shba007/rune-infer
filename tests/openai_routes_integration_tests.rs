@@ -1,5 +1,6 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
+use base64::Engine;
 use rune_infer::api::{AppState, create_router};
 use rune_infer::config::{ModelConfig, ModelRegistry, ServerConfig};
 use rune_infer::inference::AppState as InferenceAppState;
@@ -350,4 +351,355 @@ async fn test_audio_transcription_route() {
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(json.get("text").is_some());
+}
+
+fn sample_multimodal_encoder_config() -> ModelConfig {
+    let raw = r#"{
+        "id": "qwen3.8-encoder",
+        "name": "Qwen3.8 Multimodal Encoder",
+        "modality": "VisionText",
+        "capabilities": ["Chat", "Vision", "Tool Call"],
+        "engine": { "supported": ["encoder"], "preferred": "encoder" },
+        "max_context_length": 262144,
+        "sampling": { "temperature": 0.3, "max_tokens": 1024 },
+        "local": {
+            "path": "Cargo.toml",
+            "params": 27000000000,
+            "bits_per_weight": 3.44,
+            "context_length": 131072,
+            "gpu_layers": 99,
+            "args": ""
+        },
+        "extra": {}
+    }"#;
+    let entry: ModelEntry = serde_json::from_str(raw).expect("valid json");
+    ModelConfig::try_from(entry).expect("valid model config")
+}
+
+fn sample_gemma4_omni_encoder_config() -> ModelConfig {
+    let raw = r#"{
+        "id": "gemma-4-12b-it",
+        "name": "Gemma 4 12B IT",
+        "modality": "Omni",
+        "capabilities": ["Chat", "Vision", "Audio", "Video", "Omni", "Tool Call"],
+        "engine": { "supported": ["encoder"], "preferred": "encoder" },
+        "max_context_length": 262144,
+        "sampling": { "temperature": 0.6, "top_p": 0.95, "top_k": 40, "max_tokens": 4096 },
+        "local": {
+            "path": "Cargo.toml",
+            "params": 12000000000,
+            "bits_per_weight": 4.5,
+            "context_length": 262144,
+            "gpu_layers": 99,
+            "args": ""
+        },
+        "extra": {}
+    }"#;
+    let entry: ModelEntry = serde_json::from_str(raw).expect("valid json");
+    ModelConfig::try_from(entry).expect("valid model config")
+}
+
+fn create_multimodal_test_app() -> axum::Router {
+    let mut catalog = ModelRegistry {
+        server: ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+            api_key: None,
+            max_loaded_models: 2,
+            idle_unload_seconds: 300,
+            vram_budget_ratio: 0.95,
+        },
+        ..Default::default()
+    };
+    catalog.models.push(sample_multimodal_encoder_config());
+    catalog.models.push(sample_gemma4_omni_encoder_config());
+
+    let inference = Arc::new(InferenceAppState::new(&catalog));
+    let proxy = Arc::new(ProxyService::new(&catalog));
+    let state = AppState::new(inference, proxy, catalog);
+    create_router(state)
+}
+
+fn sample_png_base64() -> String {
+    let png_bytes = [
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8,
+        0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+    let b64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
+    format!("data:image/png;base64,{b64}")
+}
+
+fn sample_wav_base64() -> String {
+    let wav_bytes = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00";
+    base64::engine::general_purpose::STANDARD.encode(wav_bytes)
+}
+
+#[tokio::test]
+async fn test_openai_chat_input_audio_with_screenshot_and_tools() {
+    let app = create_multimodal_test_app();
+    let img_uri = sample_png_base64();
+    let wav_b64 = sample_wav_base64();
+
+    let payload = serde_json::json!({
+        "model": "qwen3.8-encoder",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "Click the button based on this screenshot and voice command." },
+                    { "type": "image_url", "image_url": { "url": img_uri } },
+                    { "type": "input_audio", "input_audio": { "data": wav_b64, "format": "wav" } }
+                ]
+            }
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "click_coordinate",
+                    "description": "Click screen coordinates",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number" },
+                            "y": { "type": "number" }
+                        },
+                        "required": ["x", "y"]
+                    }
+                }
+            }
+        ],
+        "tool_choice": "required"
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let res: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let tool_calls = res["choices"][0]["message"]["tool_calls"]
+        .as_array()
+        .expect("tool_calls");
+    assert_eq!(tool_calls[0]["function"]["name"], "click_coordinate");
+}
+
+#[tokio::test]
+async fn test_openai_chat_input_audio_with_screenshot_text_response() {
+    let app = create_multimodal_test_app();
+    let img_uri = sample_png_base64();
+    let wav_b64 = sample_wav_base64();
+
+    let payload = serde_json::json!({
+        "model": "qwen3.8-encoder",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "Analyze the UI screenshot and transcribed voice prompt." },
+                    { "type": "image_url", "image_url": { "url": img_uri } },
+                    { "type": "input_audio", "input_audio": { "data": wav_b64, "format": "wav" } }
+                ]
+            }
+        ]
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let res: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let content = res["choices"][0]["message"]["content"]
+        .as_str()
+        .expect("message content");
+    assert!(content.contains("1 image(s) and 1 audio(s)"));
+}
+
+#[tokio::test]
+async fn test_openai_chat_input_audio_unsupported_format() {
+    let app = create_multimodal_test_app();
+    let wav_b64 = sample_wav_base64();
+
+    let payload = serde_json::json!({
+        "model": "qwen3.8-encoder",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "input_audio", "input_audio": { "data": wav_b64, "format": "flac" } }
+                ]
+            }
+        ]
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let res: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(res["error"]["code"], "unsupported_audio_format");
+}
+
+#[tokio::test]
+async fn test_openai_chat_input_audio_invalid_base64() {
+    let app = create_multimodal_test_app();
+
+    let payload = serde_json::json!({
+        "model": "qwen3.8-encoder",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "input_audio", "input_audio": { "data": "!!!not_base64!!!", "format": "wav" } }
+                ]
+            }
+        ]
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let res: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(res["error"]["code"], "invalid_audio_format");
+}
+
+#[tokio::test]
+async fn test_gemma4_omni_model_catalog_resolution() {
+    let app = create_multimodal_test_app();
+
+    // 1. Exact model ID via GET /v1/models/{model}
+    let req = Request::builder()
+        .method("GET")
+        .uri("/v1/models/gemma-4-12b-it")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["id"], "gemma-4-12b-it");
+    let caps = json["capabilities"].as_array().expect("capabilities array");
+    let caps_str: Vec<&str> = caps.iter().filter_map(|c| c.as_str()).collect();
+    assert!(caps_str.contains(&"Omni"));
+    assert!(caps_str.contains(&"Audio"));
+    assert!(caps_str.contains(&"Vision"));
+
+    // 2. Chat completion with full Hugging Face repository/GGUF slug resolves and succeeds
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"model":"unsloth/gemma-4-12b-it-GGUF","messages":[{"role":"user","content":"Hello Gemma 4"}]}"#,
+        ))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["model"], "unsloth/gemma-4-12b-it-GGUF");
+    assert!(json["choices"][0]["message"]["content"].as_str().is_some());
+
+    // 3. Chat completion with exact ID
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"model":"gemma-4-12b-it","messages":[{"role":"user","content":"Hello Gemma 4"}]}"#,
+        ))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["model"], "gemma-4-12b-it");
+    assert!(json["choices"][0]["message"]["content"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_gemma4_omni_chat_completion_all_modalities() {
+    let app = create_multimodal_test_app();
+    let img_uri = sample_png_base64();
+    let wav_b64 = sample_wav_base64();
+
+    let payload = serde_json::json!({
+        "model": "unsloth/gemma-4-12b-it-GGUF",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "Analyze the omni inputs including image screenshot and speech audio." },
+                    { "type": "image_url", "image_url": { "url": img_uri } },
+                    { "type": "input_audio", "input_audio": { "data": wav_b64, "format": "wav" } }
+                ]
+            }
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "omni_action",
+                    "description": "Trigger omni multimodal action",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action_type": { "type": "string" }
+                        },
+                        "required": ["action_type"]
+                    }
+                }
+            }
+        ],
+        "tool_choice": "none"
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let res: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(res["model"], "unsloth/gemma-4-12b-it-GGUF");
+    let content = res["choices"][0]["message"]["content"]
+        .as_str()
+        .expect("message content");
+    assert!(content.contains("1 image(s) and 1 audio(s)"));
 }

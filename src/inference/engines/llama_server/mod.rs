@@ -208,6 +208,7 @@ impl InferenceEngine for LlamaServerEngine {
                 schema,
                 tool_choice,
                 images,
+                audios,
                 messages,
                 max_tokens,
                 temperature,
@@ -224,28 +225,82 @@ impl InferenceEngine for LlamaServerEngine {
 
                 if !messages.is_empty() {
                     for (m_idx, msg) in messages.iter().enumerate() {
-                        let (text, _) = msg.split_text_and_media();
+                        let (text, media_items) = msg.split_text_and_media();
                         let has_images = !images.is_empty()
                             && msg.role == "user"
                             && m_idx == messages.iter().position(|m| m.role == "user").unwrap_or(0);
+                        let has_audios = !audios.is_empty()
+                            && msg.role == "user"
+                            && m_idx == messages.iter().position(|m| m.role == "user").unwrap_or(0);
+                        let has_media = !media_items.is_empty() || has_images || has_audios;
 
                         let mut msg_obj = serde_json::json!({ "role": msg.role });
-                        if has_images {
+                        if has_media && msg.role == "user" {
                             let mut parts = Vec::new();
                             if !text.is_empty() {
                                 parts.push(serde_json::json!({ "type": "text", "text": text }));
                             }
-                            for frame in images.iter() {
-                                let mime = if frame.starts_with(b"\x89PNG") {
-                                    "image/png"
-                                } else {
-                                    "image/jpeg"
-                                };
-                                let b64 = base64::engine::general_purpose::STANDARD.encode(frame);
-                                parts.push(serde_json::json!({
-                                    "type": "image_url",
-                                    "image_url": { "url": format!("data:{mime};base64,{b64}") }
-                                }));
+
+                            if !media_items.is_empty() {
+                                for item in media_items {
+                                    match item {
+                                        crate::types::MediaItem::Image(url) => {
+                                            parts.push(serde_json::json!({
+                                                "type": "image_url",
+                                                "image_url": { "url": url }
+                                            }));
+                                        }
+                                        crate::types::MediaItem::Video(url) => {
+                                            parts.push(serde_json::json!({
+                                                "type": "video_url",
+                                                "video_url": { "url": url }
+                                            }));
+                                        }
+                                        crate::types::MediaItem::Audio { data, format } => {
+                                            parts.push(serde_json::json!({
+                                                "type": "input_audio",
+                                                "input_audio": {
+                                                    "data": data,
+                                                    "format": format
+                                                }
+                                            }));
+                                        }
+                                    }
+                                }
+                            } else {
+                                for frame in images.iter() {
+                                    let mime = if frame.starts_with(b"\x89PNG") {
+                                        "image/png"
+                                    } else {
+                                        "image/jpeg"
+                                    };
+                                    let b64 =
+                                        base64::engine::general_purpose::STANDARD.encode(frame);
+                                    parts.push(serde_json::json!({
+                                        "type": "image_url",
+                                        "image_url": { "url": format!("data:{mime};base64,{b64}") }
+                                    }));
+                                }
+                                for audio_bytes in audios.iter() {
+                                    let b64 = base64::engine::general_purpose::STANDARD
+                                        .encode(audio_bytes);
+                                    let fmt = if audio_bytes.starts_with(b"ID3")
+                                        || (audio_bytes.len() > 1
+                                            && audio_bytes[0] == 0xFF
+                                            && (audio_bytes[1] & 0xE0) == 0xE0)
+                                    {
+                                        "mp3"
+                                    } else {
+                                        "wav"
+                                    };
+                                    parts.push(serde_json::json!({
+                                        "type": "input_audio",
+                                        "input_audio": {
+                                            "data": b64,
+                                            "format": fmt
+                                        }
+                                    }));
+                                }
                             }
                             msg_obj["content"] = serde_json::Value::Array(parts);
                         } else if msg.role == "assistant" && msg.tool_calls.is_some() {

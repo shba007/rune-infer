@@ -1,0 +1,57 @@
+$kind: http-example
+name: 200 OK (String State with Questions Map)
+request:
+  url: '{{base_url}}/v1/decisions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "liquid-d1-3b",
+        "state": "Transaction amount $4,850 initiated from new device IP in Zurich at 03:14 AM.",
+        "questions": {
+          "fraud_likelihood": {
+            "type": "score",
+            "instruction": "Assess fraud likelihood between 0.0 and 1.0"
+          },
+          "recommended_action": {
+            "type": "choice",
+            "instruction": "Determine policy action",
+            "criteria": ["allow", "step_up_auth", "block"]
+          }
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "liquid-d1-3b",
+        "answers": {
+          "fraud_likelihood": {
+            "type": "score",
+            "value": 0.81,
+            "confidence": 0.93
+          },
+          "recommended_action": {
+            "type": "choice",
+            "value": "step_up_auth",
+            "confidence": 0.88
+          }
+        },
+        "usage": {
+          "prompt_tokens": 42,
+          "completion_tokens": 18,
+          "total_tokens": 60
+        }
+      }
+order: 11050

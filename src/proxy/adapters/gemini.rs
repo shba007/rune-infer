@@ -214,17 +214,32 @@ pub async fn execute_chat(
         }
 
         for item in media_items {
-            let url = match item {
-                crate::types::MediaItem::Image(u) => u,
-                crate::types::MediaItem::Video(u) => u,
-            };
-            if let Some((mime, b64)) = parse_data_uri(&url) {
-                parts.push(serde_json::json!({
-                    "inlineData": {
-                        "mimeType": mime,
-                        "data": b64
+            match item {
+                crate::types::MediaItem::Image(url) | crate::types::MediaItem::Video(url) => {
+                    if let Some((mime, b64)) = parse_data_uri(&url) {
+                        parts.push(serde_json::json!({
+                            "inlineData": {
+                                "mimeType": mime,
+                                "data": b64
+                            }
+                        }));
                     }
-                }));
+                }
+                crate::types::MediaItem::Audio { data, format } => {
+                    let fmt_lower = format.to_ascii_lowercase();
+                    let mime = match fmt_lower.as_str() {
+                        "wav" => "audio/wav",
+                        "mp3" => "audio/mp3",
+                        other if other.contains('/') => other,
+                        _ => "audio/wav",
+                    };
+                    parts.push(serde_json::json!({
+                        "inlineData": {
+                            "mimeType": mime,
+                            "data": data
+                        }
+                    }));
+                }
             }
         }
 

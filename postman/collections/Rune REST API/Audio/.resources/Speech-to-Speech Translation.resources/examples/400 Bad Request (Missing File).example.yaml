@@ -1,0 +1,30 @@
+$kind: http-example
+name: 400 Bad Request (Missing File)
+request:
+  url: '{{base_url}}/v1/audio/speech-to-speech'
+  method: POST
+  headers:
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: formdata
+    content:
+      - key: target_language
+        type: text
+        value: fra
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'file' is a required multipart/form-data field.",
+          "type": "invalid_request_error",
+          "param": "file"
+        }
+      }
+order: 4310

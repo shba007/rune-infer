@@ -157,6 +157,7 @@ pub async fn anthropic_messages_handler(
                                     text: Some(t.to_string()),
                                     image_url: None,
                                     video_url: None,
+                                    input_audio: None,
                                 });
                             }
                         }
@@ -177,6 +178,7 @@ pub async fn anthropic_messages_handler(
                                         text: None,
                                         image_url: Some(ImageUrlContent { url: data_uri }),
                                         video_url: None,
+                                        input_audio: None,
                                     });
                                 }
                             }

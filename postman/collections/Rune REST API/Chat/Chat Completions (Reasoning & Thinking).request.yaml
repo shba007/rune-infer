@@ -1,0 +1,29 @@
+$kind: http-request
+name: Chat Completions (Reasoning & Thinking)
+url: '{{base_url}}/v1/chat/completions'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{chat_model}}",
+      "messages": [
+        {
+          "role": "user",
+          "content": "In a room of 30 people, what is the exact probability that at least two people share a birthday? Show your step-by-step mathematical reasoning."
+        }
+      ],
+      "reasoning_effort": "high",
+      "thinking": {
+        "type": "enabled",
+        "budget_tokens": 2048
+      },
+      "max_tokens": 4096
+    }
+examples: .resources/Chat Completions (Reasoning & Thinking).resources/examples
+order: 2600

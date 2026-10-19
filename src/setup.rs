@@ -267,7 +267,10 @@ pub fn slugify(s: &str) -> String {
 
 fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
     let id = slugify(&c.path.file_stem().unwrap_or_default().to_string_lossy());
-    let is_llm = matches!(c.modality, Modality::Text | Modality::VisionText);
+    let is_llm = matches!(
+        c.modality,
+        Modality::Text | Modality::VisionText | Modality::Omni
+    );
     let mut description = format!(
         "Imported by setup wizard ({} · {} architecture)",
         c.kind_label, c.architecture

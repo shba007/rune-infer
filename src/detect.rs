@@ -221,6 +221,9 @@ const VISION_LM_ARCHS: &[&str] = &[
     "llava",
     "mllama",
     "gemma3",
+    "gemma4",
+    "gemma4v",
+    "gemma4vl",
     "internvl",
     "minicpmv",
     "glm4v",
@@ -450,6 +453,29 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
             "embedding",
             vec!["Embedding"],
         ));
+    }
+    if arch == "gemma4"
+        || arch == "gemma_4"
+        || arch == "gemma-4"
+        || lower_name.contains("gemma-4")
+        || lower_name.contains("gemma4")
+    {
+        let mut d = det(
+            Modality::Omni,
+            vec![EngineKind::LlamaServer],
+            "omni multimodal model",
+            vec![
+                "Chat",
+                "Vision",
+                "Audio",
+                "Video",
+                "Omni",
+                "Tool Call",
+                "Structured Output",
+            ],
+        );
+        d.class = Class::Llm;
+        return Classified::Model(d);
     }
     if arch == "lfm"
         || arch == "lfm2"
@@ -713,7 +739,7 @@ fn pair_projectors(
         if let Some(best) = options.first() {
             c.extra
                 .insert("mmproj_path".into(), json!(best.to_string_lossy()));
-            if c.modality != Modality::Decision {
+            if c.modality != Modality::Decision && c.modality != Modality::Omni {
                 c.modality = Modality::VisionText;
                 c.kind_label = "vision chat model";
             }
@@ -1112,6 +1138,19 @@ mod tests {
         assert_eq!(d.kind_label, "decision model");
         assert!(d.capabilities.contains(&"Decision"));
         assert!(d.capabilities.contains(&"System1"));
+    }
+
+    #[test]
+    fn gemma_4_omni_model_detection() {
+        let g = Gguf::llm("gemma4", "Gemma 4 12B IT");
+        let d = model(cls(&g, "gemma-4-12b-it-Q4_K_M.gguf"));
+        assert_eq!(d.modality, Modality::Omni);
+        assert_eq!(d.engines, vec![EngineKind::LlamaServer]);
+        assert_eq!(d.kind_label, "omni multimodal model");
+        assert!(d.capabilities.contains(&"Vision"));
+        assert!(d.capabilities.contains(&"Audio"));
+        assert!(d.capabilities.contains(&"Video"));
+        assert!(d.capabilities.contains(&"Omni"));
     }
 
     #[test]

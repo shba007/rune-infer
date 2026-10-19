@@ -129,6 +129,7 @@ pub async fn responses_handler(
         schema: tools_val,
         tool_choice: None,
         images: Vec::new(),
+        audios: Vec::new(),
         messages,
         max_tokens: sampling.max_tokens,
         temperature: sampling.temperature,

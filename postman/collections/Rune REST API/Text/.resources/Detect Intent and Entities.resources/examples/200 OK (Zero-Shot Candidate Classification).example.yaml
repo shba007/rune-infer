@@ -1,0 +1,62 @@
+$kind: http-example
+name: 200 OK (Zero-Shot Candidate Classification)
+request:
+  url: '{{base_url}}/v1/nlu/intents'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "mmbert32k-intent-classifier-merged",
+        "text": "Can you reschedule my appointment to next Monday at 2pm?",
+        "candidate_intents": [
+          "book_appointment",
+          "cancel_appointment",
+          "reschedule_appointment",
+          "general_inquiry"
+        ],
+        "candidate_entities": [
+          "date",
+          "time",
+          "service_type"
+        ]
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "nlu_01J9R4T8Q7X11",
+        "object": "nlu.analysis",
+        "model": "mmbert32k-intent-classifier-merged",
+        "intent": {
+          "name": "reschedule_appointment",
+          "confidence": 0.988
+        },
+        "entities": [
+          {
+            "type": "date",
+            "value": "next Monday",
+            "start": 37,
+            "end": 48,
+            "confidence": 0.97
+          },
+          {
+            "type": "time",
+            "value": "2pm",
+            "start": 52,
+            "end": 55,
+            "confidence": 0.95
+          }
+        ]
+      }
+order: 2550

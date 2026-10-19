@@ -1,0 +1,71 @@
+$kind: http-example
+name: 200 OK (Multiple Images Comparison)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "qwen3.8-27b",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Compare these two screenshots and identify the modified button styles."
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                }
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "https://example.com/assets/screenshot-v2.png"
+                }
+              }
+            ]
+          }
+        ]
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "chatcmpl-vision-002",
+        "object": "chat.completion",
+        "created": 1727827300,
+        "model": "qwen3.8-27b",
+        "system_fingerprint": "fp_rune_rust_v1",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Comparing the two images, the primary CTA button in the second version has updated border radius (8px rounded corners) and a high-contrast gradient background.",
+              "refusal": null
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 170,
+          "completion_tokens": 34,
+          "total_tokens": 204
+        }
+      }
+order: 2410

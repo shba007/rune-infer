@@ -1,2 +1,65 @@
 name: Globals
-values: []
+values:
+  - key: base_url
+    value: http://127.0.0.1:8080
+    enabled: true
+  - key: api_key
+    value: sk-rune-local-test-key
+    enabled: true
+  - key: chat_model
+    value: gemma-4-12b-it
+    enabled: true
+  - key: omni_model
+    value: gemma-4-12b-it
+    enabled: true
+  - key: vision_model
+    value: qwen3.8-27b
+    enabled: true
+  - key: image_model
+    value: z-image
+    enabled: true
+  - key: asr_model
+    value: parakeet-tdt-0.6b-v3
+    enabled: true
+  - key: tts_model
+    value: audio8-tts-preview-0.6b
+    enabled: true
+  - key: embedding_model
+    value: granite-embedding-311m-multilingual-r2
+    enabled: true
+  - key: moderation_model
+    value: gliguard-LLMGuardrails-300M
+    enabled: true
+  - key: decision_model
+    value: liquid-d1-3b
+    enabled: true
+  - key: detection_model
+    value: yolo-11x-detection
+    enabled: true
+  - key: grounding_model
+    value: grounding-dino-base
+    enabled: true
+  - key: image_embedding_model
+    value: clip-vit-large-patch14
+    enabled: true
+  - key: ocr_model
+    value: got-ocr-2.0
+    enabled: true
+  - key: upscale_model
+    value: real-esrgan-x4plus
+    enabled: true
+  - key: restoration_model
+    value: codeformer-v0.1
+    enabled: true
+  - key: style_model
+    value: neural-style-v2
+    enabled: true
+  - key: nlu_model
+    value: mmbert32k-intent-classifier-merged
+    enabled: true
+  - key: s2st_model
+    value: seamless-m4t-v2-large
+    enabled: true
+  - key: diarization_model
+    value: nemotron-3-diarization
+    enabled: true

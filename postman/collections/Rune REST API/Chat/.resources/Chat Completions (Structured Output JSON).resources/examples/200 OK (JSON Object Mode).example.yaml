@@ -1,0 +1,61 @@
+$kind: http-example
+name: 200 OK (JSON Object Mode)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "qwen3.5-0.8b",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a database export assistant. Always reply with a valid JSON object."
+          },
+          {
+            "role": "user",
+            "content": "Return the current server status as a JSON object with fields 'status', 'uptime_sec', and 'active_connections'."
+          }
+        ],
+        "response_format": {
+          "type": "json_object"
+        }
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "chatcmpl-json-obj-12",
+        "object": "chat.completion",
+        "created": 1727827285,
+        "model": "qwen3.5-0.8b",
+        "system_fingerprint": "fp_rune_rust_v1",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"status\":\"healthy\",\"uptime_sec\":142850,\"active_connections\":4}",
+              "refusal": null
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 44,
+          "completion_tokens": 22,
+          "total_tokens": 66
+        }
+      }
+order: 2310

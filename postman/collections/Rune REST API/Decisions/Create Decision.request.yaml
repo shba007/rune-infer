@@ -11,7 +11,7 @@ body:
   type: json
   content: |-
     {
-      "model": "liquid-d1-3b",
+      "model": "{{decision_model}}",
       "state": {
         "text": "User requests deployment of container build to production cluster with active traffic.",
         "images": [
@@ -37,4 +37,5 @@ body:
         }
       ]
     }
+examples: .resources/Create Decision.resources/examples
 order: 11000

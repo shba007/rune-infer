@@ -2,6 +2,46 @@
   "schema_version": 3,
   "models": [
     {
+      "id": "gemma-4-12b-it",
+      "name": "Gemma 4 12B IT",
+      "description": "Google DeepMind Gemma 4 12B Instruction-Tuned omni multimodal foundation model for text, image, audio, and video",
+      "modality": "Omni",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Audio",
+        "Video",
+        "Omni",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "engine": {
+        "supported": [
+          "llama-server",
+          "encoder"
+        ],
+        "preferred": "llama-server"
+      },
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_tokens": 4096
+      },
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--unsloth--gemma-4-12b-it-GGUF/snapshots/fc034cfff751157913579611efad8462ac1be606/gemma-4-12b-it-UD-Q6_K_XL.gguf",
+        "params": 12000000000,
+        "bits_per_weight": 4.5,
+        "context_length": 262144,
+        "gpu_layers": 99,
+        "args": "-fa on"
+      },
+      "extra": {
+        "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--gemma-4-12b-it-GGUF/snapshots/fc034cfff751157913579611efad8462ac1be606/mmproj-BF16.gguf"
+      }
+    },
+    {
       "id": "liquid-d1-3b",
       "name": "Liquid AI d1-3B",
       "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",

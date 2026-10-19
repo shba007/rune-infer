@@ -1,0 +1,59 @@
+$kind: http-example
+name: 200 OK (Thinking Budget Configured)
+request:
+  url: '{{base_url}}/v1/chat/completions'
+  method: POST
+  headers:
+    - key: Content-Type
+      value: application/json
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: json
+    content: |-
+      {
+        "model": "ternary-bonsai-2-27b-pq2-0",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Verify whether 104729 is prime."
+          }
+        ],
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 1024
+        },
+        "max_tokens": 2048
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "chatcmpl-think-01J9R4T8Q4N",
+        "object": "chat.completion",
+        "created": 1727827720,
+        "model": "ternary-bonsai-2-27b-pq2-0",
+        "system_fingerprint": "fp_rune_rust_v1",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Yes, 104,729 is a prime number (specifically, it is the 10,000th prime number).",
+              "reasoning_content": "The square root of 104729 is approximately 323.62. To verify primality, we test divisibility by primes up to 317 (2, 3, 5, 7, 11, ... 317). None divide 104729 evenly."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 19,
+          "completion_tokens": 82,
+          "total_tokens": 101
+        }
+      }
+order: 2610

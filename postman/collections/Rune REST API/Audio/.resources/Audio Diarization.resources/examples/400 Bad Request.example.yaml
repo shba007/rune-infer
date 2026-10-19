@@ -1,0 +1,31 @@
+$kind: http-example
+name: 400 Bad Request
+request:
+  url: '{{base_url}}/v1/audio/diarizations'
+  method: POST
+  headers:
+    - key: Authorization
+      value: 'Bearer {{api_key}}'
+  body:
+    type: formdata
+    content:
+      - key: model
+        type: text
+        value: nemotron-3-diarization
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'file' is a required multipart/form-data field.",
+          "type": "invalid_request_error",
+          "param": "file",
+          "code": "missing_required_file"
+        }
+      }
+order: 4260

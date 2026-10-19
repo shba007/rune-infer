@@ -59,10 +59,10 @@ async fn test_livez_and_readyz_probes_unauthenticated() {
     // Setup app with strict API key required for normal endpoints
     let app = create_test_app(Some("sk-strict-key-12345".to_string()));
 
-    // 1. /livez probe must return 200 OK without requiring authentication
+    // 1. /health?probe=live probe must return 200 OK without requiring authentication
     let livez_req = Request::builder()
         .method("GET")
-        .uri("/livez")
+        .uri("/health?probe=live")
         .body(Body::empty())
         .unwrap();
 
@@ -73,10 +73,10 @@ async fn test_livez_and_readyz_probes_unauthenticated() {
     assert_eq!(livez_data.status, "alive");
     assert_eq!(livez_data.service, "rune-infer");
 
-    // 2. /readyz probe must return 200 OK and describe model catalog readiness
+    // 2. /health?probe=ready probe must return 200 OK and describe model catalog readiness
     let readyz_req = Request::builder()
         .method("GET")
-        .uri("/readyz")
+        .uri("/health?probe=ready")
         .body(Body::empty())
         .unwrap();
 
@@ -89,7 +89,7 @@ async fn test_livez_and_readyz_probes_unauthenticated() {
     assert_eq!(readyz_data.models_configured, 1);
     assert!(readyz_data.models_loaded.is_empty());
 
-    // 3. /health probe must also succeed without authentication
+    // 3. /health default health probe must also succeed without authentication
     let health_req = Request::builder()
         .method("GET")
         .uri("/health")
