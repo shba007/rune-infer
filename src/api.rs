@@ -26,11 +26,19 @@ use crate::types::{
     ReadyzResponse,
 };
 
+#[derive(Default)]
+pub struct RequestConcurrencyState {
+    pub active_foreground: std::sync::atomic::AtomicUsize,
+    pub active_background: std::sync::atomic::AtomicUsize,
+    pub yield_notify: tokio::sync::Notify,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub inference: Arc<crate::inference::AppState>,
     pub proxy: Arc<ProxyService>,
     pub config: Arc<std::sync::RwLock<ModelRegistry>>,
+    pub concurrency: Arc<RequestConcurrencyState>,
 }
 
 impl AppState {
@@ -43,6 +51,7 @@ impl AppState {
             inference,
             proxy,
             config: Arc::new(std::sync::RwLock::new(config)),
+            concurrency: Arc::new(RequestConcurrencyState::default()),
         }
     }
 
@@ -128,6 +137,8 @@ pub fn create_router(state: AppState) -> Router {
         //     post(anthropic::anthropic_messages_handler),
         // )
         .route("/health", get(health_handler))
+        .route("/livez", get(livez_handler))
+        .route("/readyz", get(readyz_handler))
         .layer(DefaultBodyLimit::max(128 * 1024 * 1024))
         .with_state(shared_state)
 }
@@ -199,10 +210,68 @@ struct HealthProbeQuery {
 }
 
 #[axum::debug_handler]
+async fn livez_handler() -> Response {
+    Json(LivezResponse::new()).into_response()
+}
+
+#[axum::debug_handler]
+async fn readyz_handler(State(state): State<Arc<AppState>>) -> Response {
+    let (busy, active_requests) = {
+        let fg = state
+            .concurrency
+            .active_foreground
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let bg = state
+            .concurrency
+            .active_background
+            .load(std::sync::atomic::Ordering::Relaxed);
+        (fg > 0 || bg > 0, fg + bg)
+    };
+
+    match state.inference.registry.try_lock() {
+        Ok(reg) => {
+            let configured = reg.config.models.len();
+            let loaded = reg.loaded_models();
+            let loading = reg.loading_models();
+            let resp = ReadyzResponse::new(configured, loaded, loading)
+                .with_concurrency(busy, active_requests);
+            Json(resp).into_response()
+        }
+        Err(std::sync::TryLockError::WouldBlock) => {
+            let configured = state.config().models.len();
+            let resp = ReadyzResponse::new(configured, Vec::new(), Vec::new())
+                .with_concurrency(busy, active_requests);
+            Json(resp).into_response()
+        }
+        Err(std::sync::TryLockError::Poisoned(_)) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: ApiError::new("Model execution runtime registry is poisoned.")
+                    .with_type("server_error")
+                    .with_code("runtime_poisoned"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[axum::debug_handler]
 async fn health_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<HealthProbeQuery>,
 ) -> Response {
+    let (busy, active_requests) = {
+        let fg = state
+            .concurrency
+            .active_foreground
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let bg = state
+            .concurrency
+            .active_background
+            .load(std::sync::atomic::Ordering::Relaxed);
+        (fg > 0 || bg > 0, fg + bg)
+    };
+
     let mode = query
         .probe
         .as_deref()
@@ -219,11 +288,15 @@ async fn health_handler(
                 let configured = reg.config.models.len();
                 let loaded = reg.loaded_models();
                 let loading = reg.loading_models();
-                Json(ReadyzResponse::new(configured, loaded, loading)).into_response()
+                let resp = ReadyzResponse::new(configured, loaded, loading)
+                    .with_concurrency(busy, active_requests);
+                Json(resp).into_response()
             }
             Err(std::sync::TryLockError::WouldBlock) => {
                 let configured = state.config().models.len();
-                Json(ReadyzResponse::new(configured, Vec::new(), Vec::new())).into_response()
+                let resp = ReadyzResponse::new(configured, Vec::new(), Vec::new())
+                    .with_concurrency(busy, active_requests);
+                Json(resp).into_response()
             }
             Err(std::sync::TryLockError::Poisoned(_)) => (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -238,15 +311,15 @@ async fn health_handler(
         _ => match state.inference.registry.try_lock() {
             Ok(reg) => {
                 let loaded = reg.loaded_models();
-                let mut res = HealthResponse::new();
+                let mut res = HealthResponse::new().with_concurrency(busy, active_requests);
                 if !loaded.is_empty() {
                     res = res.with_loaded_models(loaded);
                 }
                 Json(res).into_response()
             }
             Err(std::sync::TryLockError::WouldBlock) => {
-                // Registry is active servicing or loading a model, but not poisoned
-                Json(HealthResponse::new()).into_response()
+                let res = HealthResponse::new().with_concurrency(busy, active_requests);
+                Json(res).into_response()
             }
             Err(std::sync::TryLockError::Poisoned(_)) => (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -263,21 +336,93 @@ async fn health_handler(
     }
 }
 
+fn model_config_to_info(
+    m: &crate::config::ModelConfig,
+    loaded_models: &[String],
+    loading_models: &[String],
+    load_duration_ms: Option<u64>,
+) -> ModelInfo {
+    let heads = m.mtp_heads();
+    let is_resident = loaded_models.iter().any(|id| id == &m.id);
+    let is_loading = loading_models.iter().any(|id| id == &m.id);
+    let status = if !m.is_local() {
+        "remote"
+    } else if is_resident {
+        "loaded"
+    } else if is_loading {
+        "loading"
+    } else {
+        "available"
+    };
+
+    let (max_w, max_h) = m.max_dimensions();
+    let max_edge = if max_w > 0 || max_h > 0 {
+        max_w.max(max_h)
+    } else {
+        4096
+    };
+
+    let engine = m
+        .engine
+        .as_ref()
+        .and_then(|e| e.preferred)
+        .or_else(|| m.engine.as_ref().and_then(|e| e.supported.first().cloned()));
+
+    ModelInfo::new(&m.id)
+        .with_mtp_heads(heads)
+        .with_capabilities(m.resolved_capabilities())
+        .with_locality(m.locality())
+        .with_modalities_in(m.modalities_in())
+        .with_modalities_out(m.modalities_out())
+        .with_tool_calls(m.supports_tool_calls())
+        .with_thinking_control(m.thinking_control())
+        .with_max_image_edge_px(max_edge)
+        .with_context_tokens(m.max_context_length.map(|l| l as usize).unwrap_or(4096))
+        .with_max_output_tokens(m.sampling.as_ref().and_then(|s| s.max_tokens))
+        .with_engine(engine.map(|e| e.to_string()))
+        .with_quantization(m.quantization())
+        .with_vram_mb_estimate(m.vram_mb_estimate())
+        .with_load_ms_estimate(load_duration_ms)
+        .with_resident(m.is_local() && is_resident)
+        .with_status(status)
+        .with_roles(m.roles.clone())
+        .with_aliases(m.aliases.clone())
+}
+
 #[axum::debug_handler]
 async fn models_handler(State(state): State<Arc<AppState>>) -> Response {
+    let (vram_total_bytes, vram_used_bytes, vram_free_bytes) = match (
+        crate::inference::budget::detect_total_gpu_vram(),
+        crate::inference::budget::detect_used_gpu_vram(),
+    ) {
+        (Some(total), Some(used)) => (Some(total), Some(used), Some(total.saturating_sub(used))),
+        (Some(total), None) => (Some(total), None, None),
+        _ => (None, None, None),
+    };
+
+    let (loaded_models, loading_models) = state
+        .inference
+        .registry
+        .lock()
+        .map(|r| (r.loaded_models(), r.loading_models()))
+        .unwrap_or_default();
+
     let mut mtp_models = Vec::new();
     let data = state
         .config()
         .models
         .iter()
         .map(|m| {
-            let heads = m.mtp_heads();
             if m.has_mtp() {
                 mtp_models.push(m.id.clone());
             }
-            ModelInfo::new(&m.id)
-                .with_mtp_heads(heads)
-                .with_capabilities(m.resolved_capabilities())
+            let load_ms = state
+                .inference
+                .registry
+                .lock()
+                .ok()
+                .and_then(|r| r.get_load_duration_ms(&m.id));
+            model_config_to_info(m, &loaded_models, &loading_models, load_ms)
         })
         .collect();
 
@@ -297,6 +442,9 @@ async fn models_handler(State(state): State<Arc<AppState>>) -> Response {
         Json(ModelsResponse {
             object: "list".to_string(),
             data,
+            vram_total_bytes,
+            vram_free_bytes,
+            vram_used_bytes,
         }),
     )
         .into_response()
@@ -308,10 +456,19 @@ async fn retrieve_model_handler(
     Path(model_id): Path<String>,
 ) -> Response {
     if let Some(m) = state.config().find(&model_id) {
-        let heads = m.mtp_heads();
-        let model_info = ModelInfo::new(&m.id)
-            .with_mtp_heads(heads)
-            .with_capabilities(m.resolved_capabilities());
+        let (loaded_models, loading_models) = state
+            .inference
+            .registry
+            .lock()
+            .map(|r| (r.loaded_models(), r.loading_models()))
+            .unwrap_or_default();
+        let load_ms = state
+            .inference
+            .registry
+            .lock()
+            .ok()
+            .and_then(|r| r.get_load_duration_ms(&m.id));
+        let model_info = model_config_to_info(m, &loaded_models, &loading_models, load_ms);
         Json(model_info).into_response()
     } else {
         (

@@ -22,9 +22,73 @@ use crate::types::{ApiError, ChatCompletionRequest, ErrorResponse};
 #[axum::debug_handler]
 pub async fn chat_completions_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     bytes: Bytes,
 ) -> Response {
     let start_time = std::time::Instant::now();
+
+    let is_background = headers
+        .get("x-rune-priority")
+        .or_else(|| headers.get("x-priority"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.eq_ignore_ascii_case("background") || s.eq_ignore_ascii_case("low"))
+        .unwrap_or(false);
+
+    if is_background
+        && state
+            .concurrency
+            .active_foreground
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+    {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(axum::http::header::RETRY_AFTER, "1")],
+            Json(ErrorResponse {
+                error: ApiError::new("Server busy with foreground request")
+                    .with_type("server_busy")
+                    .with_code("busy"),
+            }),
+        )
+            .into_response();
+    }
+
+    struct ConcurrencyGuard {
+        concurrency: Arc<crate::api::RequestConcurrencyState>,
+        is_background: bool,
+    }
+
+    impl Drop for ConcurrencyGuard {
+        fn drop(&mut self) {
+            if self.is_background {
+                self.concurrency
+                    .active_background
+                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            } else {
+                self.concurrency
+                    .active_foreground
+                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    }
+
+    if is_background {
+        state
+            .concurrency
+            .active_background
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    } else {
+        state
+            .concurrency
+            .active_foreground
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        state.concurrency.yield_notify.notify_waiters();
+    }
+
+    let _concurrency_guard = ConcurrencyGuard {
+        concurrency: state.concurrency.clone(),
+        is_background,
+    };
 
     let body_val: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(v) => v,
@@ -153,8 +217,53 @@ pub async fn chat_completions_handler(
         }
     };
 
+    let no_swap = headers
+        .get("x-no-swap")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.eq_ignore_ascii_case("true") || s == "1")
+        .unwrap_or(false);
+
+    let was_resident = if model_config.is_local() {
+        state
+            .inference
+            .registry
+            .lock()
+            .map(|r| r.is_model_loaded(&model_config.id))
+            .unwrap_or(false)
+    } else {
+        true
+    };
+
+    if no_swap && !was_resident {
+        return (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: ApiError::new(format!(
+                    "Model '{}' is not currently resident and x-no-swap was requested",
+                    model_config.id
+                ))
+                .with_type("swap_refused")
+                .with_code("swap_refused"),
+            }),
+        )
+            .into_response();
+    }
+
     if !model_config.is_local() {
-        return state.proxy.execute_chat(&model_config, &request).await;
+        let mut proxy_resp = state.proxy.execute_chat(&model_config, &request).await;
+        let hdrs = proxy_resp.headers_mut();
+        if let Ok(val) = axum::http::HeaderValue::from_str(&model_config.id) {
+            hdrs.insert("x-model-served", val);
+        }
+        hdrs.insert(
+            "x-model-locality",
+            axum::http::HeaderValue::from_static("cloud"),
+        );
+        hdrs.insert(
+            "x-model-resident",
+            axum::http::HeaderValue::from_static("true"),
+        );
+        return proxy_resp;
     }
 
     let req_for_prep = request.clone();
@@ -213,33 +322,94 @@ pub async fn chat_completions_handler(
             }
         };
 
+    let load_duration_ms = state
+        .inference
+        .registry
+        .lock()
+        .map(|r| r.get_load_duration_ms(&model_config.id))
+        .unwrap_or(None);
+    let last_evicted = state
+        .inference
+        .registry
+        .lock()
+        .map(|r| r.last_evicted())
+        .unwrap_or(None);
+
+    let attach_attribution_headers = |mut resp: Response| -> Response {
+        let hdrs = resp.headers_mut();
+        if let Ok(val) = axum::http::HeaderValue::from_str(&model_config.id) {
+            hdrs.insert("x-model-served", val);
+        }
+        hdrs.insert(
+            "x-model-locality",
+            axum::http::HeaderValue::from_static("local"),
+        );
+        hdrs.insert(
+            "x-model-resident",
+            axum::http::HeaderValue::from_static(if was_resident { "true" } else { "false" }),
+        );
+        if !was_resident {
+            if let Some(dur) = load_duration_ms {
+                if let Ok(val) = axum::http::HeaderValue::from_str(&dur.to_string()) {
+                    hdrs.insert("x-model-load-duration-ms", val);
+                }
+            }
+            if let Some(ref evicted) = last_evicted {
+                if let Ok(val) = axum::http::HeaderValue::from_str(evicted) {
+                    hdrs.insert("x-model-evicted", val);
+                }
+            }
+        }
+        if let Some(heads) = model_config.mtp_heads() {
+            if let Ok(val) = axum::http::HeaderValue::from_str(&heads.to_string()) {
+                hdrs.insert("x-mtp-heads", val);
+            }
+        }
+        resp
+    };
+
     let created = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
+    let include_usage = request
+        .stream_options
+        .as_ref()
+        .map(|s| s.include_usage)
+        .unwrap_or(false);
+
     if request.stream {
-        return stream::handle_chat_stream(
+        let stream_resp = stream::handle_chat_stream(
             prepared.task,
             engine,
-            model_config,
+            model_config.clone(),
             created,
             start_time,
             prepared.image_count,
             prepared.video_count,
+            include_usage,
         );
+        return attach_attribution_headers(stream_resp);
     }
 
     let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let cancel_flag_clone = cancel_flag.clone();
 
-    struct CancelOnDrop(Arc<std::sync::atomic::AtomicBool>);
+    struct CancelOnDrop {
+        flag: Arc<std::sync::atomic::AtomicBool>,
+        engine: Arc<dyn crate::inference::traits::InferenceEngine>,
+    }
     impl Drop for CancelOnDrop {
         fn drop(&mut self) {
-            self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.engine.cancel();
         }
     }
-    let _cancel_guard = CancelOnDrop(cancel_flag.clone());
+    let _cancel_guard = CancelOnDrop {
+        flag: cancel_flag.clone(),
+        engine: engine.clone(),
+    };
 
     let task_clone = prepared.task.clone();
     let model_for_stats = model_config.id.clone();
@@ -293,7 +463,7 @@ pub async fn chat_completions_handler(
                         other => serde_json::to_string_pretty(other).unwrap_or_default(),
                     };
                     let resp = response::chat_completion_response(
-                        &request.model,
+                        &model_config.id,
                         Some(content_str),
                         None,
                         "stop",
@@ -305,7 +475,7 @@ pub async fn chat_completions_handler(
                     tools::convert_to_tool_calls(&tool_calls, created)
                 {
                     let resp = response::chat_completion_response(
-                        &request.model,
+                        &model_config.id,
                         content,
                         Some(parsed_calls),
                         "tool_calls",
@@ -315,7 +485,7 @@ pub async fn chat_completions_handler(
                     Json(resp).into_response()
                 } else {
                     let resp = response::chat_completion_response(
-                        &request.model,
+                        &model_config.id,
                         Some(tool_calls.to_string()),
                         None,
                         "stop",
@@ -325,30 +495,18 @@ pub async fn chat_completions_handler(
                     Json(resp).into_response()
                 };
 
-                let mut final_resp = json_resp;
-                if let Some(heads) = model_config.mtp_heads() {
-                    if let Ok(val) = axum::http::HeaderValue::from_str(&heads.to_string()) {
-                        final_resp.headers_mut().insert("x-mtp-heads", val);
-                    }
-                }
-                final_resp
+                attach_attribution_headers(json_resp)
             }
             InferenceTaskResponse::Text(text) => {
                 let resp = response::chat_completion_response(
-                    &request.model,
+                    &model_config.id,
                     Some(text),
                     None,
                     "stop",
                     created,
                     output.usage,
                 );
-                let mut final_resp = Json(resp).into_response();
-                if let Some(heads) = model_config.mtp_heads() {
-                    if let Ok(val) = axum::http::HeaderValue::from_str(&heads.to_string()) {
-                        final_resp.headers_mut().insert("x-mtp-heads", val);
-                    }
-                }
-                final_resp
+                attach_attribution_headers(Json(resp).into_response())
             }
             InferenceTaskResponse::Error(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

@@ -790,17 +790,9 @@ impl InferenceEngine for EncoderEngine {
                         created,
                         model: active_model,
                         answers,
-                        usage: Usage {
-                            prompt_tokens,
-                            completion_tokens: 0,
-                            total_tokens: prompt_tokens,
-                        },
+                        usage: Usage::new(prompt_tokens, 0),
                     }),
-                    usage: Usage {
-                        prompt_tokens,
-                        completion_tokens: 0,
-                        total_tokens: prompt_tokens,
-                    },
+                    usage: Usage::new(prompt_tokens, 0),
                 })
             }
             _ => Err("EncoderEngine does not support this task".into()),

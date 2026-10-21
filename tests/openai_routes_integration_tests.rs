@@ -626,9 +626,17 @@ async fn test_gemma4_omni_model_catalog_resolution() {
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get("x-model-served")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "gemma-4-12b-it"
+    );
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["model"], "unsloth/gemma-4-12b-it-GGUF");
+    assert_eq!(json["model"], "gemma-4-12b-it");
     assert!(json["choices"][0]["message"]["content"].as_str().is_some());
 
     // 3. Chat completion with exact ID
@@ -694,10 +702,18 @@ async fn test_gemma4_omni_chat_completion_all_modalities() {
 
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get("x-model-served")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "gemma-4-12b-it"
+    );
 
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let res: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(res["model"], "unsloth/gemma-4-12b-it-GGUF");
+    assert_eq!(res["model"], "gemma-4-12b-it");
     let content = res["choices"][0]["message"]["content"]
         .as_str()
         .expect("message content");

@@ -287,6 +287,8 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
         description,
         modality: c.modality.clone(),
         capabilities: c.capabilities.clone(),
+        roles: Vec::new(),
+        aliases: Vec::new(),
         engine: Some(EngineConfig {
             supported: c.engines.clone(),
             preferred: Some(c.engine()),
@@ -358,6 +360,8 @@ fn cloud_entry(c: &CloudChoice) -> ModelEntry {
             .into_iter()
             .map(String::from)
             .collect(),
+        roles: Vec::new(),
+        aliases: Vec::new(),
         engine: None,
         max_context_length: None,
         sampling: SamplingConfig::default(),
@@ -430,6 +434,8 @@ pub fn write_setup(
         CatalogFile {
             schema_version: SCHEMA_VERSION,
             models: Vec::new(),
+            roles: std::collections::HashMap::new(),
+            aliases: std::collections::HashMap::new(),
         }
     };
 

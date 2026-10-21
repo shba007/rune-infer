@@ -197,6 +197,36 @@ impl InferenceEngine for LlamaServerEngine {
         &self.id
     }
 
+    fn cancel(&self) {
+        let cancel_client = match reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_millis(500))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let slots_url = format!("http://127.0.0.1:{}/slots", self.port);
+        if let Ok(resp) = cancel_client.get(&slots_url).send() {
+            if let Ok(slots) = resp.json::<serde_json::Value>() {
+                if let Some(arr) = slots.as_array() {
+                    for slot in arr {
+                        if let Some(id) = slot.get("id").and_then(|v| v.as_u64()) {
+                            let rel_url = format!(
+                                "http://127.0.0.1:{}/slots/{}?action=release",
+                                self.port, id
+                            );
+                            let _ = cancel_client.post(&rel_url).send();
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+        let fallback_url = format!("http://127.0.0.1:{}/slots/0?action=release", self.port);
+        let _ = cancel_client.post(&fallback_url).send();
+    }
+
     fn execute(
         &self,
         task: &InferenceTaskRequest,
@@ -401,6 +431,7 @@ impl InferenceEngine for LlamaServerEngine {
                     let mut full_output = String::new();
                     let mut in_reasoning = false;
                     let mut tool_accumulators: Vec<ToolCallAccumulator> = Vec::new();
+                    let mut stream_usage: Option<Usage> = None;
                     let reader = std::io::BufReader::new(resp);
 
                     for line in reader.lines().map_while(Result::ok) {
@@ -409,6 +440,15 @@ impl InferenceEngine for LlamaServerEngine {
                                 break;
                             }
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                                if let Some(u) = v.get("usage") {
+                                    if let (Some(pt), Some(ct)) = (
+                                        u.get("prompt_tokens").and_then(|t| t.as_u64()),
+                                        u.get("completion_tokens").and_then(|t| t.as_u64()),
+                                    ) {
+                                        stream_usage = Some(Usage::new(pt as u32, ct as u32));
+                                    }
+                                }
+
                                 let delta = &v["choices"][0]["delta"];
 
                                 // 1. Forward reasoning content if emitted by llama-server (e.g. Qwen thinking mode)
@@ -426,6 +466,7 @@ impl InferenceEngine for LlamaServerEngine {
                                         full_output.push_str(reasoning);
                                         if let Some(ref mut cb) = on_token {
                                             if !cb(reasoning) {
+                                                self.cancel();
                                                 break;
                                             }
                                         }
@@ -445,6 +486,7 @@ impl InferenceEngine for LlamaServerEngine {
                                     full_output.push_str(content);
                                     if let Some(ref mut cb) = on_token {
                                         if !cb(content) {
+                                            self.cancel();
                                             break;
                                         }
                                     }
@@ -518,8 +560,27 @@ impl InferenceEngine for LlamaServerEngine {
                         })
                         .collect();
 
+                    let (prompt_tokens, completion_tokens) = if let Some(u) = stream_usage {
+                        (u.prompt_tokens, u.completion_tokens)
+                    } else {
+                        let img_tok = (images.len() * 576) as u32;
+                        let aud_tok = (audios.len() * 256) as u32;
+                        let txt_tok = (prompt.len() / 4).max(1) as u32;
+                        let pt = txt_tok + img_tok + aud_tok;
+                        let ct = (full_output.len() / 4).max(1) as u32;
+                        (pt, ct)
+                    };
+                    let mut final_usage = Usage::new(prompt_tokens, completion_tokens);
+                    if !images.is_empty() || !audios.is_empty() {
+                        final_usage.prompt_tokens_details =
+                            Some(crate::types::PromptTokensDetails {
+                                image_tokens: (images.len() * 576) as u32,
+                                audio_tokens: (audios.len() * 256) as u32,
+                                cached_tokens: 0,
+                            });
+                    }
+
                     if !valid_accumulated.is_empty() {
-                        let tokens = (full_output.len() / 4).max(1) as u32;
                         return Ok(InferenceOutput {
                             response: InferenceTaskResponse::ToolCall {
                                 content: if full_output.trim().is_empty() {
@@ -529,7 +590,7 @@ impl InferenceEngine for LlamaServerEngine {
                                 },
                                 tool_calls: serde_json::Value::Array(valid_accumulated),
                             },
-                            usage: Usage::new(tokens, tokens),
+                            usage: final_usage,
                         });
                     }
 
@@ -537,39 +598,23 @@ impl InferenceEngine for LlamaServerEngine {
                     if let Some((clean_content, parsed_tools)) =
                         tools::extract_tool_calls(&full_output)
                     {
-                        let tokens = (full_output.len() / 4).max(1) as u32;
                         return Ok(InferenceOutput {
                             response: InferenceTaskResponse::ToolCall {
                                 content: clean_content,
                                 tool_calls: parsed_tools,
                             },
-                            usage: Usage::new(tokens, tokens),
+                            usage: final_usage,
                         });
                     }
 
-                    let tokens = (full_output.len() / 4).max(1) as u32;
                     return Ok(InferenceOutput {
                         response: InferenceTaskResponse::Text(full_output),
-                        usage: Usage::new(tokens, tokens),
+                        usage: final_usage,
                     });
                 }
 
                 let result: serde_json::Value = resp.json()?;
                 let choice = &result["choices"][0];
-
-                if let Some(tc) = choice["message"]
-                    .get("tool_calls")
-                    .filter(|v| v.is_array() && !v.as_array().unwrap().is_empty())
-                {
-                    let content_str = choice["message"]["content"].as_str().map(|s| s.to_string());
-                    return Ok(InferenceOutput {
-                        response: InferenceTaskResponse::ToolCall {
-                            content: content_str,
-                            tool_calls: tc.clone(),
-                        },
-                        usage: Usage::new(10, 10),
-                    });
-                }
 
                 let reasoning = choice["message"]
                     .get("reasoning_content")
@@ -587,6 +632,45 @@ impl InferenceEngine for LlamaServerEngine {
                     raw_content.to_string()
                 };
 
+                let (prompt_tokens, completion_tokens) = if let Some(u) = result.get("usage") {
+                    let pt = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                    let ct = u
+                        .get("completion_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u32;
+                    (pt, ct)
+                } else {
+                    let img_tok = (images.len() * 576) as u32;
+                    let aud_tok = (audios.len() * 256) as u32;
+                    let txt_tok = (prompt.len() / 4).max(1) as u32;
+                    let pt = txt_tok + img_tok + aud_tok;
+                    let ct = (combined_content.len() / 4).max(1) as u32;
+                    (pt, ct)
+                };
+                let mut non_stream_usage = Usage::new(prompt_tokens, completion_tokens);
+                if !images.is_empty() || !audios.is_empty() {
+                    non_stream_usage.prompt_tokens_details =
+                        Some(crate::types::PromptTokensDetails {
+                            image_tokens: (images.len() * 576) as u32,
+                            audio_tokens: (audios.len() * 256) as u32,
+                            cached_tokens: 0,
+                        });
+                }
+
+                if let Some(tc) = choice["message"]
+                    .get("tool_calls")
+                    .filter(|v| v.is_array() && !v.as_array().unwrap().is_empty())
+                {
+                    let content_str = choice["message"]["content"].as_str().map(|s| s.to_string());
+                    return Ok(InferenceOutput {
+                        response: InferenceTaskResponse::ToolCall {
+                            content: content_str,
+                            tool_calls: tc.clone(),
+                        },
+                        usage: non_stream_usage,
+                    });
+                }
+
                 if let Some((clean_content, parsed_tools)) =
                     tools::extract_tool_calls(&combined_content)
                 {
@@ -595,13 +679,13 @@ impl InferenceEngine for LlamaServerEngine {
                             content: clean_content,
                             tool_calls: parsed_tools,
                         },
-                        usage: Usage::new(10, 10),
+                        usage: non_stream_usage,
                     });
                 }
 
                 Ok(InferenceOutput {
                     response: InferenceTaskResponse::Text(combined_content),
-                    usage: Usage::new(10, 10),
+                    usage: non_stream_usage,
                 })
             }
             InferenceTaskRequest::ImageCaption {
@@ -991,18 +1075,10 @@ impl InferenceEngine for LlamaServerEngine {
                                         created,
                                         model: model.clone().unwrap_or_else(|| self.id.clone()),
                                         answers,
-                                        usage: Usage {
-                                            prompt_tokens: input_tokens,
-                                            completion_tokens: 0,
-                                            total_tokens: input_tokens,
-                                        },
+                                        usage: Usage::new(input_tokens, 0),
                                     },
                                 ),
-                                usage: Usage {
-                                    prompt_tokens: input_tokens,
-                                    completion_tokens: 0,
-                                    total_tokens: input_tokens,
-                                },
+                                usage: Usage::new(input_tokens, 0),
                             });
                         }
                     } else {
@@ -1220,17 +1296,9 @@ impl InferenceEngine for LlamaServerEngine {
                         created,
                         model: model.clone().unwrap_or_else(|| self.id.clone()),
                         answers,
-                        usage: Usage {
-                            prompt_tokens,
-                            completion_tokens: 0,
-                            total_tokens: prompt_tokens,
-                        },
+                        usage: Usage::new(prompt_tokens, 0),
                     }),
-                    usage: Usage {
-                        prompt_tokens,
-                        completion_tokens: 0,
-                        total_tokens: prompt_tokens,
-                    },
+                    usage: Usage::new(prompt_tokens, 0),
                 })
             }
             _ => Err("LlamaServerEngine does not support this task type".into()),

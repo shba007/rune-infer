@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -225,6 +226,8 @@ pub struct ModelRegistry {
     pub schema_version: u32,
     pub server: ServerConfig,
     pub models: Vec<ModelConfig>,
+    pub roles: HashMap<String, String>,
+    pub aliases: HashMap<String, String>,
 }
 
 impl Default for ModelRegistry {
@@ -239,6 +242,8 @@ impl ModelRegistry {
             schema_version: crate::schema::SCHEMA_VERSION,
             server: ServerConfig::default(),
             models: Vec::new(),
+            roles: HashMap::new(),
+            aliases: HashMap::new(),
         }
     }
 
@@ -306,6 +311,8 @@ impl ModelRegistry {
             schema_version: crate::schema::SCHEMA_VERSION,
             server: server_file.server,
             models,
+            roles: catalog_file.roles,
+            aliases: catalog_file.aliases,
         };
         registry.validate()?;
         Ok(registry)
@@ -379,6 +386,8 @@ impl ModelRegistry {
             schema_version: crate::schema::SCHEMA_VERSION,
             server: file.server,
             models,
+            roles: file.roles,
+            aliases: file.aliases,
         })
     }
 
@@ -412,6 +421,21 @@ impl ModelRegistry {
         self.models
             .iter()
             .find(|m| m.id == id)
+            .or_else(|| {
+                // Check server-level roles and aliases
+                if let Some(target) = self.roles.get(id).or_else(|| self.aliases.get(id)) {
+                    self.models.iter().find(|m| m.id == *target)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                // Check model-level roles and aliases
+                self.models.iter().find(|m| {
+                    m.roles.iter().any(|r| r.eq_ignore_ascii_case(id))
+                        || m.aliases.iter().any(|a| a.eq_ignore_ascii_case(id))
+                })
+            })
             .or_else(|| {
                 self.models
                     .iter()
@@ -722,11 +746,158 @@ pub struct ModelConfig {
     pub engine: Option<EngineConfig>,
     pub lora: Vec<LoraConfig>,
     pub runtime: Option<RuntimeConfig>,
+    pub aliases: Vec<String>,
+    pub roles: Vec<String>,
 }
 
 impl ModelConfig {
     pub fn is_local(&self) -> bool {
         self.provider == ProviderType::Local
+    }
+
+    pub fn locality(&self) -> &'static str {
+        if self.is_local() { "local" } else { "cloud" }
+    }
+
+    pub fn modalities_in(&self) -> Vec<String> {
+        let mut list = Vec::new();
+        match self.modality {
+            Modality::Omni => {
+                list.push("text".to_string());
+                list.push("image".to_string());
+                list.push("audio".to_string());
+                list.push("video".to_string());
+            }
+            Modality::VisionText => {
+                list.push("text".to_string());
+                list.push("image".to_string());
+            }
+            Modality::SpeechToText | Modality::SpeechAnalysis => {
+                list.push("audio".to_string());
+            }
+            Modality::SpeechToSpeech => {
+                list.push("audio".to_string());
+            }
+            Modality::ImageGeneration => {
+                list.push("text".to_string());
+                list.push("image".to_string());
+            }
+            Modality::Text
+            | Modality::TextToSpeech
+            | Modality::Embedding
+            | Modality::Moderation
+            | Modality::Nlu
+            | Modality::Decision => {
+                list.push("text".to_string());
+                if self.is_vision() {
+                    list.push("image".to_string());
+                }
+            }
+            Modality::Ocr | Modality::ObjectDetection => {
+                list.push("image".to_string());
+            }
+            _ => {
+                list.push("image".to_string());
+            }
+        }
+        list
+    }
+
+    pub fn modalities_out(&self) -> Vec<String> {
+        let mut list = Vec::new();
+        match self.modality {
+            Modality::Omni => {
+                list.push("text".to_string());
+                list.push("audio".to_string());
+            }
+            Modality::TextToSpeech | Modality::SpeechToSpeech => {
+                list.push("audio".to_string());
+            }
+            Modality::ImageGeneration => {
+                list.push("image".to_string());
+            }
+            Modality::SpeechToText
+            | Modality::Text
+            | Modality::VisionText
+            | Modality::Ocr
+            | Modality::Nlu
+            | Modality::Decision
+            | Modality::Moderation
+            | Modality::SpeechAnalysis => {
+                list.push("text".to_string());
+            }
+            Modality::Embedding => {
+                list.push("embedding".to_string());
+            }
+            Modality::ObjectDetection => {
+                list.push("box_2d".to_string());
+            }
+            _ => {
+                list.push("image".to_string());
+            }
+        }
+        list
+    }
+
+    pub fn supports_tool_calls(&self) -> bool {
+        self.capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter().any(|c| {
+                    c.eq_ignore_ascii_case("tool call")
+                        || c.eq_ignore_ascii_case("tool_calls")
+                        || c.eq_ignore_ascii_case("tools")
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn thinking_control(&self) -> &'static str {
+        let name_lower = self.name.to_lowercase();
+        let id_lower = self.id.to_lowercase();
+        if id_lower.contains("qwen")
+            || name_lower.contains("qwen")
+            || id_lower.contains("deepseek")
+            || name_lower.contains("deepseek")
+            || id_lower.contains("gemma")
+            || name_lower.contains("gemma")
+            || id_lower.contains("thinking")
+            || name_lower.contains("thinking")
+            || id_lower.contains("reasoning")
+            || name_lower.contains("reasoning")
+        {
+            "thinking"
+        } else if self.is_local() {
+            "chat_template_kwargs"
+        } else {
+            "reasoning_effort"
+        }
+    }
+
+    pub fn quantization(&self) -> Option<String> {
+        let path_or_id = format!("{} {}", self.model_path, self.id);
+        let path_upper = path_or_id.to_uppercase();
+        for q in &[
+            "Q4_K_M", "Q4_K_S", "Q4_0", "Q4_1", "Q5_K_M", "Q5_K_S", "Q5_0", "Q5_1", "Q8_0", "Q8_K",
+            "IQ4_XS", "IQ4_NL", "IQ3_M", "IQ3_S", "IQ2_XS", "IQ2_XXS", "BF16", "FP16", "F16",
+            "FP32", "F32",
+        ] {
+            if path_upper.contains(q) {
+                return Some(q.to_string());
+            }
+        }
+        if let Some(bpw) = self.bits_per_weight {
+            return Some(format!("{:.1}bpw", bpw));
+        }
+        None
+    }
+
+    pub fn vram_mb_estimate(&self) -> Option<u64> {
+        if !self.is_local() {
+            return None;
+        }
+        let plan = crate::inference::budget::calculate_budget(self, &ServerConfig::default());
+        Some(plan.total_estimated_vram_bytes() / (1024 * 1024))
     }
 
     pub fn validate(&self) -> Result<()> {

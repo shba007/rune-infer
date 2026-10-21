@@ -205,6 +205,8 @@ fn convert(m: V1Model, notes: &mut Vec<String>) -> Result<ModelEntry> {
         description: m.description.clone(),
         modality: m.modality.clone(),
         capabilities: m.capabilities.clone().unwrap_or_default(),
+        roles: Vec::new(),
+        aliases: Vec::new(),
         engine: None,
         max_context_length: m.max_context_length,
         sampling: m.sampling.clone().unwrap_or_default(),
@@ -359,6 +361,8 @@ pub fn migrate_json(json: &str) -> Result<Migration> {
             schema_version: SCHEMA_VERSION,
             server: v1.server,
             models,
+            roles: std::collections::HashMap::new(),
+            aliases: std::collections::HashMap::new(),
         },
         notes,
     })
@@ -445,6 +449,8 @@ pub fn run(config: &Path, dry_run: bool) -> Result<()> {
     let catalog_file = crate::schema::CatalogFile {
         schema_version: SCHEMA_VERSION,
         models: registry_file.models,
+        roles: registry_file.roles,
+        aliases: registry_file.aliases,
     };
 
     let server_output = serde_json::to_string_pretty(&server_file)? + "\n";
@@ -466,6 +472,8 @@ pub fn run(config: &Path, dry_run: bool) -> Result<()> {
         schema_version: SCHEMA_VERSION,
         server: test_server.server,
         models,
+        roles: test_catalog.roles,
+        aliases: test_catalog.aliases,
     };
     registry
         .validate()

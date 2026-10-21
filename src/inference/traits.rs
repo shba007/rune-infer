@@ -8,4 +8,7 @@ pub trait InferenceEngine: Send + Sync {
         task: &InferenceTaskRequest,
         on_token: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<InferenceOutput, Box<dyn Error>>;
+
+    /// Signals the engine to abort any active generation or prefill and free occupied slots.
+    fn cancel(&self) {}
 }

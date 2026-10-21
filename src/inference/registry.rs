@@ -36,6 +36,8 @@ pub struct ModelRegistry {
     pub(crate) lru_keys: Vec<String>,
     pub(crate) last_used: HashMap<String, Instant>,
     pub(crate) loading: HashMap<String, Arc<LoadBarrier>>,
+    pub(crate) load_durations: HashMap<String, u64>,
+    pub(crate) last_evicted: Option<String>,
 }
 
 impl ModelRegistry {
@@ -53,6 +55,8 @@ impl ModelRegistry {
             lru_keys: Vec::new(),
             last_used: HashMap::new(),
             loading: HashMap::new(),
+            load_durations: HashMap::new(),
+            last_evicted: None,
         }
     }
 
@@ -185,16 +189,26 @@ impl ModelRegistry {
             ),
             _ => engine_kind.to_string(),
         };
-        crate::telemetry::model_loaded(
-            &canonical_id,
-            load_started.elapsed().as_millis(),
-            &vram_detail,
-        );
+        let elapsed_ms = load_started.elapsed().as_millis() as u64;
+        self.load_durations.insert(canonical_id.clone(), elapsed_ms);
+        crate::telemetry::model_loaded(&canonical_id, elapsed_ms as u128, &vram_detail);
 
         self.engines.insert(canonical_id.clone(), engine);
         self.touch_lru(&canonical_id);
         self.last_used.insert(canonical_id.clone(), Instant::now());
         self.loading.remove(&canonical_id);
+    }
+
+    pub fn get_load_duration_ms(&self, id: &str) -> Option<u64> {
+        self.load_durations.get(id).copied()
+    }
+
+    pub fn last_evicted(&self) -> Option<String> {
+        self.last_evicted.clone()
+    }
+
+    pub fn is_model_loaded(&self, id: &str) -> bool {
+        self.engines.contains_key(id)
     }
 
     /// Record load failure in telemetry and clear the loading entry.
@@ -269,6 +283,7 @@ impl ModelRegistry {
         let victim_id = self.lru_keys.remove(victim_idx);
         self.last_used.remove(&victim_id);
         if let Some(_removed) = self.engines.remove(&victim_id) {
+            self.last_evicted = Some(victim_id.clone());
             crate::telemetry::model_evicted(&victim_id, "least recently used");
             tracing::info!(
                 "[ModelRegistry] Evicted least-recently-used model '{}' to respect max_loaded_models ({})",

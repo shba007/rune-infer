@@ -45,6 +45,10 @@ pub struct ServerFile {
 pub struct CatalogFile {
     pub schema_version: u32,
     pub models: Vec<ModelEntry>,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub roles: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub aliases: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +57,10 @@ pub struct RegistryFile {
     pub schema_version: u32,
     pub server: ServerConfig,
     pub models: Vec<ModelEntry>,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub roles: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub aliases: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +73,10 @@ pub struct ModelEntry {
     pub modality: Modality,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<String>,
     /// Required for local models, forbidden for cloud models.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<EngineConfig>,
@@ -295,6 +307,8 @@ impl TryFrom<ModelEntry> for ModelConfig {
             engine,
             lora: extra.lora,
             runtime,
+            aliases: e.aliases,
+            roles: e.roles,
         };
         model.validate()?;
         Ok(model)

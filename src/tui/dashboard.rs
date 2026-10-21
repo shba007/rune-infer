@@ -10,9 +10,7 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Cell, Clear, Gauge, List, ListItem, Paragraph, Row, Sparkline, Table, Wrap,
-};
+use ratatui::widgets::{Cell, Clear, List, ListItem, Paragraph, Row, Sparkline, Table, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::Level;
@@ -448,11 +446,11 @@ fn draw_models(f: &mut Frame, area: Rect, app: &App) {
     let rows = display_indices.into_iter().map(|idx| {
         let m = &app.models[idx];
         let (icon, color, extra) = match &m.status {
-            Status::Idle => ("○".to_string(), DIM, String::new()),
+            Status::Idle => ("·".to_string(), DIM, String::new()),
             Status::Loading(since) => (
                 spinner(app.tick).to_string(),
-                WARN,
-                format!(" loading {:.0}s", since.elapsed().as_secs_f32()),
+                ACCENT,
+                format!(" loading {:.1}s", since.elapsed().as_secs_f32()),
             ),
             Status::Loaded { load_ms, detail } => (
                 "●".to_string(),
@@ -467,7 +465,7 @@ fn draw_models(f: &mut Frame, area: Rect, app: &App) {
                     }
                 ),
             ),
-            Status::Failed(_) => ("✗".to_string(), ERR, " failed".to_string()),
+            Status::Failed(_) => ("×".to_string(), ERR, " failed".to_string()),
         };
         let avg = if m.tps_n > 0 {
             format!("{:.1}", m.tps_sum / m.tps_n as f64)
@@ -548,54 +546,48 @@ fn draw_stats(f: &mut Frame, area: Rect, app: &App) {
     ])
     .areas(inner);
 
-    // VRAM gauge
+    // VRAM dot gauge
     let reading = app.vram.lock().ok().and_then(|g| *g);
     match reading {
         Some((used, total)) if total > 0 => {
             let ratio = (used as f64 / total as f64).clamp(0.0, 1.0);
-            let color = if ratio > 0.9 {
-                ERR
-            } else if ratio > 0.75 {
-                WARN
-            } else {
-                OK
-            };
+            let color = if ratio > 0.95 { ERR } else { ACCENT };
+            let dot_count = 16usize;
+            let filled = ((ratio * dot_count as f64).round() as usize).min(dot_count);
+            let dots = "•".repeat(filled) + &"·".repeat(dot_count - filled);
             f.render_widget(
-                Gauge::default()
-                    .gauge_style(Style::new().fg(color))
-                    .ratio(ratio)
-                    .label(format!(
-                        "VRAM {} / {}",
-                        human_bytes(used),
-                        human_bytes(total)
-                    )),
+                Paragraph::new(Line::from(vec![
+                    Span::styled("VRAM  ", Style::new().fg(DIM)),
+                    Span::styled(dots, Style::new().fg(color)),
+                    Span::styled(
+                        format!("  {} / {}", human_bytes(used), human_bytes(total)),
+                        Style::new().fg(DIM),
+                    ),
+                ])),
                 Rect { height: 1, ..vram },
             );
         }
         _ => f.render_widget(
-            Paragraph::new(Span::styled(
-                "VRAM: no NVIDIA GPU detected",
-                Style::new().fg(DIM),
-            )),
+            Paragraph::new(Span::styled("VRAM: no GPU detected", Style::new().fg(DIM))),
             Rect { height: 1, ..vram },
         ),
     }
 
     let avg_latency = if app.latency_hist.is_empty() {
-        0
+        0.0
     } else {
-        app.latency_hist.iter().sum::<u64>() / app.latency_hist.len() as u64
+        (app.latency_hist.iter().sum::<u64>() as f64 / app.latency_hist.len() as f64) / 1000.0
     };
     let err_style = if app.total_errors > 0 {
         Style::new().fg(ERR)
     } else {
-        Style::new().fg(OK)
+        Style::new().fg(DIM)
     };
     f.render_widget(
         Paragraph::new(Line::from(vec![
             Span::raw(format!("Requests {}  ", app.total_requests)),
             Span::styled(format!("Errors {}  ", app.total_errors), err_style),
-            Span::styled(format!("Avg {} ms", avg_latency), Style::new().fg(DIM)),
+            Span::styled(format!("Avg {:.2}s", avg_latency), Style::new().fg(DIM)),
         ])),
         nums,
     );
@@ -617,9 +609,9 @@ fn draw_stats(f: &mut Frame, area: Rect, app: &App) {
         Sparkline::default()
             .block(
                 ratatui::widgets::Block::default()
-                    .title(Span::styled("Request latency (ms)", Style::new().fg(DIM))),
+                    .title(Span::styled("Latency (s)", Style::new().fg(DIM))),
             )
-            .style(Style::new().fg(WARN))
+            .style(Style::new().fg(DIM))
             .data(&lat_data),
         lat,
     );
@@ -654,10 +646,10 @@ fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
                 Cell::from(if ok {
                     r.status.to_string()
                 } else {
-                    format!("{} ✗", r.status)
+                    format!("{} ×", r.status)
                 })
                 .style(Style::new().fg(if ok { OK } else { ERR })),
-                Cell::from(format!("{} ms", r.latency_ms)),
+                Cell::from(format!("{:.2}s", r.latency_ms as f64 / 1000.0)),
                 Cell::from(r.prompt_tokens.to_string()),
                 Cell::from(r.completion_tokens.to_string()),
                 Cell::from(
@@ -687,10 +679,13 @@ fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-fn level_style(l: Level) -> Style {
+fn level_style(l: Level, msg: &str) -> Style {
+    if msg.to_lowercase().contains("idle") {
+        return Style::new().fg(DIM);
+    }
     match l {
         Level::ERROR => Style::new().fg(ERR).add_modifier(Modifier::BOLD),
-        Level::WARN => Style::new().fg(WARN),
+        Level::WARN => Style::new().fg(DIM),
         Level::INFO => Style::new(),
         _ => Style::new().fg(DIM),
     }
@@ -699,8 +694,8 @@ fn level_style(l: Level) -> Style {
 fn log_item(l: &LogLine) -> ListItem<'static> {
     ListItem::new(Line::from(vec![
         Span::styled(format!("{} ", l.ts), Style::new().fg(DIM)),
-        Span::styled(format!("{:<5} ", l.level), level_style(l.level)),
-        Span::styled(l.message.clone(), level_style(l.level)),
+        Span::styled(format!("{:<5} ", l.level), level_style(l.level, &l.message)),
+        Span::styled(l.message.clone(), level_style(l.level, &l.message)),
     ]))
 }
 

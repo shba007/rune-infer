@@ -4,8 +4,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders};
 
 pub const ACCENT: Color = Color::Cyan;
-pub const OK: Color = Color::Green;
-pub const WARN: Color = Color::Yellow;
+pub const OK: Color = Color::White;
+pub const WARN: Color = Color::DarkGray;
 pub const ERR: Color = Color::Red;
 pub const DIM: Color = Color::DarkGray;
 

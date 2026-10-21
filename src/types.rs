@@ -36,6 +36,15 @@ pub struct ChatCompletionRequest {
     /// Chat template kwargs for llama-server / jinja templates (e.g. `{"thinking": false}`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_template_kwargs: Option<serde_json::Value>,
+    /// Options for streaming responses (e.g. `{"include_usage": true}`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_options: Option<StreamOptions>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StreamOptions {
+    #[serde(default)]
+    pub include_usage: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -342,8 +351,8 @@ pub struct ChatCompletionResponse {
     pub system_fingerprint: Option<String>,
     #[serde(default)]
     pub choices: Vec<Choice>,
-    #[serde(default)]
-    pub usage: Usage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -385,11 +394,23 @@ pub struct ImageData {
     pub url: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct PromptTokensDetails {
+    #[serde(default)]
+    pub cached_tokens: u32,
+    #[serde(default)]
+    pub audio_tokens: u32,
+    #[serde(default)]
+    pub image_tokens: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
 }
 
 impl Usage {
@@ -398,7 +419,13 @@ impl Usage {
             prompt_tokens,
             completion_tokens,
             total_tokens: prompt_tokens.saturating_add(completion_tokens),
+            prompt_tokens_details: None,
         }
+    }
+
+    pub fn with_details(mut self, details: PromptTokensDetails) -> Self {
+        self.prompt_tokens_details = Some(details);
+        self
     }
 }
 
@@ -472,10 +499,16 @@ impl ApiError {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelsResponse {
     pub object: String,
     pub data: Vec<ModelInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vram_total_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vram_free_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vram_used_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -494,7 +527,7 @@ pub struct ModelPermission {
     pub is_blocking: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     pub id: String,
     pub object: String,
@@ -508,6 +541,38 @@ pub struct ModelInfo {
     pub mtp_heads: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locality: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modalities_in: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modalities_out: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_control: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_image_edge_px: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantization: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vram_mb_estimate: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_ms_estimate: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resident: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
 }
 
 impl ModelInfo {
@@ -540,6 +605,22 @@ impl ModelInfo {
             parent: None,
             mtp_heads: None,
             capabilities: None,
+            locality: None,
+            modalities_in: None,
+            modalities_out: None,
+            tool_calls: None,
+            thinking_control: None,
+            max_image_edge_px: None,
+            context_tokens: None,
+            max_output_tokens: None,
+            engine: None,
+            quantization: None,
+            vram_mb_estimate: None,
+            load_ms_estimate: None,
+            resident: None,
+            status: None,
+            roles: Vec::new(),
+            aliases: Vec::new(),
         }
     }
 
@@ -557,6 +638,86 @@ impl ModelInfo {
         self.capabilities = Some(caps);
         self
     }
+
+    pub fn with_locality(mut self, locality: impl Into<String>) -> Self {
+        self.locality = Some(locality.into());
+        self
+    }
+
+    pub fn with_modalities_in(mut self, modalities: Vec<String>) -> Self {
+        self.modalities_in = Some(modalities);
+        self
+    }
+
+    pub fn with_modalities_out(mut self, modalities: Vec<String>) -> Self {
+        self.modalities_out = Some(modalities);
+        self
+    }
+
+    pub fn with_tool_calls(mut self, tool_calls: bool) -> Self {
+        self.tool_calls = Some(tool_calls);
+        self
+    }
+
+    pub fn with_thinking_control(mut self, control: impl Into<String>) -> Self {
+        self.thinking_control = Some(control.into());
+        self
+    }
+
+    pub fn with_max_image_edge_px(mut self, edge: u32) -> Self {
+        self.max_image_edge_px = Some(edge);
+        self
+    }
+
+    pub fn with_context_tokens(mut self, tokens: usize) -> Self {
+        self.context_tokens = Some(tokens);
+        self
+    }
+
+    pub fn with_max_output_tokens(mut self, tokens: Option<usize>) -> Self {
+        self.max_output_tokens = tokens;
+        self
+    }
+
+    pub fn with_engine(mut self, engine: Option<String>) -> Self {
+        self.engine = engine;
+        self
+    }
+
+    pub fn with_quantization(mut self, quant: Option<String>) -> Self {
+        self.quantization = quant;
+        self
+    }
+
+    pub fn with_vram_mb_estimate(mut self, vram_mb: Option<u64>) -> Self {
+        self.vram_mb_estimate = vram_mb;
+        self
+    }
+
+    pub fn with_load_ms_estimate(mut self, ms: Option<u64>) -> Self {
+        self.load_ms_estimate = ms;
+        self
+    }
+
+    pub fn with_resident(mut self, resident: bool) -> Self {
+        self.resident = Some(resident);
+        self
+    }
+
+    pub fn with_status(mut self, status: impl Into<String>) -> Self {
+        self.status = Some(status.into());
+        self
+    }
+
+    pub fn with_roles(mut self, roles: Vec<String>) -> Self {
+        self.roles = roles;
+        self
+    }
+
+    pub fn with_aliases(mut self, aliases: Vec<String>) -> Self {
+        self.aliases = aliases;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -567,6 +728,10 @@ pub struct HealthResponse {
     pub backend: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loaded_models: Option<Vec<String>>,
+    #[serde(default)]
+    pub busy: bool,
+    #[serde(default)]
+    pub active_requests: usize,
 }
 
 impl Default for HealthResponse {
@@ -576,27 +741,38 @@ impl Default for HealthResponse {
 }
 
 impl HealthResponse {
-    pub fn new() -> Self {
-        let backend = if cfg!(feature = "cuda") {
-            "candle-cuda"
-        } else if cfg!(feature = "metal") {
-            "candle-metal"
-        } else if cfg!(feature = "vulkan") {
-            "candle-vulkan"
+    pub fn detect_backend() -> String {
+        if let Some(_bytes) = crate::inference::budget::detect_total_gpu_vram() {
+            if cfg!(target_os = "macos") {
+                "metal".to_string()
+            } else {
+                "cuda".to_string()
+            }
         } else {
-            "candle-cuda"
-        };
+            "cpu".to_string()
+        }
+    }
+
+    pub fn new() -> Self {
         Self {
             status: "ok".to_string(),
             service: "rune-infer".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            backend: backend.to_string(),
+            backend: Self::detect_backend(),
             loaded_models: None,
+            busy: false,
+            active_requests: 0,
         }
     }
 
     pub fn with_loaded_models(mut self, models: Vec<String>) -> Self {
         self.loaded_models = Some(models);
+        self
+    }
+
+    pub fn with_concurrency(mut self, busy: bool, active_requests: usize) -> Self {
+        self.busy = busy;
+        self.active_requests = active_requests;
         self
     }
 }
@@ -629,9 +805,15 @@ pub struct ReadyzResponse {
     pub status: String,
     pub service: String,
     pub version: String,
+    #[serde(default)]
+    pub backend: String,
     pub models_configured: usize,
     pub models_loaded: Vec<String>,
     pub models_loading: Vec<String>,
+    #[serde(default)]
+    pub busy: bool,
+    #[serde(default)]
+    pub active_requests: usize,
 }
 
 impl ReadyzResponse {
@@ -644,10 +826,19 @@ impl ReadyzResponse {
             status: "ready".to_string(),
             service: "rune-infer".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            backend: HealthResponse::detect_backend(),
             models_configured,
             models_loaded,
             models_loading,
+            busy: false,
+            active_requests: 0,
         }
+    }
+
+    pub fn with_concurrency(mut self, busy: bool, active_requests: usize) -> Self {
+        self.busy = busy;
+        self.active_requests = active_requests;
+        self
     }
 }
 

@@ -50,6 +50,7 @@ fn test_normalized_thinking_parsing() {
         reasoning_effort: Some("none".to_string()),
         thinking: None,
         chat_template_kwargs: None,
+        stream_options: None,
     };
     assert_eq!(req_none.normalized_thinking(), NormalizedThinking::Disabled);
 
@@ -157,6 +158,7 @@ fn test_local_engine_disables_thinking_in_prompt_and_task() {
         reasoning_effort: Some("none".to_string()),
         thinking: None,
         chat_template_kwargs: None,
+        stream_options: None,
     };
 
     let prepared = rune_infer::api::chat::prepare_prompt(&req, &model_config)

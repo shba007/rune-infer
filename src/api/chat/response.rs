@@ -7,7 +7,7 @@ pub fn make_chunk(
     model: &str,
     delta: ChoiceDelta,
     finish_reason: Option<String>,
-    usage: Usage,
+    usage: Option<Usage>,
 ) -> ChatCompletionResponse {
     ChatCompletionResponse {
         id: id.to_string(),
@@ -90,6 +90,6 @@ pub fn chat_completion_response(
             logprobs: None,
             finish_reason: Some(finish_reason.to_string()),
         }],
-        usage,
+        usage: Some(usage),
     }
 }

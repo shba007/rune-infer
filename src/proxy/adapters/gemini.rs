@@ -404,7 +404,7 @@ pub async fn execute_chat(
                     tool_calls: None,
                 },
                 None,
-                Usage::default(),
+                None,
             );
             yield Ok(Event::default().data(serde_json::to_string(&initial_chunk).unwrap_or_default()));
 
@@ -443,7 +443,7 @@ pub async fn execute_chat(
                                                 tool_calls: None,
                                             },
                                             None,
-                                            Usage::default(),
+                                            None,
                                         );
                                         yield Ok(Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()));
                                     }
@@ -471,7 +471,7 @@ pub async fn execute_chat(
                                             }]),
                                         },
                                         None,
-                                        Usage::default(),
+                                        None,
                                     );
                                     tool_idx += 1;
                                     yield Ok(Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()));
@@ -500,7 +500,7 @@ pub async fn execute_chat(
                                     tool_calls: None,
                                 },
                                 Some(finish_reason.to_string()),
-                                Usage::new(in_tokens, out_tokens),
+                                Some(Usage::new(in_tokens, out_tokens)),
                             );
                             yield Ok(Event::default().data(serde_json::to_string(&chunk).unwrap_or_default()));
                             yield Ok(Event::default().data("[DONE]"));
