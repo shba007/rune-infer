@@ -1,6 +1,8 @@
 use super::download;
 use crate::config::ModelConfig;
-use crate::inference::process::{ProcessGuard, configure_death_signal};
+use crate::inference::process::{
+    ProcessGuard, SafeBlockingClient, configure_death_signal, http_probe_success,
+};
 use crate::inference::traits::InferenceEngine;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{ImageData, ImageGenerationResponse, Usage};
@@ -15,7 +17,7 @@ use std::time::{Duration, Instant};
 pub struct SdServerEngine {
     id: String,
     port: u16,
-    client: reqwest::blocking::Client,
+    client: SafeBlockingClient,
     _process: Arc<Mutex<ProcessGuard>>,
     default_steps: u32,
     default_cfg: f32,
@@ -118,7 +120,7 @@ impl SdServerEngine {
         Ok(Self {
             id: model.id.clone(),
             port,
-            client,
+            client: SafeBlockingClient::new(client),
             _process: guard,
             default_steps: steps,
             default_cfg: cfg,
@@ -327,10 +329,6 @@ impl SdServerEngine {
         guard_mutex: &Arc<Mutex<ProcessGuard>>,
         stderr_lines: &Arc<Mutex<Vec<String>>>,
     ) -> Result<(), Box<dyn Error>> {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(500))
-            .build()?;
-        let check_url = format!("http://127.0.0.1:{port}/v1/models");
         let start = Instant::now();
         let timeout = Duration::from_secs(120);
 
@@ -344,10 +342,8 @@ impl SdServerEngine {
                 }
             }
 
-            if let Ok(resp) = client.get(&check_url).send() {
-                if resp.status().is_success() {
-                    return Ok(());
-                }
+            if http_probe_success(port, "/v1/models") {
+                return Ok(());
             }
 
             std::thread::sleep(Duration::from_millis(500));

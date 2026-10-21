@@ -1,6 +1,8 @@
 use super::download;
 use crate::config::ModelConfig;
-use crate::inference::process::{ProcessGuard, configure_death_signal};
+use crate::inference::process::{
+    ProcessGuard, SafeBlockingClient, configure_death_signal, http_probe_success,
+};
 use crate::inference::traits::InferenceEngine;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{AudioTranscriptionResponse, AudioTranslationResponse, Usage};
@@ -15,7 +17,7 @@ use std::time::{Duration, Instant};
 pub struct CrispAsrEngine {
     id: String,
     port: u16,
-    client: reqwest::blocking::Client,
+    client: SafeBlockingClient,
     _process: Arc<Mutex<ProcessGuard>>,
 }
 
@@ -116,7 +118,7 @@ impl CrispAsrEngine {
         Ok(Self {
             id: model.id.clone(),
             port,
-            client,
+            client: SafeBlockingClient::new(client),
             _process: guard,
         })
     }
@@ -381,10 +383,6 @@ impl CrispAsrEngine {
         guard_mutex: &Arc<Mutex<ProcessGuard>>,
         stderr_lines: &Arc<Mutex<Vec<String>>>,
     ) -> Result<(), Box<dyn Error>> {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(500))
-            .build()?;
-        let check_url = format!("http://127.0.0.1:{port}/health");
         let start = Instant::now();
         let timeout = Duration::from_secs(120);
 
@@ -398,10 +396,8 @@ impl CrispAsrEngine {
                 }
             }
 
-            if let Ok(resp) = client.get(&check_url).send() {
-                if resp.status().is_success() {
-                    return Ok(());
-                }
+            if http_probe_success(port, "/health") {
+                return Ok(());
             }
 
             std::thread::sleep(Duration::from_millis(500));

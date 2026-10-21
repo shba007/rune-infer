@@ -31,7 +31,7 @@ struct ToolCallAccumulator {
 pub struct LlamaServerEngine {
     id: String,
     port: u16,
-    client: reqwest::blocking::Client,
+    client: crate::inference::process::SafeBlockingClient,
     _process: Arc<Mutex<ProcessGuard>>,
 }
 
@@ -150,7 +150,7 @@ impl LlamaServerEngine {
         Ok(Self {
             id,
             port,
-            client,
+            client: crate::inference::process::SafeBlockingClient::new(client),
             _process: guard,
         })
     }
@@ -165,10 +165,6 @@ impl LlamaServerEngine {
         guard_mutex: &Arc<Mutex<ProcessGuard>>,
         stderr_lines: &Arc<Mutex<Vec<String>>>,
     ) -> Result<(), Box<dyn Error>> {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(500))
-            .build()?;
-        let health_url = format!("http://127.0.0.1:{port}/health");
         let start = Instant::now();
         let timeout = Duration::from_secs(120);
 
@@ -181,14 +177,71 @@ impl LlamaServerEngine {
                     );
                 }
             }
-            if let Ok(resp) = client.get(&health_url).send() {
-                if resp.status().is_success() {
-                    return Ok(());
-                }
+            if crate::inference::process::http_probe_success(port, "/health") {
+                return Ok(());
             }
             std::thread::sleep(Duration::from_millis(500));
         }
         Err("Timed out waiting for managed llama-server".into())
+    }
+
+    pub fn release_slots_tcp(port: u16) {
+        if let Some(slot_ids) = Self::query_slot_ids_tcp(port) {
+            for id in slot_ids {
+                Self::send_slot_release_tcp(port, id);
+            }
+        } else {
+            Self::send_slot_release_tcp(port, 0);
+        }
+    }
+
+    fn query_slot_ids_tcp(port: u16) -> Option<Vec<u64>> {
+        let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().ok()?;
+        let mut stream =
+            std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).ok()?;
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(300)));
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
+
+        use std::io::{Read, Write};
+        let req =
+            format!("GET /slots HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+        stream.write_all(req.as_bytes()).ok()?;
+        let _ = stream.flush();
+
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).ok()?;
+
+        let body_offset = response.windows(4).position(|w| w == b"\r\n\r\n")? + 4;
+        let body = &response[body_offset..];
+        let slots: serde_json::Value = serde_json::from_slice(body).ok()?;
+        let arr = slots.as_array()?;
+        let mut ids = Vec::new();
+        for s in arr {
+            if let Some(id) = s.get("id").and_then(|v| v.as_u64()) {
+                ids.push(id);
+            }
+        }
+        if ids.is_empty() { None } else { Some(ids) }
+    }
+
+    fn send_slot_release_tcp(port: u16, slot_id: u64) {
+        let Ok(addr) = format!("127.0.0.1:{port}").parse::<std::net::SocketAddr>() else {
+            return;
+        };
+        let Ok(mut stream) =
+            std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200))
+        else {
+            return;
+        };
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+
+        use std::io::Write;
+        let req = format!(
+            "POST /slots/{slot_id}?action=release HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+        );
+        let _ = stream.write_all(req.as_bytes());
+        let _ = stream.flush();
     }
 }
 
@@ -198,33 +251,14 @@ impl InferenceEngine for LlamaServerEngine {
     }
 
     fn cancel(&self) {
-        let cancel_client = match reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_millis(500))
-            .build()
-        {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-
-        let slots_url = format!("http://127.0.0.1:{}/slots", self.port);
-        if let Ok(resp) = cancel_client.get(&slots_url).send() {
-            if let Ok(slots) = resp.json::<serde_json::Value>() {
-                if let Some(arr) = slots.as_array() {
-                    for slot in arr {
-                        if let Some(id) = slot.get("id").and_then(|v| v.as_u64()) {
-                            let rel_url = format!(
-                                "http://127.0.0.1:{}/slots/{}?action=release",
-                                self.port, id
-                            );
-                            let _ = cancel_client.post(&rel_url).send();
-                        }
-                    }
-                    return;
-                }
-            }
+        let port = self.port;
+        if tokio::runtime::Handle::try_current().is_ok() {
+            drop(tokio::task::spawn_blocking(move || {
+                Self::release_slots_tcp(port);
+            }));
+        } else {
+            Self::release_slots_tcp(port);
         }
-        let fallback_url = format!("http://127.0.0.1:{}/slots/0?action=release", self.port);
-        let _ = cancel_client.post(&fallback_url).send();
     }
 
     fn execute(

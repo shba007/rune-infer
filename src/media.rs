@@ -290,6 +290,38 @@ pub fn is_video_format(url_or_path: &str) -> bool {
         || path_part.ends_with(".avi")
 }
 
+fn build_blocking_client(
+    timeout_secs: u64,
+) -> Result<crate::inference::process::SafeBlockingClient, ErrorResponse> {
+    if tokio::runtime::Handle::try_current().is_ok() {
+        let handle = std::thread::spawn(move || {
+            reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(timeout_secs))
+                .build()
+        });
+        let client = handle
+            .join()
+            .map_err(|_| ErrorResponse {
+                error: ApiError::new("Failed to join client build thread".to_string())
+                    .with_type("server_error"),
+            })?
+            .map_err(|e| ErrorResponse {
+                error: ApiError::new(format!("Failed to build HTTP client: {e}"))
+                    .with_type("server_error"),
+            })?;
+        Ok(crate::inference::process::SafeBlockingClient::new(client))
+    } else {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout_secs))
+            .build()
+            .map_err(|e| ErrorResponse {
+                error: ApiError::new(format!("Failed to build HTTP client: {e}"))
+                    .with_type("server_error"),
+            })?;
+        Ok(crate::inference::process::SafeBlockingClient::new(client))
+    }
+}
+
 pub fn download_remote_to_temp_file(url: &str) -> Result<PathBuf, ErrorResponse> {
     let target_url = resolve_media_source(url);
     validate_url_for_ssrf(&target_url)?;
@@ -300,13 +332,7 @@ pub fn download_remote_to_temp_file(url: &str) -> Result<PathBuf, ErrorResponse>
         .as_nanos();
     let temp_file = temp_dir.join(format!("rune_dl_{}_{}.mp4", std::process::id(), now));
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .map_err(|e| ErrorResponse {
-            error: ApiError::new(format!("Failed to build HTTP client: {e}"))
-                .with_type("server_error"),
-        })?;
+    let client = build_blocking_client(300)?;
 
     let req = build_authenticated_get(&client, &target_url)?;
     let mut resp = req
@@ -344,13 +370,7 @@ pub fn download_remote_to_temp_file(url: &str) -> Result<PathBuf, ErrorResponse>
 pub fn download_remote_bytes(url: &str) -> Result<Vec<u8>, ErrorResponse> {
     let target_url = resolve_media_source(url);
     validate_url_for_ssrf(&target_url)?;
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| ErrorResponse {
-            error: ApiError::new(format!("Failed to build HTTP client: {e}"))
-                .with_type("server_error"),
-        })?;
+    let client = build_blocking_client(60)?;
 
     let req = build_authenticated_get(&client, &target_url)?;
     let resp = req

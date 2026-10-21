@@ -409,18 +409,23 @@ pub async fn chat_completions_handler(
 
     let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let cancel_flag_clone = cancel_flag.clone();
+    let is_completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     struct CancelOnDrop {
+        completed: Arc<std::sync::atomic::AtomicBool>,
         flag: Arc<std::sync::atomic::AtomicBool>,
         engine: Arc<dyn crate::inference::traits::InferenceEngine>,
     }
     impl Drop for CancelOnDrop {
         fn drop(&mut self) {
-            self.flag.store(true, std::sync::atomic::Ordering::Relaxed);
-            self.engine.cancel();
+            if !self.completed.load(std::sync::atomic::Ordering::Relaxed) {
+                self.flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.engine.cancel();
+            }
         }
     }
     let _cancel_guard = CancelOnDrop {
+        completed: is_completed.clone(),
         flag: cancel_flag.clone(),
         engine: engine.clone(),
     };
@@ -478,6 +483,7 @@ pub async fn chat_completions_handler(
             ),
         }
     };
+    is_completed.store(true, std::sync::atomic::Ordering::Relaxed);
 
     if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
         crate::telemetry::record_failure(

@@ -481,3 +481,84 @@ fn test_if6_grounding_off_center_target() {
     // Verified: true center is in the top-right quadrant, not hardcoded [500, 500]!
     assert_ne!([center_x, center_y], [500, 500]);
 }
+
+#[tokio::test]
+async fn test_safe_blocking_client_drop_in_async_context() {
+    use rune_infer::inference::process::SafeBlockingClient;
+
+    // Constructing reqwest::blocking::Client must be done in a blocking context
+    let raw_client = tokio::task::spawn_blocking(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_millis(100))
+            .build()
+            .expect("build client")
+    })
+    .await
+    .expect("spawn_blocking client");
+
+    let safe_client = SafeBlockingClient::new(raw_client);
+    // Dropping on the async tokio worker task MUST NOT panic!
+    drop(safe_client);
+}
+
+#[test]
+fn test_http_probe_success_probe_mock_server() {
+    use rune_infer::inference::process::http_probe_success;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+    let port = listener.local_addr().expect("port").port();
+
+    std::thread::spawn(move || {
+        if let Ok((mut socket, _)) = listener.accept() {
+            let mut buf = [0u8; 512];
+            let _ = socket.read(&mut buf);
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
+            let _ = socket.write_all(resp.as_bytes());
+            let _ = socket.flush();
+        }
+    });
+
+    let ok = http_probe_success(port, "/health");
+    assert!(ok, "http_probe_success should return true for 200 OK");
+
+    let fail = http_probe_success(1, "/health");
+    assert!(
+        !fail,
+        "http_probe_success should return false for invalid port"
+    );
+}
+
+#[tokio::test]
+async fn test_llama_server_release_slots_tcp_in_tokio_task() {
+    use rune_infer::inference::engines::llama_server::LlamaServerEngine;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+    let port = listener.local_addr().expect("port").port();
+
+    std::thread::spawn(move || {
+        // Accept GET /slots
+        if let Ok((mut socket, _)) = listener.accept() {
+            let mut buf = [0u8; 512];
+            let _ = socket.read(&mut buf);
+            let resp =
+                "HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\n[{\"id\":0}]";
+            let _ = socket.write_all(resp.as_bytes());
+            let _ = socket.flush();
+        }
+        // Accept POST /slots/0?action=release
+        if let Ok((mut socket, _)) = listener.accept() {
+            let mut buf = [0u8; 512];
+            let _ = socket.read(&mut buf);
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
+            let _ = socket.write_all(resp.as_bytes());
+            let _ = socket.flush();
+        }
+    });
+
+    // Calling release_slots_tcp inside a Tokio worker thread MUST NOT panic
+    LlamaServerEngine::release_slots_tcp(port);
+}

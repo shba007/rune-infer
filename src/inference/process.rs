@@ -220,3 +220,77 @@ impl Drop for ProcessGuard {
         );
     }
 }
+
+/// Wrapper around `reqwest::blocking::Client` that prevents Tokio worker panics on drop.
+///
+/// Dropping `reqwest::blocking::Client` on an active Tokio worker thread panics Tokio's
+/// runtime shutdown guard (`Cannot drop a runtime in a context where blocking is not allowed`).
+/// When dropped inside a Tokio runtime context, `SafeBlockingClient` offloads the inner client's
+/// drop to an independent OS thread.
+pub struct SafeBlockingClient(Option<reqwest::blocking::Client>);
+
+impl SafeBlockingClient {
+    pub fn new(client: reqwest::blocking::Client) -> Self {
+        Self(Some(client))
+    }
+}
+
+impl std::ops::Deref for SafeBlockingClient {
+    type Target = reqwest::blocking::Client;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().expect("SafeBlockingClient alive")
+    }
+}
+
+impl Drop for SafeBlockingClient {
+    fn drop(&mut self) {
+        if let Some(client) = self.0.take() {
+            if tokio::runtime::Handle::try_current().is_ok() {
+                let _ = std::thread::Builder::new()
+                    .name("safe-client-drop".into())
+                    .spawn(move || drop(client));
+            } else {
+                drop(client);
+            }
+        }
+    }
+}
+
+/// Lightweight TCP health/readiness probe for localhost services without spinning up HTTP clients.
+///
+/// Sends `GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n` and
+/// returns `true` if the status code starts with `2` (e.g. 200 OK).
+pub fn http_probe_success(port: u16, path: &str) -> bool {
+    let Ok(addr) = format!("127.0.0.1:{port}").parse::<std::net::SocketAddr>() else {
+        return false;
+    };
+    let Ok(mut stream) =
+        std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300))
+    else {
+        return false;
+    };
+    let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(300)));
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+
+    use std::io::{Read, Write};
+    let req = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    let _ = stream.flush();
+
+    let mut buf = [0u8; 64];
+    let Ok(n) = stream.read(&mut buf) else {
+        return false;
+    };
+    if n < 12 {
+        return false;
+    }
+    let response_header = String::from_utf8_lossy(&buf[..n]);
+    if let Some(status_part) = response_header.split_whitespace().nth(1) {
+        status_part.starts_with('2')
+    } else {
+        false
+    }
+}
