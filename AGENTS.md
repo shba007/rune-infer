@@ -161,6 +161,12 @@ Behaviour notes:
 - Detection of language-model fine-tunes for speech ("…TTS", "…ASR") relies on
   whole-word matches in the name; verify them. Vevo2 is set up as text-to-speech
   although it also does voice conversion.
+- Omni families (Gemma-4, MiniCPM-o, `…Omni…`) are recognised by architecture or
+  file name, because several are plain language-model bodies (MiniCPM-o is
+  `qwen3`, `general.name` "Llm"). The wizard marks them `Omni` (image + audio +
+  video in) but cannot find their encoder files when only the language model was
+  downloaded; it says so and the config description repeats it. Draft heads
+  (MTP / `…-assistant` architectures) are never listed as models.
 - `rune-infer setup` skips models whose id already exists, so re-running it does
   not repair entries written by an older, less accurate wizard.
 
@@ -264,6 +270,12 @@ restart needed (runtime hot-reload detects changes every 2s).
   case-insensitive id or display name; unknown generic OpenAI-SDK default names
   (`text-embedding-3-small`, `whisper-1`, `tts-1`, …) fall back to the first
   model of that modality. Anything else is "model not found".
+- **Catalog order is priority.** When a request omits `model`, the audio,
+  embedding, moderation, NLU, OCR and detection handlers use the *first*
+  catalog entry of the right modality, so reordering `catalog.json` can change
+  defaults. The shipped catalog is ordered local before cloud, then by modality
+  (chat → image → speech → analysis/utility), then size (largest first; cloud by
+  context window), then quality (higher `bits_per_weight` first), then id.
 - **Upgrading from schema 1 & 2:** `rune-infer migrate [--dry-run]` splits the
   unified `models.json` into `config/server.json` and `config/catalog.json`, keeps
   a `models.json.v2.bak` backup, and validates the result before writing. A

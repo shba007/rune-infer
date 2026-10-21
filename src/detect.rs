@@ -325,6 +325,39 @@ fn name_tokens(info: &GgufInfo, file_name: &str) -> Vec<String> {
     .collect()
 }
 
+/// Architectures that are omni (image + audio + video in) by construction.
+const OMNI_ARCHS: &[&str] = &[
+    "gemma4",
+    "gemma_4",
+    "gemma-4",
+    "minicpmo",
+    "qwen2_5_omni",
+    "qwen25omni",
+    "qwen3_omni",
+    "qwen3omni",
+];
+
+/// Whether this language model belongs to an omni family.
+///
+/// Several omni models are plain language-model architectures structurally —
+/// MiniCPM-o's body is `qwen3` and its `general.name` is just "Llm" — so the
+/// architecture alone cannot tell, and the file name is the only evidence.
+/// Matching is on the squashed file name (`MiniCPM-o-4_5` → `minicpmo45`) or a
+/// whole `omni` word, so `MiniCPM-V` and look-alikes are not caught.
+fn is_omni_family(info: &GgufInfo, arch: &str, file_name: &str) -> bool {
+    if OMNI_ARCHS.contains(&arch) {
+        return true;
+    }
+    let squashed: String = file_name
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    squashed.contains("gemma4")
+        || squashed.contains("minicpmo")
+        || name_tokens(info, file_name).iter().any(|w| w == "omni")
+}
+
 pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
     let arch = info.architecture.to_lowercase();
     let lower_name = file_name.to_lowercase();
@@ -454,12 +487,17 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
             vec!["Embedding"],
         ));
     }
-    if arch == "gemma4"
-        || arch == "gemma_4"
-        || arch == "gemma-4"
-        || lower_name.contains("gemma-4")
-        || lower_name.contains("gemma4")
+    // A draft head (MTP / "assistant") is not a standalone model. Qwen's has a tokenizer and
+    // embeddings but no first block; Gemma's (`gemma4-assistant`) does have blocks, so its
+    // architecture name is the signal. Check this before the family branches below, or a
+    // drafter is listed as a model of its own.
+    if info.has_tokenizer
+        && info.has_token_embd
+        && (!info.has_first_block || arch.ends_with("-assistant") || arch.contains("mtp"))
     {
+        return Classified::Draft;
+    }
+    if info.has_tokenizer && info.has_token_embd && is_omni_family(info, &arch, file_name) {
         let mut d = det(
             Modality::Omni,
             vec![EngineKind::LlamaServer],
@@ -502,9 +540,6 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
     }
 
     if info.has_tokenizer && info.has_token_embd {
-        if !info.has_first_block {
-            return Classified::Draft;
-        }
         // A language-model body fine-tuned for speech is a plain LM structurally; only
         // its name gives it away (e.g. "Qwen3 1.7B Multilingual TTS").
         let words = name_tokens(info, file_name);
@@ -754,8 +789,15 @@ fn pair_projectors(
                 ambiguous[i].len()
             ));
         }
+        if c.modality == Modality::Omni && !c.extra.contains_key("mmproj_path") {
+            c.notes.push(OMNI_NO_ENCODER_NOTE.into());
+        }
     }
 }
+
+/// Shown for an omni model found without its vision/audio encoder file.
+pub const OMNI_NO_ENCODER_NOTE: &str = "omni model, but only the language model was found — \
+     add extra.mmproj_path (its vision/audio encoder GGUF) for image, audio and video input";
 
 /// Scan `input` (a file, or a folder searched up to 9 levels) and classify
 /// every GGUF found.
@@ -1151,6 +1193,97 @@ mod tests {
         assert!(d.capabilities.contains(&"Audio"));
         assert!(d.capabilities.contains(&"Video"));
         assert!(d.capabilities.contains(&"Omni"));
+    }
+
+    #[test]
+    fn minicpm_o_is_omni_although_its_body_is_a_plain_qwen3_model() {
+        // Real file: arch qwen3, general.name "Llm", only the file name says MiniCPM-o.
+        let g = Gguf::llm("qwen3", "Llm");
+        let d = model(cls(&g, "MiniCPM-o-4_5-Q8_0.gguf"));
+        assert_eq!(d.modality, Modality::Omni);
+        assert_eq!(d.engines, vec![EngineKind::LlamaServer]);
+        assert_eq!(d.kind_label, "omni multimodal model");
+        for cap in ["Chat", "Vision", "Audio", "Video", "Omni", "Tool Call"] {
+            assert!(d.capabilities.contains(&cap), "{cap}");
+        }
+        // A whole "omni" word marks other families too.
+        let q = model(cls(
+            &Gguf::llm("qwen2", "Qwen2.5-Omni-7B"),
+            "Qwen2.5-Omni-7B-Q4_K_M.gguf",
+        ));
+        assert_eq!(q.modality, Modality::Omni);
+    }
+
+    #[test]
+    fn omni_detection_does_not_catch_look_alikes() {
+        // MiniCPM-V is vision-only; "omnibus" merely contains the letters.
+        for file in [
+            "MiniCPM-V-4_5-Q8_0.gguf",
+            "omnibus-7b.gguf",
+            "OxCoder-9B.gguf",
+            "minicpm-4b.gguf",
+        ] {
+            let d = model(cls(&Gguf::llm("qwen3", "Llm"), file));
+            assert_eq!(d.modality, Modality::Text, "{file}");
+        }
+    }
+
+    #[test]
+    fn draft_heads_of_omni_families_are_not_listed_as_models() {
+        // Same shape as `mtp-gemma-4-12b-it.gguf`: tokenizer + embeddings, no first block.
+        for (arch, file) in [
+            ("gemma4", "mtp-gemma-4-12b-it.gguf"),
+            ("qwen3", "MiniCPM-o-4_5-mtp.gguf"),
+        ] {
+            let drafter = Gguf::new(arch)
+                .string_array("tokenizer.ggml.tokens", &["a"])
+                .tensor("token_embd.weight")
+                .tensor("blk.40.attn_k.weight");
+            assert!(matches!(cls(&drafter, file), Classified::Draft), "{file}");
+        }
+        // Gemma's real drafter has blocks (`blk.0.*`) — arch `gemma4-assistant` identifies it.
+        let assistant = Gguf::llm("gemma4-assistant", "Gemma 4 12B It Assistant");
+        assert!(matches!(
+            cls(&assistant, "mtp-gemma-4-12b-it.gguf"),
+            Classified::Draft
+        ));
+        // The ordinary Gemma model next to it is still an omni chat model.
+        let base = model(cls(
+            &Gguf::llm("gemma4", "Gemma-4-12B-It"),
+            "gemma-4-12b-it-UD-Q6_K_XL.gguf",
+        ));
+        assert_eq!(base.modality, Modality::Omni);
+    }
+
+    #[test]
+    fn omni_models_keep_their_modality_when_a_projector_is_paired_and_warn_when_not() {
+        let d = tmp("omni");
+        Gguf::llm_with_dim("qwen3", "Llm", 4096).write(&d.join("MiniCPM-o-4_5-Q8_0.gguf"));
+        let alone = discover(&d).unwrap();
+        let m = &alone.models[0];
+        assert_eq!(m.modality, Modality::Omni);
+        assert!(
+            m.notes.iter().any(|n| n == OMNI_NO_ENCODER_NOTE),
+            "{:?}",
+            m.notes
+        );
+
+        clip(4096).write(&d.join("mmproj-MiniCPM-o-4_5-F16.gguf"));
+        let paired = discover(&d).unwrap();
+        let m = &paired.models[0];
+        assert_eq!(
+            m.modality,
+            Modality::Omni,
+            "pairing must not downgrade it to VisionText"
+        );
+        assert!(
+            m.extra["mmproj_path"]
+                .as_str()
+                .unwrap()
+                .ends_with("mmproj-MiniCPM-o-4_5-F16.gguf")
+        );
+        assert!(!m.notes.iter().any(|n| n == OMNI_NO_ENCODER_NOTE));
+        std::fs::remove_dir_all(d).ok();
     }
 
     #[test]
