@@ -38,6 +38,7 @@ pub struct ModelRegistry {
     pub(crate) loading: HashMap<String, Arc<LoadBarrier>>,
     pub(crate) load_durations: HashMap<String, u64>,
     pub(crate) last_evicted: Option<String>,
+    load_evictions: HashMap<String, Option<String>>,
 }
 
 impl ModelRegistry {
@@ -57,6 +58,7 @@ impl ModelRegistry {
             loading: HashMap::new(),
             load_durations: HashMap::new(),
             last_evicted: None,
+            load_evictions: HashMap::new(),
         }
     }
 
@@ -141,6 +143,7 @@ impl ModelRegistry {
             .ok_or_else(|| format!("Model '{}' not found in models.json", id))?
             .clone();
 
+        self.last_evicted = None;
         let max_loaded = self.config.server.max_loaded_models;
         if max_loaded > 0 && self.engines.len() >= max_loaded {
             self.evict_lru();
@@ -191,6 +194,8 @@ impl ModelRegistry {
         };
         let elapsed_ms = load_started.elapsed().as_millis() as u64;
         self.load_durations.insert(canonical_id.clone(), elapsed_ms);
+        self.load_evictions
+            .insert(canonical_id.clone(), self.last_evicted.clone());
         crate::telemetry::model_loaded(&canonical_id, elapsed_ms as u128, &vram_detail);
 
         self.engines.insert(canonical_id.clone(), engine);
@@ -205,6 +210,10 @@ impl ModelRegistry {
 
     pub fn last_evicted(&self) -> Option<String> {
         self.last_evicted.clone()
+    }
+
+    pub fn get_load_eviction(&self, id: &str) -> Option<String> {
+        self.load_evictions.get(id).cloned().flatten()
     }
 
     pub fn is_model_loaded(&self, id: &str) -> bool {

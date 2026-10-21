@@ -153,7 +153,7 @@ async fn test_vision_plus_tools_with_tool_choice_required() {
 }
 
 #[tokio::test]
-async fn test_v1_images_grounding_endpoint() {
+async fn test_encoder_grounding_refuses_fabricated_coordinates() {
     let app = create_test_app();
     let img_uri = sample_png_base64();
 
@@ -171,18 +171,15 @@ async fn test_v1_images_grounding_endpoint() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(resp.headers()["x-model-served"], "qwen3.8-27b");
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    let res: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    assert_eq!(res["object"], "image.grounding");
-    assert_eq!(res["query"], "Save button");
-    assert!(res["point"].is_array());
-    assert_eq!(res["point"].as_array().unwrap().len(), 2);
-    assert!(res["point_pixels"].is_array());
-    assert!(res["box_2d"].is_array());
-    assert_eq!(res["box_2d"].as_array().unwrap().len(), 4);
-    assert!(res["box_normalized"].is_array());
-    assert_eq!(res["box_normalized"].as_array().unwrap().len(), 4);
+    let response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unsupported")
+    );
+    assert!(response.get("point").is_none());
 }

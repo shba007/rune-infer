@@ -1,6 +1,9 @@
 # Rune Infer Documentation & Media Assets
 
-This directory contains visual assets, screencasts, and documentation figures for Rune Infer.
+This directory contains maintained guides and demo assets for Rune Infer.
+
+- [Studio integration contract](STUDIO-CONTRACT.md): scheduling, attribution, audio and grounding limitations, and development checks.
+- [TUI review harness](../scripts/tui-review/README.md): regenerate synthetic terminal review frames.
 
 - `demo.gif`: 60-second interactive terminal screencast (dashboard, lazy loading, LRU model swap) generated via `demos/overview/overview.tape`. Embedded in the main project README.
 - `demo_tts.gif`: Text-to-speech screencast (Audio8 real-time speech synthesis) generated via `demos/tts/tts.tape`.

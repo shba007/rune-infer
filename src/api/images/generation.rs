@@ -79,37 +79,10 @@ pub async fn image_generation_handler(
         Err(resp) => return resp,
     };
 
-    let inference = state.inference.clone();
-    let model_id_fetch = gate.model_config.id.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&model_id_fetch)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::NOT_FOUND,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Model failed to load: {err}"))
-                                .with_type("invalid_request_error"),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-            Err(e) => {
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Thread join error: {e}")),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-        };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
 
     let resolved_size = resolve_image_dimensions(
         request.size.as_deref(),
@@ -166,8 +139,10 @@ pub async fn image_generation_handler(
 #[axum::debug_handler]
 pub async fn image_edit_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
+    let mut model: Option<String> = None;
     let mut prompt: Option<String> = None;
     let mut image_bytes: Vec<u8> = Vec::new();
     let mut mask_bytes: Vec<u8> = Vec::new();
@@ -175,6 +150,9 @@ pub async fn image_edit_handler(
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
         match name.as_str() {
+            "model" => {
+                model = field.text().await.ok();
+            }
             "prompt" => {
                 if let Ok(text) = field.text().await {
                     prompt = Some(text);
@@ -230,18 +208,23 @@ pub async fn image_edit_handler(
             .into_response();
     }
 
-    let model_id = state
-        .config()
-        .models
-        .iter()
-        .find(|m| m.modality == crate::config::Modality::ImageGeneration)
-        .map(|m| m.id.clone())
-        .unwrap_or_else(|| "z-image".to_string());
+    let model_id = model.unwrap_or_else(|| {
+        state
+            .config()
+            .models
+            .iter()
+            .find(|m| m.modality == crate::config::Modality::ImageGeneration)
+            .map(|m| m.id.clone())
+            .unwrap_or_else(|| "z-image".to_string())
+    });
 
-    let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let task = InferenceTaskRequest::ImageGeneration {
@@ -255,16 +238,17 @@ pub async fn image_edit_handler(
         sample_method: None,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
             InferenceTaskResponse::Image(img) => Json(img).into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    )
 }
 
 #[axum::debug_handler]

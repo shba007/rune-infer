@@ -146,9 +146,16 @@ async fn test_inf7_inf15_models_structured_capabilities_and_locality() {
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert!(json["vram_total_bytes"].is_number() || json["vram_total_bytes"].is_null());
-    assert!(json["vram_free_bytes"].is_number() || json["vram_free_bytes"].is_null());
-    assert!(json["vram_used_bytes"].is_number() || json["vram_used_bytes"].is_null());
+    // Unknown probe values are omitted, rather than represented by null or zero.
+    for field in ["vram_total_bytes", "vram_free_bytes", "vram_used_bytes"] {
+        if let Some(value) = json.get(field) {
+            assert!(value.as_u64().is_some(), "{field}: {value}");
+        }
+    }
+    if json.get("vram_total_bytes").is_none() {
+        assert!(json.get("vram_free_bytes").is_none());
+        assert!(json.get("vram_used_bytes").is_none());
+    }
 
     let models = json["data"].as_array().expect("data array");
     let local_model = models
@@ -312,6 +319,10 @@ struct MockSlowEngine {
 }
 
 impl rune_infer::inference::traits::InferenceEngine for MockSlowEngine {
+    fn supports_cancellation(&self) -> bool {
+        true
+    }
+
     fn id(&self) -> &str {
         "mock-slow"
     }
@@ -513,7 +524,14 @@ fn test_http_probe_success_probe_mock_server() {
     std::thread::spawn(move || {
         if let Ok((mut socket, _)) = listener.accept() {
             let mut buf = [0u8; 512];
-            let _ = socket.read(&mut buf);
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let n = socket.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+            }
             let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
             let _ = socket.write_all(resp.as_bytes());
             let _ = socket.flush();
@@ -543,7 +561,14 @@ async fn test_llama_server_release_slots_tcp_in_tokio_task() {
         // Accept GET /slots
         if let Ok((mut socket, _)) = listener.accept() {
             let mut buf = [0u8; 512];
-            let _ = socket.read(&mut buf);
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let n = socket.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+            }
             let resp =
                 "HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\n[{\"id\":0}]";
             let _ = socket.write_all(resp.as_bytes());
@@ -552,7 +577,14 @@ async fn test_llama_server_release_slots_tcp_in_tokio_task() {
         // Accept POST /slots/0?action=release
         if let Ok((mut socket, _)) = listener.accept() {
             let mut buf = [0u8; 512];
-            let _ = socket.read(&mut buf);
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let n = socket.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+            }
             let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
             let _ = socket.write_all(resp.as_bytes());
             let _ = socket.flush();

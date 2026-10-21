@@ -1,0 +1,31 @@
+{
+  "image": "off-center.png",
+  "width": 400,
+  "height": 240,
+  "query": "red rectangle",
+  "box_2d": [
+    100,
+    800,
+    200,
+    950
+  ],
+  "point": [
+    875,
+    150
+  ],
+  "point_pixels": [
+    350,
+    36
+  ],
+  "decision": {
+    "name": "red_visible",
+    "type": "noul",
+    "instruction": "Is a red rectangle visible in the image?",
+    "expected": true,
+    "probability_range": [
+      0.8,
+      1.0
+    ]
+  },
+  "evidence": "Acceptance target, NOT a measured probability range or calibration result."
+}

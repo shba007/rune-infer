@@ -32,16 +32,94 @@ pub struct ModelExecutionGate {
     pub model_config: ModelConfig,
     pub is_background: bool,
     pub was_resident: bool,
+    foreground_epoch: u64,
+    no_swap: bool,
     pub _guard: ConcurrencyGuard,
 }
 
 impl ModelExecutionGate {
+    fn yielded_response(&self, state: &Arc<AppState>) -> Response {
+        self.attach_headers(
+            state,
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(header::RETRY_AFTER, "1")],
+                Json(ErrorResponse {
+                    error: ApiError::new("Background request yielded to foreground request")
+                        .with_type("server_busy")
+                        .with_code("yielded"),
+                }),
+            )
+                .into_response(),
+        )
+    }
+    #[allow(clippy::result_large_err)]
+    pub async fn load_engine(
+        &self,
+        state: &Arc<AppState>,
+    ) -> Result<Arc<dyn InferenceEngine>, Response> {
+        if self.is_background && self.model_config.is_local() && !self.was_resident {
+            return Err(self.attach_headers(state, (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(header::RETRY_AFTER, "1")],
+                Json(ErrorResponse { error: ApiError::new("Background work cannot start a non-preemptible model load; warm the model with a foreground request")
+                    .with_type("server_busy").with_code("background_requires_resident") }),
+            ).into_response()));
+        }
+        if (self.no_swap || self.is_background) && self.model_config.is_local() {
+            return state
+                .inference
+                .registry
+                .lock()
+                .ok()
+                .and_then(|mut registry| registry.get_loaded(&self.model_config.id))
+                .ok_or_else(|| {
+                    self.attach_headers(
+                        state,
+                        (
+                            StatusCode::CONFLICT,
+                            Json(ErrorResponse {
+                                error: ApiError::new(
+                                    "Model is no longer resident; x-no-swap forbids a cold load",
+                                )
+                                .with_type("swap_refused")
+                                .with_code("swap_refused"),
+                            }),
+                        )
+                            .into_response(),
+                    )
+                });
+        }
+        let inference = state.inference.clone();
+        let id = self.model_config.id.clone();
+        match tokio::task::spawn_blocking(move || inference.get_engine(&id)).await {
+            Ok(Ok(engine)) => Ok(engine),
+            result => Err(self.attach_headers(
+                state,
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(match result {
+                            Ok(Err(err)) => err,
+                            Err(err) => err.to_string(),
+                            _ => unreachable!(),
+                        }),
+                    }),
+                )
+                    .into_response(),
+            )),
+        }
+    }
     #[allow(clippy::result_large_err)]
     pub fn enter(
         state: &Arc<AppState>,
         headers: &HeaderMap,
         model_name_or_id: &str,
     ) -> Result<Self, Response> {
+        let foreground_epoch = state
+            .concurrency
+            .foreground_epoch
+            .load(std::sync::atomic::Ordering::SeqCst);
         let is_background = headers
             .get("x-rune-priority")
             .or_else(|| headers.get("x-priority"))
@@ -125,6 +203,10 @@ impl ModelExecutionGate {
                 .concurrency
                 .active_foreground
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            state
+                .concurrency
+                .foreground_epoch
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             state.concurrency.yield_notify.notify_waiters();
         }
 
@@ -137,6 +219,8 @@ impl ModelExecutionGate {
             model_config,
             is_background,
             was_resident,
+            foreground_epoch,
+            no_swap,
             _guard: guard,
         })
     }
@@ -171,7 +255,7 @@ impl ModelExecutionGate {
                 .registry
                 .lock()
                 .ok()
-                .and_then(|r| r.last_evicted())
+                .and_then(|r| r.get_load_eviction(&self.model_config.id))
             {
                 if let Ok(val) = HeaderValue::from_str(&evicted) {
                     hdrs.insert("x-model-evicted", val);
@@ -193,6 +277,38 @@ impl ModelExecutionGate {
         engine: Arc<dyn InferenceEngine>,
         task: InferenceTaskRequest,
     ) -> Result<InferenceOutput, Response> {
+        if self.is_background {
+            if state
+                .concurrency
+                .foreground_epoch
+                .load(std::sync::atomic::Ordering::SeqCst)
+                != self.foreground_epoch
+                || state
+                    .concurrency
+                    .active_foreground
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    > 0
+            {
+                return Err(self.yielded_response(state));
+            }
+            if !engine.supports_cancellation() {
+                return Err(self.attach_headers(
+                    state,
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        [(header::RETRY_AFTER, "1")],
+                        Json(ErrorResponse {
+                            error: ApiError::new(
+                                "This engine does not support background cancellation",
+                            )
+                            .with_type("server_busy")
+                            .with_code("background_unsupported"),
+                        }),
+                    )
+                        .into_response(),
+                ));
+            }
+        }
         let engine_clone = engine.clone();
         let task_clone = task.clone();
         let start_time = std::time::Instant::now();
@@ -206,7 +322,7 @@ impl ModelExecutionGate {
                     .map_err(|e| e.to_string());
                 (res, gen_start.elapsed())
             });
-            let yield_notified = state.concurrency.yield_notify.notified();
+            let yield_notified = state.concurrency.wait_for_foreground(self.foreground_epoch);
             tokio::select! {
                 join_res = exec_handle => {
                     match join_res {

@@ -15,6 +15,7 @@ use crate::types::{
 #[axum::debug_handler]
 pub async fn detect_objects_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<DetectObjectsRequest>,
 ) -> Response {
     let image_uri = match request.image {
@@ -61,27 +62,32 @@ pub async fn detect_objects_handler(
         features: request.features.unwrap_or_default(),
     };
 
-    let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
             InferenceTaskResponse::Detection(det) => Json(det).into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    )
 }
 
 #[axum::debug_handler]
 pub async fn image_embeddings_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<ImageEmbeddingsRequest>,
 ) -> Response {
     let image_uri = match request.image {
@@ -137,27 +143,32 @@ pub async fn image_embeddings_handler(
         encoding_format: request.encoding_format,
     };
 
-    let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
             InferenceTaskResponse::ImageEmbedding(emb) => Json(emb).into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    )
 }
 
 #[axum::debug_handler]
 pub async fn recognize_objects_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<RecognizeObjectsRequest>,
 ) -> Response {
     let image_uri = match request.image {
@@ -183,22 +194,26 @@ pub async fn recognize_objects_handler(
         targets: request.targets,
     };
 
-    let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
             InferenceTaskResponse::Recognition(rec) => Json(rec).into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    )
 }
 
 #[axum::debug_handler]
@@ -291,41 +306,10 @@ pub async fn image_grounding_handler(
         height: h,
     };
 
-    let inference = state.inference.clone();
-    let target_model = gate.model_config.id.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&target_model)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::NOT_FOUND,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!(
-                                "Vision model '{}' failed to load: {err}",
-                                gate.model_config.id
-                            ))
-                            .with_type("invalid_request_error")
-                            .with_code("model_not_found"),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-            Err(e) => {
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Thread execution error: {e}")),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-        };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
 
     let output = match gate.execute_task(&state, engine, task).await {
         Ok(out) => out,

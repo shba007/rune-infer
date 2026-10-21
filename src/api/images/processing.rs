@@ -15,6 +15,7 @@ use crate::types::{
 #[axum::debug_handler]
 pub async fn image_caption_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<ImageCaptionRequest>,
 ) -> Response {
     let image_uri = match request.image {
@@ -61,27 +62,32 @@ pub async fn image_caption_handler(
         max_tokens: request.max_tokens.unwrap_or(128),
     };
 
-    let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
             InferenceTaskResponse::Caption(cap) => Json(cap).into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    )
 }
 
 #[axum::debug_handler]
 pub async fn image_upscale_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<ImageUpscaleRequest>,
 ) -> Response {
     let image_uri = match request.image {
@@ -107,27 +113,32 @@ pub async fn image_upscale_handler(
         response_format: request.response_format,
     };
 
-    let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
             InferenceTaskResponse::Upscale(up) => Json(up).into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    )
 }
 
 #[axum::debug_handler]
 pub async fn image_restoration_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<ImageRestorationRequest>,
 ) -> Response {
     let image_uri = match request.image {
@@ -154,27 +165,32 @@ pub async fn image_restoration_handler(
         response_format: request.response_format,
     };
 
-    let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
             InferenceTaskResponse::Restoration(rest) => Json(rest).into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    )
 }
 
 #[axum::debug_handler]
 pub async fn image_style_transfer_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<ImageStyleTransferRequest>,
 ) -> Response {
     let content_uri = match request.content_image {
@@ -211,20 +227,24 @@ pub async fn image_style_transfer_handler(
         response_format: request.response_format,
     };
 
-    let inference = state.inference.clone();
-    let engine = match tokio::task::spawn_blocking(move || inference.get_engine(&model_id)).await {
-        Ok(Ok(e)) => e,
-        _ => return StatusCode::NOT_FOUND.into_response(),
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
             InferenceTaskResponse::StyleTransfer(st) => Json(st).into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    )
 }

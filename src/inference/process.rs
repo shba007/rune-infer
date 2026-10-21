@@ -281,13 +281,11 @@ pub fn http_probe_success(port: u16, path: &str) -> bool {
     let _ = stream.flush();
 
     let mut buf = [0u8; 64];
-    let Ok(n) = stream.read(&mut buf) else {
+    // TCP may deliver the status line in several reads.
+    let Ok(()) = stream.read_exact(&mut buf[..12]) else {
         return false;
     };
-    if n < 12 {
-        return false;
-    }
-    let response_header = String::from_utf8_lossy(&buf[..n]);
+    let response_header = String::from_utf8_lossy(&buf[..12]);
     if let Some(status_part) = response_header.split_whitespace().nth(1) {
         status_part.starts_with('2')
     } else {

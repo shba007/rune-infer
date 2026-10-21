@@ -11,6 +11,7 @@ use crate::types::{ApiError, ErrorResponse, ModerationRequest};
 #[axum::debug_handler]
 pub async fn moderations_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<ModerationRequest>,
 ) -> Response {
     let inputs: Vec<String> = match request.input {
@@ -76,74 +77,28 @@ pub async fn moderations_handler(
         },
     };
 
-    let inference = state.inference.clone();
-    let target_model = model_id.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&target_model)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Moderation model failed to load: {err}"))
-                            .with_type("invalid_request_error")
-                            .with_param("model")
-                            .with_code("model_not_found"),
-                    }),
-                )
-                    .into_response();
-            }
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Execution thread error: {e}")),
-                    }),
-                )
-                    .into_response();
-            }
-        };
-
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
     let task = InferenceTaskRequest::Moderation {
         model: Some(model_id),
         input: inputs,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Moderation(mod_resp) => Json(mod_resp).into_response(),
-            InferenceTaskResponse::Error(err) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new(err).with_type("server_error"),
-                }),
-            )
-                .into_response(),
-            _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new("Unexpected response variant from moderation engine"),
-                }),
-            )
-                .into_response(),
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
+            InferenceTaskResponse::Moderation(response) => Json(response).into_response(),
+            _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         },
-        Ok(Err(err)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(err).with_type("server_error"),
-            }),
-        )
-            .into_response(),
-        Err(err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(err.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
-    }
+    )
 }

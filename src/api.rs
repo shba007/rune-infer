@@ -12,6 +12,9 @@ pub mod ocr;
 
 pub use gate::ModelExecutionGate;
 
+#[cfg(test)]
+mod contract_tests;
+
 use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{Next, from_fn_with_state};
@@ -34,6 +37,28 @@ pub struct RequestConcurrencyState {
     pub active_foreground: std::sync::atomic::AtomicUsize,
     pub active_background: std::sync::atomic::AtomicUsize,
     pub yield_notify: tokio::sync::Notify,
+    pub foreground_epoch: std::sync::atomic::AtomicU64,
+}
+
+impl RequestConcurrencyState {
+    /// Register before checking the epoch so a foreground arrival cannot be lost.
+    pub async fn wait_for_foreground(&self, epoch: u64) {
+        let notified = self.yield_notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if self
+            .foreground_epoch
+            .load(std::sync::atomic::Ordering::SeqCst)
+            != epoch
+            || self
+                .active_foreground
+                .load(std::sync::atomic::Ordering::SeqCst)
+                > 0
+        {
+            return;
+        }
+        notified.await;
+    }
 }
 
 #[derive(Clone)]
@@ -499,9 +524,9 @@ struct InferenceQuery {
 async fn inference_handler(
     State(state): State<Arc<AppState>>,
     Query(q): Query<InferenceQuery>,
+    headers: HeaderMap,
     Json(task): Json<InferenceTaskRequest>,
 ) -> Response {
-    let start_time = std::time::Instant::now();
     let engine_id = match q.engine.as_deref().filter(|s| !s.trim().is_empty()) {
         Some(id) => id.to_string(),
         None => {
@@ -516,46 +541,16 @@ async fn inference_handler(
         }
     };
 
-    let inference = state.inference.clone();
-    let res =
-        tokio::task::spawn_blocking(move || inference.execute_task(&engine_id, &task, None)).await;
-
-    match res {
-        Ok(Ok(output)) => {
-            tracing::info!(
-                target: "audit",
-                status = 200,
-                latency_ms = start_time.elapsed().as_millis(),
-                tokens = output.usage.total_tokens,
-                "Inference task completed"
-            );
-            Json(output).into_response()
-        }
-        Ok(Err(e)) => {
-            tracing::warn!(
-                target: "audit",
-                status = 404,
-                latency_ms = start_time.elapsed().as_millis(),
-                error = %e,
-                "Inference task failed: engine not found or execution error"
-            );
-            (StatusCode::NOT_FOUND, Json(InferenceTaskResponse::Error(e))).into_response()
-        }
-        Err(join_err) => {
-            tracing::error!(
-                target: "audit",
-                status = 500,
-                latency_ms = start_time.elapsed().as_millis(),
-                error = %join_err,
-                "Inference task thread join error"
-            );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(InferenceTaskResponse::Error(format!(
-                    "Task failed: {join_err}"
-                ))),
-            )
-                .into_response()
-        }
+    let gate = match ModelExecutionGate::enter(&state, &headers, &engine_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
+    match gate.execute_task(&state, engine, task).await {
+        Ok(output) => gate.attach_headers(&state, Json(output).into_response()),
+        Err(resp) => resp,
     }
 }

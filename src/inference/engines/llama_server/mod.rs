@@ -246,6 +246,10 @@ impl LlamaServerEngine {
 }
 
 impl InferenceEngine for LlamaServerEngine {
+    fn supports_cancellation(&self) -> bool {
+        true
+    }
+
     fn id(&self) -> &str {
         &self.id
     }
@@ -852,7 +856,7 @@ impl InferenceEngine for LlamaServerEngine {
                     .unwrap_or("")
                     .trim();
 
-                let (box_2d, conf) = parse_grounding_coordinates(raw_content);
+                let (box_2d, conf) = parse_grounding_coordinates(raw_content)?;
                 let center_x = (box_2d[1] + box_2d[3]) / 2;
                 let center_y = (box_2d[0] + box_2d[2]) / 2;
                 let px_x = ((center_x as f64 / 1000.0) * *width as f64).round() as u32;
@@ -1340,36 +1344,53 @@ impl InferenceEngine for LlamaServerEngine {
     }
 }
 
-fn parse_grounding_coordinates(raw: &str) -> ([u32; 4], f64) {
-    if let (Some(start), Some(end)) = (raw.find("<|box_start|>"), raw.find("<|box_end|>")) {
-        let inside = &raw[start + "<|box_start|>".len()..end];
-        let nums: Vec<u32> = inside
-            .split(|c: char| !c.is_ascii_digit())
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        if nums.len() >= 4 {
-            return ([nums[0], nums[1], nums[2], nums[3]], 0.95);
+fn parse_grounding_coordinates(raw: &str) -> Result<([u32; 4], f64), Box<dyn std::error::Error>> {
+    let inside =
+        if let (Some(start), Some(end)) = (raw.find("<|box_start|>"), raw.find("<|box_end|>")) {
+            raw.get(start + "<|box_start|>".len()..end)
+        } else if let (Some(start), Some(end)) = (raw.find('['), raw.find(']')) {
+            raw.get(start + 1..end)
+        } else {
+            None
         }
+        .ok_or("Grounding output has no bounding box")?;
+    let values: Vec<u32> = inside
+        .split(',')
+        .map(|s| s.trim().parse::<u32>())
+        .collect::<Result<_, _>>()?;
+    let bounds: [u32; 4] = values
+        .try_into()
+        .map_err(|_| "Grounding output must contain exactly four coordinates")?;
+    if bounds.iter().any(|v| *v > 1000) || bounds[0] >= bounds[2] || bounds[1] >= bounds[3] {
+        return Err("Grounding box must be ordered, nonempty and within 0..1000".into());
     }
+    // No calibrated confidence is available from generated coordinates.
+    Ok((bounds, 0.0))
+}
 
-    if let (Some(start), Some(end)) = (raw.find('['), raw.rfind(']')) {
-        let inside = &raw[start + 1..end];
-        let nums: Vec<u32> = inside
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-        if nums.len() >= 4 {
-            return ([nums[0], nums[1], nums[2], nums[3]], 0.92);
+#[cfg(test)]
+mod grounding_tests {
+    use super::parse_grounding_coordinates;
+
+    #[test]
+    fn parses_off_center_box_and_rejects_fabricated_fallbacks() {
+        let (bounds, confidence) = parse_grounding_coordinates("[100,800,200,950]").unwrap();
+        assert_eq!(bounds, [100, 800, 200, 950]);
+        assert_eq!(
+            [(bounds[1] + bounds[3]) / 2, (bounds[0] + bounds[2]) / 2],
+            [875, 150]
+        );
+        assert_eq!(confidence, 0.0);
+        for invalid in [
+            "no target",
+            "[500,500]",
+            "[0,0,1001,900]",
+            "[200,800,100,950]",
+            "[1,2,3,4,5]",
+            "[4,3,2,1]",
+            "<|box_end|><|box_start|>",
+        ] {
+            assert!(parse_grounding_coordinates(invalid).is_err(), "{invalid}");
         }
-    }
-
-    let nums: Vec<u32> = raw
-        .split(|c: char| !c.is_ascii_digit())
-        .filter_map(|s| s.parse().ok())
-        .collect();
-    if nums.len() >= 4 {
-        ([nums[0], nums[1], nums[2], nums[3]], 0.85)
-    } else {
-        ([500, 500, 500, 500], 0.5)
     }
 }

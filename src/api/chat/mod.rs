@@ -26,6 +26,10 @@ pub async fn chat_completions_handler(
     bytes: Bytes,
 ) -> Response {
     let start_time = std::time::Instant::now();
+    let foreground_epoch = state
+        .concurrency
+        .foreground_epoch
+        .load(std::sync::atomic::Ordering::SeqCst);
 
     let is_background = headers
         .get("x-rune-priority")
@@ -53,25 +57,6 @@ pub async fn chat_completions_handler(
             .into_response();
     }
 
-    struct ConcurrencyGuard {
-        concurrency: Arc<crate::api::RequestConcurrencyState>,
-        is_background: bool,
-    }
-
-    impl Drop for ConcurrencyGuard {
-        fn drop(&mut self) {
-            if self.is_background {
-                self.concurrency
-                    .active_background
-                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            } else {
-                self.concurrency
-                    .active_foreground
-                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            }
-        }
-    }
-
     if is_background {
         state
             .concurrency
@@ -82,10 +67,14 @@ pub async fn chat_completions_handler(
             .concurrency
             .active_foreground
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        state
+            .concurrency
+            .foreground_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         state.concurrency.yield_notify.notify_waiters();
     }
 
-    let _concurrency_guard = ConcurrencyGuard {
+    let _concurrency_guard = crate::api::gate::ConcurrencyGuard {
         concurrency: state.concurrency.clone(),
         is_background,
     };
@@ -250,6 +239,18 @@ pub async fn chat_completions_handler(
     }
 
     if !model_config.is_local() {
+        if is_background {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(axum::http::header::RETRY_AFTER, "1")],
+                Json(ErrorResponse {
+                    error: ApiError::new("Cloud background cancellation is unsupported")
+                        .with_type("server_busy")
+                        .with_code("background_unsupported"),
+                }),
+            )
+                .into_response();
+        }
         let mut proxy_resp = state.proxy.execute_chat(&model_config, &request).await;
         let hdrs = proxy_resp.headers_mut();
         if let Ok(val) = axum::http::HeaderValue::from_str(&model_config.id) {
@@ -261,7 +262,7 @@ pub async fn chat_completions_handler(
         );
         hdrs.insert(
             "x-model-resident",
-            axum::http::HeaderValue::from_static("true"),
+            axum::http::HeaderValue::from_static("false"),
         );
         return proxy_resp;
     }
@@ -286,41 +287,85 @@ pub async fn chat_completions_handler(
         }
     };
 
+    if is_background && !was_resident {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::RETRY_AFTER, "1")],
+            Json(ErrorResponse {
+                error: ApiError::new(
+                    "Background work requires a resident model; warm it with a foreground request",
+                )
+                .with_type("server_busy")
+                .with_code("background_requires_resident"),
+            }),
+        )
+            .into_response();
+    }
     let inference = state.inference.clone();
     let model_target = request.model.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&model_target)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                tracing::error!(
-                    target: "audit",
-                    model = %request.model,
-                    error = %err,
-                    "Failed to load model runtime engine"
-                );
+    let engine = match tokio::task::spawn_blocking(move || {
+        if no_swap || is_background {
+            inference
+                .registry
+                .lock()
+                .map_err(|err| err.to_string())?
+                .get_loaded(&model_target)
+                .ok_or_else(|| "Model is no longer resident".to_string())
+        } else {
+            inference.get_engine(&model_target)
+        }
+    })
+    .await
+    {
+        Ok(Ok(e)) => e,
+        Ok(Err(err)) => {
+            if no_swap || is_background {
+                let (status, kind, code) = if no_swap {
+                    (StatusCode::CONFLICT, "swap_refused", "swap_refused")
+                } else {
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_busy",
+                        "background_requires_resident",
+                    )
+                };
                 return (
-                    StatusCode::NOT_FOUND,
+                    status,
                     Json(ErrorResponse {
-                        error: ApiError::new(format!(
-                            "Model '{}' not found or failed to load: {err}",
-                            request.model
-                        ))
-                        .with_type("invalid_request_error")
-                        .with_code("model_not_found"),
+                        error: ApiError::new(err).with_type(kind).with_code(code),
                     }),
                 )
                     .into_response();
             }
-            Err(join_err) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Thread execution error: {join_err}")),
-                    }),
-                )
-                    .into_response();
-            }
-        };
+            tracing::error!(
+                target: "audit",
+                model = %request.model,
+                error = %err,
+                "Failed to load model runtime engine"
+            );
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!(
+                        "Model '{}' not found or failed to load: {err}",
+                        request.model
+                    ))
+                    .with_type("invalid_request_error")
+                    .with_code("model_not_found"),
+                }),
+            )
+                .into_response();
+        }
+        Err(join_err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new(format!("Thread execution error: {join_err}")),
+                }),
+            )
+                .into_response();
+        }
+    };
 
     let load_duration_ms = state
         .inference
@@ -332,7 +377,7 @@ pub async fn chat_completions_handler(
         .inference
         .registry
         .lock()
-        .map(|r| r.last_evicted())
+        .map(|r| r.get_load_eviction(&model_config.id))
         .unwrap_or(None);
 
     let attach_attribution_headers = |mut resp: Response| -> Response {
@@ -379,20 +424,22 @@ pub async fn chat_completions_handler(
         .map(|s| s.include_usage)
         .unwrap_or(false);
 
+    if is_background && !engine.supports_cancellation() {
+        return attach_attribution_headers(
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(axum::http::header::RETRY_AFTER, "1")],
+                Json(ErrorResponse {
+                    error: ApiError::new("This engine does not support background cancellation")
+                        .with_type("server_busy")
+                        .with_code("background_unsupported"),
+                }),
+            )
+                .into_response(),
+        );
+    }
+
     if request.stream {
-        let yield_notify = if is_background {
-            Some(Arc::new(tokio::sync::Notify::new()))
-        } else {
-            None
-        };
-        if is_background {
-            let concurrency = state.concurrency.clone();
-            let yn_clone = yield_notify.clone().unwrap();
-            tokio::spawn(async move {
-                concurrency.yield_notify.notified().await;
-                yn_clone.notify_waiters();
-            });
-        }
         let stream_resp = stream::handle_chat_stream(
             prepared.task,
             engine,
@@ -402,7 +449,12 @@ pub async fn chat_completions_handler(
             prepared.image_count,
             prepared.video_count,
             include_usage,
-            yield_notify,
+            if is_background {
+                Some((state.concurrency.clone(), foreground_epoch))
+            } else {
+                None
+            },
+            _concurrency_guard,
         );
         return attach_attribution_headers(stream_resp);
     }
@@ -446,7 +498,7 @@ pub async fn chat_completions_handler(
     });
 
     let (res, gen_elapsed) = if is_background {
-        let yield_notified = state.concurrency.yield_notify.notified();
+        let yield_notified = state.concurrency.wait_for_foreground(foreground_epoch);
         tokio::select! {
             join_res = exec_handle => {
                 match join_res {
@@ -457,6 +509,7 @@ pub async fn chat_completions_handler(
             _ = yield_notified => {
                 cancel_flag_for_yield.store(true, std::sync::atomic::Ordering::Relaxed);
                 engine_for_yield.cancel();
+                is_completed.store(true, std::sync::atomic::Ordering::Relaxed);
                 crate::telemetry::record_failure(
                     &model_for_stats,
                     503,

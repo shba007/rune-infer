@@ -40,7 +40,7 @@ pub fn is_no_color() -> bool {
 }
 
 pub fn sparkline_bar_set() -> ratatui::symbols::bar::Set<'static> {
-    if is_no_color() {
+    if std::env::var_os("RUNE_ASCII").is_some() {
         ASCII_BAR
     } else {
         BRAILLE_BAR

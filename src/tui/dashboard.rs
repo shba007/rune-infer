@@ -330,6 +330,29 @@ fn draw(f: &mut Frame, app: &mut App) {
     if app.help {
         draw_help(f);
     }
+    // Apply terminal compatibility to the complete frame, including borders,
+    // locality tags and dots rather than only the sparkline widget.
+    let no_color = is_no_color();
+    let ascii = std::env::var_os("RUNE_ASCII").is_some();
+    if no_color || ascii {
+        for cell in &mut f.buffer_mut().content {
+            if no_color {
+                cell.set_fg(ratatui::style::Color::Reset);
+                cell.set_bg(ratatui::style::Color::Reset);
+            }
+            if ascii && !cell.symbol().is_ascii() {
+                let symbol = match cell.symbol() {
+                    "│" | "┃" => "|",
+                    "─" | "━" => "-",
+                    "·" | "•" | "●" | "○" => ".",
+                    "×" => "x",
+                    "╭" | "╮" | "╰" | "╯" | "┌" | "┐" | "└" | "┘" => "+",
+                    _ => "*",
+                };
+                cell.set_symbol(symbol);
+            }
+        }
+    }
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {
@@ -948,6 +971,75 @@ mod tests {
     use super::*;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+
+    #[test]
+    fn export_review_frames() {
+        let Ok(directory) = std::env::var("RUNE_TUI_SNAPSHOT_DIR") else {
+            return;
+        };
+        std::fs::create_dir_all(&directory).unwrap();
+        for scenario in ["idle", "busy", "loading", "models", "logs", "80-columns"] {
+            let mut a = app();
+            a.info.exposed_to_network = false;
+            a.started = Instant::now();
+            if matches!(scenario, "busy" | "models" | "logs" | "80-columns") {
+                a.models[0].status = Status::Loaded {
+                    load_ms: 1500,
+                    detail: "fixture".into(),
+                };
+                for i in 0..20 {
+                    a.on_event(UiEvent::Request(RequestRecord {
+                        ts: ts(),
+                        model: "a".into(),
+                        status: 200,
+                        latency_ms: 500 + i * 20,
+                        prompt_tokens: 64,
+                        completion_tokens: 32,
+                        generation_ms: 500,
+                        error: None,
+                    }));
+                }
+            }
+            if scenario == "loading" {
+                a.models[0].status = Status::Loading(Instant::now());
+            }
+            a.logs.push_back(LogLine {
+                ts: ts(),
+                level: Level::INFO,
+                target: "fixture".into(),
+                message: "Synthetic review state; no model benchmark".into(),
+            });
+            if scenario == "models" {
+                a.tab = Tab::Models;
+            }
+            if scenario == "logs" {
+                a.tab = Tab::Logs;
+            }
+            let width = if scenario == "80-columns" { 80 } else { 120 };
+            let mut terminal = Terminal::new(TestBackend::new(width, 32)).unwrap();
+            terminal.draw(|frame| draw(frame, &mut a)).unwrap();
+            let buffer = terminal.backend().buffer();
+            if is_no_color() {
+                assert!(
+                    buffer
+                        .content
+                        .iter()
+                        .all(|cell| cell.fg == ratatui::style::Color::Reset
+                            && cell.bg == ratatui::style::Color::Reset)
+                );
+            }
+            if std::env::var_os("RUNE_ASCII").is_some() {
+                assert!(buffer.content.iter().all(|cell| cell.symbol().is_ascii()));
+            }
+            let cells: Vec<_> = buffer.content.iter().map(|cell| serde_json::json!({"text":cell.symbol(), "fg":format!("{:?}",cell.fg), "bg":format!("{:?}",cell.bg)})).collect();
+            std::fs::write(
+                std::path::Path::new(&directory).join(format!("{scenario}.json")),
+                serde_json::to_vec(&serde_json::json!({"width":width,"height":32,"cells":cells}))
+                    .unwrap(),
+            )
+            .unwrap();
+        }
+    }
 
     fn app() -> App {
         let info = DashboardInfo {

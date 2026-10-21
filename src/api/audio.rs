@@ -187,49 +187,10 @@ pub async fn audio_transcriptions_handler(
         Err(resp) => return resp,
     };
 
-    let inference = state.inference.clone();
-    let model_to_fetch = gate.model_config.id.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                tracing::error!(
-                    target: "audit",
-                    model = %gate.model_config.id,
-                    error = %err,
-                    "Failed to load audio transcription engine"
-                );
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::NOT_FOUND,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Model load failure: {err}"))
-                                .with_type("invalid_request_error"),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    target: "audit",
-                    model = %gate.model_config.id,
-                    error = %e,
-                    "Join error when retrieving audio transcription engine"
-                );
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Join error: {e}")),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-        };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
 
     let diar_audio_bytes = if diarize {
         Some(file_bytes.clone())
@@ -262,25 +223,29 @@ pub async fn audio_transcriptions_handler(
                 .map(|m| m.id.clone())
                 .unwrap_or_else(|| "nemotron-3-diarization".to_string());
 
-            let inference_diar = state.inference.clone();
-            let diar_bytes = diar_audio_bytes.unwrap_or_default();
-            let diar_fname = diar_filename.clone();
-
-            let diar_res = tokio::task::spawn_blocking(move || {
-                let diar_engine = inference_diar.get_engine(&diar_model_id)?;
-                let diar_task = InferenceTaskRequest::AudioDiarization {
-                    audio_bytes: diar_bytes,
-                    filename: diar_fname,
-                    speaker_threshold: None,
-                    max_speakers: None,
+            let auxiliary_gate =
+                match crate::api::ModelExecutionGate::enter(&state, &headers, &diar_model_id) {
+                    Ok(gate) => gate,
+                    Err(resp) => return resp,
                 };
-                diar_engine
-                    .execute(&diar_task, None)
-                    .map_err(|e| e.to_string())
-            })
-            .await;
-
-            if let Ok(Ok(diar_output)) = diar_res {
+            let diar_engine = match auxiliary_gate.load_engine(&state).await {
+                Ok(engine) => engine,
+                Err(resp) => return resp,
+            };
+            let diar_task = InferenceTaskRequest::AudioDiarization {
+                audio_bytes: diar_audio_bytes.unwrap_or_default(),
+                filename: diar_filename.clone(),
+                speaker_threshold: None,
+                max_speakers: None,
+            };
+            let diar_output = match auxiliary_gate
+                .execute_task(&state, diar_engine, diar_task)
+                .await
+            {
+                Ok(output) => output,
+                Err(resp) => return resp,
+            };
+            {
                 if let InferenceTaskResponse::Diarization(diar) = diar_output.response {
                     trans.speakers = Some(diar.speakers.clone());
                     trans.speaker_activity = Some(diar.speaker_activity);
@@ -464,51 +429,10 @@ pub async fn audio_translations_handler(
         Err(resp) => return resp,
     };
 
-    let inference = state.inference.clone();
-    let model_to_fetch = gate.model_config.id.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                tracing::error!(
-                    target: "audit",
-                    model = %gate.model_config.id,
-                    error = %err,
-                    "Failed to load audio translation engine"
-                );
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::NOT_FOUND,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Model load failure: {err}"))
-                                .with_type("invalid_request_error")
-                                .with_param("model")
-                                .with_code("model_not_found"),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    target: "audit",
-                    model = %gate.model_config.id,
-                    error = %e,
-                    "Join error when retrieving audio translation engine"
-                );
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Join error: {e}")),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-        };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
 
     let task = InferenceTaskRequest::AudioTranslation {
         audio_bytes: file_bytes,
@@ -604,37 +528,10 @@ pub async fn audio_speech_handler(
         Err(resp) => return resp,
     };
 
-    let inference = state.inference.clone();
-    let model_to_fetch = gate.model_config.id.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::NOT_FOUND,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Model failed to load: {err}"))
-                                .with_type("invalid_request_error"),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-            Err(e) => {
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Thread join error: {e}")),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-        };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
 
     let format_str = request
         .response_format
@@ -694,9 +591,9 @@ pub async fn audio_speech_handler(
 #[axum::debug_handler]
 pub async fn speech_to_speech_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    let start_time = std::time::Instant::now();
     let mut file_bytes = Vec::new();
     let mut model_id: Option<String> = None;
     let mut target_language = "fra".to_string();
@@ -774,31 +671,14 @@ pub async fn speech_to_speech_handler(
         },
     };
 
-    let inference = state.inference.clone();
-    let model_to_fetch = target_model.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Model failed to load: {err}"))
-                            .with_type("invalid_request_error"),
-                    }),
-                )
-                    .into_response();
-            }
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Thread join error: {e}")),
-                    }),
-                )
-                    .into_response();
-            }
-        };
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &target_model) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
 
     let task = InferenceTaskRequest::SpeechToSpeech {
         audio_bytes: file_bytes,
@@ -807,32 +687,11 @@ pub async fn speech_to_speech_handler(
         response_format: response_format.clone(),
     };
 
-    let model_for_stats = target_model.clone();
-    let res = tokio::task::spawn_blocking(move || {
-        let gen_started = std::time::Instant::now();
-        let r = engine.execute(&task, None).map_err(|e| e.to_string());
-        (r, gen_started.elapsed())
-    })
-    .await;
-
-    let (exec_res, gen_elapsed) = match res {
-        Ok((r, elapsed)) => (r, elapsed),
-        Err(e) => (
-            Err(format!("Thread join error: {e}")),
-            std::time::Duration::ZERO,
-        ),
-    };
-
-    match exec_res {
-        Ok(output) => {
-            crate::telemetry::record_completion(
-                &model_for_stats,
-                start_time.elapsed().as_millis(),
-                output.usage.prompt_tokens,
-                output.usage.completion_tokens,
-                gen_elapsed.as_millis(),
-            );
-            match output.response {
+    let exec_res = gate.execute_task(&state, engine, task).await;
+    gate.attach_headers(
+        &state,
+        match exec_res {
+            Ok(output) => match output.response {
                 InferenceTaskResponse::Audio(bytes) => Response::builder()
                     .header("Content-Type", "audio/wav")
                     .body(axum::body::Body::from(bytes))
@@ -851,24 +710,10 @@ pub async fn speech_to_speech_handler(
                     }),
                 )
                     .into_response(),
-            }
-        }
-        Err(e) => {
-            crate::telemetry::record_failure(
-                &model_for_stats,
-                500,
-                start_time.elapsed().as_millis(),
-                &e,
-            );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new(e).with_type("server_error"),
-                }),
-            )
-                .into_response()
-        }
-    }
+            },
+            Err(resp) => resp,
+        },
+    )
 }
 
 fn attach_transcription_to_diarization(
@@ -1038,9 +883,9 @@ fn attach_transcription_to_diarization(
 #[axum::debug_handler]
 pub async fn audio_diarization_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    let start_time = std::time::Instant::now();
     let mut file_bytes = Vec::new();
     let mut filename = "audio.wav".to_string();
     let mut model_id: Option<String> = None;
@@ -1146,43 +991,14 @@ pub async fn audio_diarization_handler(
         },
     };
 
-    let inference = state.inference.clone();
-    let model_to_fetch = target_model.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                tracing::error!(
-                    target: "audit",
-                    model = %target_model,
-                    error = %err,
-                    "Failed to load speaker diarization engine"
-                );
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Model load failure: {err}"))
-                            .with_type("invalid_request_error"),
-                    }),
-                )
-                    .into_response();
-            }
-            Err(e) => {
-                tracing::error!(
-                    target: "audit",
-                    model = %target_model,
-                    error = %e,
-                    "Join error when retrieving speaker diarization engine"
-                );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Join error: {e}")),
-                    }),
-                )
-                    .into_response();
-            }
-        };
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &target_model) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
 
     let asr_audio_bytes = file_bytes.clone();
     let asr_filename = filename.clone();
@@ -1194,109 +1010,89 @@ pub async fn audio_diarization_handler(
         max_speakers,
     };
 
-    let model_for_stats = target_model.clone();
-    let res = tokio::task::spawn_blocking(move || {
-        let gen_started = std::time::Instant::now();
-        let r = engine.execute(&task, None).map_err(|e| e.to_string());
-        (r, gen_started.elapsed())
-    })
-    .await;
+    let exec_res = gate.execute_task(&state, engine, task).await;
+    gate.attach_headers(
+        &state,
+        match exec_res {
+            Ok(mut output) => {
+                if let InferenceTaskResponse::Diarization(ref mut diarization) = output.response {
+                    let target_asr_model = asr_model.unwrap_or_else(|| {
+                        let cfg = state.config();
+                        cfg.models
+                            .iter()
+                            .find(|m| {
+                                m.modality == crate::config::Modality::SpeechToText
+                                    && (m.id.contains("whisper")
+                                        || m.name.to_lowercase().contains("whisper"))
+                            })
+                            .or_else(|| {
+                                cfg.models
+                                    .iter()
+                                    .find(|m| m.modality == crate::config::Modality::SpeechToText)
+                            })
+                            .map(|m| m.id.clone())
+                            .unwrap_or_else(|| "whisper-large-v3".to_string())
+                    });
 
-    let (exec_res, gen_elapsed) = match res {
-        Ok((r, elapsed)) => (r, elapsed),
-        Err(e) => (
-            Err(format!("Thread join error: {e}")),
-            std::time::Duration::ZERO,
-        ),
-    };
+                    let auxiliary_gate = match crate::api::ModelExecutionGate::enter(
+                        &state,
+                        &headers,
+                        &target_asr_model,
+                    ) {
+                        Ok(gate) => gate,
+                        Err(resp) => return resp,
+                    };
+                    let asr_engine = match auxiliary_gate.load_engine(&state).await {
+                        Ok(engine) => engine,
+                        Err(resp) => return resp,
+                    };
+                    let asr_task = InferenceTaskRequest::AudioTranscription {
+                        audio_bytes: asr_audio_bytes,
+                        filename: asr_filename,
+                        prompt,
+                        language,
+                        temperature: None,
+                        response_format: Some("verbose_json".to_string()),
+                    };
 
-    match exec_res {
-        Ok(mut output) => {
-            if let InferenceTaskResponse::Diarization(ref mut diarization) = output.response {
-                let target_asr_model = asr_model.unwrap_or_else(|| {
-                    let cfg = state.config();
-                    cfg.models
-                        .iter()
-                        .find(|m| {
-                            m.modality == crate::config::Modality::SpeechToText
-                                && (m.id.contains("whisper")
-                                    || m.name.to_lowercase().contains("whisper"))
-                        })
-                        .or_else(|| {
-                            cfg.models
-                                .iter()
-                                .find(|m| m.modality == crate::config::Modality::SpeechToText)
-                        })
-                        .map(|m| m.id.clone())
-                        .unwrap_or_else(|| "whisper-large-v3".to_string())
-                });
-
-                let inference_asr = state.inference.clone();
-                let asr_task = InferenceTaskRequest::AudioTranscription {
-                    audio_bytes: asr_audio_bytes,
-                    filename: asr_filename,
-                    prompt,
-                    language,
-                    temperature: None,
-                    response_format: Some("verbose_json".to_string()),
-                };
-
-                let asr_res = tokio::task::spawn_blocking(move || {
-                    let asr_engine = inference_asr.get_engine(&target_asr_model)?;
-                    asr_engine
-                        .execute(&asr_task, None)
-                        .map_err(|e| e.to_string())
-                })
-                .await;
-
-                if let Ok(Ok(asr_output)) = asr_res {
-                    if let InferenceTaskResponse::Transcription(asr_resp) = asr_output.response {
-                        attach_transcription_to_diarization(diarization, &asr_resp);
+                    let asr_output = match auxiliary_gate
+                        .execute_task(&state, asr_engine, asr_task)
+                        .await
+                    {
+                        Ok(output) => output,
+                        Err(resp) => return resp,
+                    };
+                    {
+                        if let InferenceTaskResponse::Transcription(asr_resp) = asr_output.response
+                        {
+                            attach_transcription_to_diarization(diarization, &asr_resp);
+                        }
                     }
                 }
-            }
 
-            crate::telemetry::record_completion(
-                &model_for_stats,
-                start_time.elapsed().as_millis(),
-                output.usage.prompt_tokens,
-                output.usage.completion_tokens,
-                gen_elapsed.as_millis(),
-            );
-            match output.response {
-                InferenceTaskResponse::Diarization(diarization) => {
-                    Json(diarization).into_response()
+                match output.response {
+                    InferenceTaskResponse::Diarization(diarization) => {
+                        Json(diarization).into_response()
+                    }
+                    InferenceTaskResponse::Error(e) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(e).with_type("server_error"),
+                        }),
+                    )
+                        .into_response(),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(
+                                "Unexpected response type from diarization engine",
+                            ),
+                        }),
+                    )
+                        .into_response(),
                 }
-                InferenceTaskResponse::Error(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(e).with_type("server_error"),
-                    }),
-                )
-                    .into_response(),
-                _ => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new("Unexpected response type from diarization engine"),
-                    }),
-                )
-                    .into_response(),
             }
-        }
-        Err(e) => {
-            crate::telemetry::record_failure(
-                &model_for_stats,
-                500,
-                start_time.elapsed().as_millis(),
-                &e,
-            );
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new(e).with_type("server_error"),
-                }),
-            )
-                .into_response()
-        }
-    }
+            Err(resp) => resp,
+        },
+    )
 }

@@ -66,39 +66,10 @@ pub async fn embeddings_handler(
         Err(resp) => return resp,
     };
 
-    let inference = state.inference.clone();
-    let target_model = gate.model_config.id.clone();
-    let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&target_model)).await {
-            Ok(Ok(e)) => e,
-            Ok(Err(err)) => {
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::NOT_FOUND,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Model failed to load: {err}"))
-                                .with_type("invalid_request_error")
-                                .with_param("model")
-                                .with_code("model_not_found"),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-            Err(e) => {
-                return gate.attach_headers(
-                    &state,
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: ApiError::new(format!("Execution thread error: {e}")),
-                        }),
-                    )
-                        .into_response(),
-                );
-            }
-        };
+    let engine = match gate.load_engine(&state).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
 
     let task = InferenceTaskRequest::Embedding {
         model: Some(gate.model_config.id.clone()),

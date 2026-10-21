@@ -142,6 +142,7 @@ Known issues worth fixing:
   not decode-only.
 
 Behaviour notes:
+- **Studio priority contract:** Background work requires a resident model and a cancellation-capable engine; uncancellable engines/cloud chat refuse it with 503. Foreground arrival yields running background work (503, or an SSE error after HTTP 200). Full-frame `NO_COLOR` and `RUNE_ASCII=1` fallbacks are supported. See `docs/STUDIO-CONTRACT.md` for the contract and remaining hardware/UX gaps.
 - **Sampling** (`temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`) is
   layered: request value > model `sampling` block > engine default. It applies
   to local chat/responses and to remote providers (`top_k`/`min_p` are only

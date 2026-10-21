@@ -21,16 +21,30 @@ pub fn handle_chat_stream(
     image_count: usize,
     video_count: usize,
     include_usage: bool,
-    yield_notify: Option<Arc<tokio::sync::Notify>>,
+    yield_notify: Option<(Arc<crate::api::RequestConcurrencyState>, u64)>,
+    concurrency_guard: crate::api::gate::ConcurrencyGuard,
 ) -> Response {
     let (tx, rx) = tokio::sync::mpsc::channel::<Event>(64);
     let model_id = model_config.id.clone();
+    let yielded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let execution_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (execution_done_tx, execution_done_rx) = tokio::sync::oneshot::channel::<()>();
 
-    if let Some(notify) = yield_notify {
+    let yield_task = if let Some((concurrency, epoch)) = yield_notify {
         let engine_for_yield = engine.clone();
         let tx_yield = tx.clone();
-        tokio::spawn(async move {
-            notify.notified().await;
+        let yielded = yielded.clone();
+        let execution_finished = execution_finished.clone();
+        Some(tokio::spawn(async move {
+            tokio::select! {
+                _ = tx_yield.closed() => return,
+                _ = execution_done_rx => return,
+                _ = concurrency.wait_for_foreground(epoch) => {},
+            }
+            if execution_finished.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            yielded.store(true, std::sync::atomic::Ordering::SeqCst);
             engine_for_yield.cancel();
             let err_chunk = serde_json::json!({
                 "error": {
@@ -42,8 +56,10 @@ pub fn handle_chat_stream(
             let _ = tx_yield
                 .send(Event::default().event("error").data(err_chunk.to_string()))
                 .await;
-        });
-    }
+        }))
+    } else {
+        None
+    };
 
     let initial_chunk = make_chunk(
         &format!("chatcmpl-{created}"),
@@ -62,7 +78,17 @@ pub fn handle_chat_stream(
         .try_send(Event::default().data(serde_json::to_string(&initial_chunk).unwrap_or_default()));
 
     let engine_for_task = engine.clone();
+    let yielded_for_task = yielded.clone();
+    let execution_finished_for_task = execution_finished.clone();
     tokio::task::spawn_blocking(move || {
+        let _execution_done = execution_done_tx;
+        struct ExecutionFinished(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for ExecutionFinished {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let _execution_finished = ExecutionFinished(execution_finished_for_task);
         let tx_sender = tx.clone();
         let tx_status = tx.clone();
         let model_id_clone = model_id.clone();
@@ -71,8 +97,12 @@ pub fn handle_chat_stream(
         let mut is_thinking = false;
         let mut tool_call_buffering = false;
         let engine_for_cancel = engine_for_task.clone();
+        let yielded_for_tokens = yielded_for_task.clone();
 
         let mut on_token = move |piece: &str| -> bool {
+            if yielded_for_tokens.load(std::sync::atomic::Ordering::SeqCst) {
+                return false;
+            }
             if piece.contains("<think>") {
                 is_thinking = true;
                 let clean = piece
@@ -200,7 +230,19 @@ pub fn handle_chat_stream(
 
         let gen_started = std::time::Instant::now();
         let exec_result = engine_for_task.execute(&task, Some(&mut on_token));
+        _execution_finished
+            .0
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         let gen_elapsed = gen_started.elapsed();
+        if yielded_for_task.load(std::sync::atomic::Ordering::SeqCst) {
+            crate::telemetry::record_failure(
+                &model_id,
+                503,
+                start_time.elapsed().as_millis(),
+                "background stream yielded",
+            );
+            return;
+        }
         if tx_status.is_closed() {
             crate::telemetry::record_failure(
                 &model_id,
@@ -411,6 +453,10 @@ pub fn handle_chat_stream(
 
     struct StreamCancelGuard<S> {
         inner: S,
+        _concurrency_guard: crate::api::gate::ConcurrencyGuard,
+        yield_task: Option<tokio::task::JoinHandle<()>>,
+        yielded: Arc<std::sync::atomic::AtomicBool>,
+        execution_finished: Arc<std::sync::atomic::AtomicBool>,
         engine: Arc<dyn InferenceEngine>,
         is_done: Arc<std::sync::atomic::AtomicBool>,
     }
@@ -432,7 +478,15 @@ pub fn handle_chat_stream(
 
     impl<S> Drop for StreamCancelGuard<S> {
         fn drop(&mut self) {
-            if !self.is_done.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Some(task) = &self.yield_task {
+                task.abort();
+            }
+            if !self.is_done.load(std::sync::atomic::Ordering::Relaxed)
+                && !self.yielded.load(std::sync::atomic::Ordering::SeqCst)
+                && !self
+                    .execution_finished
+                    .load(std::sync::atomic::Ordering::SeqCst)
+            {
                 self.engine.cancel();
             }
         }
@@ -444,6 +498,10 @@ pub fn handle_chat_stream(
     let is_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let cancel_guarded = StreamCancelGuard {
         inner: sse_stream,
+        _concurrency_guard: concurrency_guard,
+        yield_task,
+        yielded,
+        execution_finished,
         engine: engine.clone(),
         is_done,
     };

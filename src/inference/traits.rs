@@ -11,4 +11,9 @@ pub trait InferenceEngine: Send + Sync {
 
     /// Signals the engine to abort any active generation or prefill and free occupied slots.
     fn cancel(&self) {}
+
+    /// Whether this engine implements cancellation beyond the default no-op.
+    fn supports_cancellation(&self) -> bool {
+        false
+    }
 }
