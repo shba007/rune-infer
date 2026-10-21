@@ -34,8 +34,12 @@ pub struct GgufInfo {
     pub context_length: Option<u32>,
     /// `<arch>.embedding_length`: a vision projector must output exactly this size.
     pub embedding_length: Option<u32>,
-    /// `clip.vision.projection_dim` (projectors only).
+    /// `clip.vision.projection_dim` (projectors only). A value of 0 (MiniCPM's resampler)
+    /// carries no information and is stored as `None`.
     pub projection_dim: Option<u32>,
+    /// `clip.has_vision_encoder` / `clip.has_audio_encoder` (projectors only).
+    pub has_vision_encoder: Option<bool>,
+    pub has_audio_encoder: Option<bool>,
     pub has_tokenizer: bool,
     /// Any `prism.*` key (Prism ternary quantisation needs the Prism llama.cpp build).
     pub has_prism_keys: bool,
@@ -50,6 +54,8 @@ pub struct GgufInfo {
     pub diffusion_tensors: bool,
     /// `audio_tower.*` tensors: a speech-recognition audio encoder.
     pub audio_tower: bool,
+    /// `audio_projector.*` tensors: an audio encoder that feeds a language model.
+    pub audio_projector: bool,
 }
 
 fn rd<const N: usize>(r: &mut impl Read) -> Result<[u8; N]> {
@@ -149,8 +155,10 @@ pub fn parse_gguf(r: &mut impl Read) -> Result<GgufInfo> {
                 info.embedding_length = Some(rd_u32(r)?)
             }
             ("clip.vision.projection_dim" | "clip.projection_dim", 4) => {
-                info.projection_dim = Some(rd_u32(r)?)
+                info.projection_dim = Some(rd_u32(r)?).filter(|d| *d > 0)
             }
+            ("clip.has_vision_encoder", 7) => info.has_vision_encoder = Some(rd::<1>(r)?[0] != 0),
+            ("clip.has_audio_encoder", 7) => info.has_audio_encoder = Some(rd::<1>(r)?[0] != 0),
             (k, _) => {
                 if k.starts_with("tokenizer.") {
                     info.has_tokenizer = true;
@@ -174,9 +182,16 @@ pub fn parse_gguf(r: &mut impl Read) -> Result<GgufInfo> {
             info.has_first_block = true;
         } else if name.starts_with("audio_tower.") {
             info.audio_tower = true;
+        } else if name.starts_with("audio_projector.") {
+            info.audio_projector = true;
         } else if DIFFUSION_TENSOR_MARKERS.iter().any(|m| name.contains(m)) {
             info.diffusion_tensors = true;
         }
+    }
+    // An audio encoder shipped as its own file (MiniCPM-o's `audio/` GGUF is arch `whisper`).
+    if info.audio_projector && info.has_audio_encoder.is_none() {
+        info.has_audio_encoder = Some(true);
+        info.has_vision_encoder.get_or_insert(false);
     }
     Ok(info)
 }
@@ -264,6 +279,9 @@ pub struct Detected {
     pub needs: Vec<&'static str>,
     pub notes: Vec<String>,
     class: Class,
+    /// The model belongs to an omni family (Gemma-4, MiniCPM-o, ...). Only a hint: what it
+    /// can actually do is decided by the encoder files found next to it.
+    omni_family: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -370,6 +388,7 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
             needs: Vec::new(),
             notes: Vec::new(),
             class: Class::Other,
+            omni_family: false,
         }
     };
 
@@ -427,6 +446,9 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
             "speech-to-text",
             vec!["Speech-to-Text"],
         ));
+    }
+    if arch == "whisper" && info.audio_projector {
+        return Classified::Projector;
     }
     if arch == "whisper" || arch.starts_with("voxtral") {
         return Classified::Model(det(
@@ -498,21 +520,17 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
         return Classified::Draft;
     }
     if info.has_tokenizer && info.has_token_embd && is_omni_family(info, &arch, file_name) {
+        // What an omni model can do depends on its encoder files, which are separate downloads
+        // (MiniCPM-o's body is a plain `qwen3`). Start as a chat model; pairing the projector
+        // upgrades it to exactly what that projector provides.
         let mut d = det(
-            Modality::Omni,
+            Modality::Text,
             vec![EngineKind::LlamaServer],
-            "omni multimodal model",
-            vec![
-                "Chat",
-                "Vision",
-                "Audio",
-                "Video",
-                "Omni",
-                "Tool Call",
-                "Structured Output",
-            ],
+            "chat model",
+            vec!["Chat", "Tool Call", "Structured Output"],
         );
         d.class = Class::Llm;
+        d.omni_family = true;
         return Classified::Model(d);
     }
     if arch == "lfm"
@@ -617,6 +635,7 @@ pub struct LocalCandidate {
     pub notes: Vec<String>,
     class: Class,
     embedding_length: Option<u32>,
+    omni_family: bool,
 }
 
 impl LocalCandidate {
@@ -625,6 +644,17 @@ impl LocalCandidate {
     }
     pub fn is_vision(&self) -> bool {
         self.modality == Modality::VisionText
+    }
+    /// For an omni-family model: what is still missing for full omni input, if anything.
+    pub fn omni_gap(&self) -> Option<&'static str> {
+        if !self.omni_family || self.modality == Modality::Omni {
+            return None;
+        }
+        Some(if self.extra.contains_key("mmproj_path") {
+            "Omni family, but only text and image input are wired up (audio needs an audio-capable mmproj)"
+        } else {
+            "Omni family: image, audio and video input need extra.mmproj_path"
+        })
     }
     /// Ready to run without any manual follow-up.
     pub fn is_ready(&self) -> bool {
@@ -706,24 +736,63 @@ fn common_prefix_len(a: &str, b: &str) -> usize {
     a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count()
 }
 
-/// Give each vision model the projector that belongs to it.
+/// What a projector file provides. Legacy `mmproj` files predate the flags and are vision-only.
+fn projector_abilities(info: &GgufInfo) -> (bool, bool) {
+    (
+        info.has_vision_encoder.unwrap_or(true),
+        info.has_audio_encoder.unwrap_or(false),
+    )
+}
+
+fn projector_label(info: &GgufInfo) -> &'static str {
+    match projector_abilities(info) {
+        (true, true) => "vision+audio projector",
+        (false, true) => "audio encoder",
+        _ => "vision projector",
+    }
+}
+
+/// Give each model the projector that belongs to it, and set what it can do from that file.
 ///
-/// A projector's output size (`clip.vision.projection_dim`) must equal its
-/// model's `embedding_length`, so that is the primary match. Several models of
-/// the same size in one folder are told apart by file-name similarity; if that
-/// still cannot decide, nothing is attached and the model gets a note.
+/// * A projector belongs to the models in the *nearest enclosing folder that holds a model*,
+///   so `snapshot/vision/x.gguf` pairs with `snapshot/model.gguf`.
+/// * Its output size (`clip.vision.projection_dim`) must equal the model's `embedding_length`
+///   (a size of 0, which some projectors record, says nothing and is ignored). Models of the
+///   same size are told apart by file-name similarity; if that cannot decide, nothing is
+///   attached and the model gets a note.
+/// * `llama-server` loads a single `--mmproj`, so when several projectors match, the most
+///   capable one is attached (vision+audio, then vision, then audio) and the rest are noted.
+/// * Capabilities come from the projector's own `has_vision_encoder` / `has_audio_encoder`
+///   flags: both → omni, vision → vision chat, audio → audio chat. A model family's name never
+///   grants an ability the files do not provide.
 fn pair_projectors(
     candidates: &mut [LocalCandidate],
     projectors: Vec<(PathBuf, GgufInfo)>,
     skipped: &mut Vec<Skipped>,
 ) {
-    let mut chosen: Vec<Vec<PathBuf>> = vec![Vec::new(); candidates.len()];
+    let llm = |c: &LocalCandidate| c.class == Class::Llm;
+    let mut model_dirs: Vec<PathBuf> = candidates
+        .iter()
+        .filter(|c| llm(c))
+        .filter_map(|c| c.path.parent().map(Path::to_path_buf))
+        .collect();
+    model_dirs.sort();
+    model_dirs.dedup();
+
+    let mut chosen: Vec<Vec<usize>> = vec![Vec::new(); candidates.len()];
     let mut ambiguous: Vec<Vec<usize>> = vec![Vec::new(); candidates.len()];
 
     for (pi, (path, info)) in projectors.iter().enumerate() {
-        let dir = path.parent();
+        let owner = path.parent().and_then(|proj_dir| {
+            model_dirs
+                .iter()
+                .filter(|d| proj_dir.starts_with(d))
+                .max_by_key(|d| d.components().count())
+        });
         let in_dir: Vec<usize> = (0..candidates.len())
-            .filter(|&i| candidates[i].class == Class::Llm && candidates[i].path.parent() == dir)
+            .filter(|&i| {
+                llm(&candidates[i]) && candidates[i].path.parent() == owner.map(|d| d.as_path())
+            })
             .collect();
         let mut matches: Vec<usize> = in_dir
             .iter()
@@ -754,15 +823,19 @@ fn pair_projectors(
             }
         }
         match matches.first() {
-            Some(&i) => chosen[i].push(path.clone()),
+            Some(&i) => chosen[i].push(pi),
             None if ambiguous.iter().any(|a| a.contains(&pi)) => {}
             None => skipped.push(Skipped {
                 path: path.clone(),
                 reason: match info.projection_dim {
-                    Some(d) => {
-                        format!("vision projector (output size {d}) matches no model in its folder")
-                    }
-                    None => "vision projector with no matching model in its folder".to_string(),
+                    Some(d) => format!(
+                        "{} (output size {d}) matches no model in its folder",
+                        projector_label(info)
+                    ),
+                    None => format!(
+                        "{} with no matching model in its folder",
+                        projector_label(info)
+                    ),
                 },
             }),
         }
@@ -770,33 +843,84 @@ fn pair_projectors(
 
     for (i, c) in candidates.iter_mut().enumerate() {
         let mut options = std::mem::take(&mut chosen[i]);
-        options.sort_by_key(|p| projector_rank(p));
-        if let Some(best) = options.first() {
+        // Most capable first; on a tie vision beats audio (image input is what llama-server
+        // supports); then the f16-preferring name rank.
+        options.sort_by_key(|&pi| {
+            let (v, a) = projector_abilities(&projectors[pi].1);
+            (
+                std::cmp::Reverse(u8::from(v) + u8::from(a)),
+                std::cmp::Reverse(v),
+                projector_rank(&projectors[pi].0),
+            )
+        });
+        if let Some(&best) = options.first() {
+            let (path, info) = &projectors[best];
+            let (vision, audio) = projector_abilities(info);
             c.extra
-                .insert("mmproj_path".into(), json!(best.to_string_lossy()));
-            if c.modality != Modality::Decision && c.modality != Modality::Omni {
-                c.modality = Modality::VisionText;
-                c.kind_label = "vision chat model";
+                .insert("mmproj_path".into(), json!(path.to_string_lossy()));
+            let cap = |c: &mut LocalCandidate, name: &str| {
+                if !c.capabilities.iter().any(|x| x == name) {
+                    c.capabilities.push(name.into());
+                }
+            };
+            if vision {
+                cap(c, "Vision");
             }
-            if !c.capabilities.iter().any(|cap| cap == "Vision") {
-                c.capabilities.push("Vision".into());
+            if audio {
+                cap(c, "Audio");
+            }
+            if c.modality != Modality::Decision {
+                match (vision, audio) {
+                    (true, true) => {
+                        c.modality = Modality::Omni;
+                        c.kind_label = "omni multimodal model";
+                        cap(c, "Video");
+                        cap(c, "Omni");
+                    }
+                    (true, false) => {
+                        c.modality = Modality::VisionText;
+                        c.kind_label = "vision chat model";
+                    }
+                    (false, true) => c.kind_label = "audio chat model",
+                    (false, false) => {}
+                }
             }
             c.notes
                 .retain(|n| !n.starts_with("vision-language model, but no matching"));
+            // The rest could not be attached: llama-server takes one projector.
+            for &pi in options.iter().skip(1) {
+                let (other_path, other_info) = &projectors[pi];
+                let (ov, oa) = projector_abilities(other_info);
+                if (oa && !audio) || (ov && !vision) {
+                    c.notes.push(format!(
+                        "{} {} found but not attached: llama-server loads a single mmproj",
+                        projector_label(other_info),
+                        other_path.file_name().unwrap_or_default().to_string_lossy()
+                    ));
+                }
+            }
         } else if !ambiguous[i].is_empty() {
             c.notes.push(format!(
-                "{} vision projector(s) in this folder could belong to it; set extra.mmproj_path",
+                "{} projector(s) in this folder could belong to it; set extra.mmproj_path",
                 ambiguous[i].len()
             ));
         }
-        if c.modality == Modality::Omni && !c.extra.contains_key("mmproj_path") {
-            c.notes.push(OMNI_NO_ENCODER_NOTE.into());
+        if c.omni_family && c.modality != Modality::Omni {
+            c.notes.push(if c.extra.contains_key("mmproj_path") {
+                OMNI_PARTIAL_NOTE.into()
+            } else {
+                OMNI_NO_ENCODER_NOTE.into()
+            });
         }
     }
 }
 
+/// Shown for an omni-family model whose projector provides vision but not audio.
+pub const OMNI_PARTIAL_NOTE: &str = "omni family, but its projector only provides image input — \
+     audio and video need an audio-capable mmproj (llama-server loads a single file)";
+
 /// Shown for an omni model found without its vision/audio encoder file.
-pub const OMNI_NO_ENCODER_NOTE: &str = "omni model, but only the language model was found — \
+pub const OMNI_NO_ENCODER_NOTE: &str = "omni family, but only the language model was found — \
      add extra.mmproj_path (its vision/audio encoder GGUF) for image, audio and video input";
 
 /// Scan `input` (a file, or a folder searched up to 9 levels) and classify
@@ -877,6 +1001,7 @@ pub fn discover(input: &Path) -> Result<Discovery> {
                 notes,
                 class: d.class,
                 embedding_length: info.embedding_length,
+                omni_family: d.omni_family,
                 path,
             }
         })
@@ -964,6 +1089,10 @@ pub(crate) mod testing {
             self
         }
         /// A string-array key such as `tokenizer.ggml.tokens`.
+        pub fn bool_kv(mut self, k: &str, v: bool) -> Self {
+            self.kvs.push((k.into(), 7, vec![u8::from(v)]));
+            self
+        }
         pub fn string_array(mut self, k: &str, items: &[&str]) -> Self {
             let mut b = Vec::new();
             b.extend(8u32.to_le_bytes());
@@ -1183,37 +1312,33 @@ mod tests {
     }
 
     #[test]
-    fn gemma_4_omni_model_detection() {
+    fn gemma_4_is_an_omni_family_but_only_a_chat_model_until_its_projector_is_found() {
         let g = Gguf::llm("gemma4", "Gemma 4 12B IT");
         let d = model(cls(&g, "gemma-4-12b-it-Q4_K_M.gguf"));
-        assert_eq!(d.modality, Modality::Omni);
+        assert!(d.omni_family);
+        assert_eq!(
+            d.modality,
+            Modality::Text,
+            "the family name alone claims nothing"
+        );
         assert_eq!(d.engines, vec![EngineKind::LlamaServer]);
-        assert_eq!(d.kind_label, "omni multimodal model");
-        assert!(d.capabilities.contains(&"Vision"));
-        assert!(d.capabilities.contains(&"Audio"));
-        assert!(d.capabilities.contains(&"Video"));
-        assert!(d.capabilities.contains(&"Omni"));
-    }
-
-    #[test]
-    fn minicpm_o_is_omni_although_its_body_is_a_plain_qwen3_model() {
-        // Real file: arch qwen3, general.name "Llm", only the file name says MiniCPM-o.
-        let g = Gguf::llm("qwen3", "Llm");
-        let d = model(cls(&g, "MiniCPM-o-4_5-Q8_0.gguf"));
-        assert_eq!(d.modality, Modality::Omni);
-        assert_eq!(d.engines, vec![EngineKind::LlamaServer]);
-        assert_eq!(d.kind_label, "omni multimodal model");
-        for cap in ["Chat", "Vision", "Audio", "Video", "Omni", "Tool Call"] {
-            assert!(d.capabilities.contains(&cap), "{cap}");
+        for cap in ["Vision", "Audio", "Video", "Omni"] {
+            assert!(!d.capabilities.contains(&cap), "{cap}");
         }
+    }
+    #[test]
+    fn minicpm_o_is_recognised_as_an_omni_family_despite_its_plain_qwen3_body() {
+        // Real file: arch qwen3, general.name "Llm", only the file name says MiniCPM-o.
+        let d = model(cls(&Gguf::llm("qwen3", "Llm"), "MiniCPM-o-4_5-Q8_0.gguf"));
+        assert!(d.omni_family);
+        assert_eq!((d.modality, d.kind_label), (Modality::Text, "chat model"));
         // A whole "omni" word marks other families too.
         let q = model(cls(
             &Gguf::llm("qwen2", "Qwen2.5-Omni-7B"),
             "Qwen2.5-Omni-7B-Q4_K_M.gguf",
         ));
-        assert_eq!(q.modality, Modality::Omni);
+        assert!(q.omni_family);
     }
-
     #[test]
     fn omni_detection_does_not_catch_look_alikes() {
         // MiniCPM-V is vision-only; "omnibus" merely contains the letters.
@@ -1224,10 +1349,10 @@ mod tests {
             "minicpm-4b.gguf",
         ] {
             let d = model(cls(&Gguf::llm("qwen3", "Llm"), file));
+            assert!(!d.omni_family, "{file}");
             assert_eq!(d.modality, Modality::Text, "{file}");
         }
     }
-
     #[test]
     fn draft_heads_of_omni_families_are_not_listed_as_models() {
         // Same shape as `mtp-gemma-4-12b-it.gguf`: tokenizer + embeddings, no first block.
@@ -1252,40 +1377,197 @@ mod tests {
             &Gguf::llm("gemma4", "Gemma-4-12B-It"),
             "gemma-4-12b-it-UD-Q6_K_XL.gguf",
         ));
-        assert_eq!(base.modality, Modality::Omni);
+        assert!(base.omni_family && base.modality == Modality::Text);
+    }
+
+    /// A projector with explicit encoder flags (`dim` None = records no projection size).
+    fn projector(dim: Option<u32>, vision: bool, audio: bool) -> Gguf {
+        let g = Gguf::new("clip")
+            .bool_kv("clip.has_vision_encoder", vision)
+            .bool_kv("clip.has_audio_encoder", audio);
+        match dim {
+            Some(d) => g.u32("clip.vision.projection_dim", d),
+            None => g.u32("clip.vision.projection_dim", 0),
+        }
+    }
+
+    /// MiniCPM-o's separate audio encoder: arch `whisper` with an `audio_projector`.
+    fn audio_encoder() -> Gguf {
+        Gguf::new("whisper")
+            .tensor("encoder.layers.0.fc1.weight")
+            .tensor("audio_projector.linear1.weight")
+    }
+
+    fn minicpm(d: &Path) {
+        Gguf::llm_with_dim("qwen3", "Llm", 4096).write(&d.join("MiniCPM-o-4_5-Q8_0.gguf"));
     }
 
     #[test]
-    fn omni_models_keep_their_modality_when_a_projector_is_paired_and_warn_when_not() {
-        let d = tmp("omni");
-        Gguf::llm_with_dim("qwen3", "Llm", 4096).write(&d.join("MiniCPM-o-4_5-Q8_0.gguf"));
-        let alone = discover(&d).unwrap();
-        let m = &alone.models[0];
-        assert_eq!(m.modality, Modality::Omni);
+    fn an_omni_family_model_without_encoders_is_a_chat_model_and_says_so() {
+        let d = tmp("omni-alone");
+        minicpm(&d);
+        let m = &discover(&d).unwrap().models[0];
+        assert_eq!(m.modality, Modality::Text);
+        assert!(
+            !m.capabilities.iter().any(|c| c == "Vision" || c == "Audio"),
+            "{:?}",
+            m.capabilities
+        );
         assert!(
             m.notes.iter().any(|n| n == OMNI_NO_ENCODER_NOTE),
             "{:?}",
             m.notes
         );
+        assert!(m.omni_gap().unwrap().contains("need extra.mmproj_path"));
+        std::fs::remove_dir_all(d).ok();
+    }
 
-        clip(4096).write(&d.join("mmproj-MiniCPM-o-4_5-F16.gguf"));
-        let paired = discover(&d).unwrap();
-        let m = &paired.models[0];
+    #[test]
+    fn minicpm_o_with_its_real_layout_is_vision_only() {
+        // The real snapshot: model at the root, encoders in vision/ and audio/ subfolders; the
+        // vision file records projection_dim 0 and the audio file is arch whisper.
+        let d = tmp("omni-real");
+        minicpm(&d);
+        projector(None, true, false).write(&d.join("vision/MiniCPM-o-4_5-vision-F16.gguf"));
+        audio_encoder().write(&d.join("audio/MiniCPM-o-4_5-audio-F16.gguf"));
+
+        let f = discover(&d).unwrap();
+        assert_eq!(
+            f.models.len(),
+            1,
+            "the audio encoder is not a speech model: {:?}",
+            f.models.iter().map(|m| &m.path).collect::<Vec<_>>()
+        );
+        assert!(f.skipped.is_empty(), "{:?}", f.skipped);
+        let m = &f.models[0];
         assert_eq!(
             m.modality,
-            Modality::Omni,
-            "pairing must not downgrade it to VisionText"
+            Modality::VisionText,
+            "only what the attached projector provides"
         );
         assert!(
             m.extra["mmproj_path"]
                 .as_str()
                 .unwrap()
-                .ends_with("mmproj-MiniCPM-o-4_5-F16.gguf")
+                .ends_with("MiniCPM-o-4_5-vision-F16.gguf")
         );
-        assert!(!m.notes.iter().any(|n| n == OMNI_NO_ENCODER_NOTE));
+        assert!(
+            m.capabilities.iter().any(|c| c == "Vision")
+                && !m.capabilities.iter().any(|c| c == "Audio")
+        );
+        assert!(
+            m.notes
+                .iter()
+                .any(|n| n.contains("audio encoder") && n.contains("not attached")),
+            "{:?}",
+            m.notes
+        );
+        assert!(
+            m.notes.iter().any(|n| n == OMNI_PARTIAL_NOTE),
+            "{:?}",
+            m.notes
+        );
+        assert!(m.omni_gap().unwrap().contains("only text and image"));
         std::fs::remove_dir_all(d).ok();
     }
 
+    #[test]
+    fn a_projector_with_both_encoders_makes_the_model_omni() {
+        // Gemma-4's single mmproj has vision and audio encoders.
+        let d = tmp("omni-both");
+        Gguf::llm_with_dim("gemma4", "Gemma-4-12B-It", 3840)
+            .write(&d.join("gemma-4-12b-it-UD-Q6_K_XL.gguf"));
+        projector(Some(3840), true, true).write(&d.join("mmproj-F16.gguf"));
+        let m = &discover(&d).unwrap().models[0];
+        assert_eq!(m.modality, Modality::Omni);
+        for cap in ["Vision", "Audio", "Video", "Omni"] {
+            assert!(
+                m.capabilities.iter().any(|c| c == cap),
+                "{cap}: {:?}",
+                m.capabilities
+            );
+        }
+        assert!(m.omni_gap().is_none());
+        assert!(
+            !m.notes
+                .iter()
+                .any(|n| n == OMNI_PARTIAL_NOTE || n == OMNI_NO_ENCODER_NOTE)
+        );
+        std::fs::remove_dir_all(d).ok();
+    }
+
+    #[test]
+    fn the_most_capable_matching_projector_is_attached() {
+        let d = tmp("omni-pick");
+        Gguf::llm_with_dim("qwen35", "Model", 4096).write(&d.join("model.gguf"));
+        projector(Some(4096), true, false).write(&d.join("mmproj-vision.gguf"));
+        projector(Some(4096), true, true).write(&d.join("mmproj-both.gguf"));
+        let m = &discover(&d).unwrap().models[0];
+        assert!(
+            m.extra["mmproj_path"]
+                .as_str()
+                .unwrap()
+                .ends_with("mmproj-both.gguf")
+        );
+        assert_eq!(m.modality, Modality::Omni);
+        std::fs::remove_dir_all(d).ok();
+    }
+
+    #[test]
+    fn projectors_belong_to_the_nearest_folder_that_holds_a_model() {
+        // Two models, each with its own vision/ subfolder, plus a model one level above.
+        let d = tmp("omni-nearest");
+        Gguf::llm_with_dim("qwen3", "Alpha", 4096).write(&d.join("a/alpha.gguf"));
+        projector(Some(4096), true, false).write(&d.join("a/vision/alpha-vision.gguf"));
+        Gguf::llm_with_dim("qwen3", "Bravo", 4096).write(&d.join("b/bravo.gguf"));
+        projector(Some(4096), true, false).write(&d.join("b/vision/bravo-vision.gguf"));
+        Gguf::llm_with_dim("qwen3", "Topmost", 4096).write(&d.join("top.gguf"));
+
+        let f = discover(&d).unwrap();
+        let mm = |n: &str| {
+            f.models
+                .iter()
+                .find(|m| m.display_name == n)
+                .unwrap()
+                .extra
+                .get("mmproj_path")
+                .and_then(|v| v.as_str().map(String::from))
+        };
+        assert!(mm("Alpha").unwrap().ends_with("alpha-vision.gguf"));
+        assert!(mm("Bravo").unwrap().ends_with("bravo-vision.gguf"));
+        assert!(
+            mm("Topmost").is_none(),
+            "a model above the folders must not take their projectors"
+        );
+        std::fs::remove_dir_all(d).ok();
+    }
+
+    #[test]
+    fn a_projection_size_of_zero_is_unknown_not_a_mismatch() {
+        let g = Gguf::new("clip")
+            .u32("clip.vision.projection_dim", 0)
+            .bool_kv("clip.has_vision_encoder", true);
+        let i = parse_gguf(&mut g.bytes().as_slice()).unwrap();
+        assert_eq!(i.projection_dim, None);
+        assert_eq!(
+            (i.has_vision_encoder, i.has_audio_encoder),
+            (Some(true), None)
+        );
+    }
+
+    #[test]
+    fn audio_encoder_files_are_companions_not_speech_models() {
+        let i = parse_gguf(&mut audio_encoder().bytes().as_slice()).unwrap();
+        assert!(i.audio_projector);
+        assert_eq!(
+            (i.has_audio_encoder, i.has_vision_encoder),
+            (Some(true), Some(false))
+        );
+        assert!(matches!(classify(&i, "audio.gguf"), Classified::Projector));
+        // A real whisper speech model (no audio_projector) is unaffected.
+        let w = Gguf::new("whisper").tensor("encoder.layers.0.fc1.weight");
+        assert_eq!(model(cls(&w, "w.gguf")).modality, Modality::SpeechToText);
+    }
     #[test]
     fn diffusion_models_are_image_generation_and_flag_missing_companions() {
         for arch in ["qwen_image", "lumina2", "flux"] {
@@ -1543,9 +1825,10 @@ mod tests {
     #[test]
     #[ignore]
     fn catalog_agrees_with_detection() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/models.json");
-        let reg = crate::config::ModelRegistry::from_file_with_env(
-            &path,
+        let config = Path::new(env!("CARGO_MANIFEST_DIR")).join("config");
+        let reg = crate::config::ModelRegistry::from_files_with_env(
+            config.join("server.json"),
+            config.join("catalog.json"),
             &[
                 ("GEMINI_API_KEY".into(), "x".into()),
                 ("OPENROUTER_API_KEY".into(), "x".into()),
@@ -1577,8 +1860,10 @@ mod tests {
             let want_engine = m.engine_plan()[0];
             match classify(&info, &p.file_name().unwrap().to_string_lossy()) {
                 Classified::Model(det) => {
+                    // Pairing a projector (a separate file) later upgrades a chat model to vision/omni.
                     let same_modality = det.modality == m.modality
-                        || (det.modality == Modality::Text && m.modality == Modality::VisionText);
+                        || (det.modality == Modality::Text
+                            && matches!(m.modality, Modality::VisionText | Modality::Omni));
                     let ok = same_modality && det.engines[0] == want_engine;
                     println!(
                         "{} {:<36} catalog={:<16}/{:<18} detected={:<16}/{:<18}",

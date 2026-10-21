@@ -965,6 +965,21 @@ impl ModelConfig {
                     .unwrap_or(false))
     }
 
+    /// A local llama.cpp model can only take image or audio input with an `mmproj`
+    /// file. True when the model is served by llama-server but none is configured
+    /// or the configured file does not exist.
+    pub fn missing_projector(&self) -> bool {
+        let llama = matches!(
+            self.engine_plan().first(),
+            Some(EngineKind::LlamaServer | EngineKind::LlamaServerPrism)
+        );
+        llama
+            && !self
+                .mmproj_path
+                .as_deref()
+                .is_some_and(|p| !p.trim().is_empty() && Path::new(p).exists())
+    }
+
     /// Whether the model accepts audio input.
     pub fn supports_audio(&self) -> bool {
         self.modality == Modality::Omni

@@ -358,7 +358,7 @@ fn sample_multimodal_encoder_config() -> ModelConfig {
         "id": "qwen3.8-encoder",
         "name": "Qwen3.8 Multimodal Encoder",
         "modality": "VisionText",
-        "capabilities": ["Chat", "Vision", "Tool Call"],
+        "capabilities": ["Chat", "Vision", "Audio", "Tool Call"],
         "engine": { "supported": ["encoder"], "preferred": "encoder" },
         "max_context_length": 262144,
         "sampling": { "temperature": 0.3, "max_tokens": 1024 },
@@ -399,6 +399,30 @@ fn sample_gemma4_omni_encoder_config() -> ModelConfig {
     ModelConfig::try_from(entry).expect("valid model config")
 }
 
+/// Sees images but declares no audio support (like MiniCPM-o with only its vision encoder).
+fn sample_vision_only_config() -> ModelConfig {
+    let raw = r#"{
+        "id": "vision-only",
+        "name": "Vision Only",
+        "modality": "VisionText",
+        "capabilities": ["Chat", "Vision", "Tool Call"],
+        "engine": { "supported": ["encoder"], "preferred": "encoder" },
+        "max_context_length": 8192,
+        "sampling": {},
+        "local": {
+            "path": "Cargo.toml",
+            "params": 1000000000,
+            "bits_per_weight": 8.0,
+            "context_length": 4096,
+            "gpu_layers": 99,
+            "args": ""
+        },
+        "extra": {}
+    }"#;
+    let entry: ModelEntry = serde_json::from_str(raw).expect("valid json");
+    ModelConfig::try_from(entry).expect("valid model config")
+}
+
 fn create_multimodal_test_app() -> axum::Router {
     let mut catalog = ModelRegistry {
         server: ServerConfig {
@@ -413,6 +437,7 @@ fn create_multimodal_test_app() -> axum::Router {
     };
     catalog.models.push(sample_multimodal_encoder_config());
     catalog.models.push(sample_gemma4_omni_encoder_config());
+    catalog.models.push(sample_vision_only_config());
 
     let inference = Arc::new(InferenceAppState::new(&catalog));
     let proxy = Arc::new(ProxyService::new(&catalog));
@@ -435,6 +460,41 @@ fn sample_png_base64() -> String {
 fn sample_wav_base64() -> String {
     let wav_bytes = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00";
     base64::engine::general_purpose::STANDARD.encode(wav_bytes)
+}
+
+#[tokio::test]
+async fn test_vision_only_model_rejects_audio_input_with_a_clear_error() {
+    // A vision model is not an audio model: this used to be forwarded to the engine and
+    // come back as a bare 500 ("audio input is not supported").
+    let app = create_multimodal_test_app();
+    let payload = serde_json::json!({
+        "model": "vision-only",
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": "What did they say?" },
+                { "type": "input_audio", "input_audio": { "data": sample_wav_base64(), "format": "wav" } }
+            ]
+        }]
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"]["code"], "model_audio_unsupported");
+    assert!(
+        json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("vision-only")
+    );
 }
 
 #[tokio::test]

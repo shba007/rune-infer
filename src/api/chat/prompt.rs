@@ -47,7 +47,8 @@ pub fn prepare_prompt(
         ));
     }
 
-    if has_audio && !model_config.is_vision() && !model_config.supports_audio() {
+    // A vision model is not an audio model: audio needs its own declared support.
+    if has_audio && !model_config.supports_audio() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -57,6 +58,23 @@ pub fn prepare_prompt(
                 ))
                 .with_type("invalid_request_error")
                 .with_code("model_audio_unsupported"),
+            }),
+        ));
+    }
+
+    // llama.cpp refuses image/audio input without an mmproj file and answers with a bare 500.
+    // Say what is actually wrong instead of forwarding the request to fail.
+    if (has_vision || has_audio) && model_config.missing_projector() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new(format!(
+                    "Model '{}' accepts image/audio input but has no usable vision projector. \
+                     Set extra.mmproj_path in its catalog entry to an existing mmproj file.",
+                    model_config.id
+                ))
+                .with_type("invalid_request_error")
+                .with_code("model_projector_missing"),
             }),
         ));
     }
@@ -415,4 +433,129 @@ pub fn prepare_prompt(
         video_count,
         audio_count,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::ModelEntry;
+
+    /// A local llama-server model. `mmproj` is spliced into `extra`.
+    fn model(modality: &str, caps: &str, mmproj: Option<&str>) -> ModelConfig {
+        let extra = mmproj
+            .map(|p| format!(r#""mmproj_path": {p:?}"#))
+            .unwrap_or_default();
+        let entry: ModelEntry = serde_json::from_str(&format!(
+            r#"{{"id":"m","name":"M","modality":"{modality}","capabilities":{caps},
+                "engine":{{"supported":["llama-server"]}},
+                "local":{{"path":"m.gguf"}},"extra":{{{extra}}}}}"#
+        ))
+        .unwrap();
+        ModelConfig::try_from(entry).unwrap()
+    }
+
+    fn request(parts: &str) -> ChatCompletionRequest {
+        let comma = if parts.is_empty() { "" } else { "," };
+        serde_json::from_str(&format!(
+            r#"{{"model":"m","messages":[{{"role":"user","content":[
+                {{"type":"text","text":"hi"}}{comma}{parts}]}}]}}"#
+        ))
+        .unwrap()
+    }
+
+    const IMAGE: &str = r#"{"type":"image_url","image_url":{"url":"data:image/png;base64,AAAA"}}"#;
+    const AUDIO: &str = r#"{"type":"input_audio","input_audio":{"data":"AAAA","format":"wav"}}"#;
+    /// Any file that exists, standing in for a projector.
+    const EXISTING_FILE: &str = env!("CARGO_MANIFEST_DIR");
+
+    fn rejected_with(
+        r: Result<PreparedPrompt, (StatusCode, Json<ErrorResponse>)>,
+    ) -> Option<String> {
+        r.err().and_then(|(_, Json(e))| e.error.code)
+    }
+
+    #[test]
+    fn a_vision_model_does_not_accept_audio() {
+        // The bug this guards: `is_vision()` used to waive the audio check, so audio reached
+        // llama-server, which answered "audio input is not supported" with a 500.
+        let vision = model("VisionText", r#"["Chat","Vision"]"#, Some(EXISTING_FILE));
+        assert_eq!(
+            rejected_with(prepare_prompt(&request(AUDIO), &vision)).as_deref(),
+            Some("model_audio_unsupported")
+        );
+    }
+
+    #[test]
+    fn omni_and_audio_capable_models_pass_the_audio_gate() {
+        let omni = model("Omni", r#"["Chat","Vision","Audio"]"#, Some(EXISTING_FILE));
+        let code = rejected_with(prepare_prompt(&request(AUDIO), &omni));
+        assert!(
+            !matches!(
+                code.as_deref(),
+                Some("model_audio_unsupported" | "model_projector_missing")
+            ),
+            "{code:?}"
+        );
+        let audio_chat = model("Text", r#"["Chat","Audio"]"#, Some(EXISTING_FILE));
+        let code = rejected_with(prepare_prompt(&request(AUDIO), &audio_chat));
+        assert!(
+            !matches!(code.as_deref(), Some("model_audio_unsupported")),
+            "{code:?}"
+        );
+    }
+
+    #[test]
+    fn text_models_reject_images_and_audio() {
+        let text = model("Text", r#"["Chat"]"#, None);
+        assert_eq!(
+            rejected_with(prepare_prompt(&request(IMAGE), &text)).as_deref(),
+            Some("model_vision_unsupported")
+        );
+        assert_eq!(
+            rejected_with(prepare_prompt(&request(AUDIO), &text)).as_deref(),
+            Some("model_audio_unsupported")
+        );
+    }
+
+    #[test]
+    fn a_missing_projector_is_reported_instead_of_forwarded() {
+        for (label, mmproj) in [
+            ("not configured", None),
+            (
+                "file does not exist",
+                Some("Z:/definitely/missing-mmproj.gguf"),
+            ),
+        ] {
+            let vision = model("VisionText", r#"["Chat","Vision"]"#, mmproj);
+            let err = prepare_prompt(&request(IMAGE), &vision).err().expect(label);
+            assert_eq!(err.0, StatusCode::BAD_REQUEST, "{label}");
+            let Json(body) = err.1;
+            assert_eq!(
+                body.error.code.as_deref(),
+                Some("model_projector_missing"),
+                "{label}"
+            );
+            assert!(body.error.message.contains("extra.mmproj_path"), "{label}");
+        }
+        // With a projector present the request moves past this gate.
+        let ok = model("VisionText", r#"["Chat","Vision"]"#, Some(EXISTING_FILE));
+        let code = rejected_with(prepare_prompt(&request(IMAGE), &ok));
+        assert!(
+            !matches!(
+                code.as_deref(),
+                Some("model_projector_missing" | "model_vision_unsupported")
+            ),
+            "{code:?}"
+        );
+    }
+
+    #[test]
+    fn text_only_requests_never_need_a_projector() {
+        let vision = model("VisionText", r#"["Chat","Vision"]"#, None);
+        let code = rejected_with(prepare_prompt(&request(""), &vision));
+        assert!(
+            code.is_none() || code.as_deref() != Some("model_projector_missing"),
+            "{code:?}"
+        );
+    }
 }

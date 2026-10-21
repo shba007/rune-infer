@@ -281,8 +281,8 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
             c.needs.join(", extra.")
         ));
     }
-    if c.modality == Modality::Omni && !c.extra.contains_key("mmproj_path") {
-        description.push_str(". Image/audio/video input still needs extra.mmproj_path");
+    if let Some(gap) = c.omni_gap() {
+        description.push_str(&format!(". {gap}"));
     }
     ModelEntry {
         id,

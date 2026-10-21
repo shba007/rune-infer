@@ -161,12 +161,25 @@ Behaviour notes:
 - Detection of language-model fine-tunes for speech ("…TTS", "…ASR") relies on
   whole-word matches in the name; verify them. Vevo2 is set up as text-to-speech
   although it also does voice conversion.
-- Omni families (Gemma-4, MiniCPM-o, `…Omni…`) are recognised by architecture or
-  file name, because several are plain language-model bodies (MiniCPM-o is
-  `qwen3`, `general.name` "Llm"). The wizard marks them `Omni` (image + audio +
-  video in) but cannot find their encoder files when only the language model was
-  downloaded; it says so and the config description repeats it. Draft heads
-  (MTP / `…-assistant` architectures) are never listed as models.
+- **Capabilities come from evidence, never from a family name.** Omni families
+  (Gemma-4, MiniCPM-o, `…Omni…`) are recognised by architecture or file name
+  (MiniCPM-o's body is a plain `qwen3`, `general.name` "Llm") but that is only a
+  hint: the wizard starts them as chat models and sets modality and capabilities
+  from the projector it pairs, using that file's own `clip.has_vision_encoder` /
+  `clip.has_audio_encoder` flags — both → `Omni`, vision → `VisionText`. A
+  projector belongs to the models in the nearest enclosing folder that holds a
+  model (`snapshot/vision/x.gguf` → `snapshot/model.gguf`); `llama-server` loads a
+  single `--mmproj`, so the most capable match is attached (vision wins ties) and
+  the rest are noted. A separate audio-encoder file (MiniCPM-o's `audio/`, arch
+  `whisper` + `audio_projector`) is a companion, not a speech model. A catalog
+  entry must likewise only claim what its files provide: the dashboard's
+  `C V T A I` flags just read `capabilities`.
+- **The server refuses media a model cannot take**, before loading it: audio to a
+  model without audio support → `model_audio_unsupported`; image/audio to a
+  llama.cpp model whose `extra.mmproj_path` is missing or points at no file →
+  `model_projector_missing`. (Previously both reached `llama-server` and came
+  back as a bare 500.)
+- Draft heads (MTP / `…-assistant` architectures) are never listed as models.
 - `rune-infer setup` skips models whose id already exists, so re-running it does
   not repair entries written by an older, less accurate wizard.
 
