@@ -2,18 +2,56 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.6.0] - 2026-10-17
+## [0.7.0] - 2026-10-21
 
 ### 🚀 Features
 
-- Eliminate model load lock contention, enforce bounded SSE backpressure, and fix audio8-asr-infinite model path
+- *(inference)* Enhance audio engine with mock model support and command environment configuration
 
-- Add audio diarization functionality and update models
+- Add support for audio inputs in multimodal chat
+
+- Add example and enhance descriptions for chat completions and image grounding requests
+
+- *(gateway)* Implement rune studio contract, residency controls, honest usage, and dot TUI
+
+- *(gateway)* Implement background preemption, route attribution, and spec TUI
 
 
 ### 🐛 Bug Fixes
 
-- Update actions/checkout and other dependencies in workflows, upgraded performence of model load/unload
+- *(engine)* Eliminate blocking runtime drop panic in async context
+
+
+### 🚜 Refactor
+
+- Image generation and processing handlers to use ModelExecutionGate for engine loading and task execution
+
+
+## [0.6.0] - 2026-10-19
+
+### 🚀 Features
+
+- Eliminate model load lock contention, enforce bounded SSE backpressure, and fix audio8-asr-infinite model path by @shba007
+
+- Add audio diarization functionality and update models by @shba007
+
+- Add health and readiness endpoints, implement SSRF protection, and enhance model configuration tests by @shba007
+
+- *(inference)* Support per-request thinking mode and reasoning effort controls by @shba007
+
+- *(decision)* Integrate liquid d1-3b multimodal system 1 decision model by @shba007
+
+- *(decision)* Enable native systemone vision ingestion and robust multimodal payload parsing by @shba007
+
+
+### 🐛 Bug Fixes
+
+- Update actions/checkout and other dependencies in workflows, upgraded performence of model load/unload by @shba007
+
+
+### ⚡ Performance
+
+- *(inference)* Optimize token speed and prevent VRAM PCIe spill with Flash Attention and smart context budgeting by @shba007
 
 
 ## [0.5.0] - 2026-10-16
