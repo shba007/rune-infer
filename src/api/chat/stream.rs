@@ -21,9 +21,29 @@ pub fn handle_chat_stream(
     image_count: usize,
     video_count: usize,
     include_usage: bool,
+    yield_notify: Option<Arc<tokio::sync::Notify>>,
 ) -> Response {
     let (tx, rx) = tokio::sync::mpsc::channel::<Event>(64);
     let model_id = model_config.id.clone();
+
+    if let Some(notify) = yield_notify {
+        let engine_for_yield = engine.clone();
+        let tx_yield = tx.clone();
+        tokio::spawn(async move {
+            notify.notified().await;
+            engine_for_yield.cancel();
+            let err_chunk = serde_json::json!({
+                "error": {
+                    "message": "Background request yielded to foreground request",
+                    "type": "server_busy",
+                    "code": "yielded"
+                }
+            });
+            let _ = tx_yield
+                .send(Event::default().event("error").data(err_chunk.to_string()))
+                .await;
+        });
+    }
 
     let initial_chunk = make_chunk(
         &format!("chatcmpl-{created}"),

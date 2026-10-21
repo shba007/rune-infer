@@ -380,6 +380,19 @@ pub async fn chat_completions_handler(
         .unwrap_or(false);
 
     if request.stream {
+        let yield_notify = if is_background {
+            Some(Arc::new(tokio::sync::Notify::new()))
+        } else {
+            None
+        };
+        if is_background {
+            let concurrency = state.concurrency.clone();
+            let yn_clone = yield_notify.clone().unwrap();
+            tokio::spawn(async move {
+                concurrency.yield_notify.notified().await;
+                yn_clone.notify_waiters();
+            });
+        }
         let stream_resp = stream::handle_chat_stream(
             prepared.task,
             engine,
@@ -389,6 +402,7 @@ pub async fn chat_completions_handler(
             prepared.image_count,
             prepared.video_count,
             include_usage,
+            yield_notify,
         );
         return attach_attribution_headers(stream_resp);
     }
@@ -413,7 +427,10 @@ pub async fn chat_completions_handler(
 
     let task_clone = prepared.task.clone();
     let model_for_stats = model_config.id.clone();
-    let result = tokio::task::spawn_blocking(move || {
+    let engine_for_yield = engine.clone();
+    let cancel_flag_for_yield = cancel_flag.clone();
+
+    let exec_handle = tokio::task::spawn_blocking(move || {
         let gen_started = std::time::Instant::now();
         let mut on_token =
             |_: &str| -> bool { !cancel_flag_clone.load(std::sync::atomic::Ordering::Relaxed) };
@@ -421,38 +438,74 @@ pub async fn chat_completions_handler(
             .execute(&task_clone, Some(&mut on_token))
             .map_err(|e| e.to_string());
         (res, gen_started.elapsed())
-    })
-    .await
-    .map(|(res, gen_elapsed)| {
-        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            crate::telemetry::record_failure(
-                &model_for_stats,
-                499,
-                start_time.elapsed().as_millis(),
-                "client disconnected during execution",
-            );
-        } else {
-            match &res {
-                Ok(out) => crate::telemetry::record_completion(
-                    &model_for_stats,
-                    start_time.elapsed().as_millis(),
-                    out.usage.prompt_tokens,
-                    out.usage.completion_tokens,
-                    gen_elapsed.as_millis(),
-                ),
-                Err(e) => crate::telemetry::record_failure(
-                    &model_for_stats,
-                    500,
-                    start_time.elapsed().as_millis(),
-                    e,
-                ),
-            }
-        }
-        res
     });
 
-    match result {
-        Ok(Ok(output)) => match output.response {
+    let (res, gen_elapsed) = if is_background {
+        let yield_notified = state.concurrency.yield_notify.notified();
+        tokio::select! {
+            join_res = exec_handle => {
+                match join_res {
+                    Ok(pair) => pair,
+                    Err(e) => (Err(format!("Thread execution error: {e}")), std::time::Duration::ZERO),
+                }
+            }
+            _ = yield_notified => {
+                cancel_flag_for_yield.store(true, std::sync::atomic::Ordering::Relaxed);
+                engine_for_yield.cancel();
+                crate::telemetry::record_failure(
+                    &model_for_stats,
+                    503,
+                    start_time.elapsed().as_millis(),
+                    "background task yielded to foreground request",
+                );
+                return attach_attribution_headers((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    [(axum::http::header::RETRY_AFTER, "1")],
+                    Json(ErrorResponse {
+                        error: ApiError::new("Background request yielded to foreground request")
+                            .with_type("server_busy")
+                            .with_code("yielded"),
+                    }),
+                ).into_response());
+            }
+        }
+    } else {
+        match exec_handle.await {
+            Ok(pair) => pair,
+            Err(e) => (
+                Err(format!("Thread execution error: {e}")),
+                std::time::Duration::ZERO,
+            ),
+        }
+    };
+
+    if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        crate::telemetry::record_failure(
+            &model_for_stats,
+            499,
+            start_time.elapsed().as_millis(),
+            "client disconnected during execution",
+        );
+    } else {
+        match &res {
+            Ok(out) => crate::telemetry::record_completion(
+                &model_for_stats,
+                start_time.elapsed().as_millis(),
+                out.usage.prompt_tokens,
+                out.usage.completion_tokens,
+                gen_elapsed.as_millis(),
+            ),
+            Err(e) => crate::telemetry::record_failure(
+                &model_for_stats,
+                500,
+                start_time.elapsed().as_millis(),
+                e,
+            ),
+        }
+    }
+
+    match res {
+        Ok(output) => match output.response {
             InferenceTaskResponse::ToolCall {
                 content,
                 tool_calls,
@@ -508,48 +561,45 @@ pub async fn chat_completions_handler(
                 );
                 attach_attribution_headers(Json(resp).into_response())
             }
-            InferenceTaskResponse::Error(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new(e)
-                        .with_type("server_error")
-                        .with_code("inference_error"),
-                }),
-            )
-                .into_response(),
-            _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: ApiError::new("Unexpected response type from text inference")
-                        .with_type("server_error"),
-                }),
-            )
-                .into_response(),
+            InferenceTaskResponse::Error(e) => attach_attribution_headers(
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new(e)
+                            .with_type("server_error")
+                            .with_code("inference_error"),
+                    }),
+                )
+                    .into_response(),
+            ),
+            _ => attach_attribution_headers(
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        error: ApiError::new("Unexpected response type from text inference")
+                            .with_type("server_error"),
+                    }),
+                )
+                    .into_response(),
+            ),
         },
-        Ok(Err(e)) => {
+        Err(e) => {
             let status = if e.contains("context") || e.contains("tokens") || e.contains("limit") {
                 StatusCode::PAYLOAD_TOO_LARGE
             } else {
                 StatusCode::BAD_REQUEST
             };
-            (
-                status,
-                Json(ErrorResponse {
-                    error: ApiError::new(e)
-                        .with_type("invalid_request_error")
-                        .with_code("inference_failure"),
-                }),
+            attach_attribution_headers(
+                (
+                    status,
+                    Json(ErrorResponse {
+                        error: ApiError::new(e)
+                            .with_type("invalid_request_error")
+                            .with_code("inference_failure"),
+                    }),
+                )
+                    .into_response(),
             )
-                .into_response()
         }
-        Err(join_err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(format!("Thread execution failure: {join_err}"))
-                    .with_type("server_error")
-                    .with_code("internal_error"),
-            }),
-        )
-            .into_response(),
     }
 }

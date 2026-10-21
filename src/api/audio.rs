@@ -71,9 +71,9 @@ fn sanitize_filename(raw: &str) -> String {
 #[axum::debug_handler]
 pub async fn audio_transcriptions_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    let start_time = std::time::Instant::now();
     let mut file_bytes = Vec::new();
     let mut filename = "audio.wav".to_string();
     let mut model_id: Option<String> = None;
@@ -182,41 +182,52 @@ pub async fn audio_transcriptions_handler(
         },
     };
 
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &target_model) {
+        Ok(g) => g,
+        Err(resp) => return resp,
+    };
+
     let inference = state.inference.clone();
-    let model_to_fetch = target_model.clone();
+    let model_to_fetch = gate.model_config.id.clone();
     let engine =
         match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
                 tracing::error!(
                     target: "audit",
-                    model = %target_model,
+                    model = %gate.model_config.id,
                     error = %err,
                     "Failed to load audio transcription engine"
                 );
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Model load failure: {err}"))
-                            .with_type("invalid_request_error"),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Model load failure: {err}"))
+                                .with_type("invalid_request_error"),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
             Err(e) => {
                 tracing::error!(
                     target: "audit",
-                    model = %target_model,
+                    model = %gate.model_config.id,
                     error = %e,
                     "Join error when retrieving audio transcription engine"
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Join error: {e}")),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Join error: {e}")),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
         };
 
@@ -236,158 +247,123 @@ pub async fn audio_transcriptions_handler(
         response_format,
     };
 
-    let model_for_stats = target_model.clone();
-    let res = tokio::task::spawn_blocking(move || {
-        let gen_started = std::time::Instant::now();
-        let r = engine.execute(&task, None).map_err(|e| e.to_string());
-        (r, gen_started.elapsed())
-    })
-    .await;
-
-    let (exec_res, gen_elapsed) = match res {
-        Ok((r, elapsed)) => (r, elapsed),
-        Err(e) => (
-            Err(format!("Thread join error: {e}")),
-            std::time::Duration::ZERO,
-        ),
+    let mut output = match gate.execute_task(&state, engine, task).await {
+        Ok(out) => out,
+        Err(resp) => return resp,
     };
 
-    match exec_res {
-        Ok(mut output) => {
-            if diarize {
-                if let InferenceTaskResponse::Transcription(ref mut trans) = output.response {
-                    let diar_model_id = state
-                        .config()
-                        .models
-                        .iter()
-                        .find(|m| m.modality == crate::config::Modality::SpeechAnalysis)
-                        .map(|m| m.id.clone())
-                        .unwrap_or_else(|| "nemotron-3-diarization".to_string());
+    if diarize {
+        if let InferenceTaskResponse::Transcription(ref mut trans) = output.response {
+            let diar_model_id = state
+                .config()
+                .models
+                .iter()
+                .find(|m| m.modality == crate::config::Modality::SpeechAnalysis)
+                .map(|m| m.id.clone())
+                .unwrap_or_else(|| "nemotron-3-diarization".to_string());
 
-                    let inference_diar = state.inference.clone();
-                    let diar_bytes = diar_audio_bytes.unwrap_or_default();
-                    let diar_fname = diar_filename.clone();
+            let inference_diar = state.inference.clone();
+            let diar_bytes = diar_audio_bytes.unwrap_or_default();
+            let diar_fname = diar_filename.clone();
 
-                    let diar_res = tokio::task::spawn_blocking(move || {
-                        let diar_engine = inference_diar.get_engine(&diar_model_id)?;
-                        let diar_task = InferenceTaskRequest::AudioDiarization {
-                            audio_bytes: diar_bytes,
-                            filename: diar_fname,
-                            speaker_threshold: None,
-                            max_speakers: None,
-                        };
-                        diar_engine
-                            .execute(&diar_task, None)
-                            .map_err(|e| e.to_string())
-                    })
-                    .await;
+            let diar_res = tokio::task::spawn_blocking(move || {
+                let diar_engine = inference_diar.get_engine(&diar_model_id)?;
+                let diar_task = InferenceTaskRequest::AudioDiarization {
+                    audio_bytes: diar_bytes,
+                    filename: diar_fname,
+                    speaker_threshold: None,
+                    max_speakers: None,
+                };
+                diar_engine
+                    .execute(&diar_task, None)
+                    .map_err(|e| e.to_string())
+            })
+            .await;
 
-                    if let Ok(Ok(diar_output)) = diar_res {
-                        if let InferenceTaskResponse::Diarization(diar) = diar_output.response {
-                            trans.speakers = Some(diar.speakers.clone());
-                            trans.speaker_activity = Some(diar.speaker_activity);
-                            if trans.duration.is_none() || trans.duration == Some(0.0) {
-                                trans.duration = Some(diar.duration);
-                            }
+            if let Ok(Ok(diar_output)) = diar_res {
+                if let InferenceTaskResponse::Diarization(diar) = diar_output.response {
+                    trans.speakers = Some(diar.speakers.clone());
+                    trans.speaker_activity = Some(diar.speaker_activity);
+                    if trans.duration.is_none() || trans.duration == Some(0.0) {
+                        trans.duration = Some(diar.duration);
+                    }
 
-                            // Align segments with diarization turns
-                            if let Some(serde_json::Value::Array(ref mut segs)) = trans.segments {
-                                for seg in segs.iter_mut() {
-                                    if let serde_json::Value::Object(obj) = seg {
-                                        let seg_start = obj
-                                            .get("start")
-                                            .and_then(|v| v.as_f64())
-                                            .unwrap_or(0.0);
-                                        let seg_end = obj
-                                            .get("end")
-                                            .and_then(|v| v.as_f64())
-                                            .unwrap_or(seg_start);
+                    // Align segments with diarization turns
+                    if let Some(serde_json::Value::Array(ref mut segs)) = trans.segments {
+                        for seg in segs.iter_mut() {
+                            if let serde_json::Value::Object(obj) = seg {
+                                let seg_start =
+                                    obj.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let seg_end =
+                                    obj.get("end").and_then(|v| v.as_f64()).unwrap_or(seg_start);
 
-                                        let mut best_speaker = None;
-                                        let mut max_overlap = 0.0;
-                                        for d in &diar.segments {
-                                            let overlap = (seg_end.min(d.end)
-                                                - seg_start.max(d.start))
-                                            .max(0.0);
-                                            if overlap > max_overlap {
-                                                max_overlap = overlap;
-                                                best_speaker = Some(d.speaker.clone());
-                                            }
-                                        }
-
-                                        if let Some(spk) = best_speaker {
-                                            obj.insert(
-                                                "speaker".to_string(),
-                                                serde_json::Value::String(spk),
-                                            );
-                                        } else if let Some(first_spk) = diar.speakers.first() {
-                                            obj.insert(
-                                                "speaker".to_string(),
-                                                serde_json::Value::String(first_spk.clone()),
-                                            );
-                                        }
+                                let mut best_speaker = None;
+                                let mut max_overlap = 0.0;
+                                for d in &diar.segments {
+                                    let overlap =
+                                        (seg_end.min(d.end) - seg_start.max(d.start)).max(0.0);
+                                    if overlap > max_overlap {
+                                        max_overlap = overlap;
+                                        best_speaker = Some(d.speaker.clone());
                                     }
+                                }
+
+                                if let Some(spk) = best_speaker {
+                                    obj.insert(
+                                        "speaker".to_string(),
+                                        serde_json::Value::String(spk),
+                                    );
+                                } else if let Some(first_spk) = diar.speakers.first() {
+                                    obj.insert(
+                                        "speaker".to_string(),
+                                        serde_json::Value::String(first_spk.clone()),
+                                    );
                                 }
                             }
                         }
                     }
                 }
             }
-
-            crate::telemetry::record_completion(
-                &model_for_stats,
-                start_time.elapsed().as_millis(),
-                output.usage.prompt_tokens,
-                output.usage.completion_tokens,
-                gen_elapsed.as_millis(),
-            );
-            match output.response {
-                InferenceTaskResponse::Transcription(transcription) => {
-                    Json(transcription).into_response()
-                }
-                InferenceTaskResponse::Text(raw) => {
-                    Json(serde_json::json!({ "text": raw })).into_response()
-                }
-                InferenceTaskResponse::Error(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(e).with_type("server_error"),
-                    }),
-                )
-                    .into_response(),
-                _ => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new("Unexpected response type from ASR engine"),
-                    }),
-                )
-                    .into_response(),
-            }
         }
-        Err(e) => {
-            crate::telemetry::record_failure(
-                &model_for_stats,
-                500,
-                start_time.elapsed().as_millis(),
-                &e,
-            );
+    }
+
+    match output.response {
+        InferenceTaskResponse::Transcription(transcription) => {
+            gate.attach_headers(&state, Json(transcription).into_response())
+        }
+        InferenceTaskResponse::Text(raw) => gate.attach_headers(
+            &state,
+            Json(serde_json::json!({ "text": raw })).into_response(),
+        ),
+        InferenceTaskResponse::Error(e) => gate.attach_headers(
+            &state,
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(e).with_type("server_error"),
                 }),
             )
-                .into_response()
-        }
+                .into_response(),
+        ),
+        _ => gate.attach_headers(
+            &state,
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new("Unexpected response type from ASR engine"),
+                }),
+            )
+                .into_response(),
+        ),
     }
 }
 
 #[axum::debug_handler]
 pub async fn audio_translations_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    let start_time = std::time::Instant::now();
     let mut file_bytes = Vec::new();
     let mut filename = "audio.wav".to_string();
     let mut model_id: Option<String> = None;
@@ -483,43 +459,54 @@ pub async fn audio_translations_handler(
         },
     };
 
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &target_model) {
+        Ok(g) => g,
+        Err(resp) => return resp,
+    };
+
     let inference = state.inference.clone();
-    let model_to_fetch = target_model.clone();
+    let model_to_fetch = gate.model_config.id.clone();
     let engine =
         match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
                 tracing::error!(
                     target: "audit",
-                    model = %target_model,
+                    model = %gate.model_config.id,
                     error = %err,
                     "Failed to load audio translation engine"
                 );
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Model load failure: {err}"))
-                            .with_type("invalid_request_error")
-                            .with_param("model")
-                            .with_code("model_not_found"),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Model load failure: {err}"))
+                                .with_type("invalid_request_error")
+                                .with_param("model")
+                                .with_code("model_not_found"),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
             Err(e) => {
                 tracing::error!(
                     target: "audit",
-                    model = %target_model,
+                    model = %gate.model_config.id,
                     error = %e,
                     "Join error when retrieving audio translation engine"
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Join error: {e}")),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Join error: {e}")),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
         };
 
@@ -531,78 +518,48 @@ pub async fn audio_translations_handler(
         response_format,
     };
 
-    let model_for_stats = target_model.clone();
-    let res = tokio::task::spawn_blocking(move || {
-        let gen_started = std::time::Instant::now();
-        let r = engine.execute(&task, None).map_err(|e| e.to_string());
-        (r, gen_started.elapsed())
-    })
-    .await;
-
-    let (exec_res, gen_elapsed) = match res {
-        Ok((r, elapsed)) => (r, elapsed),
-        Err(e) => (
-            Err(format!("Thread join error: {e}")),
-            std::time::Duration::ZERO,
-        ),
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(out) => out,
+        Err(resp) => return resp,
     };
 
-    match exec_res {
-        Ok(output) => {
-            crate::telemetry::record_completion(
-                &model_for_stats,
-                start_time.elapsed().as_millis(),
-                output.usage.prompt_tokens,
-                output.usage.completion_tokens,
-                gen_elapsed.as_millis(),
-            );
-            match output.response {
-                InferenceTaskResponse::Translation(trans) => Json(trans).into_response(),
-                InferenceTaskResponse::Text(raw) => {
-                    Json(serde_json::json!({ "text": raw })).into_response()
-                }
-                InferenceTaskResponse::Error(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(e).with_type("server_error"),
-                    }),
-                )
-                    .into_response(),
-                _ => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(
-                            "Unexpected response type from ASR translation engine",
-                        ),
-                    }),
-                )
-                    .into_response(),
-            }
+    match output.response {
+        InferenceTaskResponse::Translation(trans) => {
+            gate.attach_headers(&state, Json(trans).into_response())
         }
-        Err(e) => {
-            crate::telemetry::record_failure(
-                &model_for_stats,
-                500,
-                start_time.elapsed().as_millis(),
-                &e,
-            );
+        InferenceTaskResponse::Text(raw) => gate.attach_headers(
+            &state,
+            Json(serde_json::json!({ "text": raw })).into_response(),
+        ),
+        InferenceTaskResponse::Error(e) => gate.attach_headers(
+            &state,
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(e).with_type("server_error"),
                 }),
             )
-                .into_response()
-        }
+                .into_response(),
+        ),
+        _ => gate.attach_headers(
+            &state,
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new("Unexpected response type from ASR translation engine"),
+                }),
+            )
+                .into_response(),
+        ),
     }
 }
 
 #[axum::debug_handler]
 pub async fn audio_speech_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<AudioSpeechRequest>,
 ) -> Response {
-    let start_time = std::time::Instant::now();
     if request.input.trim().is_empty() || request.input.len() > 4096 {
         return (
             StatusCode::BAD_REQUEST,
@@ -642,41 +599,40 @@ pub async fn audio_speech_handler(
         },
     };
 
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(g) => g,
+        Err(resp) => return resp,
+    };
+
     let inference = state.inference.clone();
-    let model_to_fetch = model_id.clone();
+    let model_to_fetch = gate.model_config.id.clone();
     let engine =
         match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
-                crate::telemetry::record_failure(
-                    &model_id,
-                    404,
-                    start_time.elapsed().as_millis(),
-                    &err.to_string(),
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Model failed to load: {err}"))
+                                .with_type("invalid_request_error"),
+                        }),
+                    )
+                        .into_response(),
                 );
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Model failed to load: {err}"))
-                            .with_type("invalid_request_error"),
-                    }),
-                )
-                    .into_response();
             }
             Err(e) => {
-                crate::telemetry::record_failure(
-                    &model_id,
-                    500,
-                    start_time.elapsed().as_millis(),
-                    &e.to_string(),
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Thread join error: {e}")),
+                        }),
+                    )
+                        .into_response(),
                 );
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Thread join error: {e}")),
-                    }),
-                )
-                    .into_response();
             }
         };
 
@@ -691,75 +647,47 @@ pub async fn audio_speech_handler(
         speed: request.speed,
     };
 
-    let model_for_stats = model_id.clone();
-    let res = tokio::task::spawn_blocking(move || {
-        let gen_started = std::time::Instant::now();
-        let r = engine.execute(&task, None).map_err(|e| e.to_string());
-        (r, gen_started.elapsed())
-    })
-    .await;
-
-    let (exec_res, gen_elapsed) = match res {
-        Ok((r, elapsed)) => (r, elapsed),
-        Err(e) => (
-            Err(format!("Thread join error: {e}")),
-            std::time::Duration::ZERO,
-        ),
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(out) => out,
+        Err(resp) => return resp,
     };
 
-    match exec_res {
-        Ok(output) => {
-            crate::telemetry::record_completion(
-                &model_for_stats,
-                start_time.elapsed().as_millis(),
-                output.usage.prompt_tokens,
-                output.usage.completion_tokens,
-                gen_elapsed.as_millis(),
-            );
-            match output.response {
-                InferenceTaskResponse::Audio(bytes) => {
-                    let content_type = match format_str.as_str() {
-                        "mp3" => "audio/mpeg",
-                        "opus" => "audio/opus",
-                        "flac" => "audio/flac",
-                        _ => "audio/wav",
-                    };
-                    Response::builder()
-                        .header("Content-Type", content_type)
-                        .body(axum::body::Body::from(bytes))
-                        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
-                }
-                InferenceTaskResponse::Error(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(e).with_type("server_error"),
-                    }),
-                )
-                    .into_response(),
-                _ => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new("Unexpected response type from TTS engine"),
-                    }),
-                )
-                    .into_response(),
-            }
+    match output.response {
+        InferenceTaskResponse::Audio(bytes) => {
+            let content_type = match format_str.as_str() {
+                "mp3" => "audio/mpeg",
+                "opus" => "audio/opus",
+                "flac" => "audio/flac",
+                _ => "audio/wav",
+            };
+            gate.attach_headers(
+                &state,
+                Response::builder()
+                    .header("Content-Type", content_type)
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+            )
         }
-        Err(e) => {
-            crate::telemetry::record_failure(
-                &model_for_stats,
-                500,
-                start_time.elapsed().as_millis(),
-                &e,
-            );
+        InferenceTaskResponse::Error(e) => gate.attach_headers(
+            &state,
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(e).with_type("server_error"),
                 }),
             )
-                .into_response()
-        }
+                .into_response(),
+        ),
+        _ => gate.attach_headers(
+            &state,
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new("Unexpected response type from TTS engine"),
+                }),
+            )
+                .into_response(),
+        ),
     }
 }
 

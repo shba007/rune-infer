@@ -266,6 +266,12 @@ async fn run(
                 engine: m
                     .is_local()
                     .then(|| m.engine_plan()[0].as_str().to_string()),
+                locality: if m.is_local() {
+                    "LOCAL".to_string()
+                } else {
+                    "CLOUD".to_string()
+                },
+                capabilities: m.capabilities.clone().unwrap_or_default(),
             })
             .collect(),
     };

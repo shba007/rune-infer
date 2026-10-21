@@ -204,6 +204,7 @@ pub async fn recognize_objects_handler(
 #[axum::debug_handler]
 pub async fn image_grounding_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<ImageGroundingRequest>,
 ) -> Response {
     if request.query.trim().is_empty() {
@@ -247,29 +248,43 @@ pub async fn image_grounding_handler(
         },
     };
 
-    let uri_for_decode = image_uri.clone();
-    let decoded_frames = match tokio::task::spawn_blocking(move || {
-        decode_media(&uri_for_decode, (4096, 4096))
-    })
-    .await
-    {
-        Ok(Ok(frames)) if !frames.is_empty() => frames,
-        Ok(Err(err_resp)) => return (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: ApiError::new("Failed to decode provided image for visual grounding.")
-                        .with_type("invalid_request_error"),
-                }),
-            )
-                .into_response();
-        }
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(g) => g,
+        Err(resp) => return resp,
     };
+
+    let max_dims = gate.model_config.max_dimensions();
+
+    let uri_for_decode = image_uri.clone();
+    let decoded_frames =
+        match tokio::task::spawn_blocking(move || decode_media(&uri_for_decode, max_dims)).await {
+            Ok(Ok(frames)) if !frames.is_empty() => frames,
+            Ok(Err(err_resp)) => {
+                return gate.attach_headers(
+                    &state,
+                    (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
+                );
+            }
+            _ => {
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: ApiError::new(
+                                "Failed to decode provided image for visual grounding.",
+                            )
+                            .with_type("invalid_request_error"),
+                        }),
+                    )
+                        .into_response(),
+                );
+            }
+        };
 
     let (image_bytes, w, h) = decoded_frames.into_iter().next().unwrap();
     let task = InferenceTaskRequest::ImageGrounding {
-        model: Some(model_id.clone()),
+        model: Some(gate.model_config.id.clone()),
         image_bytes,
         query: request.query,
         width: w,
@@ -277,63 +292,59 @@ pub async fn image_grounding_handler(
     };
 
     let inference = state.inference.clone();
-    let target_model = model_id.clone();
+    let target_model = gate.model_config.id.clone();
     let engine =
         match tokio::task::spawn_blocking(move || inference.get_engine(&target_model)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!(
-                            "Vision model '{}' failed to load: {err}",
-                            model_id
-                        ))
-                        .with_type("invalid_request_error")
-                        .with_code("model_not_found"),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!(
+                                "Vision model '{}' failed to load: {err}",
+                                gate.model_config.id
+                            ))
+                            .with_type("invalid_request_error")
+                            .with_code("model_not_found"),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
             Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Thread execution error: {e}")),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Thread execution error: {e}")),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
         };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(out) => out,
+        Err(err_resp) => return err_resp,
+    };
 
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Grounding(grounding) => Json(grounding).into_response(),
-            _ => (
+    match output.response {
+        InferenceTaskResponse::Grounding(grounding) => {
+            gate.attach_headers(&state, Json(grounding).into_response())
+        }
+        _ => gate.attach_headers(
+            &state,
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new("Unexpected response type from vision grounding engine"),
                 }),
             )
                 .into_response(),
-        },
-        Ok(Err(err)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(err).with_type("server_error"),
-            }),
-        )
-            .into_response(),
-        Err(err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(err.to_string()),
-            }),
-        )
-            .into_response(),
+        ),
     }
 }

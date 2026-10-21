@@ -15,6 +15,7 @@ use crate::types::{
 #[axum::debug_handler]
 pub async fn image_generation_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<ImageGenerationRequest>,
 ) -> Response {
     if request.prompt.trim().is_empty() {
@@ -73,50 +74,47 @@ pub async fn image_generation_handler(
         },
     };
 
-    let model_config = match state.config().find(&model_id) {
-        Some(c) => c.clone(),
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: ApiError::new(format!("Model '{}' not found", model_id))
-                        .with_type("invalid_request_error"),
-                }),
-            )
-                .into_response();
-        }
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(g) => g,
+        Err(resp) => return resp,
     };
 
     let inference = state.inference.clone();
-    let model_id_fetch = model_id.clone();
+    let model_id_fetch = gate.model_config.id.clone();
     let engine =
         match tokio::task::spawn_blocking(move || inference.get_engine(&model_id_fetch)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Model failed to load: {err}"))
-                            .with_type("invalid_request_error"),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Model failed to load: {err}"))
+                                .with_type("invalid_request_error"),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
             Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Thread join error: {e}")),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Thread join error: {e}")),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
         };
 
     let resolved_size = resolve_image_dimensions(
         request.size.as_deref(),
         request.aspect_ratio.as_deref(),
-        model_config.max_resolution.as_deref(),
+        gate.model_config.max_resolution.as_deref(),
     );
 
     let task = InferenceTaskRequest::ImageGeneration {
@@ -124,37 +122,44 @@ pub async fn image_generation_handler(
         negative_prompt: request.negative_prompt.clone(),
         size: Some(resolved_size),
         response_format: request.response_format.clone(),
-        steps: request.steps.or(model_config.default_steps),
-        cfg_scale: request.cfg_scale.or(model_config.default_cfg_scale),
+        steps: request.steps.or(gate.model_config.default_steps),
+        cfg_scale: request.cfg_scale.or(gate.model_config.default_cfg_scale),
         seed: request.seed,
         sample_method: request
             .sample_method
             .clone()
-            .or_else(|| model_config.default_sample_method.clone()),
+            .or_else(|| gate.model_config.default_sample_method.clone()),
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Image(img_resp) => Json(img_resp).into_response(),
-            InferenceTaskResponse::Error(e) => (
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(out) => out,
+        Err(resp) => return resp,
+    };
+
+    match output.response {
+        InferenceTaskResponse::Image(img_resp) => {
+            gate.attach_headers(&state, Json(img_resp).into_response())
+        }
+        InferenceTaskResponse::Error(e) => gate.attach_headers(
+            &state,
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(e).with_type("server_error"),
                 }),
             )
                 .into_response(),
-            _ => (
+        ),
+        _ => gate.attach_headers(
+            &state,
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new("Unexpected response type").with_type("server_error"),
                 }),
             )
                 .into_response(),
-        },
-        _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        ),
     }
 }
 

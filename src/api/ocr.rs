@@ -12,6 +12,7 @@ use crate::types::{ApiError, DocumentOcrRequest, ErrorResponse};
 #[axum::debug_handler]
 pub async fn document_ocr_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<DocumentOcrRequest>,
 ) -> Response {
     let doc_url = match request.document {
@@ -54,18 +55,24 @@ pub async fn document_ocr_handler(
         },
     };
 
-    let model_config = state.config().find(&model_id).cloned();
-    let max_dims = model_config
-        .as_ref()
-        .map(|c| c.max_dimensions())
-        .unwrap_or((4096, 4096));
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(g) => g,
+        Err(resp) => return resp,
+    };
+
+    let max_dims = gate.model_config.max_dimensions();
 
     let uri_for_decode = image_uri.clone();
-    let decoded_frames =
-        match tokio::task::spawn_blocking(move || decode_media(&uri_for_decode, max_dims)).await {
-            Ok(Ok(frames)) if !frames.is_empty() => frames,
-            Ok(Ok(_)) => {
-                return (
+    let decoded_frames = match tokio::task::spawn_blocking(move || {
+        decode_media(&uri_for_decode, max_dims)
+    })
+    .await
+    {
+        Ok(Ok(frames)) if !frames.is_empty() => frames,
+        Ok(Ok(_)) => {
+            return gate.attach_headers(
+                &state,
+                (
                     StatusCode::BAD_REQUEST,
                     Json(ErrorResponse {
                         error: ApiError::new("Failed to parse image frames from document source.")
@@ -74,47 +81,62 @@ pub async fn document_ocr_handler(
                             .with_code("invalid_document_image"),
                     }),
                 )
-                    .into_response();
-            }
-            Ok(Err(err_resp)) => return (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
-            Err(join_err) => {
-                return (
+                    .into_response(),
+            );
+        }
+        Ok(Err(err_resp)) => {
+            return gate.attach_headers(
+                &state,
+                (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
+            );
+        }
+        Err(join_err) => {
+            return gate.attach_headers(
+                &state,
+                (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
                         error: ApiError::new(format!("Document decode thread error: {join_err}")),
                     }),
                 )
-                    .into_response();
-            }
-        };
+                    .into_response(),
+            );
+        }
+    };
 
     let (image_bytes, width, height) = decoded_frames.into_iter().next().unwrap();
 
     let inference = state.inference.clone();
-    let model_to_fetch = model_id.clone();
+    let target_model = gate.model_config.id.clone();
     let engine =
-        match tokio::task::spawn_blocking(move || inference.get_engine(&model_to_fetch)).await {
+        match tokio::task::spawn_blocking(move || inference.get_engine(&target_model)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("OCR model failed to load: {err}"))
-                            .with_type("invalid_request_error")
-                            .with_param("model")
-                            .with_code("model_not_found"),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("OCR model failed to load: {err}"))
+                                .with_type("invalid_request_error")
+                                .with_param("model")
+                                .with_code("model_not_found"),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
             Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Execution thread error: {e}")),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Execution thread error: {e}")),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
         };
 
@@ -123,7 +145,7 @@ pub async fn document_ocr_handler(
         .unwrap_or_else(|| vec!["text".to_string(), "selection_marks".to_string()]);
 
     let task = InferenceTaskRequest::DocumentOcr {
-        model: Some(model_id),
+        model: Some(gate.model_config.id.clone()),
         image_bytes,
         width,
         height,
@@ -131,41 +153,34 @@ pub async fn document_ocr_handler(
         response_format: request.response_format,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(out) => out,
+        Err(err_resp) => return err_resp,
+    };
 
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Ocr(ocr_resp) => Json(ocr_resp).into_response(),
-            InferenceTaskResponse::Error(err) => (
+    match output.response {
+        InferenceTaskResponse::Ocr(ocr_resp) => {
+            gate.attach_headers(&state, Json(ocr_resp).into_response())
+        }
+        InferenceTaskResponse::Error(err) => gate.attach_headers(
+            &state,
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(err).with_type("server_error"),
                 }),
             )
                 .into_response(),
-            _ => (
+        ),
+        _ => gate.attach_headers(
+            &state,
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new("Unexpected response variant from OCR engine"),
                 }),
             )
                 .into_response(),
-        },
-        Ok(Err(err)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(err).with_type("server_error"),
-            }),
-        )
-            .into_response(),
-        Err(err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(err.to_string()).with_type("server_error"),
-            }),
-        )
-            .into_response(),
+        ),
     }
 }

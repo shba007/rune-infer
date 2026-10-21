@@ -27,6 +27,8 @@ pub struct ModelRow {
     pub provider: Option<String>,
     /// Preferred engine for local models (e.g. `nemo-speech`).
     pub engine: Option<String>,
+    pub locality: String,
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +63,7 @@ struct ModelState {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Dashboard,
+    Models,
     Logs,
 }
 
@@ -213,8 +216,16 @@ impl App {
                     Tab::Dashboard
                 }
             }
+            KeyCode::Char('m') | KeyCode::Char('M') => {
+                self.tab = if self.tab == Tab::Models {
+                    Tab::Dashboard
+                } else {
+                    Tab::Models
+                }
+            }
             KeyCode::Char('1') => self.tab = Tab::Dashboard,
-            KeyCode::Char('2') => self.tab = Tab::Logs,
+            KeyCode::Char('2') => self.tab = Tab::Models,
+            KeyCode::Char('3') => self.tab = Tab::Logs,
             KeyCode::Char('e') => {
                 self.errors_only = !self.errors_only;
                 self.follow = true;
@@ -312,6 +323,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     draw_header(f, header, app);
     match app.tab {
         Tab::Dashboard => draw_dashboard(f, body, app),
+        Tab::Models => draw_all_models(f, body, app),
         Tab::Logs => draw_logs(f, body, app),
     }
     draw_footer(f, footer, app);
@@ -353,6 +365,14 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let mut spans = Vec::new();
     spans.extend(key_hint("Tab", "dashboard / logs"));
+    spans.extend(key_hint(
+        "m",
+        if app.tab == Tab::Models {
+            "dashboard"
+        } else {
+            "all models"
+        },
+    ));
     if app.tab == Tab::Logs {
         spans.extend(key_hint("↑↓ PgUp/Dn", "scroll"));
         spans.extend(key_hint("f", "follow"));
@@ -385,6 +405,57 @@ fn draw_dashboard(f: &mut Frame, area: Rect, app: &App) {
     draw_stats(f, stats, app);
     draw_requests(f, mid, app);
     draw_recent_logs(f, bottom, app);
+}
+
+fn render_model_row<'a>(app: &App, idx: usize) -> Row<'a> {
+    let m = &app.models[idx];
+    let (icon, color, extra) = match &m.status {
+        Status::Idle => ("·".to_string(), DIM, String::new()),
+        Status::Loading(since) => (
+            spinner(app.tick).to_string(),
+            ACCENT,
+            format!(" loading {:.1}s", since.elapsed().as_secs_f32()),
+        ),
+        Status::Loaded { load_ms, detail } => (
+            "●".to_string(),
+            OK,
+            format!(
+                " · loaded in {:.1}s{}",
+                *load_ms as f64 / 1000.0,
+                if detail.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {detail}")
+                }
+            ),
+        ),
+        Status::Failed(_) => ("×".to_string(), ERR, " failed".to_string()),
+    };
+    let avg = if m.tps_n > 0 {
+        format!("{:.1}", m.tps_sum / m.tps_n as f64)
+    } else {
+        "–".into()
+    };
+    Row::new([
+        Cell::from(icon).style(Style::new().fg(color)),
+        Cell::from(format!("{}{}", m.row.id, extra)),
+        Cell::from(m.row.modality.clone()).style(Style::new().fg(DIM)),
+        Cell::from(
+            m.row
+                .provider
+                .clone()
+                .or_else(|| m.row.engine.clone())
+                .unwrap_or_else(|| "local".into()),
+        )
+        .style(Style::new().fg(DIM)),
+        Cell::from(m.requests.to_string()),
+        Cell::from(m.errors.to_string()).style(if m.errors > 0 {
+            Style::new().fg(ERR)
+        } else {
+            Style::new()
+        }),
+        Cell::from(avg),
+    ])
 }
 
 fn draw_models(f: &mut Frame, area: Rect, app: &App) {
@@ -443,56 +514,42 @@ fn draw_models(f: &mut Frame, area: Rect, app: &App) {
             .then_with(|| a.cmp(&b))
     });
 
-    let rows = display_indices.into_iter().map(|idx| {
+    let mut active_indices = Vec::new();
+    let mut idle_indices = Vec::new();
+    for &idx in &display_indices {
         let m = &app.models[idx];
-        let (icon, color, extra) = match &m.status {
-            Status::Idle => ("·".to_string(), DIM, String::new()),
-            Status::Loading(since) => (
-                spinner(app.tick).to_string(),
-                ACCENT,
-                format!(" loading {:.1}s", since.elapsed().as_secs_f32()),
-            ),
-            Status::Loaded { load_ms, detail } => (
-                "●".to_string(),
-                OK,
-                format!(
-                    " · loaded in {:.1}s{}",
-                    *load_ms as f64 / 1000.0,
-                    if detail.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" · {detail}")
-                    }
-                ),
-            ),
-            Status::Failed(_) => ("×".to_string(), ERR, " failed".to_string()),
-        };
-        let avg = if m.tps_n > 0 {
-            format!("{:.1}", m.tps_sum / m.tps_n as f64)
+        if matches!(
+            m.status,
+            Status::Loading(_) | Status::Loaded { .. } | Status::Failed(_)
+        ) || m.requests > 0
+        {
+            active_indices.push(idx);
         } else {
-            "–".into()
-        };
-        Row::new([
-            Cell::from(icon).style(Style::new().fg(color)),
-            Cell::from(format!("{}{}", m.row.id, extra)),
-            Cell::from(m.row.modality.clone()).style(Style::new().fg(DIM)),
-            Cell::from(
-                m.row
-                    .provider
-                    .clone()
-                    .or_else(|| m.row.engine.clone())
-                    .unwrap_or_else(|| "local".into()),
-            )
-            .style(Style::new().fg(DIM)),
-            Cell::from(m.requests.to_string()),
-            Cell::from(m.errors.to_string()).style(if m.errors > 0 {
-                Style::new().fg(ERR)
-            } else {
-                Style::new()
-            }),
-            Cell::from(avg),
-        ])
-    });
+            idle_indices.push(idx);
+        }
+    }
+
+    let mut rows: Vec<Row> = Vec::new();
+    for idx in active_indices {
+        rows.push(render_model_row(app, idx));
+    }
+
+    if idle_indices.len() > 1 {
+        rows.push(Row::new([
+            Cell::from("·").style(Style::new().fg(DIM)),
+            Cell::from(format!("+ {} MORE · NO TRAFFIC", idle_indices.len()))
+                .style(Style::new().fg(DIM)),
+            Cell::from("–").style(Style::new().fg(DIM)),
+            Cell::from("m to list all").style(Style::new().fg(DIM)),
+            Cell::from("0").style(Style::new().fg(DIM)),
+            Cell::from("0").style(Style::new().fg(DIM)),
+            Cell::from("–").style(Style::new().fg(DIM)),
+        ]));
+    } else {
+        for idx in idle_indices {
+            rows.push(render_model_row(app, idx));
+        }
+    }
     let table = Table::new(
         rows,
         [
@@ -596,6 +653,7 @@ fn draw_stats(f: &mut Frame, area: Rect, app: &App) {
     let tps_data: Vec<u64> = app.tps_hist.iter().copied().collect();
     f.render_widget(
         Sparkline::default()
+            .bar_set(sparkline_bar_set())
             .block(ratatui::widgets::Block::default().title(Span::styled(
                 format!("Generation speed · last {latest_tps} tok/s"),
                 Style::new().fg(DIM),
@@ -607,14 +665,102 @@ fn draw_stats(f: &mut Frame, area: Rect, app: &App) {
     let lat_data: Vec<u64> = app.latency_hist.iter().copied().collect();
     f.render_widget(
         Sparkline::default()
+            .bar_set(sparkline_bar_set())
             .block(
                 ratatui::widgets::Block::default()
-                    .title(Span::styled("Latency (s)", Style::new().fg(DIM))),
+                    .title(Span::styled("Latency (ms)", Style::new().fg(DIM))),
             )
             .style(Style::new().fg(DIM))
             .data(&lat_data),
         lat,
     );
+}
+
+fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
+    let block = panel(format!(
+        " Models Catalog · {} configured ",
+        app.models.len()
+    ));
+    let header = Row::new([
+        "",
+        "Model ID / Name",
+        "Locality",
+        "Capabilities",
+        "Provider / Engine",
+        "Reqs",
+        "Status",
+    ])
+    .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD));
+
+    let rows = app.models.iter().map(|m| {
+        let (icon, color, status_text) = match &m.status {
+            Status::Idle => ("·", DIM, "IDLE"),
+            Status::Loading(_) => (spinner(app.tick), ACCENT, "LOADING"),
+            Status::Loaded { .. } => ("●", OK, "LOADED"),
+            Status::Failed(_) => ("×", ERR, "FAILED"),
+        };
+
+        let has_cap = |prefix: &str| {
+            m.row
+                .capabilities
+                .iter()
+                .any(|c| c.to_lowercase().contains(prefix))
+        };
+        let chat_dot = if has_cap("chat") || has_cap("text") {
+            "●"
+        } else {
+            "○"
+        };
+        let vision_dot = if has_cap("vision") { "●" } else { "○" };
+        let tools_dot = if has_cap("tool") { "●" } else { "○" };
+        let audio_dot = if has_cap("audio") || has_cap("speech") {
+            "●"
+        } else {
+            "○"
+        };
+        let image_dot = if has_cap("image") { "●" } else { "○" };
+        let cap_str =
+            format!("C:{chat_dot} V:{vision_dot} T:{tools_dot} A:{audio_dot} I:{image_dot}");
+
+        let locality_style = if m.row.locality == "LOCAL" {
+            Style::new().fg(OK)
+        } else {
+            Style::new().fg(ACCENT)
+        };
+
+        Row::new([
+            Cell::from(icon).style(Style::new().fg(color)),
+            Cell::from(format!("{} ({})", m.row.id, m.row.name)),
+            Cell::from(m.row.locality.clone()).style(locality_style),
+            Cell::from(cap_str).style(Style::new().fg(DIM)),
+            Cell::from(
+                m.row
+                    .provider
+                    .clone()
+                    .or_else(|| m.row.engine.clone())
+                    .unwrap_or_else(|| "local".into()),
+            )
+            .style(Style::new().fg(DIM)),
+            Cell::from(m.requests.to_string()),
+            Cell::from(status_text).style(Style::new().fg(color)),
+        ])
+    });
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(2),
+            Constraint::Min(24),
+            Constraint::Length(8),
+            Constraint::Length(22),
+            Constraint::Length(18),
+            Constraint::Length(6),
+            Constraint::Length(9),
+        ],
+    )
+    .header(header)
+    .block(block);
+    f.render_widget(table, area);
 }
 
 fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
@@ -769,7 +915,8 @@ fn draw_help(f: &mut Frame) {
     f.render_widget(Clear, area);
     let text = vec![
         Line::from(""),
-        Line::from("  Tab / 1 / 2     switch Dashboard and Logs"),
+        Line::from("  Tab / 1 / 2 / 3 switch Dashboard, Models, and Logs"),
+        Line::from("  m               toggle full models catalog"),
         Line::from("  ↑ ↓  PgUp PgDn  scroll the log view"),
         Line::from("  f               follow the newest log line"),
         Line::from("  e               errors and warnings only"),
@@ -816,6 +963,8 @@ mod tests {
                     modality: "text".into(),
                     provider: None,
                     engine: Some("llama-server".into()),
+                    locality: "LOCAL".into(),
+                    capabilities: vec!["Chat".into()],
                 },
                 ModelRow {
                     id: "g".into(),
@@ -823,6 +972,8 @@ mod tests {
                     modality: "vision-text".into(),
                     provider: Some("google".into()),
                     engine: None,
+                    locality: "CLOUD".into(),
+                    capabilities: vec!["Chat".into(), "Vision".into()],
                 },
             ],
         };
@@ -836,7 +987,7 @@ mod tests {
     fn draw_all(app: &mut App) {
         for (w, h) in [(20, 6), (60, 20), (120, 40)] {
             let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
-            for tab in [Tab::Dashboard, Tab::Logs] {
+            for tab in [Tab::Dashboard, Tab::Models, Tab::Logs] {
                 app.tab = tab;
                 t.draw(|f| draw(f, app)).unwrap();
             }

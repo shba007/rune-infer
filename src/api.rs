@@ -3,11 +3,14 @@ pub mod audio;
 pub mod chat;
 pub mod decisions;
 pub mod embeddings;
+pub mod gate;
 pub mod images;
 pub mod moderation;
 pub mod nlu;
 pub mod ocr;
 // pub mod responses;
+
+pub use gate::ModelExecutionGate;
 
 use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};

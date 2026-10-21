@@ -11,6 +11,42 @@ pub const DIM: Color = Color::DarkGray;
 
 pub const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+pub const BRAILLE_BAR: ratatui::symbols::bar::Set = ratatui::symbols::bar::Set {
+    full: "⣿",
+    seven_eighths: "⣶",
+    three_quarters: "⣴",
+    five_eighths: "⣤",
+    half: "⣄",
+    three_eighths: "⣀",
+    one_quarter: "⡀",
+    one_eighth: "⠄",
+    empty: " ",
+};
+
+pub const ASCII_BAR: ratatui::symbols::bar::Set = ratatui::symbols::bar::Set {
+    full: "#",
+    seven_eighths: "#",
+    three_quarters: "=",
+    five_eighths: "=",
+    half: "-",
+    three_eighths: "-",
+    one_quarter: ".",
+    one_eighth: ".",
+    empty: " ",
+};
+
+pub fn is_no_color() -> bool {
+    std::env::var_os("NO_COLOR").is_some()
+}
+
+pub fn sparkline_bar_set() -> ratatui::symbols::bar::Set<'static> {
+    if is_no_color() {
+        ASCII_BAR
+    } else {
+        BRAILLE_BAR
+    }
+}
+
 pub fn spinner(tick: u64) -> &'static str {
     SPINNER[(tick as usize / 2) % SPINNER.len()]
 }

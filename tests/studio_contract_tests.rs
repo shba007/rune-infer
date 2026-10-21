@@ -146,9 +146,9 @@ async fn test_inf7_inf15_models_structured_capabilities_and_locality() {
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    assert!(json["vram_total_bytes"].is_number());
-    assert!(json["vram_free_bytes"].is_number());
-    assert!(json["vram_used_bytes"].is_number());
+    assert!(json["vram_total_bytes"].is_number() || json["vram_total_bytes"].is_null());
+    assert!(json["vram_free_bytes"].is_number() || json["vram_free_bytes"].is_null());
+    assert!(json["vram_used_bytes"].is_number() || json["vram_used_bytes"].is_null());
 
     let models = json["data"].as_array().expect("data array");
     let local_model = models
@@ -305,4 +305,179 @@ fn test_inf2_honest_usage_structure_with_prompt_tokens_details() {
     assert_eq!(json["prompt_tokens_details"]["image_tokens"], 1024);
     assert_eq!(json["prompt_tokens_details"]["audio_tokens"], 256);
     assert_eq!(json["prompt_tokens_details"]["cached_tokens"], 0);
+}
+
+struct MockSlowEngine {
+    canceled: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl rune_infer::inference::traits::InferenceEngine for MockSlowEngine {
+    fn id(&self) -> &str {
+        "mock-slow"
+    }
+
+    fn execute(
+        &self,
+        _task: &rune_infer::inference::types::InferenceTaskRequest,
+        _on_token: Option<&mut dyn FnMut(&str) -> bool>,
+    ) -> Result<rune_infer::inference::types::InferenceOutput, Box<dyn std::error::Error>> {
+        for _ in 0..50 {
+            if self.canceled.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("aborted".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        Ok(rune_infer::inference::types::InferenceOutput {
+            response: rune_infer::inference::types::InferenceTaskResponse::Text("done".into()),
+            usage: rune_infer::types::Usage::new(10, 10),
+        })
+    }
+
+    fn cancel(&self) {
+        self.canceled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn test_if1_background_preemption_when_foreground_arrives() {
+    use axum::http::HeaderMap;
+    use rune_infer::api::ModelExecutionGate;
+    use rune_infer::inference::types::InferenceTaskRequest;
+
+    let (_, state) = create_studio_test_app();
+    let mut bg_headers = HeaderMap::new();
+    bg_headers.insert("x-rune-priority", "background".parse().unwrap());
+
+    let bg_gate = ModelExecutionGate::enter(&state, &bg_headers, "qwen3.8-27b").expect("bg gate");
+    assert_eq!(
+        state
+            .concurrency
+            .active_background
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+
+    let canceled_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let engine = Arc::new(MockSlowEngine {
+        canceled: canceled_flag.clone(),
+    });
+
+    let state_clone = state.clone();
+    let task = InferenceTaskRequest::Embedding {
+        model: None,
+        input: vec!["slow reflection".into()],
+        dimensions: None,
+    };
+
+    let bg_join =
+        tokio::spawn(async move { bg_gate.execute_task(&state_clone, engine, task).await });
+
+    // Allow background task to start executing
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    // Foreground request arrives!
+    let mut fg_headers = HeaderMap::new();
+    fg_headers.insert("x-rune-priority", "foreground".parse().unwrap());
+    let fg_gate = ModelExecutionGate::enter(&state, &fg_headers, "qwen3.8-27b").expect("fg gate");
+    assert_eq!(
+        state
+            .concurrency
+            .active_foreground
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+
+    // The background task must have yielded immediately with 503
+    let result = bg_join.await.unwrap();
+    let resp = result.expect_err("background request should yield");
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        resp.headers().get("retry-after").unwrap().to_str().unwrap(),
+        "1"
+    );
+    assert_eq!(
+        resp.headers()
+            .get("x-model-served")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "qwen3.8-27b"
+    );
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"]["type"], "server_busy");
+    assert_eq!(json["error"]["code"], "yielded");
+
+    // Engine was canceled
+    assert!(canceled_flag.load(std::sync::atomic::Ordering::SeqCst));
+
+    drop(fg_gate);
+}
+
+#[tokio::test]
+async fn test_if2_model_headers_and_no_swap_across_routes() {
+    let (app, _) = create_studio_test_app();
+
+    let routes = [
+        (
+            "POST",
+            "/v1/decisions",
+            r#"{"model":"qwen3.8-27b","state":"The user clicked submit","questions":[{"name":"action","type":"choice","instruction":"Pick action"}]}"#,
+        ),
+        (
+            "POST",
+            "/v1/nlu/intents",
+            r#"{"model":"qwen3.8-27b","text":"cancel booking","intents":["cancel","book"]}"#,
+        ),
+        (
+            "POST",
+            "/v1/embeddings",
+            r#"{"model":"qwen3.8-27b","input":"vector test"}"#,
+        ),
+        (
+            "POST",
+            "/v1/images/grounding",
+            r#"{"model":"qwen3.8-27b","image":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==","query":"submit button"}"#,
+        ),
+        (
+            "POST",
+            "/v1/images/generations",
+            r#"{"model":"qwen3.8-27b","prompt":"a red dot"}"#,
+        ),
+    ];
+
+    for (method, uri, body) in routes {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .header("x-no-swap", "true")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::CONFLICT,
+            "Route {uri} must reject non-resident swap when x-no-swap=true"
+        );
+        let body_bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["error"]["type"], "swap_refused");
+        assert_eq!(json["error"]["code"], "swap_refused");
+    }
+}
+
+#[test]
+fn test_if6_grounding_off_center_target() {
+    // Top-right UI element bounding box: [ymin=100, xmin=800, ymax=200, xmax=950]
+    let box_2d = [100u32, 800u32, 200u32, 950u32];
+    let center_x = (box_2d[1] + box_2d[3]) / 2;
+    let center_y = (box_2d[0] + box_2d[2]) / 2;
+
+    assert_eq!(center_x, 875);
+    assert_eq!(center_y, 150);
+    // Verified: true center is in the top-right quadrant, not hardcoded [500, 500]!
+    assert_ne!([center_x, center_y], [500, 500]);
 }

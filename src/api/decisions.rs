@@ -12,6 +12,7 @@ use crate::types::{ApiError, DecisionRequest, ErrorResponse};
 #[axum::debug_handler]
 pub async fn decisions_handler(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(request): Json<DecisionRequest>,
 ) -> Response {
     let (text, image_uris) = request.extract_state_and_images();
@@ -62,11 +63,12 @@ pub async fn decisions_handler(
         },
     };
 
-    let model_config = state.config().find(&model_id).cloned();
-    let max_dims = model_config
-        .as_ref()
-        .map(|c| c.max_dimensions())
-        .unwrap_or((4096, 4096));
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(g) => g,
+        Err(resp) => return resp,
+    };
+
+    let max_dims = gate.model_config.max_dimensions();
 
     let mut decoded_images = Vec::new();
     for uri in &image_uris {
@@ -78,30 +80,41 @@ pub async fn decisions_handler(
         {
             Ok(Ok(frames)) if !frames.is_empty() => frames,
             Ok(Ok(_)) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse {
-                        error: ApiError::new(
-                            "Failed to parse image frames from decision state image.",
-                        )
-                        .with_type("invalid_request_error")
-                        .with_param("state.images")
-                        .with_code("invalid_state_image"),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(ErrorResponse {
+                            error: ApiError::new(
+                                "Failed to parse image frames from decision state image.",
+                            )
+                            .with_type("invalid_request_error")
+                            .with_param("state.images")
+                            .with_code("invalid_state_image"),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
-            Ok(Err(err_resp)) => return (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
+            Ok(Err(err_resp)) => {
+                return gate.attach_headers(
+                    &state,
+                    (StatusCode::BAD_REQUEST, Json(err_resp)).into_response(),
+                );
+            }
             Err(join_err) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!(
-                            "State image decode thread error: {join_err}"
-                        )),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!(
+                                "State image decode thread error: {join_err}"
+                            )),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
         };
 
@@ -111,75 +124,74 @@ pub async fn decisions_handler(
     }
 
     let inference = state.inference.clone();
-    let target_model = model_id.clone();
+    let target_model = gate.model_config.id.clone();
     let engine =
         match tokio::task::spawn_blocking(move || inference.get_engine(&target_model)).await {
             Ok(Ok(e)) => e,
             Ok(Err(err)) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Decision model failed to load: {err}"))
-                            .with_type("invalid_request_error")
-                            .with_param("model")
-                            .with_code("model_not_found"),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Decision model failed to load: {err}"))
+                                .with_type("invalid_request_error")
+                                .with_param("model")
+                                .with_code("model_not_found"),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
             Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: ApiError::new(format!("Execution thread error: {e}")),
-                    }),
-                )
-                    .into_response();
+                return gate.attach_headers(
+                    &state,
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: ApiError::new(format!("Execution thread error: {e}")),
+                        }),
+                    )
+                        .into_response(),
+                );
             }
         };
 
     let task = InferenceTaskRequest::Decision {
-        model: Some(model_id),
+        model: Some(gate.model_config.id.clone()),
         text,
         images: decoded_images,
         questions,
     };
 
-    let res =
-        tokio::task::spawn_blocking(move || engine.execute(&task, None).map_err(|e| e.to_string()))
-            .await;
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(out) => out,
+        Err(err_resp) => return err_resp,
+    };
 
-    match res {
-        Ok(Ok(output)) => match output.response {
-            InferenceTaskResponse::Decision(decision_resp) => Json(decision_resp).into_response(),
-            InferenceTaskResponse::Error(err) => (
+    match output.response {
+        InferenceTaskResponse::Decision(decision_resp) => {
+            gate.attach_headers(&state, Json(decision_resp).into_response())
+        }
+        InferenceTaskResponse::Error(err) => gate.attach_headers(
+            &state,
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new(err).with_type("server_error"),
                 }),
             )
                 .into_response(),
-            _ => (
+        ),
+        _ => gate.attach_headers(
+            &state,
+            (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: ApiError::new("Unexpected response variant from decision engine"),
                 }),
             )
                 .into_response(),
-        },
-        Ok(Err(err)) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(format!("Decision inference failed: {err}")),
-            }),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: ApiError::new(format!("Execution thread error: {e}")),
-            }),
-        )
-            .into_response(),
+        ),
     }
 }
