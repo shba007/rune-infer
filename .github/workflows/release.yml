@@ -1,41 +1,30 @@
 name: Rust Release
-
-permissions:
-  contents: write
-
+# Owner promotes to main, then explicitly creates and pushes the version tag.
+# Automation never creates source commits, branches or tags.
 on:
   push:
-    branches:
-      - main
-
+    tags: ['v*']
+permissions:
+  contents: write
 jobs:
   release:
-    if: contains(github.event.head_commit.message, 'ci(release):')
     runs-on: ubuntu-latest
-
     steps:
-      - name: 📥 Checkout Repo
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: 🛠️ Install Tooling (git-cliff)
-        uses: taiki-e/install-action@v2.87.28
-        with:
-          tool: git-cliff
-
-      - name: 📝 Create Release Note
+          persist-credentials: false
+      - name: Validate version, changelog and main ancestry
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN}}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          VERSION=$(grep -m1 '^version =' Cargo.toml | cut -d '"' -f2)
-          TAG="v$VERSION"
-          # Notes for commits since the last tag, labelled with the new version.
-          # (--current would require $TAG to already exist on this commit.)
-          git-cliff --unreleased --tag "$TAG" --strip header > RELEASE_NOTES.md
-
-          # gh creates the tag on the pushed commit if it does not exist yet.
-          gh release create "$TAG" \
-            --target "$GITHUB_SHA" \
-            --title "$TAG" \
-            --notes-file RELEASE_NOTES.md
+          git merge-base --is-ancestor HEAD origin/main
+          python3 scripts/release_notes.py --version "$RELEASE_TAG" --output RELEASE_NOTES.md
+      - name: Publish the owner's existing tag
+        env:
+          # Repository token lets release publication trigger deploy.yml.
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          : "${GH_TOKEN:?Configure GH_TOKEN with release permission}"
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file RELEASE_NOTES.md

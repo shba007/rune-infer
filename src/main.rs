@@ -15,13 +15,13 @@ use tracing_subscriber::prelude::*;
 #[command(author = "Rune Infer Team")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "A standalone model server with OpenAI-compatible API and Cloud AI Gateway")]
-#[command(after_help = "Data lives in ~/.rune-infer (override with RUNE_HOME). \
-A ./config/models.json in the current directory takes precedence (dev checkouts).")]
+#[command(after_help = "Data lives in ~/rune/infer (override with RUNE_HOME). \
+Precedence: --config, RUNE_HOME, local ./config (development checkouts), default home.")]
 struct Args {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// Path to models.json [default: ./config/models.json if present, else ~/.rune-infer/config/models.json]
+    /// Configuration directory, server.json, catalog.json or legacy models.json (overrides RUNE_HOME)
     #[arg(short, long, global = true)]
     config: Option<String>,
 
@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
 
     ws.enter()
         .with_context(|| format!("Cannot use folder {}", ws.root.display()))?;
-    let env_result = dotenvy::dotenv();
+    let env_result = dotenvy::from_path(ws.env_file()).map(|_| ws.env_file());
 
     #[cfg(feature = "tui")]
     let tui_mode = !args.headless && rune_infer::tui::is_interactive();

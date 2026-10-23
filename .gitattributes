@@ -1,3 +1,6 @@
 # Shell scripts must keep LF endings on every platform (they run on Linux/macOS).
 *.sh text eol=lf
 .cargo-husky/hooks/* text eol=lf
+
+# Rustfmt requires Unix newlines, including Windows checkouts.
+*.rs text eol=lf

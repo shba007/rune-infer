@@ -4,7 +4,7 @@
 #
 # Environment overrides:
 #   RUNE_VERSION      release tag to install (default: latest), e.g. v0.2.0
-#   RUNE_INSTALL_DIR  where to put the binary (default: %LOCALAPPDATA%\Programs\rune-infer)
+#   RUNE_INSTALL_DIR  where to put the binary (default: <user-home>\rune)
 #   RUNE_REPO         GitHub repo (default: shba007/rune-infer)
 #   RUNE_BASE_URL     download base URL or local directory (mirrors / offline installs)
 #   RUNE_SKIP_VERIFY  set to 1 to skip the SHA-256 check (not recommended)
@@ -21,7 +21,16 @@ function Get-Setting($name, $default) {
 
 $repo = Get-Setting 'RUNE_REPO' 'shba007/rune-infer'
 $version = Get-Setting 'RUNE_VERSION' 'latest'
-$installDir = Get-Setting 'RUNE_INSTALL_DIR' (Join-Path $env:LOCALAPPDATA 'Programs\rune-infer')
+$userHome = $env:USERPROFILE
+if ([string]::IsNullOrWhiteSpace($userHome)) { $userHome = [Environment]::GetFolderPath('UserProfile') }
+$installDir = Get-Setting 'RUNE_INSTALL_DIR' ''
+if (-not $installDir) {
+    if ([string]::IsNullOrWhiteSpace($userHome) -or -not [IO.Path]::IsPathRooted($userHome)) {
+        throw 'Cannot resolve user home; set RUNE_INSTALL_DIR explicitly.'
+    }
+    $installDir = Join-Path $userHome 'rune'
+}
+$installDir = [IO.Path]::GetFullPath($installDir)
 $bin = 'rune-infer'
 
 # Some Windows PowerShell setups return $null for the .NET type below, so fall back to the
@@ -63,6 +72,7 @@ function Fetch($name, $dest) {
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("rune-infer-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
+$keepTemp = $false
 try {
     Write-Host "Installing Rune Infer ($platform, $version)..."
     $zip = Join-Path $tmp $archive
@@ -95,28 +105,68 @@ try {
     $exe = Join-Path $extract "$bin.exe"
     if (-not (Test-Path -LiteralPath $exe)) { throw "Archive did not contain $bin.exe" }
 
+    # Validate before replacing anything. Older default installations are retained.
+    $candidateVersion = & $exe --version
+    if ($LASTEXITCODE -ne 0 -or $candidateVersion -notmatch '^rune-infer [0-9]+\.[0-9]+\.[0-9]+') {
+        throw 'Downloaded executable did not validate; installed files were not changed.'
+    }
+    if ($version -ne 'latest' -and $candidateVersion -ne "rune-infer $($version.TrimStart('v'))") {
+        throw 'Downloaded executable does not match the requested version; installation unchanged.'
+    }
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     $target = Join-Path $installDir "$bin.exe"
     $upgrade = Test-Path -LiteralPath $target
-    try { Copy-Item -LiteralPath $exe -Destination $target -Force }
-    catch { throw "Cannot replace $target - is Rune Infer still running? Close it and run the installer again." }
-
-    if ($upgrade) { Write-Host "Upgraded: $target" } else { Write-Host "Installed: $target" }
-    try { & $target --version } catch { Write-Warning "Installed binary did not start: $($_.Exception.Message)" }
+    if ($upgrade) {
+        if ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw 'Destination is a link/reparse point; it was not overwritten.'
+        }
+        $priorVersion = & $target --version
+        if ($LASTEXITCODE -ne 0 -or $priorVersion -notmatch '^rune-infer [0-9]+\.[0-9]+\.[0-9]+') {
+            throw 'Destination conflicts with an unrecognized executable; it was not overwritten.'
+        }
+        Copy-Item -LiteralPath $target -Destination (Join-Path $tmp 'previous.exe')
+    }
+    try {
+        Copy-Item -LiteralPath $exe -Destination $target -Force
+        $installedVersion = & $target --version
+        if ($LASTEXITCODE -ne 0 -or $installedVersion -ne $candidateVersion) { throw 'Installed executable validation failed.' }
+    } catch {
+        try {
+            if ($upgrade) { Copy-Item -LiteralPath (Join-Path $tmp 'previous.exe') -Destination $target -Force }
+            elseif (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
+        } catch {
+            $keepTemp = $true
+            throw "Cannot restore previous executable; backup retained in $tmp."
+        }
+        throw
+    }
+    Write-Host "Installed: $target ($installedVersion)"
 
     # Add to the *user* PATH (no admin needed) and to this session.
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    function Normalize-PathEntry($entry) {
+        try { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($entry.Trim('"'))).TrimEnd('\', '/') }
+        catch { $entry }
+    }
     $entries = @($userPath -split ';' | Where-Object { $_ })
+    $normalized = @($entries | ForEach-Object { Normalize-PathEntry $_ })
+    $wanted = Normalize-PathEntry $installDir
     if ((Get-Setting 'RUNE_NO_MODIFY_PATH' '0') -eq '1') {
         Write-Host "Skipped PATH update. Add $installDir to your PATH manually."
-    } elseif ($entries -notcontains $installDir) {
-        [Environment]::SetEnvironmentVariable('Path', (($entries + $installDir) -join ';'), 'User')
-        $env:Path = "$env:Path;$installDir"
-        Write-Host "Added $installDir to your PATH (open a new terminal for other windows to see it)."
+    } else {
+        if ($normalized -notcontains $wanted) {
+            [Environment]::SetEnvironmentVariable('Path', (($entries + $installDir) -join ';'), 'User')
+        }
+        $sessionEntries = @($env:Path -split ';' | Where-Object { $_ } | ForEach-Object { Normalize-PathEntry $_ })
+        if ($sessionEntries -notcontains $wanted) { $env:Path = "$env:Path;$installDir" }
+        Write-Host 'User PATH configured (open a new terminal for other windows).'
     }
 
     Write-Host ''
-    Write-Host "Next: run 'rune-infer' - a short setup wizard creates your config in $env:USERPROFILE\.rune-infer."
+    $defaultHome = if ($userHome) { Join-Path $userHome 'rune\infer' } else { '<user-home>\rune\infer' }
+    $inferHome = Get-Setting 'RUNE_HOME' $defaultHome
+    Write-Host "Next: run 'rune-infer setup'; configuration lives in $inferHome\config."
+    Write-Host 'Legacy configuration is copied and validated on first launch; originals and old executable locations are retained.'
     Write-Host 'Optional: install FFmpeg (winget install Gyan.FFmpeg) for video input.'
 }
 catch {
@@ -124,5 +174,9 @@ catch {
     throw ("{0}`n  at {1}" -f $_.Exception.Message, $_.InvocationInfo.PositionMessage.Trim())
 }
 finally {
-    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    $resolvedTemp = [IO.Path]::GetFullPath($tmp)
+    $tempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+    if (-not $keepTemp -and $resolvedTemp.StartsWith($tempParent, [StringComparison]::OrdinalIgnoreCase) -and [IO.Path]::GetFileName($resolvedTemp).StartsWith('rune-infer-')) {
+        Remove-Item -LiteralPath $resolvedTemp -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }

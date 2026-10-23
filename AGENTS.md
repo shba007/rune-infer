@@ -94,7 +94,7 @@ Single crate `rune-infer` (`src/lib.rs` + `src/main.rs`), axum HTTP server.
 
 Key modules:
 - `home.rs` — workspace resolution (`RUNE_HOME` > `./config/models.json` dev
-  checkout > `~/.rune-infer`). The process `chdir`s into the root so the
+  checkout > `~/rune/infer`). The process `chdir`s into the root so the
   engines' relative `bin/`, `logs/`, `config/` and `.env` just work.
 - `server.rs` — `bind()` (actionable port errors) and `serve()` with graceful
   shutdown; used by the CLI and by library embedders.
@@ -192,7 +192,7 @@ hot-reload is **not implemented yet**.
 
 ## 4. Config
 
-`<home>/config/` (home = `~/.rune-infer`, see §3) uses **schema 3**, decoupled
+`<home>/config/` (home = `~/rune/infer`, see §3) uses **schema 3**, decoupled
 into `server.json` (host, port, security limits) and `catalog.json` (model entries).
 Adding a model is a `catalog.json` edit only — no source change and no server
 restart needed (runtime hot-reload detects changes every 2s).
@@ -346,8 +346,7 @@ Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
   (`rune-infer-{linux-x64,linux-arm64,macos-x64,macos-arm64,windows-x64,windows-arm64}.{tar.gz,zip}` +
   `.sha256`) so `releases/latest/download/<name>` works without API calls.
   `install.sh` / `install.ps1` detect the platform, verify the checksum
-  (abort on mismatch), install to `~/.local/bin` or
-  `%LOCALAPPDATA%\Programs\rune-infer`, and handle upgrades. Env overrides:
+  (abort on mismatch), install to the shared `~/rune` directory on every platform, and handle upgrades. Env overrides:
   `RUNE_VERSION`, `RUNE_INSTALL_DIR`, `RUNE_BASE_URL`, `RUNE_NO_MODIFY_PATH`.
 - Known gaps: release binaries are unsigned (SmartScreen/Gatekeeper warn); no
   uninstall script. `windows-arm64` is built `continue-on-error` (newest
@@ -381,6 +380,11 @@ Deferred: per-model request concurrency / parallel slots.
 ---
 
 ## 8. Working agreements
+
+- Implement and test locally; leave changes uncommitted. Do not stage, commit, push, merge, create tags, publish releases or dispatch publishing workflows. The owner performs those actions; this overrides older handoffs.
+- Prepare the version and its matching CHANGELOG section before the owner commits. New public descriptions cover user-visible behavior and migration, without internal planning identifiers. Preview with `python scripts/release_notes.py`; never regenerate release notes from Git history.
+- CI is read-only: it must not auto-commit formatting, bump versions, or push release branches. After owner promotion to main and an owner-created version tag push, release automation may publish that existing tag and its assets, using the exact changelog section. No automation creates source commits or pushes branches/tags.
+- Shared executables live directly in `<user-home>/rune`; Infer owns only its executable and `infer/` home. Do not modify Kit, `tools/`, plugin payloads, unrelated projects or model weights. `RUNE_HOME` remains Infer-specific. Default home migration preserves originals and refuses conflicts; see `docs/INSTALLATION.md`.
 
 - **Ask before adding new features or new dependencies/libraries.**
 - Targets: Windows + Linux + macOS. TUI stack is `ratatui` + `crossterm` +

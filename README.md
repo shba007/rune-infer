@@ -101,9 +101,9 @@ curl -fsSL https://raw.githubusercontent.com/shba007/rune-infer/main/install.sh 
 irm https://raw.githubusercontent.com/shba007/rune-infer/main/install.ps1 | iex
 ```
 
-The installer verifies SHA-256 checksums, places the binary in `~/.local/bin` (or `%LOCALAPPDATA%\Programs\rune-infer` on Windows), and configures your `PATH`. Re-running the script updates to the latest release.
+The installer verifies SHA-256 checksums, places `rune-infer[.exe]` directly in `~/rune` beside Kit, and adds that shared directory to user PATH at most once. Configuration and engine binaries live in `~/rune/infer`. Re-running updates only Infer. Legacy defaults are retained; [migration, overrides and release preparation](docs/INSTALLATION.md) describe validation and conflict handling.
 
-*Installer environment overrides:* `RUNE_VERSION` (e.g. `v0.4.0`), `RUNE_INSTALL_DIR`, `RUNE_REPO` (default `shba007/rune-infer`), `RUNE_BASE_URL` (for local mirrors), `RUNE_SKIP_VERIFY=1`, and `RUNE_NO_MODIFY_PATH=1` (Windows).
+*Installer environment overrides:* `RUNE_VERSION` (e.g. `v0.4.0`), `RUNE_INSTALL_DIR`, `RUNE_REPO` (default `shba007/rune-infer`), `RUNE_BASE_URL` (for local mirrors), `RUNE_SKIP_VERIFY=1`, and `RUNE_NO_MODIFY_PATH=1` (all platforms).
 
 ### Build from Source
 
@@ -149,7 +149,7 @@ Invocation: `rune-infer [OPTIONS] [COMMAND]`
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `-c, --config <CONFIG>` | String (path) | `./config/models.json` if present; else `~/.rune-infer/config/models.json` | Path to the `models.json` catalog file (schema 2). Global flag. |
+| `-c, --config <CONFIG>` | String (path) | `./config` in a dev checkout; else `~/rune/infer/config` | Explicit config directory, `server.json`, `catalog.json`, or legacy `models.json`. Overrides `RUNE_HOME`. Global flag. |
 | `--host <HOST>` | String | Value from `server.host` in config (`0.0.0.0`) | Host IP address to bind HTTP listener to. |
 | `-p, --port <PORT>` | u16 | Value from `server.port` in config (`8080`) | TCP port to bind HTTP listener to. |
 | `--max-loaded-models <N>` | usize | Value from `server.max_loaded_models` in config (`1`) | Maximum models kept loaded simultaneously in VRAM/RAM (`0` = unlimited). Triggers LRU eviction on overflow. |
@@ -446,7 +446,7 @@ The repository uses `.cargo-husky` to enforce:
 
 | Variable | Description | Default |
 |---|---|---|
-| `RUNE_HOME` | Working directory for `config/models.json`, `logs/`, `bin/`, and `.env` | `~/.rune-infer` (or local repo `./config` if present) |
+| `RUNE_HOME` | Infer-specific home for `config/server.json`, `config/catalog.json`, `logs/`, `bin/`, and `.env` | `~/rune/infer`; set value wins over local development config |
 | `RUNE_API_KEY` | Server API authentication key (checked if `server.api_key` is null) | — |
 | `LLAMA_SERVER_PATH` | Path to upstream `llama-server` binary override | `<home>/bin/llama-server` |
 | `SD_SERVER_PATH` | Path to `sd-server` binary override | `<home>/bin/sd-server` |

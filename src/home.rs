@@ -1,11 +1,12 @@
-//! Resolution of the Rune Infer home directory (`~/.rune-infer`) and the
+//! Resolution of the Rune Infer home directory (`~/rune/infer`) and the
 //! config file location.
 //!
 //! Layout inside the home directory (also used verbatim for a dev checkout,
 //! which keeps these paths relative to the current directory):
 //!
 //! ```text
-//! <home>/config/models.json   model catalog + server settings
+//! <home>/config/server.json   server settings
+//! <home>/config/catalog.json  model catalog
 //! <home>/.env                 secrets referenced from the config as {{VAR}}
 //! <home>/bin/                 auto-installed engine binaries
 //! <home>/logs/rune-infer.log  audit log
@@ -18,21 +19,30 @@ pub const DEFAULT_SERVER_REL: &str = "config/server.json";
 pub const DEFAULT_CATALOG_REL: &str = "config/catalog.json";
 pub const LEGACY_CONFIG_REL: &str = "config/models.json";
 
-/// `$RUNE_HOME`, else `~/.rune-infer`.
-pub fn rune_home() -> PathBuf {
+mod migration;
+pub(crate) use migration::migrate_legacy_home;
+
+/// `$RUNE_HOME`, else `~/rune/infer`; never fall back to the current directory.
+pub fn rune_home() -> std::io::Result<PathBuf> {
     if let Some(custom) = std::env::var_os(HOME_ENV).filter(|v| !v.is_empty()) {
-        return PathBuf::from(custom);
+        return Ok(absolutize(&std::env::current_dir()?, Path::new(&custom)));
     }
-    user_home().join(".rune-infer")
+    Ok(user_home()?.join("rune").join("infer"))
 }
 
-fn user_home() -> PathBuf {
+fn user_home() -> std::io::Result<PathBuf> {
     let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
     std::env::var_os(var)
         .filter(|v| !v.is_empty())
+        .or_else(|| std::env::var_os("HOME").filter(|v| !v.is_empty()))
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("."))
+        .filter(|p| p.is_absolute())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Cannot resolve the user home; set RUNE_HOME or use --config explicitly",
+            )
+        })
 }
 
 /// Where the process should treat as its working root.
@@ -54,12 +64,29 @@ impl Workspace {
     /// * `--config <path>` given: honoured as-is; root is inferred.
     /// * `RUNE_HOME` set: that folder.
     /// * `./config/server.json` or `./config/models.json` exists in current dir: dev checkout.
-    /// * otherwise `~/.rune-infer`.
+    /// * otherwise `~/rune/infer`.
     pub fn resolve(explicit_config: Option<&str>) -> std::io::Result<Self> {
         let cwd = std::env::current_dir()?;
+        let custom = std::env::var_os(HOME_ENV)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from);
+        // Home lookup is intentionally deferred so explicit paths work without it.
+        Self::resolve_at(
+            explicit_config,
+            &cwd,
+            custom.as_deref(),
+            user_home().ok().as_deref(),
+        )
+    }
 
+    fn resolve_at(
+        explicit_config: Option<&str>,
+        cwd: &Path,
+        custom: Option<&Path>,
+        user: Option<&Path>,
+    ) -> std::io::Result<Self> {
         if let Some(raw) = explicit_config {
-            let path = absolutize(&cwd, Path::new(raw));
+            let path = absolutize(cwd, Path::new(raw));
             if path.is_dir() {
                 let root = if path.file_name().is_some_and(|n| n == "config") {
                     path.parent().unwrap_or(&path).to_path_buf()
@@ -79,7 +106,7 @@ impl Workspace {
                 });
             }
 
-            let parent = path.parent().unwrap_or(&cwd).to_path_buf();
+            let parent = path.parent().unwrap_or(cwd).to_path_buf();
             let root = if parent.file_name().is_some_and(|n| n == "config") {
                 parent.parent().unwrap_or(&parent).to_path_buf()
             } else {
@@ -114,21 +141,33 @@ impl Workspace {
         }
 
         // An explicit RUNE_HOME always wins over implicit ./config detection.
-        let home_forced = std::env::var_os(HOME_ENV).is_some_and(|v| !v.is_empty());
+        let home_forced = custom.is_some();
         let local_server = cwd.join(DEFAULT_SERVER_REL);
         let local_catalog = cwd.join(DEFAULT_CATALOG_REL);
         let local_legacy = cwd.join(LEGACY_CONFIG_REL);
 
         if !home_forced && (local_server.exists() || local_legacy.exists()) {
             return Ok(Self {
-                root: cwd,
+                root: cwd.to_path_buf(),
                 server_path: local_server,
                 catalog_path: local_catalog,
                 legacy_config_path: local_legacy,
             });
         }
 
-        let root = rune_home();
+        let root = if let Some(custom) = custom {
+            absolutize(cwd, custom)
+        } else {
+            let user = user.filter(|p| p.is_absolute()).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Cannot resolve the user home; set RUNE_HOME or use --config explicitly",
+                )
+            })?;
+            let root = user.join("rune").join("infer");
+            migrate_legacy_home(&user.join(".rune-infer"), &root)?;
+            root
+        };
         Ok(Self {
             server_path: root.join("config").join("server.json"),
             catalog_path: root.join("config").join("catalog.json"),
@@ -162,5 +201,200 @@ fn absolutize(cwd: &Path, p: &Path) -> PathBuf {
         p.to_path_buf()
     } else {
         cwd.join(p)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "infer home spaces {}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+        fn legacy(&self) -> PathBuf {
+            let root = self.0.join(".rune-infer");
+            std::fs::create_dir_all(root.join("config/custom")).unwrap();
+            std::fs::write(root.join("config/server.json"), r#"{"schema_version":3,"server":{"host":"127.0.0.1","port":18083,"max_loaded_models":1,"idle_unload_seconds":300,"api_key":"{{INFER_MIGRATION_TEST_KEY}}"}}"#).unwrap();
+            std::fs::write(root.join("config/catalog.json"), r#"{"schema_version":3,"models":[{"id":"fixture","name":"Fixture","modality":"Text","engine":{"supported":["encoder"]},"local":{"path":"{{INFER_MIGRATION_MODEL_DIR}}/model.gguf"}}]}"#).unwrap();
+            std::fs::write(root.join(".env"), "INFER_MIGRATION_TEST_KEY=private-fixture-value\nINFER_MIGRATION_MODEL_DIR=models/../models\n").unwrap();
+            std::fs::write(root.join("config/custom/settings.txt"), "customization").unwrap();
+            for dir in ["models", "bin/engine", "logs", "unrelated-project"] {
+                std::fs::create_dir_all(root.join(dir)).unwrap();
+            }
+            std::fs::write(root.join("models/model.gguf"), "weights stay here").unwrap();
+            std::fs::write(root.join("bin/engine/server"), "engine").unwrap();
+            std::fs::write(root.join("logs/log.txt"), "history").unwrap();
+            std::fs::write(root.join("logs/.active_pids"), "do not copy").unwrap();
+            root
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn fresh_default_and_overrides_do_not_need_cwd_or_user_home_fallbacks() {
+        let f = Fixture::new();
+        let cwd = f.0.join("unrelated");
+        std::fs::create_dir(&cwd).unwrap();
+        let ws = Workspace::resolve_at(None, &cwd, None, Some(&f.0)).unwrap();
+        assert_eq!(ws.root, f.0.join("rune/infer"));
+        assert_eq!(ws.server_path, ws.root.join("config/server.json"));
+        let plan = crate::setup::SetupPlan {
+            exposure: crate::setup::Exposure::Local,
+            port: 18084,
+            server_api_key: None,
+            cloud: vec![],
+            local: vec![],
+            gpu_available: false,
+        };
+        crate::setup::write_setup(&plan, &ws.server_path, &ws.catalog_path, &ws.env_file())
+            .unwrap();
+        assert!(ws.config_exists());
+        assert_eq!(
+            crate::config::ModelRegistry::from_files(&ws.server_path, &ws.catalog_path)
+                .unwrap()
+                .server
+                .port,
+            18084
+        );
+        assert!(Workspace::resolve_at(None, &cwd, None, None).is_err());
+        let custom = f.0.join("custom infer");
+        let ws = Workspace::resolve_at(None, &cwd, Some(&custom), None).unwrap();
+        assert_eq!(ws.root, custom);
+        std::fs::create_dir_all(cwd.join("config")).unwrap();
+        std::fs::write(cwd.join("config/server.json"), "{}").unwrap();
+        assert_eq!(
+            Workspace::resolve_at(None, &cwd, None, None).unwrap().root,
+            cwd
+        );
+        assert_eq!(
+            Workspace::resolve_at(None, &cwd, Some(&custom), None)
+                .unwrap()
+                .root,
+            custom
+        );
+        std::fs::create_dir_all(f.0.join("explicit/config")).unwrap();
+        let path = f.0.join("explicit/config/server.json");
+        assert_eq!(
+            Workspace::resolve_at(Some(path.to_str().unwrap()), &cwd, Some(&custom), None)
+                .unwrap()
+                .root,
+            f.0.join("explicit")
+        );
+    }
+
+    #[test]
+    fn migration_preserves_settings_secrets_weights_and_customizations_and_repeats_safely() {
+        let f = Fixture::new();
+        let old = f.legacy();
+        let new = f.0.join("rune/infer");
+        std::fs::create_dir_all(f.0.join("rune/tools/plugins")).unwrap();
+        std::fs::write(f.0.join("rune/rune-kit.exe"), "kit").unwrap();
+        assert!(migrate_legacy_home(&old, &new).unwrap());
+        assert_eq!(
+            std::fs::read(old.join(".env")).unwrap(),
+            std::fs::read(new.join(".env")).unwrap()
+        );
+        let vars = vec![
+            (
+                "INFER_MIGRATION_TEST_KEY".into(),
+                "private-fixture-value".into(),
+            ),
+            (
+                "INFER_MIGRATION_MODEL_DIR".into(),
+                "models/../models".into(),
+            ),
+        ];
+        let registry = crate::config::ModelRegistry::from_files_with_env(
+            new.join("config/server.json"),
+            new.join("config/catalog.json"),
+            &vars,
+        )
+        .unwrap();
+        assert_eq!(registry.server.port, 18083);
+        assert_eq!(
+            Path::new(&registry.models[0].model_path)
+                .canonicalize()
+                .unwrap(),
+            old.canonicalize().unwrap().join("models/model.gguf")
+        );
+        assert!(Path::new(&registry.models[0].model_path).exists());
+        assert!(new.join("bin/engine/server").exists());
+        assert!(new.join("logs/log.txt").exists());
+        assert!(!new.join("logs/.active_pids").exists());
+        assert!(new.join("config/custom/settings.txt").exists());
+        assert!(!new.join("models").exists());
+        assert!(!new.join("unrelated-project").exists());
+        assert_eq!(
+            std::fs::read(f.0.join("rune/rune-kit.exe")).unwrap(),
+            b"kit"
+        );
+        std::fs::write(new.join("config/custom/settings.txt"), "new customization").unwrap();
+        assert!(!migrate_legacy_home(&old, &new).unwrap());
+        assert_eq!(
+            std::fs::read(new.join("config/custom/settings.txt")).unwrap(),
+            b"new customization"
+        );
+        std::fs::write(old.join("config/custom/changed.txt"), "late edit").unwrap();
+        assert!(migrate_legacy_home(&old, &new).is_err());
+        assert!(!new.join("config/custom/changed.txt").exists());
+    }
+
+    #[test]
+    fn conflicts_and_invalid_config_leave_originals_and_destination_untouched() {
+        let f = Fixture::new();
+        let old = f.legacy();
+        let new = f.0.join("rune/infer");
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(new.join(".env"), "destination secret").unwrap();
+        assert!(migrate_legacy_home(&old, &new).is_err());
+        assert_eq!(
+            std::fs::read(new.join(".env")).unwrap(),
+            b"destination secret"
+        );
+        let other = f.0.join("other/infer");
+        std::fs::write(old.join("config/catalog.json"), "private-broken-json").unwrap();
+        let err = migrate_legacy_home(&old, &other).unwrap_err().to_string();
+        assert!(!err.contains("private-broken-json"));
+        assert!(!other.exists());
+        assert!(old.join(".env").exists());
+    }
+
+    #[test]
+    fn unified_schema_two_is_converted_only_in_the_new_home() {
+        let f = Fixture::new();
+        let old = f.legacy();
+        let new = f.0.join("rune/infer");
+        let server: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(old.join("config/server.json")).unwrap())
+                .unwrap();
+        let catalog: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(old.join("config/catalog.json")).unwrap())
+                .unwrap();
+        std::fs::write(old.join("config/models.json"),serde_json::to_vec(&serde_json::json!({"schema_version":2,"server":server["server"],"models":catalog["models"]})).unwrap()).unwrap();
+        std::fs::remove_file(old.join("config/server.json")).unwrap();
+        std::fs::remove_file(old.join("config/catalog.json")).unwrap();
+        assert!(migrate_legacy_home(&old, &new).unwrap());
+        assert!(old.join("config/models.json").exists());
+        assert!(!old.join("config/server.json").exists());
+        assert!(new.join("config/server.json").exists());
+        assert!(!migrate_legacy_home(&old, &new).unwrap());
     }
 }

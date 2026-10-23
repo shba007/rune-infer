@@ -732,7 +732,7 @@ impl<'a> Wizard<'a> {
                     ])
                 };
                 lines.push(ok(format!("Platform: {} / {}", p.os, p.arch)));
-                lines.push(ok("Rune home:".into()));
+                lines.push(ok("Infer home (config/, bin/ and logs/):".into()));
                 lines.push(Line::styled(
                     format!("      {}", p.home.display()),
                     Style::new().fg(DIM),

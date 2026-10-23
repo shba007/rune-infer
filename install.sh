@@ -5,7 +5,7 @@
 #
 # Environment overrides:
 #   RUNE_VERSION      release tag to install (default: latest), e.g. v0.2.0
-#   RUNE_INSTALL_DIR  where to put the binary (default: ~/.local/bin)
+#   RUNE_INSTALL_DIR  where to put the binary (default: ~/rune)
 #   RUNE_REPO         GitHub repo (default: shba007/rune-infer)
 #   RUNE_BASE_URL     download base URL or local directory (mirrors / offline installs)
 #   RUNE_PLATFORM     force a platform name, e.g. linux-x64 (advanced)
@@ -14,7 +14,10 @@ set -eu
 
 REPO="${RUNE_REPO:-shba007/rune-infer}"
 VERSION="${RUNE_VERSION:-latest}"
-INSTALL_DIR="${RUNE_INSTALL_DIR:-$HOME/.local/bin}"
+if [ -z "${RUNE_INSTALL_DIR:-}" ]; then
+  case "${HOME:-}" in /*) ;; *) printf '%s\n' 'error: cannot resolve user home; set RUNE_INSTALL_DIR' >&2; exit 1 ;; esac
+fi
+INSTALL_DIR="${RUNE_INSTALL_DIR:-${HOME}/rune}"
 BIN="rune-infer"
 
 say()  { printf '%s\n' "$*"; }
@@ -83,7 +86,8 @@ sha256_of() {
 have tar || die "need tar to unpack the download"
 
 TMP=$(mktemp -d 2>/dev/null || mktemp -d -t rune-infer)
-trap 'rm -rf "$TMP"' EXIT INT TERM
+KEEP_TMP=0
+trap 'if [ "$KEEP_TMP" = 0 ]; then rm -rf "$TMP"; else warn "backup retained in $TMP"; fi' EXIT INT TERM
 
 say "Installing Rune Infer ($PLATFORM, $VERSION)..."
 fetch "$ARCHIVE" "$TMP/$ARCHIVE"
@@ -103,33 +107,51 @@ fi
 tar -xzf "$TMP/$ARCHIVE" -C "$TMP" || die "could not unpack $ARCHIVE"
 [ -f "$TMP/$BIN" ] || die "archive did not contain '$BIN'"
 
-mkdir -p "$INSTALL_DIR" || die "cannot create $INSTALL_DIR (set RUNE_INSTALL_DIR to a writable folder)"
-upgrade=0; [ -e "$INSTALL_DIR/$BIN" ] && upgrade=1
-# Write beside the target then rename, so a running instance is not corrupted.
-cp "$TMP/$BIN" "$INSTALL_DIR/$BIN.new" && chmod 755 "$INSTALL_DIR/$BIN.new" \
-  && mv -f "$INSTALL_DIR/$BIN.new" "$INSTALL_DIR/$BIN" \
-  || die "cannot write to $INSTALL_DIR"
+chmod 755 "$TMP/$BIN"
+candidate=$("$TMP/$BIN" --version) || die "downloaded executable did not start; installation unchanged"
+case "$candidate" in 'rune-infer '[0-9]*.[0-9]*.[0-9]*) ;; *) die "downloaded executable has an unexpected identity" ;; esac
+[ "$VERSION" = latest ] || [ "$candidate" = "rune-infer ${VERSION#v}" ] || die "downloaded executable does not match requested version"
+mkdir -p "$INSTALL_DIR" || die "cannot create $INSTALL_DIR (set RUNE_INSTALL_DIR)"
+upgrade=0
+[ ! -L "$INSTALL_DIR/$BIN" ] || die "destination is a link; it was not overwritten"
+if [ -e "$INSTALL_DIR/$BIN" ]; then
+  upgrade=1
+  prior=$("$INSTALL_DIR/$BIN" --version) || die "destination conflict: existing executable did not validate"
+  case "$prior" in 'rune-infer '[0-9]*.[0-9]*.[0-9]*) ;; *) die "destination conflict: existing file was not overwritten" ;; esac
+  cp -p "$INSTALL_DIR/$BIN" "$TMP/previous" || die "cannot preserve existing executable"
+fi
+# mktemp prevents overwriting an unrelated .new file or the other product.
+STAGED=$(mktemp "$INSTALL_DIR/.rune-infer-install.XXXXXX") || die "cannot stage executable"
+if ! { cp "$TMP/$BIN" "$STAGED" && chmod 755 "$STAGED" && mv -f "$STAGED" "$INSTALL_DIR/$BIN"; }; then
+  rm -f "$STAGED"
+  die "cannot install executable"
+fi
+installed=$("$INSTALL_DIR/$BIN" --version) || installed=''
+if [ "$installed" != "$candidate" ]; then
+  if [ "$upgrade" = 1 ]; then
+    if ! cp -p "$TMP/previous" "$INSTALL_DIR/$BIN"; then KEEP_TMP=1; die "cannot restore old executable; backup retained"; fi
+  else rm -f "$INSTALL_DIR/$BIN"; fi
+  die "installed executable failed validation; previous installation restored"
+fi
 
 if [ "$PLATFORM" != "${PLATFORM#macos}" ] && have xattr; then
   xattr -d com.apple.quarantine "$INSTALL_DIR/$BIN" 2>/dev/null || true
 fi
 
 if [ "$upgrade" = 1 ]; then say "Upgraded: $INSTALL_DIR/$BIN"; else say "Installed: $INSTALL_DIR/$BIN"; fi
-"$INSTALL_DIR/$BIN" --version 2>/dev/null || warn "installed binary did not start; run '$INSTALL_DIR/$BIN --version' to see why"
+say "$installed"
 
-case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
-  *)
-    say ""
-    say "$INSTALL_DIR is not on your PATH. Add it with:"
-    case "${SHELL:-}" in
-      */zsh)  say "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc && exec zsh" ;;
-      */fish) say "  fish_add_path $INSTALL_DIR" ;;
-      *)      say "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.profile && . ~/.profile" ;;
-    esac
-    ;;
-esac
-
+# Persistent PATH entry with a runtime guard; repeated installs and Kit coexistence
+# do not append another copy. Explicit opt-out leaves user profiles untouched.
+if [ "${RUNE_NO_MODIFY_PATH:-0}" != 1 ]; then
+  case "${HOME:-}" in /*) ;; *) die "cannot resolve home for PATH update; set RUNE_NO_MODIFY_PATH=1" ;; esac
+  case "${SHELL:-}" in */zsh) PROFILE="$HOME/.zprofile" ;; *) PROFILE="$HOME/.profile" ;; esac
+  quoted=$(printf '%s' "$INSTALL_DIR" | sed "s/'/'\\''/g")
+  if ! grep -Fq "$INSTALL_DIR" "$PROFILE" 2>/dev/null && ! { [ "$INSTALL_DIR" = "$HOME/rune" ] && grep -Fq '$HOME/rune' "$PROFILE" 2>/dev/null; }; then
+    printf '\n# Rune shared PATH\n_rune_path='\''%s'\''\ncase ":$PATH:" in *":$_rune_path:"*) ;; *) export PATH="$_rune_path:$PATH" ;; esac\nunset _rune_path\n' "$quoted" >> "$PROFILE"
+  fi
+fi
 say ""
-say "Next: run 'rune-infer' — a short setup wizard creates your config in ~/.rune-infer."
+say "Next: run 'rune-infer setup'; configuration lives in ${RUNE_HOME:-${HOME:-<user-home>}/rune/infer}/config."
+say "Legacy configuration is copied and validated on first launch; originals and old executable locations are retained."
 say "Optional: install FFmpeg for video input."

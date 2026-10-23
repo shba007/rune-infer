@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-10-23
+
+### Installation and migration
+
+- Install `rune-infer` directly in `~/rune` on Windows, Linux and macOS, alongside Kit without changing Kit files or `tools/`.
+- Store Infer configuration and runtime state in `~/rune/infer`; retain `RUNE_HOME`, `--config`, installation overrides and intentional development-checkout behavior. Library callers must handle the `io::Result` now returned by `rune_home()` when user-home resolution fails.
+- Copy and validate legacy `~/.rune-infer` configuration, environment, engines and logs before selecting the new home. Keep originals, refuse destination conflicts, and retain references to existing model weights without moving them. Resolve conflicts explicitly or set `RUNE_HOME` to the legacy home to continue using it.
+
+### Model compatibility
+
+- Recognize Omni model families and select projector capabilities from file metadata rather than family names. Attach the most capable matching projector and exclude audio companions and draft heads from model discovery.
+- Reject unsupported audio inputs and missing image/audio projectors before loading a model. Existing Omni changes have source regression coverage; live Omni audio/vision behavior and quality have not been validated by installation tests.
+
+### Release consistency
+
+- Generate release notes from this version's changelog section. CI checks changes without creating commits or pushing branches; the owner prepares the version, promotes to main and pushes the release tag before artifact publication.
+
 ## [0.7.0] - 2026-10-21
 
 ### 🚀 Features
