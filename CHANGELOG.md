@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Release consistency
 
-- Generate release notes from this version's changelog section. CI checks changes without creating commits or pushing branches; the owner prepares the version, promotes to main and pushes the release tag before artifact publication.
+- Prepare synchronized release versions and changelog entries automatically after validation, with one owner-reviewed release PR. Publish the matching changelog section after owner promotion to main; installers remain usable without Rust.
 
 ## [0.7.0] - 2026-10-21
 

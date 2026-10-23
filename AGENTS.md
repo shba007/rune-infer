@@ -381,16 +381,19 @@ Deferred: per-model request concurrency / parallel slots.
 
 ## 8. Working agreements
 
-- Implement and test locally; leave changes uncommitted. Do not stage, commit, push, merge, create tags, publish releases or dispatch publishing workflows. The owner performs those actions; this overrides older handoffs.
-- Prepare the version and its matching CHANGELOG section before the owner commits. New public descriptions cover user-visible behavior and migration, without internal planning identifiers. Preview with `python scripts/release_notes.py`; never regenerate release notes from Git history.
-- CI is read-only: it must not auto-commit formatting, bump versions, or push release branches. After owner promotion to main and an owner-created version tag push, release automation may publish that existing tag and its assets, using the exact changelog section. No automation creates source commits or pushes branches/tags.
+- Agents implement/test locally and leave changes unstaged and uncommitted. Agents must not commit, push, merge, tag, publish or dispatch publishing workflows. The human owner commits/pushes development work and reviews/merges release PRs.
+- GitHub Actions is authorized to calculate versions, update Cargo.toml/Cargo.lock/CHANGELOG.md and generated metadata, commit/push the dedicated release/update-version branch, open/update its PR targeting develop, and create tags/releases/artifacts after owner promotion. Do not use an AI service for release generation.
+- Use the Rust xtask (git-conventional, semver, toml_edit): `cargo test --locked --manifest-path xtask/Cargo.toml`, and `cargo run --locked --manifest-path xtask/Cargo.toml -- prepare`, `example` or `notes`. prepare defaults to a read-only preview. --apply writes release files only, never Git, and is reserved for CI/owner; agents do not use it on this working repository.
+- All valid semantic commit types may prepare releases; exclude routine release/autoformat bookkeeping, invalid commits, internal planning identifiers and placeholders. Preserve published history. Publication extracts the exact prepared version section, never new Git-history prose. One preparation PR is reused, with ci(release): update version as commit/title; .release/prepared.json prevents loops. All merge/release commits still receive tests.
+- Owner merges the preparation PR into develop (merge or squash), then promotes develop to main using a MERGE COMMIT titled ci(release): publish vX.Y.Z. Merging into develop alone does not publish. See docs/RELEASING.md for validation, tokens, PR events and artifact delivery.
+- Prefer Rust for new repository-owned release utilities and validation. Keep shell/PowerShell bootstrap installers usable without Rust; optional demo/visual tooling is outside this focused change.
 - Shared executables live directly in `<user-home>/rune`; Infer owns only its executable and `infer/` home. Do not modify Kit, `tools/`, plugin payloads, unrelated projects or model weights. `RUNE_HOME` remains Infer-specific. Default home migration preserves originals and refuses conflicts; see `docs/INSTALLATION.md`.
 
 - **Ask before adding new features or new dependencies/libraries.**
 - Targets: Windows + Linux + macOS. TUI stack is `ratatui` + `crossterm` +
   `tui-input` (approved); anything else new needs approval first.
 - Conventional commits (enforced by `.cargo-husky` hooks; changelog via
-  `git-cliff`/`cog`). Edition 2024, `rustfmt.toml` respected.
+  the Rust `xtask`). Edition 2024, `rustfmt.toml` respected.
 - Audit log goes to `logs/rune-infer.log`; payload bodies are never logged.
 - Build needs a C/C++ toolchain only if engines are built from source; FFmpeg
   must be on `PATH` for video input.

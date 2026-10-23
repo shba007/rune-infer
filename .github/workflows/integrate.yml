@@ -3,12 +3,17 @@ permissions:
   contents: read
 on:
   push:
-    branches: [develop]
+    branches: [develop, release/update-version]
   pull_request:
     branches: [develop, main]
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Validate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -17,13 +22,81 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            xtask -> target
       - run: cargo build --locked
       - run: cargo test --all-targets --locked
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo fmt --check
-      - run: python3 scripts/release_notes.py --output RELEASE_NOTES.md
-      - run: python3 -m unittest discover -s scripts/tests
+      - run: cargo test --locked --manifest-path xtask/Cargo.toml
+      - run: cargo clippy --locked --manifest-path xtask/Cargo.toml --all-targets -- -D warnings
+      - run: cargo fmt --manifest-path xtask/Cargo.toml --check
+      - run: cargo run --locked --manifest-path xtask/Cargo.toml -- notes --out RELEASE_NOTES.md
       - uses: actions/upload-artifact@v4
         with:
-          name: release-note-preview
+          name: release-note-preview-${{ matrix.os }}
           path: RELEASE_NOTES.md
+  prepare:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-preparation
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Refuse a stale validated source
+        env:
+          TESTED_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: xtask -> target
+      - name: Prepare deterministic release files
+        id: prepare
+        run: cargo run --locked --manifest-path xtask/Cargo.toml -- prepare --apply
+      - name: Validate generated release files
+        if: steps.prepare.outputs.prepared == 'true'
+        run: |
+          cargo run --locked --manifest-path xtask/Cargo.toml -- notes --out RELEASE_NOTES.md
+          cargo metadata --locked --no-deps --format-version 1 > /dev/null
+          cargo build --locked
+          cargo test --all-targets --locked
+          cargo test --locked --manifest-path xtask/Cargo.toml
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo fmt --check
+          git diff --check
+          git fetch origin develop
+          test "$(git rev-parse origin/develop)" = "$(git rev-parse HEAD)"
+      - name: Require branch push credential
+        if: steps.prepare.outputs.prepared == 'true'
+        env:
+          RELEASE_BRANCH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: ': "${RELEASE_BRANCH_TOKEN:?Configure GH_TOKEN with Contents write for branch pushes}"'
+      - name: Open or update the single preparation PR
+        if: steps.prepare.outputs.prepared == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch-token: ${{ secrets.GH_TOKEN }}
+          branch: release/update-version
+          base: develop
+          commit-message: 'ci(release): update version'
+          title: 'ci(release): update version'
+          body-path: RELEASE_NOTES.md
+          delete-branch: true
+          add-paths: |
+            Cargo.toml
+            Cargo.lock
+            CHANGELOG.md
+            .release/prepared.json

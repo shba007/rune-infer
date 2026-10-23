@@ -1,3 +1,5 @@
+# Historical generator configuration retained for reference. Active preparation
+# and publication use xtask; do not regenerate CHANGELOG.md with git-cliff.
 [changelog]
 header = """
 # Changelog\n

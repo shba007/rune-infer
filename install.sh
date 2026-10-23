@@ -146,8 +146,8 @@ say "$installed"
 if [ "${RUNE_NO_MODIFY_PATH:-0}" != 1 ]; then
   case "${HOME:-}" in /*) ;; *) die "cannot resolve home for PATH update; set RUNE_NO_MODIFY_PATH=1" ;; esac
   case "${SHELL:-}" in */zsh) PROFILE="$HOME/.zprofile" ;; *) PROFILE="$HOME/.profile" ;; esac
-  quoted=$(printf '%s' "$INSTALL_DIR" | sed "s/'/'\\''/g")
-  if ! grep -Fq "$INSTALL_DIR" "$PROFILE" 2>/dev/null && ! { [ "$INSTALL_DIR" = "$HOME/rune" ] && grep -Fq '$HOME/rune' "$PROFILE" 2>/dev/null; }; then
+  quoted=$(printf '%s' "$INSTALL_DIR" | sed "s/'/'\\\\''/g")
+  if ! grep -Fq "$INSTALL_DIR" "$PROFILE" 2>/dev/null && ! grep -Fq "_rune_path='$quoted'" "$PROFILE" 2>/dev/null && ! { [ "$INSTALL_DIR" = "$HOME/rune" ] && grep -Fq '$HOME/rune' "$PROFILE" 2>/dev/null; }; then
     printf '\n# Rune shared PATH\n_rune_path='\''%s'\''\ncase ":$PATH:" in *":$_rune_path:"*) ;; *) export PATH="$_rune_path:$PATH" ;; esac\nunset _rune_path\n' "$quoted" >> "$PROFILE"
   fi
 fi

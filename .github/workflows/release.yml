@@ -1,30 +1,42 @@
 name: Rust Release
-# Owner promotes to main, then explicitly creates and pushes the version tag.
-# Automation never creates source commits, branches or tags.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
 permissions:
   contents: write
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
 jobs:
   release:
+    if: >-
+      startsWith(github.event.head_commit.message, 'ci(release): publish v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Validate version, changelog and main ancestry
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: xtask -> target
+      - name: Validate owner promotion and exact prepared notes
+        id: release
         run: |
-          git merge-base --is-ancestor HEAD origin/main
-          python3 scripts/release_notes.py --version "$RELEASE_TAG" --output RELEASE_NOTES.md
-      - name: Publish the owner's existing tag
+          cargo run --locked --manifest-path xtask/Cargo.toml -- verify-promotion
+          cargo run --locked --manifest-path xtask/Cargo.toml -- notes --out RELEASE_NOTES.md
+          VERSION=$(cargo run --quiet --locked --manifest-path xtask/Cargo.toml -- version)
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          if git show-ref --verify --quiet "refs/tags/v$VERSION"; then
+            echo "Release tag already exists; historical releases are never replaced" >&2
+            exit 1
+          fi
+      - name: Publish prepared version after owner promotion
         env:
-          # Repository token lets release publication trigger deploy.yml.
+          # A PAT/App credential lets release.published trigger CD.
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          : "${GH_TOKEN:?Configure GH_TOKEN with release permission}"
-          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file RELEASE_NOTES.md
+          : "${GH_TOKEN:?Configure GH_TOKEN with Contents write for release publication}"
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes-file RELEASE_NOTES.md

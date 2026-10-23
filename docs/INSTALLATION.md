@@ -76,29 +76,24 @@ command; it is separate from automatic home migration.
 
 ## Release preparation
 
-The owner reviews and commits changes on develop, promotes to main, then creates
-and pushes the matching version tag. Agents must leave changes uncommitted and
-must not stage, commit, push, merge, create tags, publish or dispatch workflows.
+Agents leave changes unstaged and uncommitted. The owner commits/pushes development
+work. GitHub Actions prepares synchronized versions/changelog and opens the single
+release/update-version PR after successful develop validation. The owner merges
+that PR into develop, then promotes develop to main with a merge commit titled
+`ci(release): publish vX.Y.Z`. Main automation creates the tag and publishes the
+exact prepared changelog section. Merging into develop alone does not publish.
 
-Prepare Cargo.toml/Cargo.lock and the matching CHANGELOG section before committing.
-New public descriptions cover functionality, compatibility and migration, without
-internal planning labels. Preview without publishing:
+Preview without Git mutation or publication:
 
 ```text
-python scripts/release_notes.py --version v0.8.0 --output target/release-notes-preview.md
+cargo run --locked --manifest-path xtask/Cargo.toml -- prepare
+cargo run --locked --manifest-path xtask/Cargo.toml -- example
+cargo run --locked --manifest-path xtask/Cargo.toml -- notes
 ```
 
-The script extracts that exact version section; missing, empty, mismatched,
-duplicate or placeholder sections fail. CI uploads this preview and runs checks
-without writing source commits or pushing branches. The former formatting
-auto-commit and version-update PR/push steps have been removed.
-
-After the **owner** pushes an existing version tag on main, release automation
-checks main ancestry and version/changelog consistency and uses `gh release create
---verify-tag` with the preview file. It does not create tags. Repository `GH_TOKEN`
-must permit release publication and trigger the artifact workflow. Artifact upload
-does not overwrite existing assets. Historical releases, tags and changelog
-sections are not regenerated.
+See [RELEASING.md](RELEASING.md) for deterministic rules, merge strategy, validation,
+required tokens/settings and remaining optional non-Rust tools. Bootstrap installers
+need no Rust installation. Historical releases and changelog sections are preserved.
 
 The proposed 0.8.0 also includes the already committed Omni discovery/projector
 changes after 0.7.0. Installation regression tests do not validate live Omni audio,

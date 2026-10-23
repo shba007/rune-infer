@@ -405,7 +405,7 @@ rune-infer/
 │   └── proxy/             # Cloud provider adapters, rate limiting, retry queues
 ├── tests/                 # Integration and controller tests
 ├── .cargo-husky/          # Pre-commit secret scanning and formatting hooks
-├── cliff.toml             # git-cliff changelog generator configuration
+├── xtask/                 # Rust release preparation and validation
 └── cog.toml               # Cocogitto conventional commit validation
 ```
 
@@ -428,7 +428,7 @@ cargo fmt --all
 cog verify --file <commit-message-file>
 
 # Preview changelog generation
-git-cliff --unreleased
+cargo run --locked --manifest-path xtask/Cargo.toml -- prepare
 ```
 
 ### Git Hooks & Secret Scanning
