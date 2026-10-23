@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.8.0] - 2026-10-23
+## [0.8.0]
 
 ### Installation and migration
 
@@ -18,6 +18,17 @@ All notable changes to this project will be documented in this file.
 ### Release consistency
 
 - Prepare synchronized release versions and changelog entries automatically after validation, with one owner-reviewed release PR. Publish the matching changelog section after owner promotion to main; installers remain usable without Rust.
+
+### Features
+
+- add omni family detection and handling for multimodal models
+- introduce migration inference trial script for local inference post-migration
+- add xtask for release management and changelog generation
+- streamline CLI options for server commands and add global flags
+
+### Maintenance
+
+- model capabilities and projector handling for Omni families
 
 ## [0.7.0] - 2026-10-21
 
