@@ -469,3 +469,13 @@ Published under the [MIT](https://github.com/shba007/rune-infer/blob/main/LICENS
 <a href="https://github.com/shba007/rune-infer/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=shba007/rune-infer" alt="Contributors">
 </a>
+
+### Explicit server startup
+
+`rune-infer serve` starts the server with its dashboard on an interactive terminal.
+Use `rune-infer serve --headless` for CI/background operation. The existing bare
+`rune-infer` invocation remains supported. Server flags work before or after serve:
+`rune-infer serve --config /path/to/infer/config --port 8080 --headless`.
+Existing commands: `setup` creates configuration, `migrate --dry-run` previews a
+schema upgrade, `--help` lists options, and `--version` reports the version.
+See [Screen Insight integration](docs/SCREEN-INSIGHT.md) for the tested image API.

@@ -25,37 +25,39 @@ struct Args {
     #[arg(short, long, global = true)]
     config: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, global = true)]
     host: Option<String>,
 
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     port: Option<u16>,
 
     /// Max models kept loaded at once, 0 = unlimited [default: from config]
-    #[arg(long)]
+    #[arg(long, global = true)]
     max_loaded_models: Option<usize>,
 
     /// Unload a model after this many idle seconds, 0 = never [default: from config]
-    #[arg(long)]
+    #[arg(long, global = true)]
     idle_timeout: Option<u64>,
 
     /// Run as a plain server without the terminal dashboard (implied when there is no TTY)
-    #[arg(long)]
+    #[arg(long, global = true)]
     headless: bool,
 
     /// Allow binding to a non-localhost address without an API key (INSECURE)
-    #[arg(long)]
+    #[arg(long, global = true)]
     insecure_no_auth: bool,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Start the inference server (dashboard on a TTY; --headless for background use)
+    Serve,
     /// Run the interactive setup wizard (API keys, local models, engines)
     Setup,
     /// Upgrade a schema 1 models.json to the current schema (keeps a .v1.bak backup)
     Migrate {
         /// Show what would change without writing anything
-        #[arg(long)]
+        #[arg(long, global = true)]
         dry_run: bool,
     },
 }
@@ -375,4 +377,23 @@ async fn prepare(
     let port = args.port.unwrap_or(config.server.port);
     let listener = rune_infer::server::bind(&host, port).await?;
     Ok((config, listener, format!("{host}:{port}")))
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    #[test]
+    fn serve_accepts_global_server_options_and_legacy_launch() {
+        let args =
+            Args::try_parse_from(["rune-infer", "serve", "--headless", "--port", "8089"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Serve)));
+        assert!(args.headless);
+        assert_eq!(args.port, Some(8089));
+        assert!(
+            Args::try_parse_from(["rune-infer", "--headless"])
+                .unwrap()
+                .command
+                .is_none()
+        );
+    }
 }

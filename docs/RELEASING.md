@@ -11,7 +11,7 @@ promotion. No AI service is involved.
 1. Owner pushes reviewed conventional commits to `develop`. Rust CI validates the
    application and release utility on Linux and Windows: build, tests, Clippy,
    formatting, installer/migration fixtures and matching current release notes.
-   PRs targeting develop/main and pushes to release/update-version also validate.
+   Only develop pushes start integration/preparation; PR events and release-branch pushes do not duplicate it.
    There are no blanket exclusions for merge/release commits.
 2. Only a successful trusted develop push can run preparation, after **both**
    validation jobs. The serialized job refuses a stale tested source SHA. Rust
@@ -22,8 +22,7 @@ promotion. No AI service is involved.
 3. Actions commits/pushes only those four release files to the fixed branch
    `release/update-version`, targeting develop. Commit and PR title are exactly
    `ci(release): update version`. Re-runs update the same outstanding PR. No
-   releasable changes means no PR. The branch push receives ordinary Linux/Windows
-   validation, so generated changes are checked at their actual commit SHA too.
+   releasable changes means no PR. Generated changes are validated in this original preparation run before PR creation.
 4. Owner reviews the notes, versions and checks, then merges the preparation PR
    into develop. **Merge or squash is supported** for this preparation PR; its
    consumed source SHA remains an ancestor either way. Do not squash unrelated
@@ -124,14 +123,14 @@ explicitly; no secret values are logged.
 [GitHub's event rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
 restrict workflows from GITHUB_TOKEN events, and bot PR events can require
 approval. The [create-pull-request credential split](https://github.com/peter-evans/create-pull-request)
-lets the GH_TOKEN branch push start validation independently of bot PR approval.
-Generated-file checks also run before opening the PR. Owner approval may still be
-needed for its PR-event run; never assume bot PR creation validated the branch.
+separates PR API permissions from branch push permissions.
+Generated-file checks also run before opening the PR. PR events and release-branch pushes do not start integration. Review the original
+develop run and its generated-file checks; do not require a second PR-head run.
 
 Repository/org policy must allow Actions and the listed actions, allow Actions to
 create PRs, permit the release actor to update release/update-version, and permit
 the release actor to create tags/releases. Keep owner reviews and branch protection.
-Require the Linux/Windows validation checks; allow merge commits for main
+Align branch protection with develop-only validation; allow merge commits for main
 promotion. The release workflow itself creates no source commits on main/develop.
 No repository settings or secret values were changed. Live token scopes, workflow
 delivery, PR creation and publication require the owner's next reviewed push;
