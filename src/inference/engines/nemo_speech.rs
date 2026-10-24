@@ -150,7 +150,7 @@ impl NemoSpeechEngine {
         Ok(listener.local_addr()?.port())
     }
 
-    fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
+    pub(crate) fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
         let exe_name = if cfg!(windows) {
             "nemo-speech.exe"
         } else {

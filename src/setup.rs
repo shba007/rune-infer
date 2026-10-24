@@ -4,6 +4,11 @@
 //! This module is UI-agnostic (no terminal code) so it can be unit tested and
 //! reused by other front-ends; the interactive wizard lives in `tui::wizard`.
 
+mod local;
+#[cfg(test)]
+pub(crate) use local::prepare_local_models_with;
+pub use local::{LocalPreparationEvent, PreparedLocal, prepare_local_models, validate_local_files};
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -105,8 +110,69 @@ fn llama_server_installed(home: &Path) -> bool {
 
 /// Download (or locate) the upstream `llama-server` engine.
 pub fn install_llama_server() -> Result<PathBuf, String> {
-    use crate::inference::engines::llama_server::{RuntimeFlavor, install};
-    install::ensure_binary_installed(RuntimeFlavor::Upstream).map_err(|e| e.to_string())
+    install_engine(EngineKind::LlamaServer)
+}
+
+/// Install or reuse a selected external engine without starting a model process.
+/// Uses the same installation locations and resolvers as request-time loading.
+pub fn install_engine(engine: EngineKind) -> Result<PathBuf, String> {
+    use crate::inference::engines::{
+        audio::AudioEngine,
+        crispasr::CrispAsrEngine,
+        llama_server::{RuntimeFlavor, install},
+        needle::NeedleEngine,
+        nemo_speech::NemoSpeechEngine,
+        sd_server::SdServerEngine,
+    };
+    let result = match engine {
+        EngineKind::LlamaServer => install::ensure_binary_installed(RuntimeFlavor::Upstream),
+        EngineKind::LlamaServerPrism => install::ensure_binary_installed(RuntimeFlavor::Prism),
+        EngineKind::SdServer => SdServerEngine::ensure_binary_installed(),
+        EngineKind::AudioCpp => AudioEngine::ensure_binary_installed(),
+        EngineKind::NemoSpeech => NemoSpeechEngine::ensure_binary_installed(),
+        EngineKind::Crispasr => CrispAsrEngine::ensure_binary_installed(),
+        EngineKind::Needle => NeedleEngine::ensure_binary_installed(),
+        EngineKind::Encoder => return Err(
+            "encoder is built in; external installation does not validate its inference support"
+                .into(),
+        ),
+    };
+    let path = result.map_err(|error| format!("{engine}: {error}"))?;
+    if !path.is_file() {
+        return Err(format!(
+            "{engine}: installer did not provide an executable file at {}",
+            path.display()
+        ));
+    }
+    Ok(path)
+}
+
+/// Restrict newly configured models to the owner's one selected compatible engine.
+pub fn select_local_engines(
+    models: &[LocalCandidate],
+    choices: &[EngineKind],
+) -> Result<Vec<LocalCandidate>, String> {
+    if models.len() != choices.len() {
+        return Err("Choose one engine for every local model.".into());
+    }
+    models
+        .iter()
+        .zip(choices)
+        .map(|(model, engine)| {
+            if *engine == EngineKind::Encoder {
+                return Err("Synthetic encoder is not available in setup.".into());
+            }
+            if !model.engines.contains(engine) {
+                return Err(format!(
+                    "{} is not compatible with {engine}",
+                    model.display_name
+                ));
+            }
+            let mut selected = model.clone();
+            selected.engines = vec![*engine];
+            Ok(selected)
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

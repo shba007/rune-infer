@@ -23,7 +23,8 @@ use super::theme::{DIM, ERR, OK, WARN, centered, human_bytes, spinner, terminal_
 use crate::config::EngineKind;
 use crate::home::Workspace;
 use crate::setup::{
-    self, CloudChoice, Exposure, LocalCandidate, PROVIDERS, Prerequisites, SetupPlan,
+    self, CloudChoice, Exposure, LocalCandidate, LocalPreparationEvent, PROVIDERS, PreparedLocal,
+    Prerequisites, SetupPlan,
 };
 use crate::telemetry::UiEvent;
 use ratatui::style::Color;
@@ -86,9 +87,9 @@ enum LocalPhase {
 }
 
 enum EnginePhase {
-    Ask,
-    Installing(Receiver<Result<PathBuf, String>>),
-    Done(Result<PathBuf, String>),
+    Pick,
+    Installing(Receiver<LocalPreparationEvent>),
+    Done(Result<PreparedLocal, String>),
 }
 
 struct Wizard<'a> {
@@ -134,8 +135,11 @@ struct Wizard<'a> {
     chosen: Vec<LocalCandidate>,
     local_error: Option<String>,
 
-    // engine
+    // engine installation and real inference checks
     engine: EnginePhase,
+    engine_choices: Vec<EngineKind>,
+    engine_cursor: usize,
+    engine_status: String,
 
     // review
     review_error: Option<String>,
@@ -237,7 +241,10 @@ impl<'a> Wizard<'a> {
             local_cursor: 0,
             chosen: Vec::new(),
             local_error: None,
-            engine: EnginePhase::Ask,
+            engine: EnginePhase::Pick,
+            engine_choices: Vec::new(),
+            engine_cursor: 0,
+            engine_status: String::new(),
             review_error: None,
         }
     }
@@ -275,10 +282,27 @@ impl<'a> Wizard<'a> {
                 };
             }
         }
+        let mut finished = None;
         if let EnginePhase::Installing(rx) = &self.engine {
-            if let Ok(res) = rx.try_recv() {
-                self.engine = EnginePhase::Done(res);
+            loop {
+                match rx.try_recv() {
+                    Ok(LocalPreparationEvent::Progress(status)) => self.engine_status = status,
+                    Ok(LocalPreparationEvent::Finished(result)) => {
+                        finished = Some(result);
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        finished = Some(Err(
+                            "Engine check worker stopped unexpectedly. Retry or go back.".into(),
+                        ));
+                        break;
+                    }
+                }
             }
+        }
+        if let Some(result) = finished {
+            self.engine = EnginePhase::Done(result);
         }
     }
 
@@ -289,18 +313,14 @@ impl<'a> Wizard<'a> {
     }
 
     fn engine_needed(&self) -> bool {
-        self.chosen
-            .iter()
-            .any(|c| c.engine() == EngineKind::LlamaServer)
-            && self
-                .prereq
-                .as_ref()
-                .is_some_and(|p| !p.llama_server_installed)
+        !self.chosen.is_empty()
     }
 
     fn next_after_local(&mut self) {
         if self.engine_needed() {
-            self.engine = EnginePhase::Ask;
+            self.engine_choices = self.chosen.iter().map(LocalCandidate::engine).collect();
+            self.engine_cursor = 0;
+            self.engine = EnginePhase::Pick;
             self.go(Step::Engine);
         } else {
             self.next_after_engine();
@@ -552,7 +572,14 @@ impl<'a> Wizard<'a> {
                         }
                         Ok(d) => {
                             // Models that still need companion files start unticked.
-                            self.picks = d.models.iter().map(|c| c.is_ready()).collect();
+                            self.picks = d
+                                .models
+                                .iter()
+                                .map(|c| {
+                                    c.is_ready()
+                                        && c.engines.iter().any(|e| *e != EngineKind::Encoder)
+                                })
+                                .collect();
                             self.candidates = d.models;
                             self.skipped = d.skipped;
                             self.local_cursor = 0;
@@ -566,65 +593,123 @@ impl<'a> Wizard<'a> {
                     self.path_input.handle_event(&Event::Key(k));
                 }
             },
-            LocalPhase::Pick => match k.code {
-                KeyCode::Esc => self.local_phase = LocalPhase::Path,
-                KeyCode::Up => self.local_cursor = self.local_cursor.saturating_sub(1),
-                KeyCode::Down => {
-                    self.local_cursor = (self.local_cursor + 1).min(self.candidates.len() - 1)
-                }
-                KeyCode::Char(' ') => {
-                    self.picks[self.local_cursor] = !self.picks[self.local_cursor]
-                }
-                KeyCode::Char('a') => {
-                    let all = self.picks.iter().all(|p| *p);
-                    self.picks.iter_mut().for_each(|p| *p = !all);
-                }
-                KeyCode::Enter => {
-                    for (c, picked) in self.candidates.iter().zip(&self.picks) {
-                        if *picked && !self.chosen.iter().any(|x| x.path == c.path) {
-                            self.chosen.push(c.clone());
-                        }
+            LocalPhase::Pick => {
+                match k.code {
+                    KeyCode::Esc => self.local_phase = LocalPhase::Path,
+                    KeyCode::Up => self.local_cursor = self.local_cursor.saturating_sub(1),
+                    KeyCode::Down => {
+                        self.local_cursor = (self.local_cursor + 1).min(self.candidates.len() - 1)
                     }
-                    self.path_input = Input::default();
-                    self.local_phase = LocalPhase::Path;
-                }
-                _ => {}
-            },
-        }
-    }
-
-    fn key_engine(&mut self, k: KeyEvent) {
-        match &self.engine {
-            EnginePhase::Ask => match k.code {
-                KeyCode::Enter | KeyCode::Char('y') => {
-                    let (tx, rx) = channel();
-                    std::thread::spawn(move || {
-                        let _ = tx.send(setup::install_llama_server());
-                    });
-                    self.engine = EnginePhase::Installing(rx);
-                }
-                KeyCode::Char('n') => self.next_after_engine(),
-                KeyCode::Esc => self.go(Step::Local),
-                _ => {}
-            },
-            EnginePhase::Installing(_) => {}
-            EnginePhase::Done(_) => {
-                if matches!(k.code, KeyCode::Enter) {
-                    self.next_after_engine();
+                    KeyCode::Char(' ') => {
+                        self.picks[self.local_cursor] = !self.picks[self.local_cursor]
+                    }
+                    KeyCode::Char('a') => {
+                        let all = self.picks.iter().all(|p| *p);
+                        self.picks.iter_mut().for_each(|p| *p = !all);
+                    }
+                    KeyCode::Enter => {
+                        for (c, picked) in self.candidates.iter().zip(&self.picks) {
+                            if *picked && !self.chosen.iter().any(|x| x.path == c.path) {
+                                let mut c = c.clone();
+                                c.engines.retain(|engine| *engine != EngineKind::Encoder);
+                                if c.engines.is_empty() {
+                                    self.local_error = Some("This model has no real inference engine available in setup.".into());
+                                    return;
+                                }
+                                self.chosen.push(c);
+                            }
+                        }
+                        self.path_input = Input::default();
+                        self.local_phase = LocalPhase::Path;
+                    }
+                    _ => {}
                 }
             }
         }
     }
 
-    fn plan(&self) -> SetupPlan {
-        SetupPlan {
+    fn begin_engine_install(&mut self) {
+        if self.prereq.is_none() {
+            self.engine = EnginePhase::Done(Err(
+                "System check is still running. Retry once it completes.".into(),
+            ));
+            return;
+        }
+        let models = match setup::select_local_engines(&self.chosen, &self.engine_choices) {
+            Ok(models) => models,
+            Err(error) => {
+                self.engine = EnginePhase::Done(Err(error));
+                return;
+            }
+        };
+        let (tx, rx) = channel();
+        let gpu = self.gpu_available();
+        std::thread::spawn(move || {
+            let result = setup::prepare_local_models(&models, gpu, |status| {
+                let _ = tx.send(LocalPreparationEvent::Progress(status));
+            });
+            let _ = tx.send(LocalPreparationEvent::Finished(result));
+        });
+        self.engine_status = "Checking local model files".into();
+        self.engine = EnginePhase::Installing(rx);
+    }
+
+    fn key_engine(&mut self, k: KeyEvent) {
+        match &self.engine {
+            EnginePhase::Pick => match k.code {
+                KeyCode::Up => self.engine_cursor = self.engine_cursor.saturating_sub(1),
+                KeyCode::Down => {
+                    self.engine_cursor =
+                        (self.engine_cursor + 1).min(self.chosen.len().saturating_sub(1))
+                }
+                KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') => {
+                    if let Some(model) = self.chosen.get(self.engine_cursor) {
+                        if let Some(choice) = self.engine_choices.get_mut(self.engine_cursor) {
+                            let index = model
+                                .engines
+                                .iter()
+                                .position(|engine| engine == choice)
+                                .unwrap_or(0);
+                            let next = if k.code == KeyCode::Left {
+                                (index + model.engines.len() - 1) % model.engines.len()
+                            } else {
+                                (index + 1) % model.engines.len()
+                            };
+                            *choice = model.engines[next];
+                        }
+                    }
+                }
+                KeyCode::Enter => self.begin_engine_install(),
+                KeyCode::Esc => self.go(Step::Local),
+                _ => {}
+            },
+            EnginePhase::Installing(_) => {}
+            EnginePhase::Done(Ok(_)) => {
+                if k.code == KeyCode::Enter {
+                    self.next_after_engine();
+                } else if k.code == KeyCode::Esc {
+                    self.engine = EnginePhase::Pick;
+                }
+            }
+            EnginePhase::Done(Err(_)) => {
+                if k.code == KeyCode::Enter {
+                    self.begin_engine_install();
+                } else if k.code == KeyCode::Esc {
+                    self.engine = EnginePhase::Pick;
+                }
+            }
+        }
+    }
+
+    fn plan(&self) -> Result<SetupPlan, String> {
+        Ok(SetupPlan {
             exposure: self.exposure,
             port: self.port.value().trim().parse().unwrap_or(8080),
             server_api_key: self.server_key.clone(),
             cloud: self.cloud_done.clone(),
-            local: self.chosen.clone(),
+            local: setup::select_local_engines(&self.chosen, &self.engine_choices)?,
             gpu_available: self.gpu_available(),
-        }
+        })
     }
 
     fn key_review(&mut self, k: KeyEvent) -> Flow {
@@ -634,7 +719,6 @@ impl<'a> Wizard<'a> {
                 if self.sources[1] {
                     self.go(Step::Cloud);
                 } else if self.engine_needed() {
-                    self.engine = EnginePhase::Ask;
                     self.go(Step::Engine)
                 } else {
                     self.go(Step::Local)
@@ -645,8 +729,38 @@ impl<'a> Wizard<'a> {
                     self.review_error = Some("Configure at least one model before saving.".into());
                     return Flow::Stay;
                 }
+                if !self.chosen.is_empty() && !matches!(self.engine, EnginePhase::Done(Ok(_))) {
+                    self.review_error = Some(
+                        "Install and smoke-test every selected local model before saving.".into(),
+                    );
+                    return Flow::Stay;
+                }
+                let plan = match self.plan() {
+                    Ok(plan) => plan,
+                    Err(error) => {
+                        self.review_error = Some(error);
+                        return Flow::Stay;
+                    }
+                };
+                if !plan.local.is_empty() {
+                    match &self.engine {
+                        EnginePhase::Done(Ok(prepared)) => {
+                            if let Err(error) = prepared.validate(&plan.local, plan.gpu_available) {
+                                self.review_error = Some(error);
+                                return Flow::Stay;
+                            }
+                        }
+                        _ => {
+                            self.review_error = Some(
+                                "Every local model must pass a real inference check before saving."
+                                    .into(),
+                            );
+                            return Flow::Stay;
+                        }
+                    }
+                }
                 match setup::write_setup(
-                    &self.plan(),
+                    &plan,
                     &self.ws.server_path,
                     &self.ws.catalog_path,
                     &self.ws.env_file(),
@@ -779,10 +893,23 @@ impl<'a> Wizard<'a> {
                     add("Esc", "back");
                 }
             },
-            Step::Engine => {
-                add("Enter", "download");
-                add("n", "skip");
-            }
+            Step::Engine => match &self.engine {
+                EnginePhase::Pick => {
+                    add("Up/Down", "model");
+                    add("Left/Right", "engine");
+                    add("Enter", "install & check");
+                    add("Esc", "back");
+                }
+                EnginePhase::Installing(_) => {}
+                EnginePhase::Done(Ok(_)) => {
+                    add("Enter", "continue");
+                    add("Esc", "engine choices");
+                }
+                EnginePhase::Done(Err(_)) => {
+                    add("Enter", "retry");
+                    add("Esc", "engine choices");
+                }
+            },
             Step::Review => {
                 add("Enter", "save & start");
                 add("Esc", "back");
@@ -1124,65 +1251,87 @@ impl<'a> Wizard<'a> {
     }
 
     fn draw_engine(&self, f: &mut Frame, area: Rect) {
-        let mut lines = vec![Line::from("")];
+        let mut lines = vec![
+            Line::from("Choose one compatible engine for each local model."),
+            Line::from(""),
+        ];
+        let height = area.height.saturating_sub(10).max(1) as usize;
+        let start = self.engine_cursor.saturating_sub(height.saturating_sub(1));
+        for (i, model) in self.chosen.iter().enumerate().skip(start).take(height) {
+            let selected = self.engine_choices.get(i).copied();
+            lines.push(Line::styled(
+                format!(
+                    "{} {} · {}",
+                    if i == self.engine_cursor { ">" } else { " " },
+                    model.display_name,
+                    selected
+                        .map(|engine| engine.as_str())
+                        .unwrap_or("choose an engine")
+                ),
+                Style::new().fg(if i == self.engine_cursor { ACCENT } else { DIM }),
+            ));
+        }
+        if let Some(model) = self.chosen.get(self.engine_cursor) {
+            lines.push(Line::styled(
+                format!(
+                    "Compatible: {}",
+                    model
+                        .engines
+                        .iter()
+                        .map(|engine| engine.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                Style::new().fg(DIM),
+            ));
+        }
+        lines.push(Line::from(""));
         match &self.engine {
-            EnginePhase::Ask => {
-                lines.push(Line::from(
-                    "  Local GGUF models run on the llama.cpp `llama-server` engine.",
-                ));
-                lines.push(Line::from(
-                    "  Download it now so your first request doesn't have to wait?",
-                ));
-                lines.push(Line::styled(
-                    "  (Skip to download automatically on first use instead.)",
-                    Style::new().fg(DIM),
-                ));
-            }
+            EnginePhase::Pick => lines.push(Line::from(
+                "Enter installs selected engines, then loads and smoke-tests each model in turn.",
+            )),
             EnginePhase::Installing(_) => {
-                lines.push(Line::styled(
-                    format!(
-                        "  {} downloading llama-server… this can take a minute",
-                        spinner(self.tick)
-                    ),
-                    Style::new().fg(WARN),
-                ));
-                lines.push(Line::from(""));
-                for l in &self.log_tail {
-                    lines.push(Line::styled(format!("  {l}"), Style::new().fg(DIM)));
+                lines.push(Line::from(format!(
+                    "{} {}",
+                    spinner(self.tick),
+                    self.engine_status
+                )));
+                for line in self.log_tail.iter().rev().take(2).rev() {
+                    lines.push(Line::styled(line.as_str(), Style::new().fg(DIM)));
                 }
             }
-            EnginePhase::Done(Ok(p)) => {
-                lines.push(Line::styled(
-                    format!("  ✓ Installed at {}", p.display()),
-                    Style::new().fg(OK),
-                ));
-                lines.push(Line::styled(
-                    "  Press Enter to continue.",
-                    Style::new().fg(DIM),
-                ));
+            EnginePhase::Done(Ok(installed)) => {
+                lines.push(Line::from(format!(
+                    "● {} engine(s) installed; all selected models passed inference. Enter to continue.",
+                    installed.engines.len()
+                )));
             }
-            EnginePhase::Done(Err(e)) => {
+            EnginePhase::Done(Err(error)) => {
                 lines.push(Line::styled(
-                    format!("  ✗ Download failed: {e}"),
+                    format!("Failed: {error}"),
                     Style::new().fg(ERR),
                 ));
-                lines.push(Line::from("  Not fatal — it will retry on the first request (check your network or set GH_TOKEN)."));
-                lines.push(Line::styled(
-                    "  Press Enter to continue.",
-                    Style::new().fg(DIM),
+                lines.push(Line::from(
+                    "Enter retries. Esc returns to engine selection.",
                 ));
             }
         }
         f.render_widget(
             Paragraph::new(lines)
                 .wrap(Wrap { trim: false })
-                .block(panel(" Engine ")),
+                .block(panel(" Engines ")),
             area,
         );
     }
 
     fn draw_review(&self, f: &mut Frame, area: Rect) {
-        let p = self.plan();
+        let p = match self.plan() {
+            Ok(plan) => plan,
+            Err(error) => {
+                f.render_widget(Paragraph::new(error).style(Style::new().fg(ERR)), area);
+                return;
+            }
+        };
         let bullet = |s: String| {
             Line::from(vec![
                 Span::styled("  • ", Style::new().fg(ACCENT)),
@@ -1392,7 +1541,23 @@ mod tests {
         render_all_sizes(&w);
         w.on_key(key(KeyCode::Enter));
         assert_eq!(w.chosen.len(), 1);
-        // Empty path => continue (prerequisites unknown in test => Review)
+        // Every local selection must pass installation and inference checks.
+        w.on_key(key(KeyCode::Enter));
+        assert!(w.step == Step::Engine);
+        render_all_sizes(&w);
+        let models = setup::select_local_engines(&w.chosen, &w.engine_choices).unwrap();
+        let fake_binary = ws.root.join("fixture-engine");
+        std::fs::write(&fake_binary, "fixture engine").unwrap();
+        let prepared = setup::prepare_local_models_with(
+            &models,
+            w.gpu_available(),
+            |_| Ok(fake_binary.clone()),
+            |_| Ok(()),
+            |_| {},
+        )
+        .unwrap();
+        w.engine = EnginePhase::Done(Ok(prepared));
+        render_all_sizes(&w);
         w.on_key(key(KeyCode::Enter));
         assert!(w.step == Step::Review);
         render_all_sizes(&w);
@@ -1509,6 +1674,48 @@ mod tests {
         w.next_after_local();
         assert!(w.step == Step::Review);
         std::fs::remove_dir_all(&ws.root).unwrap();
+    }
+
+    #[test]
+    fn local_engine_choice_failure_progress_and_ready_save_guard() {
+        let ws = temp_ws();
+        crate::detect::testing::Gguf::llm("llama", "Tiny").write(&ws.root.join("tiny.gguf"));
+        let (_tx, rx) = channel();
+        let mut w = Wizard::new(&ws, rx);
+        w.sources = [true, false];
+        w.chosen = setup::discover_models(&ws.root).unwrap().models;
+        w.chosen[0].engines.push(EngineKind::LlamaServerPrism);
+        w.next_after_local();
+        w.on_key(key(KeyCode::Right));
+        assert_eq!(w.engine_choices, [EngineKind::LlamaServerPrism]);
+        assert_eq!(
+            w.plan().unwrap().local[0].engines,
+            [EngineKind::LlamaServerPrism]
+        );
+        w.step = Step::Review;
+        assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Stay));
+        assert!(!ws.catalog_path.exists());
+        w.step = Step::Engine;
+        w.engine = EnginePhase::Done(Err("download failed".into()));
+        render_all_sizes(&w);
+        w.on_key(key(KeyCode::Char('n')));
+        assert!(w.step == Step::Engine);
+        w.on_key(key(KeyCode::Esc));
+        assert!(matches!(w.engine, EnginePhase::Pick));
+        let (tx, rx) = channel();
+        w.engine = EnginePhase::Installing(rx);
+        tx.send(LocalPreparationEvent::Progress("Loading Tiny".into()))
+            .unwrap();
+        w.poll_workers();
+        assert_eq!(w.engine_status, "Loading Tiny");
+        render_all_sizes(&w);
+        tx.send(LocalPreparationEvent::Finished(Err(
+            "inference failed".into()
+        )))
+        .unwrap();
+        w.poll_workers();
+        assert!(matches!(w.engine, EnginePhase::Done(Err(_))));
+        std::fs::remove_dir_all(ws.root).unwrap();
     }
 
     struct ModelRegistryProbe(usize);

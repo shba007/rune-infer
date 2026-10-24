@@ -27,10 +27,22 @@ pub struct AudioEngine {
     id: String,
     bin_path: PathBuf,
     model_path: PathBuf,
+    allow_synthetic_fallback: bool,
 }
 
 impl AudioEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
+        Self::new_with_fallback(model, true)
+    }
+
+    pub(crate) fn new_for_setup(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
+        Self::new_with_fallback(model, false)
+    }
+
+    fn new_with_fallback(
+        model: &ModelConfig,
+        allow_synthetic_fallback: bool,
+    ) -> Result<Self, Box<dyn Error>> {
         let model_path = PathBuf::from(&model.model_path);
         if !model_path.exists() {
             return Err(format!("Audio model file not found at: {}", model_path.display()).into());
@@ -43,7 +55,7 @@ impl AudioEngine {
 
         let bin_path = match Self::ensure_binary_installed() {
             Ok(p) => p,
-            Err(e) if is_mock => {
+            Err(e) if is_mock && allow_synthetic_fallback => {
                 tracing::warn!("[AudioEngine] Using fallback binary path for mock test model: {e}");
                 let exe_name = if cfg!(windows) {
                     "audiocpp_cli.exe"
@@ -80,6 +92,7 @@ impl AudioEngine {
             id: model.id.clone(),
             bin_path: abs_bin_path,
             model_path: abs_model_path,
+            allow_synthetic_fallback,
         })
     }
 
@@ -102,7 +115,7 @@ impl AudioEngine {
         }
     }
 
-    fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
+    pub(crate) fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
         let exe_name = if cfg!(windows) {
             "audiocpp_cli.exe"
         } else {
@@ -556,7 +569,7 @@ impl InferenceEngine for AudioEngine {
                             };
 
                             // For mock test paths (e.g. CI running with Cargo.toml as dummy weights), provide a fallback
-                            if is_mock {
+                            if is_mock && self.allow_synthetic_fallback {
                                 transcript = prompt
                                     .clone()
                                     .unwrap_or_else(|| "Test audio transcription".to_string());
@@ -571,7 +584,7 @@ impl InferenceEngine for AudioEngine {
                         }
                     }
                     Err(e) => {
-                        if is_mock {
+                        if is_mock && self.allow_synthetic_fallback {
                             tracing::warn!(
                                 "[AudioEngine] Failed to spawn audiocpp_cli ASR (mock fallback): {e}"
                             );
@@ -585,7 +598,7 @@ impl InferenceEngine for AudioEngine {
                     }
                 }
 
-                if transcript.is_empty() && is_mock {
+                if transcript.is_empty() && is_mock && self.allow_synthetic_fallback {
                     transcript = prompt
                         .clone()
                         .unwrap_or_else(|| "Test audio transcription".to_string());
@@ -728,7 +741,7 @@ impl InferenceEngine for AudioEngine {
                                 format!("Process exited with status {:?}", out.status.code())
                             };
 
-                            if is_mock {
+                            if is_mock && self.allow_synthetic_fallback {
                                 raw_turns.push(RawTurn {
                                     start_sample: 0,
                                     end_sample: 16000,
@@ -746,7 +759,7 @@ impl InferenceEngine for AudioEngine {
                         }
                     }
                     Err(e) => {
-                        if is_mock {
+                        if is_mock && self.allow_synthetic_fallback {
                             tracing::warn!(
                                 "[AudioEngine] Failed to spawn audiocpp_cli diarization (mock fallback): {e}"
                             );
@@ -892,6 +905,26 @@ impl InferenceEngine for AudioEngine {
                     backend_flag
                 );
 
+                if !self.allow_synthetic_fallback {
+                    let result = match cmd.output() {
+                        Ok(output) if output.status.success() => {
+                            std::fs::read(&output_wav_path).map_err(|e| e.to_string())
+                        }
+                        Ok(output) => Err(format!(
+                            "audio.cpp TTS failed: {}",
+                            String::from_utf8_lossy(&output.stderr).trim()
+                        )),
+                        Err(error) => Err(format!("audio.cpp could not start: {error}")),
+                    };
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                    return result
+                        .map(|bytes| InferenceOutput {
+                            response: InferenceTaskResponse::Audio(bytes),
+                            usage: Usage::default(),
+                        })
+                        .map_err(Into::into);
+                }
+
                 let audio_data = match cmd.output() {
                     Ok(out) if out.status.success() && output_wav_path.exists() => {
                         std::fs::read(&output_wav_path).unwrap_or_else(|_| {
@@ -985,5 +1018,31 @@ mod tests {
         } else {
             panic!("Expected transcription response");
         }
+    }
+}
+
+#[cfg(test)]
+mod strict_setup_tests {
+    use super::*;
+
+    #[test]
+    fn strict_tts_check_never_substitutes_synthetic_audio() {
+        let engine = AudioEngine {
+            id: "rune-setup-check".into(),
+            bin_path: std::env::temp_dir().join(format!(
+                "absent-engine-{}",
+                crate::setup::generate_api_key()
+            )),
+            model_path: PathBuf::from("fixture.gguf"),
+            allow_synthetic_fallback: false,
+        };
+        let task = InferenceTaskRequest::AudioSpeech {
+            input: "Hello".into(),
+            voice: None,
+            response_format: Some("wav".into()),
+            speed: None,
+        };
+        let error = engine.execute(&task, None).unwrap_err().to_string();
+        assert!(error.contains("could not start"));
     }
 }

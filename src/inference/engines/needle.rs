@@ -29,7 +29,7 @@ impl NeedleEngine {
         })
     }
 
-    fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
+    pub(crate) fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
         let base_dir = PathBuf::from("bin").join("needle");
         let exe_name = if cfg!(windows) {
             "needle.exe"
