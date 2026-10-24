@@ -3,6 +3,13 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.10.1](https://github.com/shba007/rune-infer/compare/v0.10.0..v0.10.1) - 2026-10-24
+
+#### 🚜 Refactoring
+- setup wizard and improve CLI experience - ([b70cdcb](https://github.com/shba007/rune-infer/commit/b70cdcb8d62a83eddd365e260867dd1e87e166de)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.10.0](https://github.com/shba007/rune-infer/compare/v0.9.0..v0.10.0) - 2026-10-24
 
 #### 🚀 Features
