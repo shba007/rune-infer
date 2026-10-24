@@ -296,3 +296,62 @@ fn prepared_note_receipt_rejects_post_preparation_changes() {
     };
     assert!(infer_xtask::validate_note_receipt(&invalid, &plan.notes).is_err());
 }
+
+#[test]
+fn release_merge_classifier_never_skips_source_or_dependency_changes() {
+    let manifest =
+        "[package]\nname=\"rune-infer\"\nversion=\"0.7.0\"\n[dependencies]\nserde=\"1\"\n";
+    let lock = "version=4\n[[package]]\nname=\"rune-infer\"\nversion=\"0.7.0\"\n[[package]]\nname=\"serde\"\nversion=\"1.0.0\"\n";
+    let next_manifest = manifest.replace("0.7.0", "0.8.0");
+    let next_lock = lock.replace("0.7.0", "0.8.0");
+    let files = [
+        "Cargo.toml",
+        "Cargo.lock",
+        "CHANGELOG.md",
+        ".release/prepared.json",
+    ];
+    assert!(
+        infer_xtask::release_metadata_only(&files, manifest, &next_manifest, lock, &next_lock)
+            .unwrap()
+    );
+    assert!(
+        !infer_xtask::release_metadata_only(
+            &["src/main.rs", ".release/prepared.json"],
+            manifest,
+            &next_manifest,
+            lock,
+            &next_lock
+        )
+        .unwrap()
+    );
+    assert!(
+        !infer_xtask::release_metadata_only(
+            &files,
+            manifest,
+            &next_manifest.replace("serde=\"1\"", "serde=\"2\""),
+            lock,
+            &next_lock
+        )
+        .unwrap()
+    );
+    assert!(
+        !infer_xtask::release_metadata_only(
+            &files,
+            manifest,
+            &next_manifest,
+            lock,
+            &next_lock.replace("1.0.0", "1.0.1")
+        )
+        .unwrap()
+    );
+    assert!(
+        !infer_xtask::release_metadata_only(
+            &["Cargo.toml"],
+            manifest,
+            &next_manifest,
+            lock,
+            &next_lock
+        )
+        .unwrap()
+    );
+}

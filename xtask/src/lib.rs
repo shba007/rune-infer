@@ -433,3 +433,76 @@ pub fn validate_note_receipt(state: &State, notes: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// Release PR merges have already been tested in preparation. Only skip their
+/// generated metadata: dependency/source changes must still receive normal CI.
+pub fn release_metadata_only(
+    paths: &[&str],
+    before_manifest: &str,
+    after_manifest: &str,
+    before_lock: &str,
+    after_lock: &str,
+) -> Result<bool> {
+    if !paths.contains(&".release/prepared.json")
+        || paths.iter().any(|p| {
+            !matches!(
+                *p,
+                "Cargo.toml" | "Cargo.lock" | "CHANGELOG.md" | ".release/prepared.json"
+            )
+        })
+    {
+        return Ok(false);
+    }
+    fn normalized(text: &str, lock: bool) -> Result<String> {
+        let mut doc = text.replace("\r\n", "\n").parse::<DocumentMut>()?;
+        if lock {
+            for package in doc["package"]
+                .as_array_of_tables_mut()
+                .ok_or("Missing lock packages")?
+                .iter_mut()
+            {
+                if package["name"].as_str() == Some("rune-infer") {
+                    package["version"] = value("0.0.0");
+                }
+            }
+        } else {
+            doc["package"]["version"] = value("0.0.0");
+        }
+        Ok(doc.to_string())
+    }
+    Ok(
+        normalized(before_manifest, false)? == normalized(after_manifest, false)?
+            && normalized(before_lock, true)? == normalized(after_lock, true)?,
+    )
+}
+
+pub fn ci_required(root: &Path, before: &str) -> Result<bool> {
+    if before.len() != 40
+        || !before.chars().all(|c| c.is_ascii_hexdigit())
+        || before.chars().all(|c| c == '0')
+    {
+        return Ok(true);
+    }
+    let paths = git(root, &["diff", "--name-only", before, "HEAD"])?;
+    let paths: Vec<_> = paths.lines().collect();
+    if paths.iter().any(|p| {
+        !matches!(
+            *p,
+            "Cargo.toml" | "Cargo.lock" | "CHANGELOG.md" | ".release/prepared.json"
+        )
+    }) || !paths.contains(&".release/prepared.json")
+    {
+        return Ok(true);
+    }
+    let manifest = git(root, &["show", &format!("{before}:Cargo.toml")])?;
+    let lock = git(root, &["show", &format!("{before}:Cargo.lock")])?;
+    let only_metadata = release_metadata_only(
+        &paths,
+        &manifest,
+        &fs::read_to_string(root.join("Cargo.toml"))?,
+        &lock,
+        &fs::read_to_string(root.join("Cargo.lock"))?,
+    )
+    .unwrap_or(false);
+    Ok(!(only_metadata && validate_promotion(root).unwrap_or(false)))
+}

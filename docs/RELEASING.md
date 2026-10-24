@@ -12,7 +12,11 @@ read-only previews are used locally.
 1. Owner pushes reviewed semantic commits to develop. Rust CI runs Linux/Windows
    build/tests/Clippy/format, including migration and bootstrap acceptance. Only
    develop pushes trigger integration/preparation, including merge/release commits.
-   PR events and release-branch pushes do not duplicate the pipeline.
+   PR events and release-branch pushes do not duplicate the pipeline. A lightweight
+   Rust classification job skips the full matrix/preparation for validated release
+   metadata-only merges into develop. It checks changed paths, version-only
+   manifest/lock edits and prepared metadata; source/dependency changes or invalid
+   release metadata still run normal CI, regardless of subject.
 2. After both validation jobs pass, the serialized preparation job checks out
    develop and verifies its SHA equals the tested source. Pinned git-cliff generates
    the version and substantive changelog from reviewed commits. Rust synchronizes

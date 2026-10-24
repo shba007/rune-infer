@@ -11,6 +11,14 @@ fn run() -> Result<()> {
         .unwrap()
         .to_path_buf();
     match args.first().map(String::as_str) {
+        Some("ci-required") if args.len() == 1 => {
+            let required = infer_xtask::ci_required(&root, &env::var("CI_BEFORE")?)?;
+            println!("{}", if required { "Source validation required" } else { "Validated release metadata only; skip duplicate source CI/preparation" });
+            if let Some(output) = env::var_os("GITHUB_OUTPUT") {
+                use std::io::Write;
+                writeln!(fs::OpenOptions::new().append(true).open(output)?, "required={required}")?;
+            }
+        }
         Some("prepare") => {
             let write = args.iter().any(|s| s == "--apply");
             if args.iter().skip(1).any(|s| s != "--apply") { return Err("Usage: prepare [--apply] (default is a read-only dry run)".into()); }

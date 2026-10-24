@@ -5,7 +5,27 @@ on:
   push:
     branches: [develop]
 jobs:
+  inspect:
+    name: Classify develop push
+    runs-on: ubuntu-latest
+    outputs:
+      required: ${{ steps.classify.outputs.required }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: xtask -> target
+      - id: classify
+        env:
+          CI_BEFORE: ${{ github.event.before }}
+        run: cargo run --locked --manifest-path xtask/Cargo.toml -- ci-required
   build:
+    needs: inspect
+    if: needs.inspect.outputs.required == 'true'
     name: Validate (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -37,8 +57,8 @@ jobs:
           name: release-note-preview-${{ matrix.os }}
           path: RELEASE_NOTES.md
   prepare:
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: [inspect, build]
+    if: needs.inspect.outputs.required == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     permissions:
       contents: write
