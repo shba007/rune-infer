@@ -2,33 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.8.0]
+## v0.8.0
 
-### Installation and migration
+**[Compare changes](https://github.com/shba007/rune-infer/compare/v0.7.0...v0.8.0)**
 
-- Install `rune-infer` directly in `~/rune` on Windows, Linux and macOS, alongside Kit without changing Kit files or `tools/`.
-- Store Infer configuration and runtime state in `~/rune/infer`; retain `RUNE_HOME`, `--config`, installation overrides and intentional development-checkout behavior. Library callers must handle the `io::Result` now returned by `rune_home()` when user-home resolution fails.
-- Copy and validate legacy `~/.rune-infer` configuration, environment, engines and logs before selecting the new home. Keep originals, refuse destination conflicts, and retain references to existing model weights without moving them. Resolve conflicts explicitly or set `RUNE_HOME` to the legacy home to continue using it.
+### Enhancements
 
-### Model compatibility
+- add omni family detection and handling for multimodal models ([9e5ab31](https://github.com/shba007/rune-infer/commit/9e5ab31d80c44cb799aa812ae9278acec77b14a2))
 
-- Recognize Omni model families and select projector capabilities from file metadata rather than family names. Attach the most capable matching projector and exclude audio companions and draft heads from model discovery.
-- Reject unsupported audio inputs and missing image/audio projectors before loading a model. Existing Omni changes have source regression coverage; live Omni audio/vision behavior and quality have not been validated by installation tests.
+- introduce migration inference trial script for local inference post-migration ([3731c43](https://github.com/shba007/rune-infer/commit/3731c43d235a94ada778e791d930c2f3be1592a3))
 
-### Release consistency
+- add xtask for release management and changelog generation ([5397f0d](https://github.com/shba007/rune-infer/commit/5397f0d2dec18ba47173f40ddbcbb092c261972f))
 
-- Prepare synchronized release versions and changelog entries automatically after validation, with one owner-reviewed release PR. Publish the matching changelog section after owner promotion to main; installers remain usable without Rust.
+- streamline CLI options for server commands and add global flags ([a75d37f](https://github.com/shba007/rune-infer/commit/a75d37feb73f51edae3086e73e5beec4dbed86da))
 
-### Features
+- enhance promotion verification and output handling ([1d1c08b](https://github.com/shba007/rune-infer/commit/1d1c08b114b55234dd8beae712f0a405b8d0adbb))
 
-- add omni family detection and handling for multimodal models
-- introduce migration inference trial script for local inference post-migration
-- add xtask for release management and changelog generation
-- streamline CLI options for server commands and add global flags
+### Refactors
 
-### Maintenance
+- model capabilities and projector handling for Omni families ([2162eb5](https://github.com/shba007/rune-infer/commit/2162eb50dc47f2489605d9b34292fd878ea2e689))
 
-- model capabilities and projector handling for Omni families
+### Contributors
+
+- Shirsendu Bairagi
 
 ## [0.7.0] - 2026-10-21
 

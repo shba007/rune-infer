@@ -1,4 +1,6 @@
 {
-  "sourceHead": "a75d37feb73f51edae3086e73e5beec4dbed86da",
-  "version": "0.8.0"
+  "sourceHead": "1d1c08b114b55234dd8beae712f0a405b8d0adbb",
+  "version": "0.8.0",
+  "generator": "git-cliff-core@2.14.2",
+  "notesSha256": "7facc173cbf3fbdc1f528f83f2ad34414d2a1c8a80db91f1810b33bbea873da9"
 }
