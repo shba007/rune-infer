@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::collapsible_if)]
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 use rune_infer::config::ModelRegistry;
 use rune_infer::home::Workspace;
@@ -65,6 +65,11 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    if args.command.is_none() {
+        Args::command().print_help()?;
+        println!();
+        return Ok(());
+    }
 
     let ws =
         Workspace::resolve(args.config.as_deref()).context("Cannot determine working folder")?;
@@ -383,17 +388,14 @@ async fn prepare(
 mod cli_tests {
     use super::*;
     #[test]
-    fn serve_accepts_global_server_options_and_legacy_launch() {
+    fn serve_accepts_global_server_options() {
         let args =
             Args::try_parse_from(["rune-infer", "serve", "--headless", "--port", "8089"]).unwrap();
         assert!(matches!(args.command, Some(Command::Serve)));
         assert!(args.headless);
         assert_eq!(args.port, Some(8089));
-        assert!(
-            Args::try_parse_from(["rune-infer", "--headless"])
-                .unwrap()
-                .command
-                .is_none()
-        );
+        let args = Args::try_parse_from(["rune-infer", "--headless", "serve"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Serve)));
+        assert!(args.headless);
     }
 }

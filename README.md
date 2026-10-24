@@ -128,10 +128,10 @@ cargo build --release --no-default-features
 
 ## Quick Start & CLI Usage
 
-Run `rune-infer` in your terminal:
+Run `rune-infer` to see the description, commands and options. Start the server with:
 
 ```bash
-rune-infer
+rune-infer serve
 ```
 
 On first run without a configuration, Rune Infer automatically launches the interactive **Setup Wizard** in your terminal:
@@ -473,8 +473,8 @@ Published under the [MIT](https://github.com/shba007/rune-infer/blob/main/LICENS
 ### Explicit server startup
 
 `rune-infer serve` starts the server with its dashboard on an interactive terminal.
-Use `rune-infer serve --headless` for CI/background operation. The existing bare
-`rune-infer` invocation remains supported. Server flags work before or after serve:
+Use `rune-infer serve --headless` for CI/background operation. Bare `rune-infer`
+shows help without starting the server or accessing configuration. Server flags work before or after serve:
 `rune-infer serve --config /path/to/infer/config --port 8080 --headless`.
 Existing commands: `setup` creates configuration, `migrate --dry-run` previews a
 schema upgrade, `--help` lists options, and `--version` reports the version.

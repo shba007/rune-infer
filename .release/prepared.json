@@ -1,6 +1,6 @@
 {
   "sourceHead": "3757ea853f9fc7dc725ead85a2a9fc498b3e2d9d",
   "version": "0.8.0",
-  "generator": "git-cliff-core@2.14.2",
-  "notesSha256": "2499e616ec2ef0abed304694a8af421c5bdb8cda228dd92c6309953814f2bb5d"
+  "generator": "cocogitto@7.0.0",
+  "notesSha256": "158c3fffda3023b248fdbf762f775c5686e9084e052a40d8fac3ab3cf70c6f8d"
 }

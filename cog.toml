@@ -1,17 +1,29 @@
+# Shared Rune release policy. Cocogitto is the only changelog renderer.
 from_latest_tag = true
 ignore_merge_commits = true
 tag_prefix = "v"
 
+
 [commit_types]
-feat = { changelog_title = "🚀 Features" }
-fix = { changelog_title = "🐛 Bug Fixes" }
-perf = { changelog_title = "⚡ Performance" }
-refactor = { changelog_title = "🚜 Refactoring" }
-docs = { changelog_title = "📚 Documentation" }
-style = { changelog_title = "🎨 Style" }
-test = { changelog_title = "🧪 Testing" }
-ci = { changelog_title = "🤖 Continuous Integration", omit_from_changelog = true }
-chore = { changelog_title = "⚙️ Miscellaneous", omit_from_changelog = true }
+feat = { changelog_title = "🚀 Features", bump_minor = true, order = 1 }
+fix = { changelog_title = "🐛 Bug Fixes", bump_patch = true, order = 2 }
+perf = { changelog_title = "⚡ Performance", bump_patch = true, order = 3 }
+refactor = { changelog_title = "🚜 Refactoring", bump_patch = true, order = 4 }
+docs = { changelog_title = "📚 Documentation", bump_patch = true, order = 5 }
+style = { changelog_title = "🎨 Style", bump_patch = true, order = 6 }
+test = { changelog_title = "🧪 Testing", bump_patch = true, order = 7 }
+build = { changelog_title = "📦 Build", bump_patch = true, order = 8 }
+ci = { changelog_title = "🤖 Continuous Integration", bump_patch = true, order = 9 }
+chore = { changelog_title = "⚙️ Miscellaneous", bump_patch = true, order = 10 }
+revert = { changelog_title = "⏪ Reverts", bump_patch = true, order = 11 }
+custom = { changelog_title = "Other Changes", bump_patch = true, order = 12 }
 
 [git_hooks.commit-msg]
 script = "cog verify --file $1"
+
+[changelog]
+path = "CHANGELOG.md"
+template = ".release/changelog.tera"
+remote = "github.com"
+owner = "shba007"
+repository = "rune-infer"

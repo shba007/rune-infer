@@ -18,7 +18,7 @@ read-only previews are used locally.
    manifest/lock edits and prepared metadata; source/dependency changes or invalid
    release metadata still run normal CI, regardless of subject.
 2. After both validation jobs pass, the serialized preparation job checks out
-   develop and verifies its SHA equals the tested source. Pinned git-cliff generates
+   develop and verifies its SHA equals the tested source. Pinned Cocogitto generates
    the version and substantive changelog from reviewed commits. Rust synchronizes
    Cargo.toml/Cargo.lock and .release/prepared.json. Generated files are validated
    in this same run, including build/tests/Clippy/format, before PR creation. A final
@@ -41,7 +41,7 @@ read-only previews are used locally.
    - Unpublished version: require matching prepared metadata, valid ancestor source,
      exact latest nonempty changelog section and matching stored note digest when
      available. Reject unprepared semantic changes after that source and versions
-     differing from git-cliff's calculation for the complete pending history.
+     differing from Cocogitto's calculation for the complete pending history.
    - Malformed/decreasing versions, missing/mismatched pending metadata, stale source
      and invalid notes fail clearly. They are not silent job skips.
 6. A valid unpublished pending release is published with GH_TOKEN at the main SHA,
@@ -53,24 +53,23 @@ read-only previews are used locally.
 
 ## Package and version policy
 
-`git-cliff-core =2.14.2` is pinned in xtask/Cargo.toml and Cargo.lock. Active
-cliff.toml configures its parser, template, grouping and bump behavior. There is
-no custom version-increment algorithm or handwritten changelog renderer. Features
+`Cocogitto =7.0.0` is pinned in xtask/Cargo.toml and Cargo.lock. Active
+cog.toml configures commit types and bump flags; .release/changelog.tera is the
+shared Cocogitto template. Rust integrates the package without a second classifier
+or Markdown renderer. Features
 advance minor, fix/perf/other semantic maintenance advances patch, and breaking
 changes advance minor below 1.0 or major at/above 1.0. Breaking classification wins
 regardless of ordinary type. All semantic types, including docs/refactor/style/
 test/build/ci/chore/revert/custom, remain eligible. Routine release/autoformat
 bookkeeping, invalid messages, placeholders and internal planning identifiers are
-excluded by package configuration, not by an AI service.
+excluded by the reviewed Rust history-selection policy before Cocogitto renders them.
 
-The package template follows changelogen presentation: version heading, compare
-link with actual previous/current tags, nonempty grouped sections (Enhancements,
-Fixes, Documentation, Refactors, Performance, Tests, Build, CI, Chore), commit links,
-PR references where present, explicit breaking information and locally known
-contributors. Remote requests are disabled, so author names from Git supply
-contributors without API-dependent nondeterminism. Historical sections remain
-byte-for-byte intact. Preparation replaces only the unpublished section and never
-regenerates published history.
+The shared Cocogitto template uses dated linked version headings, emoji groups,
+linked commits and per-entry Git author signatures. PR references remain in commit
+summaries. Breaking-change bodies and footers are retained. No online author lookup
+is used. The owner-authorized format migration preserves historical entry wording
+and available attribution while standardizing local formatting. Published tags and
+release bodies are unchanged. Subsequent preparation preserves historical sections.
 
 Full tag-to-source pending history determines the greatest package bump and the
 complete section. .release/prepared.json records consumed source/version and, for

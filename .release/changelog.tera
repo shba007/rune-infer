@@ -1,0 +1,24 @@
+{% import "macros" as macros %}
+{% if version.tag != from.tag -%}
+## [{{ version.tag }}]({{ repository_url }}/compare/{{ from.tag }}..{{ version.tag }}) - {{ date | date(format="%Y-%m-%d") }}
+{% else -%}
+## {{ version.tag }} - {{ date | date(format="%Y-%m-%d") }}
+{% endif %}
+{% for value in commits | group_by_type -%}
+#### {{ value.0 | upper_first }}
+{% for commit in value.1 -%}
+{% if commit.id -%}
+{{ macros::remote(commit=commit) }}
+{% else -%}
+- {% if commit.breaking_change %}![BREAKING](https://img.shields.io/badge/BREAKING-red) {% endif %}{% if commit.scope %}(**{{ commit.scope }}**) {% endif %}{{ commit.summary }}{% if commit.signature %} - {{ commit.signature }}{% endif %}
+{% endif -%}
+{% if commit.breaking_change -%}
+{% if commit.body %}  {{ commit.body }}
+{% endif -%}
+{% for footer in commit.footers -%}
+{% if footer.footer and (footer.footer.token == "BREAKING CHANGE" or footer.footer.token == "BREAKING-CHANGE") %}  **BREAKING CHANGE**: {{ footer.footer.content }}
+{% endif -%}
+{% endfor -%}
+{% endif -%}
+{% endfor %}
+{% endfor -%}

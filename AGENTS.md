@@ -329,7 +329,8 @@ Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
 
 ## 6. Terminal UX & install
 
-- `rune-infer` on a TTY opens the dashboard with the server running inside it;
+- Bare `rune-infer` prints description and command help without accessing configuration.
+  `rune-infer serve` on a TTY opens the dashboard with the server running inside it;
   `--headless` (or no TTY: Docker, systemd, CI) runs a plain server with console
   logs. With no config present it first runs the **setup wizard** (also
   `rune-infer setup` any time): welcome/system check → network & API key →
@@ -383,8 +384,8 @@ Deferred: per-model request concurrency / parallel slots.
 
 - Agents implement/test locally and leave changes unstaged and uncommitted. Agents must not commit, push, merge, tag, publish or dispatch publishing workflows. The human owner commits/pushes development work and reviews/merges release PRs.
 - GitHub Actions is authorized to calculate versions, update Cargo.toml/Cargo.lock/CHANGELOG.md and generated metadata, commit/push the dedicated release/update-version branch, open/update its PR targeting develop, and create tags/releases/artifacts after owner promotion. Do not use an AI service for release generation.
-- Use the Rust integration xtask with pinned git-cliff-core =2.14.2 and toml_edit: `cargo test --locked --manifest-path xtask/Cargo.toml`, and `cargo run --locked --manifest-path xtask/Cargo.toml -- prepare`, `example` or `notes`. prepare defaults to a read-only preview. --apply writes release files only, never Git, and is reserved for CI/owner; agents do not use it on this working repository.
-- Agents must never author or edit CHANGELOG entries. CI uses pinned git-cliff for semantic parsing, version calculation and changelogen-style rendering; only fixture/dry-run output is allowed locally. Below 1.0, breaking changes advance minor; features advance minor and maintenance advances patch. Every main push validates metadata and either publishes an unpublished prepared release, succeeds with an explicit no-pending result, or fails on invalid pending metadata.
+- Use the Rust integration xtask with pinned Cocogitto =7.0.0 and toml_edit: `cargo test --locked --manifest-path xtask/Cargo.toml`, and `cargo run --locked --manifest-path xtask/Cargo.toml -- prepare`, `example` or `notes`. prepare defaults to a read-only preview. --apply writes release files only, never Git, and is reserved for CI/owner; agents do not use it on this working repository.
+- Agents must never author or edit CHANGELOG entries. CI uses pinned Cocogitto for semantic parsing, version calculation and Cocogitto rendering; only fixture/dry-run output is allowed locally. Below 1.0, breaking changes advance minor; features advance minor and maintenance advances patch. Every main push validates metadata and either publishes an unpublished prepared release, succeeds with an explicit no-pending result, or fails on invalid pending metadata.
 - All valid semantic commit types may prepare releases; exclude routine release/autoformat bookkeeping, invalid commits, internal planning identifiers and placeholders. Preserve published history. Publication extracts the exact prepared version section, never new Git-history prose. One preparation PR is reused, with ci(release): update version as commit/title; .release/prepared.json prevents loops. Normal source merges still receive tests. A validated preparation merge that changes only generated release metadata skips duplicate build/test/preparation; source or dependency changes never qualify.
 - Owner merges the preparation PR into develop (merge or squash), then promotes develop to main using a MERGE COMMIT preserving ancestry; no special merge title is required. Merging into develop alone does not publish. See docs/RELEASING.md for validation, tokens, PR events and artifact delivery.
 - Prefer Rust for new repository-owned release utilities and validation. Keep shell/PowerShell bootstrap installers usable without Rust; optional demo/visual tooling is outside this focused change.
@@ -394,7 +395,7 @@ Deferred: per-model request concurrency / parallel slots.
 - Targets: Windows + Linux + macOS. TUI stack is `ratatui` + `crossterm` +
   `tui-input` (approved); anything else new needs approval first.
 - Conventional commits (enforced by `.cargo-husky` hooks; changelog via
-  pinned git-cliff via Rust `xtask`). Edition 2024, `rustfmt.toml` respected.
+  pinned Cocogitto via Rust `xtask`). Edition 2024, `rustfmt.toml` respected.
 - Audit log goes to `logs/rune-infer.log`; payload bodies are never logged.
 - Build needs a C/C++ toolchain only if engines are built from source; FFmpeg
   must be on `PATH` for video input.

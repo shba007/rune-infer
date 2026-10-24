@@ -1,4 +1,4 @@
-use git_cliff_core::commit::Commit;
+use infer_xtask::cocogitto::Commit;
 use infer_xtask::{
     GENERATOR, State, apply, generated_release, history_base, pending_release, plan, release_notes,
     validate_event, validate_versions,
@@ -8,7 +8,7 @@ use std::fs;
 fn v(s: &str) -> Version {
     Version::parse(s).unwrap()
 }
-fn commits(messages: &[&str]) -> Vec<Commit<'static>> {
+fn commits(messages: &[&str]) -> Vec<Commit> {
     messages
         .iter()
         .enumerate()
@@ -40,7 +40,7 @@ fn package_calculates_explicit_feature_breaking_and_maintenance_versions() {
             .unwrap()
             .unwrap();
         assert_eq!(version, v(expected));
-        assert!(notes.contains(&format!("compare/v{base}...v{expected}")));
+        assert!(notes.contains(&format!("compare/v{base}..v{expected}")));
         assert!(notes.contains("/commit/0000000000000000000000000000000000000001"));
         assert!(notes.contains("Fixture contributor"));
         if message.contains('!') || message.contains("BREAKING CHANGE") {
@@ -79,8 +79,8 @@ fn package_keeps_all_semantic_types_and_substantive_release_fixes() {
     )
     .unwrap()
     .unwrap();
-    assert!(notes.contains("/pull/42"));
-    assert!(notes.contains("### CI"));
+    assert!(notes.contains("(#42)"));
+    assert!(notes.contains("#### 🤖 Continuous Integration"));
 }
 #[test]
 fn package_excludes_private_invalid_and_routine_bookkeeping() {

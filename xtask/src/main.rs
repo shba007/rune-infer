@@ -54,10 +54,10 @@ fn run() -> Result<()> {
         }
         Some("example") if args.len() == 1 => {
             let old = semver::Version::parse("0.8.0")?;
-            let mut commit = git_cliff_core::commit::Commit::new("a".repeat(40), "fix(install): preserve existing configuration during updates (#42)".into());
+            let mut commit = infer_xtask::cocogitto::Commit::new("a".repeat(40), "fix(install): preserve existing configuration during updates (#42)".into());
             commit.author.name = Some("Example contributor".into());
             let (_, notes) = infer_xtask::generated_release(&old, vec![commit])?.unwrap();
-            println!("Dry-run git-cliff example (no files or Git state changed):\n\n{notes}");
+            println!("Dry-run Cocogitto example (no files or Git state changed):\n\n{notes}");
         }
         _ => return Err("Usage: cargo run --manifest-path xtask/Cargo.toml -- {prepare [--apply]|notes [--out FILE]|version|verify-event|verify-promotion|example}".into()),
     }

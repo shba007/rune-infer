@@ -1,11 +1,14 @@
 [package]
+default-run = "infer-xtask"
 name = "infer-xtask"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
 [dependencies]
-git-cliff-core = { version = "=2.14.2", default-features = false }
+cocogitto = "=7.0.0"
+conventional_commit_parser = "=0.9.4"
+chrono = "0.4"
 sha2 = "0.11"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
@@ -14,3 +17,7 @@ toml_edit = "0.25"
 
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "render-notes"
+path = "src/render_notes.rs"
