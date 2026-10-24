@@ -80,7 +80,7 @@ pub fn handle_chat_stream(
     let engine_for_task = engine.clone();
     let yielded_for_task = yielded.clone();
     let execution_finished_for_task = execution_finished.clone();
-    tokio::task::spawn_blocking(move || {
+    crate::telemetry::spawn_blocking(move || {
         let _execution_done = execution_done_tx;
         struct ExecutionFinished(Arc<std::sync::atomic::AtomicBool>);
         impl Drop for ExecutionFinished {

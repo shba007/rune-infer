@@ -92,7 +92,7 @@ impl ModelExecutionGate {
         }
         let inference = state.inference.clone();
         let id = self.model_config.id.clone();
-        match tokio::task::spawn_blocking(move || inference.get_engine(&id)).await {
+        match crate::telemetry::spawn_blocking(move || inference.get_engine(&id)).await {
             Ok(Ok(engine)) => Ok(engine),
             result => Err(self.attach_headers(
                 state,
@@ -146,6 +146,7 @@ impl ModelExecutionGate {
                 .into_response());
         }
 
+        crate::telemetry::set_request_model(model_name_or_id);
         let model_config = match state.config().find(model_name_or_id) {
             Some(c) => c.clone(),
             None => {
@@ -315,7 +316,7 @@ impl ModelExecutionGate {
         let model_id = self.model_config.id.clone();
 
         if self.is_background {
-            let exec_handle = tokio::task::spawn_blocking(move || {
+            let exec_handle = crate::telemetry::spawn_blocking(move || {
                 let gen_start = std::time::Instant::now();
                 let res = engine_clone
                     .execute(&task_clone, None)
@@ -376,7 +377,7 @@ impl ModelExecutionGate {
                 }
             }
         } else {
-            let join_res = tokio::task::spawn_blocking(move || {
+            let join_res = crate::telemetry::spawn_blocking(move || {
                 let gen_start = std::time::Instant::now();
                 let res = engine_clone
                     .execute(&task_clone, None)

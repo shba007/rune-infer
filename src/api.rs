@@ -152,7 +152,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/nlu/intents", post(nlu::nlu_intents_handler))
         .route("/ocr", post(ocr::document_ocr_handler))
         .route("/decisions", post(decisions::decisions_handler))
-        .layer(from_fn_with_state(shared_state.clone(), auth_middleware));
+        .layer(from_fn_with_state(shared_state.clone(), auth_middleware))
+        .layer(axum::middleware::from_fn(
+            crate::telemetry::request_lifecycle,
+        ));
 
     Router::new()
         .nest("/v1", v1_routes)

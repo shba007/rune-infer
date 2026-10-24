@@ -5,6 +5,9 @@
 //! typed [`UiEvent`]s and forwards them over a channel. Nothing here depends on
 //! a terminal, so library users can install the layer for their own display.
 
+mod request;
+pub(crate) use request::{request_lifecycle, set_request_model, spawn_blocking};
+
 use std::collections::HashMap;
 
 use tokio::sync::mpsc::UnboundedSender;
@@ -26,8 +29,25 @@ pub struct LogLine {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestPhase {
+    Incoming,
+    Processing,
+    Succeeded,
+    Failed,
+}
+
+impl RequestPhase {
+    pub fn is_finished(self) -> bool {
+        matches!(self, Self::Succeeded | Self::Failed)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RequestRecord {
+    /// Stable identity across lifecycle updates; zero for standalone audit records.
+    pub id: u64,
+    pub phase: RequestPhase,
     pub ts: String,
     pub model: String,
     pub status: u16,
@@ -87,8 +107,16 @@ pub fn record_completion(
     completion_tokens: u32,
     generation_ms: u128,
 ) {
+    let request_id = request::completion(
+        model,
+        latency_ms,
+        prompt_tokens,
+        completion_tokens,
+        generation_ms,
+    );
     tracing::info!(
         target: "audit",
+        request_id,
         event = "completed",
         status = 200,
         model = %model,
@@ -102,9 +130,11 @@ pub fn record_completion(
 
 /// Record a failed inference request.
 pub fn record_failure(model: &str, status: u16, latency_ms: u128, error: &str) {
+    let request_id = request::failure(model, status, latency_ms, error);
     tracing::warn!(
         target: "audit",
         event = "failed",
+        request_id,
         status,
         model = %model,
         latency_ms = latency_ms as u64,
@@ -235,9 +265,24 @@ impl<S: Subscriber> Layer<S> for EventLayer {
                 }));
             }
             AUDIT_TARGET => match f.text("event").as_str() {
-                "completed" | "failed" => {
-                    let error = f.map.contains_key("error").then(|| f.text("error"));
+                "completed" | "failed" | "request_state"
+                    if f.num::<u64>("request_id") == 0 || f.text("event") == "request_state" =>
+                {
+                    let error = f
+                        .map
+                        .contains_key("error")
+                        .then(|| f.text("error"))
+                        .filter(|e| !e.is_empty());
                     let _ = self.tx.send(UiEvent::Request(RequestRecord {
+                        id: f.num("request_id"),
+                        phase: match f.text("phase").as_str() {
+                            "incoming" => RequestPhase::Incoming,
+                            "processing" => RequestPhase::Processing,
+                            _ if f.num::<u16>("status") >= 400 || error.is_some() => {
+                                RequestPhase::Failed
+                            }
+                            _ => RequestPhase::Succeeded,
+                        },
                         ts: ts.clone(),
                         model: f.text("model"),
                         status: f.num("status"),
@@ -254,7 +299,7 @@ impl<S: Subscriber> Layer<S> for EventLayer {
         }
 
         let mut message = f.message.clone();
-        if let Some(err) = f.map.get("error") {
+        if let Some(err) = f.map.get("error").filter(|e| !e.is_empty()) {
             message.push_str(&format!(" — {}", err.trim_matches('"')));
         }
         if let Some(model) = f.map.get("model") {

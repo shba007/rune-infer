@@ -179,6 +179,8 @@ pub async fn chat_completions_handler(
         }
     };
 
+    crate::telemetry::set_request_model(&request.model);
+
     if request.model.trim().is_empty() {
         return (
             StatusCode::BAD_REQUEST,

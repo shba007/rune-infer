@@ -79,6 +79,7 @@ impl ProxyService {
         config: &ModelConfig,
         request: &ChatCompletionRequest,
     ) -> Response {
+        crate::telemetry::set_request_model(&config.id);
         let controller = self.get_controller(&config.id);
 
         // Fill unset sampling parameters from the model's configured defaults.

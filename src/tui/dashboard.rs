@@ -16,7 +16,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::Level;
 
 use super::theme::*;
-use crate::telemetry::{LogLine, ModelEvent, ModelEventKind, RequestRecord, UiEvent};
+use crate::telemetry::{LogLine, ModelEvent, ModelEventKind, RequestPhase, RequestRecord, UiEvent};
 
 #[derive(Debug, Clone)]
 pub struct ModelRow {
@@ -168,6 +168,23 @@ impl App {
     }
 
     fn on_request(&mut self, r: RequestRecord) {
+        let existing = (r.id != 0)
+            .then(|| self.requests.iter().position(|entry| entry.id == r.id))
+            .flatten();
+        if existing.is_some_and(|i| self.requests[i].phase.is_finished()) {
+            return;
+        }
+        let finished = r.phase.is_finished();
+        if !finished {
+            if let Some(i) = existing {
+                let timestamp = self.requests[i].ts.clone();
+                self.requests[i] = r;
+                self.requests[i].ts = timestamp;
+            } else {
+                self.requests.push_back(r);
+            }
+            return;
+        }
         self.total_requests += 1;
         let failed = r.status >= 400 || r.error.is_some();
         if failed {
@@ -191,10 +208,19 @@ impl App {
         if !failed {
             push_capped(&mut self.latency_hist, r.latency_ms, HISTORY);
         }
-        if self.requests.len() >= MAX_REQUESTS {
-            self.requests.pop_front();
+        if let Some(i) = existing {
+            let timestamp = self.requests[i].ts.clone();
+            self.requests[i] = r;
+            self.requests[i].ts = timestamp;
+        } else {
+            self.requests.push_back(r);
         }
-        self.requests.push_back(r);
+        while self.requests.len() > MAX_REQUESTS {
+            let Some(i) = self.requests.iter().position(|r| r.phase.is_finished()) else {
+                break;
+            };
+            self.requests.remove(i);
+        }
     }
 
     fn on_key(&mut self, code: KeyCode, mods: KeyModifiers) {
@@ -777,8 +803,13 @@ fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
         );
         return;
     }
-    let header = Row::new(["Time", "Model", "Status", "Latency", "In", "Out", "tok/s"])
-        .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD));
+    let detailed = area.width >= 100;
+    let columns = if detailed {
+        vec!["Time", "Model", "Status", "Latency", "In", "Out", "tok/s"]
+    } else {
+        vec!["Time", "Model", "Status", "Latency"]
+    };
+    let header = Row::new(columns).style(Style::new().fg(DIM).add_modifier(Modifier::BOLD));
     let visible = area.height.saturating_sub(3) as usize;
     let rows: Vec<Row> = app
         .requests
@@ -786,44 +817,67 @@ fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
         .rev()
         .take(visible)
         .map(|r| {
+            let finished = r.phase.is_finished();
             let ok = r.status < 400 && r.error.is_none();
-            Row::new([
+            let status = match r.phase {
+                RequestPhase::Incoming => "INCOMING".to_string(),
+                RequestPhase::Processing => "PROCESSING".to_string(),
+                _ if ok => format!("{} SUCCEEDED", r.status),
+                _ => format!("{} FAILED", r.status),
+            };
+            let mut cells = vec![
                 Cell::from(r.ts.clone()).style(Style::new().fg(DIM)),
                 Cell::from(r.model.clone()),
-                Cell::from(if ok {
-                    r.status.to_string()
+                Cell::from(status).style(Style::new().fg(if !finished {
+                    ACCENT
+                } else if ok {
+                    OK
                 } else {
-                    format!("{} ×", r.status)
-                })
-                .style(Style::new().fg(if ok { OK } else { ERR })),
-                Cell::from(format!("{:.2}s", r.latency_ms as f64 / 1000.0)),
-                Cell::from(r.prompt_tokens.to_string()),
-                Cell::from(r.completion_tokens.to_string()),
-                Cell::from(
-                    r.tokens_per_second()
-                        .map(|t| format!("{t:.1}"))
-                        .unwrap_or("–".into()),
-                ),
-            ])
+                    ERR
+                })),
+                Cell::from(if finished {
+                    format!("{:.2}s", r.latency_ms as f64 / 1000.0)
+                } else {
+                    "–".into()
+                }),
+            ];
+            if detailed {
+                cells.extend([
+                    Cell::from(if finished {
+                        r.prompt_tokens.to_string()
+                    } else {
+                        "–".into()
+                    }),
+                    Cell::from(if finished {
+                        r.completion_tokens.to_string()
+                    } else {
+                        "–".into()
+                    }),
+                    Cell::from(
+                        r.tokens_per_second()
+                            .filter(|_| finished)
+                            .map(|t| format!("{t:.1}"))
+                            .unwrap_or("–".into()),
+                    ),
+                ]);
+            }
+            Row::new(cells)
         })
         .collect();
-    f.render_widget(
-        Table::new(
-            rows,
-            [
-                Constraint::Length(9),
-                Constraint::Min(16),
-                Constraint::Length(8),
-                Constraint::Length(10),
-                Constraint::Length(7),
-                Constraint::Length(7),
-                Constraint::Length(8),
-            ],
-        )
-        .header(header)
-        .block(block),
-        area,
-    );
+    let mut widths = vec![
+        Constraint::Length(9),
+        Constraint::Min(12),
+        Constraint::Length(14),
+        Constraint::Length(8),
+    ];
+    if detailed {
+        widths.extend([
+            Constraint::Length(7),
+            Constraint::Length(7),
+            Constraint::Length(8),
+        ]);
+    }
+    f.render_widget(Table::new(rows, widths).header(header).block(block), area);
 }
 
 fn level_style(l: Level, msg: &str) -> Style {
@@ -967,6 +1021,8 @@ mod tests {
                 };
                 for i in 0..20 {
                     a.on_event(UiEvent::Request(RequestRecord {
+                        id: 0,
+                        phase: RequestPhase::Succeeded,
                         ts: ts(),
                         model: "a".into(),
                         status: 200,
@@ -1066,6 +1122,46 @@ mod tests {
     }
 
     #[test]
+    fn lifecycle_updates_same_rows_without_double_counting_or_reordering() {
+        let mut a = app();
+        let record = |id, phase, model: &str| RequestRecord {
+            id,
+            phase,
+            ts: ts(),
+            model: model.into(),
+            status: if phase.is_finished() { 200 } else { 0 },
+            latency_ms: 100,
+            prompt_tokens: 10,
+            completion_tokens: 20,
+            generation_ms: 100,
+            error: None,
+        };
+        a.on_request(record(1, RequestPhase::Incoming, "a"));
+        assert_eq!(a.requests.len(), 1);
+        assert_eq!(a.total_requests, 0);
+        draw_all(&mut a);
+        a.on_request(record(2, RequestPhase::Incoming, "a"));
+        a.on_request(record(1, RequestPhase::Processing, "a"));
+        assert_eq!(a.requests.len(), 2);
+        assert_eq!(a.requests[0].phase, RequestPhase::Processing);
+        draw_all(&mut a);
+        let done = record(1, RequestPhase::Succeeded, "a");
+        a.on_request(done.clone());
+        a.on_request(done);
+        assert_eq!(a.total_requests, 1);
+        assert_eq!(a.models[0].requests, 1);
+        let mut failed = record(2, RequestPhase::Failed, "a");
+        failed.status = 400;
+        failed.error = Some("unsupported image".into());
+        a.on_request(failed);
+        assert_eq!((a.total_requests, a.total_errors), (2, 1));
+        assert_eq!(a.requests.len(), 2);
+        assert_eq!(a.requests[0].id, 1);
+        assert_eq!(a.requests[1].id, 2);
+        draw_all(&mut a);
+    }
+
+    #[test]
     fn state_tracks_model_lifecycle_and_stats() {
         let mut a = app();
         draw_all(&mut a); // empty state
@@ -1089,6 +1185,8 @@ mod tests {
 
         for i in 0..3u64 {
             a.on_event(UiEvent::Request(RequestRecord {
+                id: 0,
+                phase: RequestPhase::Succeeded,
                 ts: ts(),
                 model: "a".into(),
                 status: 200,
@@ -1100,6 +1198,8 @@ mod tests {
             }));
         }
         a.on_event(UiEvent::Request(RequestRecord {
+            id: 0,
+            phase: RequestPhase::Failed,
             ts: ts(),
             model: "g".into(),
             status: 429,
