@@ -3,6 +3,16 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.9.0](https://github.com/shba007/rune-infer/compare/v0.8.0..v0.9.0) - 2026-10-24
+
+#### 🚀 Features
+- integrate Cocogitto for changelog generation - ([0806321](https://github.com/shba007/rune-infer/commit/0806321ac97d461856ca6f9e7912783c1a9036b9)) - Shirsendu Bairagi
+
+#### 🐛 Bug Fixes
+- update changelog retrieval to read only HEAD for CI compatibility - ([41a244f](https://github.com/shba007/rune-infer/commit/41a244f3ef9df7fa5d3485087900b1e2f77e3835)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.8.0](https://github.com/shba007/rune-infer/compare/v0.7.0..v0.8.0) - 2026-10-24
 
 #### 🚀 Features
