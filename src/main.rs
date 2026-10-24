@@ -15,6 +15,7 @@ mod self_update;
 #[derive(Parser, Debug)]
 #[command(name = "rune-infer")]
 #[command(author = "Rune Infer Team")]
+#[command(before_help = rune_infer::CLI_LOGO)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "A standalone model server with OpenAI-compatible API and Cloud AI Gateway")]
 #[command(after_help = "Data lives in ~/.rune/infer (override with RUNE_HOME). \
@@ -212,7 +213,7 @@ async fn run(
                 }
                 Ok(rune_infer::tui::WizardOutcome::Cancelled) => {
                     finish_terminal(true);
-                    println!("Setup cancelled — nothing was written.");
+                    println!("Setup cancelled. Any downloaded engines are kept.");
                     return Ok(());
                 }
                 Err(e) => {

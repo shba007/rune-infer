@@ -2383,7 +2383,6 @@ dependencies = [
  "cargo-husky",
  "chrono",
  "clap",
- "crossterm",
  "divan",
  "dotenvy",
  "encoding_rs",

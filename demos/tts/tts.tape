@@ -1,12 +1,12 @@
 # VHS Tape Script: Rune Infer Text-to-Speech (TTS) Screencast
 # Requirements: https://github.com/charmbracelet/vhs
 #
-# To render this tape into docs/demo_tts.gif:
+# To render this tape into public/demo_tts.gif:
 #   vhs demos/tts/tts.tape
 # Or run:
 #   .\demos\record.ps1 -Name tts
 
-Output docs/demo_tts.gif
+Output public/demo_tts.gif
 
 Set Shell "powershell"
 Set FontSize 14

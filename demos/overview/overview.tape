@@ -1,12 +1,12 @@
 # VHS Tape Script: Rune Infer 60-second Terminal Screencast
 # Requirements: https://github.com/charmbracelet/vhs
 #
-# To render this tape into docs/demo.gif:
+# To render this tape into public/demo.gif:
 #   vhs demos/overview/overview.tape
 # Or run:
 #   .\demos\record.ps1 -Name overview
 
-Output docs/demo.gif
+Output public/demo.gif
 
 Set Shell "powershell"
 Set FontSize 14

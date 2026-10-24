@@ -330,29 +330,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     if app.help {
         draw_help(f);
     }
-    // Apply terminal compatibility to the complete frame, including borders,
-    // locality tags and dots rather than only the sparkline widget.
-    let no_color = is_no_color();
-    let ascii = std::env::var_os("RUNE_ASCII").is_some();
-    if no_color || ascii {
-        for cell in &mut f.buffer_mut().content {
-            if no_color {
-                cell.set_fg(ratatui::style::Color::Reset);
-                cell.set_bg(ratatui::style::Color::Reset);
-            }
-            if ascii && !cell.symbol().is_ascii() {
-                let symbol = match cell.symbol() {
-                    "│" | "┃" => "|",
-                    "─" | "━" => "-",
-                    "·" | "•" | "●" | "○" => ".",
-                    "×" => "x",
-                    "╭" | "╮" | "╰" | "╯" | "┌" | "┐" | "└" | "┘" => "+",
-                    _ => "*",
-                };
-                cell.set_symbol(symbol);
-            }
-        }
-    }
+    terminal_compatibility(f);
 }
 
 fn draw_header(f: &mut Frame, area: Rect, app: &App) {

@@ -1,5 +1,9 @@
 <div align="center">
 
+<p align="center">
+  <img src="./public/logo.svg" alt="Rune Infer ASCII logo" width="180" height="120">
+</p>
+
 # Rune Infer
 
 **A standalone, config-driven AI gateway and OpenAI/Anthropic-compatible model server written in Rust.**
@@ -13,7 +17,7 @@
 <br>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Rune Infer Terminal Screencast - Live Dashboard, Lazy Loading, and VRAM Swapping" width="850">
+  <img src="./public/demo.gif" alt="Rune Infer Terminal Screencast - Live Dashboard, Lazy Loading, and VRAM Swapping" width="850">
 </p>
 
 </div>
@@ -134,14 +138,16 @@ Run `rune-infer` to see the description, commands and options. Start the server 
 rune-infer serve
 ```
 
-On first run without a configuration, Rune Infer automatically launches the interactive **Setup Wizard** in your terminal:
-1. Detects system capabilities (CPU, RAM, GPUs, CUDA/Vulkan support).
-2. Sets network bind address and generates or requests an API authentication key.
-3. Configures cloud provider API keys (validated live and saved to `.env`).
-4. Discovers local GGUF models by inspecting binary headers (auto-detects architecture, pairs vision projectors by dimension, and links draft models).
-5. Offers optional pre-installation of engine binaries into `<home>/bin/`.
+Bare `rune-infer` prints the ASCII Rune logo and command help without starting the server.
+`rune-infer serve` without configuration opens setup in an interactive terminal:
+1. Choose localhost or network access, port, and API key (required for network access).
+2. Select Local models, Cloud models, or both; at least one source is required.
+3. For local models, scan a file or directory, select models, and optionally pre-download upstream llama-server.
+4. For cloud models, select providers, enter each key and model ID, and validate the key. Failed validation requires retry.
+5. Review and save at least one configured model, then immediately start the server/dashboard.
 
-Re-run the wizard at any time with `rune-infer setup`.
+Re-run with `rune-infer setup`. Configuration is saved at review; engine downloads may happen earlier and are retained on cancellation.
+Per-model engine selection, full engine readiness checks, and cloud model listing are subsequent setup cycles.
 
 ### CLI Options
 

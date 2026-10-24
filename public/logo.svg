@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"
+  role="img" aria-labelledby="t">
+  <title id="t">Rune Infer</title>
+  <circle cx="512" cy="512" r="512" fill="#000" />
+  <g fill="#fff">
+    <circle cx="512" cy="512" r="34" />
+    <circle cx="512" cy="417" r="26" />
+    <circle cx="594.3" cy="464.5" r="26" />
+    <circle cx="594.3" cy="559.5" r="26" />
+    <circle cx="512" cy="607" r="26" />
+    <circle cx="429.7" cy="559.5" r="26" />
+    <circle cx="429.7" cy="464.5" r="26" />
+    <circle cx="561.2" cy="328.5" r="22" />
+    <circle cx="646.4" cy="377.6" r="22" />
+    <circle cx="695.5" cy="462.8" r="22" />
+    <circle cx="695.5" cy="561.2" r="22" />
+    <circle cx="646.4" cy="646.4" r="22" />
+    <circle cx="561.2" cy="695.5" r="22" />
+    <circle cx="462.8" cy="695.5" r="22" />
+    <circle cx="377.6" cy="646.4" r="22" />
+    <circle cx="328.5" cy="561.2" r="22" />
+    <circle cx="328.5" cy="462.8" r="22" />
+    <circle cx="377.6" cy="377.6" r="22" />
+    <circle cx="462.8" cy="328.5" r="22" />
+    <circle cx="512" cy="227" r="18" />
+    <circle cx="609.5" cy="244.2" r="18" />
+    <circle cx="695.2" cy="293.7" r="18" />
+    <circle cx="758.8" cy="369.5" r="18" />
+    <circle cx="792.7" cy="462.5" r="18" />
+    <circle cx="792.7" cy="561.5" r="18" />
+    <circle cx="758.8" cy="654.5" r="18" />
+    <circle cx="695.2" cy="730.3" r="18" />
+    <circle cx="609.5" cy="779.8" r="18" />
+    <circle cx="512" cy="797" r="18" />
+    <circle cx="414.5" cy="779.8" r="18" />
+    <circle cx="328.8" cy="730.3" r="18" />
+    <circle cx="265.2" cy="654.5" r="18" />
+    <circle cx="231.3" cy="561.5" r="18" />
+    <circle cx="231.3" cy="462.5" r="18" />
+    <circle cx="265.2" cy="369.5" r="18" />
+    <circle cx="328.8" cy="293.7" r="18" />
+    <circle cx="414.5" cy="244.2" r="18" />
+    <circle cx="561.6" cy="135.3" r="14" />
+    <circle cx="657.4" cy="160.9" r="14" />
+    <circle cx="743.3" cy="210.5" r="14" />
+    <circle cx="813.5" cy="280.7" r="14" />
+    <circle cx="863.1" cy="366.6" r="14" />
+    <circle cx="888.7" cy="462.4" r="14" />
+    <circle cx="888.7" cy="561.6" r="14" />
+    <circle cx="863.1" cy="657.4" r="14" />
+    <circle cx="813.5" cy="743.3" r="14" />
+    <circle cx="743.3" cy="813.5" r="14" />
+    <circle cx="657.4" cy="863.1" r="14" />
+    <circle cx="561.6" cy="888.7" r="14" />
+    <circle cx="462.4" cy="888.7" r="14" />
+    <circle cx="366.6" cy="863.1" r="14" />
+    <circle cx="280.7" cy="813.5" r="14" />
+    <circle cx="210.5" cy="743.3" r="14" />
+    <circle cx="160.9" cy="657.4" r="14" />
+    <circle cx="135.3" cy="561.6" r="14" />
+    <circle cx="135.3" cy="462.4" r="14" />
+    <circle cx="160.9" cy="366.6" r="14" />
+    <circle cx="210.5" cy="280.7" r="14" />
+    <circle cx="280.7" cy="210.5" r="14" />
+    <circle cx="366.6" cy="160.9" r="14" />
+    <circle cx="462.4" cy="135.3" r="14" />
+  </g>
+</svg>

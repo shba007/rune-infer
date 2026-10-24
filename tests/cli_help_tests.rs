@@ -12,6 +12,7 @@ fn bare_invocation_shows_help_without_resolving_configuration() {
     assert!(output.status.success(), "{:?}", output);
     let help = String::from_utf8(output.stdout).unwrap();
     for expected in [
+        rune_infer::CLI_LOGO,
         "model server",
         "Usage:",
         "Commands:",

@@ -27,8 +27,8 @@ demos/
 
 | Demo | Tape File | Output Asset | Description |
 | :--- | :--- | :--- | :--- |
-| **Overview** | [`demos/overview/overview.tape`](overview/overview.tape) | [`docs/demo.gif`](../docs/demo.gif) | Live dashboard with 0 models, lazy-loading Qwen3.8 27B, LRU model swap to Ternary Bonsai 27B within VRAM budget, tok/s throughput, and latency sparkline. Embedded in main README. |
-| **TTS** | [`demos/tts/tts.tape`](tts/tts.tape) | [`docs/demo_tts.gif`](../docs/demo_tts.gif) | Real-time text-to-speech synthesis using Audio8 TTS Preview 0.6B on `/v1/audio/speech`. |
+| **Overview** | [`demos/overview/overview.tape`](overview/overview.tape) | [`public/demo.gif`](../public/demo.gif) | Live dashboard with 0 models, lazy-loading Qwen3.8 27B, LRU model swap to Ternary Bonsai 27B within VRAM budget, tok/s throughput, and latency sparkline. Embedded in main README. |
+| **TTS** | [`demos/tts/tts.tape`](tts/tts.tape) | [`public/demo_tts.gif`](../public/demo_tts.gif) | Real-time text-to-speech synthesis using Audio8 TTS Preview 0.6B on `/v1/audio/speech`. |
 
 ---
 

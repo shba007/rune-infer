@@ -329,18 +329,19 @@ Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
 
 ## 6. Terminal UX & install
 
-- Bare `rune-infer` prints description and command help without accessing configuration.
+- Bare `rune-infer` prints the ASCII Rune logo, description and command help without accessing configuration.
   `rune-infer self-update [--check] [--version VERSION]` verifies release archives
   and updates only the invoked executable, before home/config resolution. Preserve
   checksum validation, rollback, explicit installation locations and Kit files.
   `rune-infer serve` on a TTY opens the dashboard with the server running inside it;
   `--headless` (or no TTY: Docker, systemd, CI) runs a plain server with console
   logs. With no config present it first runs the **setup wizard** (also
-  `rune-infer setup` any time): welcome/system check → network & API key →
-  optional cloud keys (validated, stored in `.env`, config holds `{{VAR}}`) →
-  optional local model discovery (each GGUF is classified from its header; projectors and drafts are attached; incomplete image models start unticked) →
-  optional `llama-server` pre-download → review → write. Nothing is written
-  before the review; every step is skippable.
+  `rune-infer setup` any time): network & API key → required Local/Cloud
+  multiselect → selected local discovery and optional upstream llama-server download →
+  selected cloud providers, keys and manual model IDs → review → save and start.
+  At least one configured model is required; failed cloud key validation requires retry.
+  Configuration is saved at review; downloaded engines remain after cancellation.
+  Per-model engine selection/readiness and cloud model listing remain subsequent cycles.
 - Secure defaults: wizard binds `127.0.0.1`; choosing the network requires an
   API key; the dashboard shows a red banner when listening beyond localhost
   without a key.

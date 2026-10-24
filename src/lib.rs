@@ -25,3 +25,7 @@ pub use types::{
     ApiError, ChatCompletionRequest, Choice, ChoiceDelta, HealthResponse, LivezResponse, ModelInfo,
     ModelsResponse, ReadyzResponse, SseResponse,
 };
+
+/// ASCII rendering of public/logo.svg's concentric dot rings and central dot.
+/// Coordinates are sampled at twice the horizontal resolution for terminal cells.
+pub const CLI_LOGO: &str = "          .   .\n     . .         . .\n   .     o  o  o     .\n      o   o   o   o\n .  o   o       o   o  .\n.  o  o  O  O  O  o  o  .\n            *\n.  o  o  O  O  O  o  o  .\n .  o   o       o   o  .\n      o   o   o   o\n   .     o  o  o     .\n     . .         . .\n          .   .";

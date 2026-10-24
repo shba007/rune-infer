@@ -96,3 +96,30 @@ pub fn human_duration(secs: u64) -> String {
         secs % 60
     )
 }
+
+/// Apply terminal compatibility across every widget in a frame.
+pub fn terminal_compatibility(f: &mut ratatui::Frame) {
+    // Apply terminal compatibility to the complete frame, including borders,
+    // locality tags and dots rather than only the sparkline widget.
+    let no_color = is_no_color();
+    let ascii = std::env::var_os("RUNE_ASCII").is_some();
+    if no_color || ascii {
+        for cell in &mut f.buffer_mut().content {
+            if no_color {
+                cell.set_fg(ratatui::style::Color::Reset);
+                cell.set_bg(ratatui::style::Color::Reset);
+            }
+            if ascii && !cell.symbol().is_ascii() {
+                let symbol = match cell.symbol() {
+                    "│" | "┃" => "|",
+                    "─" | "━" => "-",
+                    "·" | "•" | "●" | "○" => ".",
+                    "×" => "x",
+                    "╭" | "╮" | "╰" | "╯" | "┌" | "┐" | "└" | "┘" => "+",
+                    _ => "*",
+                };
+                cell.set_symbol(symbol);
+            }
+        }
+    }
+}

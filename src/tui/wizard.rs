@@ -1,7 +1,7 @@
 //! First-run setup wizard.
 //!
-//! Every step is skippable except the review. Nothing touches disk until the
-//! user confirms on the final screen.
+//! Configure at least one model before saving. Engine downloads may write files
+//! before the final configuration review.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -19,13 +19,21 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
-use super::theme::*;
+use super::theme::{DIM, ERR, OK, WARN, centered, human_bytes, spinner, terminal_compatibility};
 use crate::config::EngineKind;
 use crate::home::Workspace;
 use crate::setup::{
     self, CloudChoice, Exposure, LocalCandidate, PROVIDERS, Prerequisites, SetupPlan,
 };
 use crate::telemetry::UiEvent;
+use ratatui::style::Color;
+
+const ACCENT: Color = Color::White;
+fn panel<'a>(title: impl Into<Line<'a>>) -> Block<'a> {
+    Block::default()
+        .title(title.into())
+        .title_style(Style::new().fg(ACCENT).add_modifier(Modifier::BOLD))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WizardOutcome {
@@ -35,7 +43,7 @@ pub enum WizardOutcome {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Step {
-    Welcome,
+    Sources,
     Network,
     Cloud,
     Local,
@@ -44,11 +52,11 @@ enum Step {
 }
 
 const STEPS: [(&str, Step); 6] = [
-    ("Welcome", Step::Welcome),
     ("Network", Step::Network),
-    ("Cloud", Step::Cloud),
+    ("Sources", Step::Sources),
     ("Local models", Step::Local),
     ("Engine", Step::Engine),
+    ("Cloud", Step::Cloud),
     ("Review", Step::Review),
 ];
 
@@ -91,6 +99,10 @@ struct Wizard<'a> {
 
     prereq: Option<Prerequisites>,
     prereq_rx: Receiver<Prerequisites>,
+
+    sources: [bool; 2],
+    source_cursor: usize,
+    source_error: Option<String>,
 
     // network
     exposure: Exposure,
@@ -193,7 +205,10 @@ impl<'a> Wizard<'a> {
     fn new(ws: &'a Workspace, prereq_rx: Receiver<Prerequisites>) -> Self {
         Wizard {
             ws,
-            step: Step::Welcome,
+            step: Step::Network,
+            sources: [false; 2],
+            source_cursor: 0,
+            source_error: None,
             tick: 0,
             log_tail: VecDeque::new(),
             prereq: None,
@@ -227,8 +242,17 @@ impl<'a> Wizard<'a> {
         }
     }
 
-    fn step_index(&self) -> usize {
-        STEPS.iter().position(|(_, s)| *s == self.step).unwrap_or(0)
+    fn visible_steps(&self) -> Vec<(&'static str, Step)> {
+        STEPS
+            .iter()
+            .copied()
+            .filter(|(_, step)| match step {
+                Step::Local => self.sources[0],
+                Step::Engine => self.sources[0] && self.engine_needed(),
+                Step::Cloud => self.sources[1],
+                _ => true,
+            })
+            .collect()
     }
 
     fn gpu_available(&self) -> bool {
@@ -279,15 +303,50 @@ impl<'a> Wizard<'a> {
             self.engine = EnginePhase::Ask;
             self.go(Step::Engine);
         } else {
-            self.go(Step::Review);
+            self.next_after_engine();
         }
+    }
+
+    fn next_after_engine(&mut self) {
+        self.go(if self.sources[1] {
+            Step::Cloud
+        } else {
+            Step::Review
+        });
     }
 
     fn on_key(&mut self, k: KeyEvent) -> Flow {
         match self.step {
-            Step::Welcome => match k.code {
-                KeyCode::Enter => self.go(Step::Network),
-                KeyCode::Esc | KeyCode::Char('q') => return Flow::Cancel,
+            Step::Sources => match k.code {
+                KeyCode::Esc => self.go(Step::Network),
+                KeyCode::Up | KeyCode::Down | KeyCode::Tab => {
+                    self.source_cursor = 1 - self.source_cursor
+                }
+                KeyCode::Char(' ') => {
+                    self.sources[self.source_cursor] = !self.sources[self.source_cursor];
+                    self.source_error = None;
+                }
+                KeyCode::Enter => {
+                    if !self.sources.iter().any(|selected| *selected) {
+                        self.source_error = Some("Select Local, Cloud, or both.".into());
+                    } else {
+                        if !self.sources[0] {
+                            self.chosen.clear();
+                        }
+                        if !self.sources[1] {
+                            self.cloud_done.clear();
+                        }
+                        self.cloud_phase = CloudPhase::Pick;
+                        self.local_phase = LocalPhase::Path;
+                        self.source_error = None;
+                        self.review_error = None;
+                        self.go(if self.sources[0] {
+                            Step::Local
+                        } else {
+                            Step::Cloud
+                        });
+                    }
+                }
                 _ => {}
             },
             Step::Network => return self.key_network(k),
@@ -301,7 +360,7 @@ impl<'a> Wizard<'a> {
 
     fn key_network(&mut self, k: KeyEvent) -> Flow {
         match k.code {
-            KeyCode::Esc => self.go(Step::Welcome),
+            KeyCode::Esc => return Flow::Cancel,
             KeyCode::Up => self.net_focus = self.net_focus.saturating_sub(1),
             KeyCode::Down | KeyCode::Tab => self.net_focus = (self.net_focus + 1).min(2),
             KeyCode::Enter => {
@@ -329,7 +388,7 @@ impl<'a> Wizard<'a> {
                 if !self.want_key {
                     self.server_key = None;
                 }
-                self.go(Step::Cloud);
+                self.go(Step::Sources);
             }
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') if self.net_focus != 1 => {
                 if self.net_focus == 0 {
@@ -356,7 +415,7 @@ impl<'a> Wizard<'a> {
     fn key_cloud(&mut self, k: KeyEvent) {
         match self.cloud_phase {
             CloudPhase::Pick => match k.code {
-                KeyCode::Esc => self.go(Step::Network),
+                KeyCode::Esc => self.go(Step::Sources),
                 KeyCode::Up => self.cloud_cursor = self.cloud_cursor.saturating_sub(1),
                 KeyCode::Down => {
                     self.cloud_cursor = (self.cloud_cursor + 1).min(PROVIDERS.len() - 1)
@@ -371,8 +430,9 @@ impl<'a> Wizard<'a> {
                         .collect();
                     self.cloud_pos = 0;
                     if self.cloud_queue.is_empty() {
-                        self.go(Step::Local);
+                        self.review_error = Some("Select at least one cloud provider.".into());
                     } else {
+                        self.review_error = None;
                         self.begin_provider();
                         self.cloud_phase = CloudPhase::Details;
                     }
@@ -395,7 +455,7 @@ impl<'a> Wizard<'a> {
         self.cloud_pos += 1;
         if self.cloud_pos >= self.cloud_queue.len() {
             self.cloud_phase = CloudPhase::Pick;
-            self.go(Step::Local);
+            self.go(Step::Review);
         } else {
             self.begin_provider();
         }
@@ -405,7 +465,14 @@ impl<'a> Wizard<'a> {
         let preset = PROVIDERS[self.cloud_queue[self.cloud_pos]];
         match &self.validation {
             Validation::Running(_) => return,
-            Validation::Ok | Validation::Failed(_) => {
+            Validation::Failed(_) => {
+                if matches!(k.code, KeyCode::Enter | KeyCode::Char('r') | KeyCode::Esc) {
+                    self.validation = Validation::Idle;
+                    self.cloud_focus = 0;
+                }
+                return;
+            }
+            Validation::Ok => {
                 match k.code {
                     KeyCode::Enter => {
                         self.cloud_done.push(CloudChoice {
@@ -434,8 +501,7 @@ impl<'a> Wizard<'a> {
             KeyCode::Enter => {
                 let key = self.key_input.value().trim().to_string();
                 if key.is_empty() {
-                    // Empty key = skip this provider.
-                    self.advance_provider();
+                    self.cloud_focus = 0;
                 } else if self.cloud_focus == 0 || self.model_input.value().trim().is_empty() {
                     self.cloud_focus = 1;
                 } else {
@@ -460,10 +526,15 @@ impl<'a> Wizard<'a> {
     fn key_local(&mut self, k: KeyEvent) {
         match self.local_phase {
             LocalPhase::Path => match k.code {
-                KeyCode::Esc => self.go(Step::Cloud),
+                KeyCode::Esc => self.go(Step::Sources),
                 KeyCode::Enter => {
                     let raw = strip_quotes(self.path_input.value()).to_string();
                     if raw.is_empty() {
+                        if self.chosen.is_empty() {
+                            self.local_error =
+                                Some("Select at least one local model before continuing.".into());
+                            return;
+                        }
                         self.local_error = None;
                         self.next_after_local();
                         return;
@@ -532,14 +603,14 @@ impl<'a> Wizard<'a> {
                     });
                     self.engine = EnginePhase::Installing(rx);
                 }
-                KeyCode::Char('n') => self.go(Step::Review),
+                KeyCode::Char('n') => self.next_after_engine(),
                 KeyCode::Esc => self.go(Step::Local),
                 _ => {}
             },
             EnginePhase::Installing(_) => {}
             EnginePhase::Done(_) => {
                 if matches!(k.code, KeyCode::Enter) {
-                    self.go(Step::Review);
+                    self.next_after_engine();
                 }
             }
         }
@@ -560,7 +631,9 @@ impl<'a> Wizard<'a> {
         match k.code {
             KeyCode::Esc => {
                 self.review_error = None;
-                if self.engine_needed() {
+                if self.sources[1] {
+                    self.go(Step::Cloud);
+                } else if self.engine_needed() {
                     self.engine = EnginePhase::Ask;
                     self.go(Step::Engine)
                 } else {
@@ -568,6 +641,10 @@ impl<'a> Wizard<'a> {
                 }
             }
             KeyCode::Enter => {
+                if self.chosen.is_empty() && self.cloud_done.is_empty() {
+                    self.review_error = Some("Configure at least one model before saving.".into());
+                    return Flow::Stay;
+                }
                 match setup::write_setup(
                     &self.plan(),
                     &self.ws.server_path,
@@ -587,41 +664,44 @@ impl<'a> Wizard<'a> {
 
     fn draw(&self, f: &mut Frame) {
         let area = centered(f.area(), 100, f.area().height.min(32));
-        let [title, steps, body, footer] = Layout::vertical([
-            Constraint::Length(2),
-            Constraint::Length(2),
+        let [title, steps_area, body, footer] = Layout::vertical([
+            Constraint::Length(if area.height >= 32 { 14 } else { 1 }),
+            Constraint::Length(1),
             Constraint::Min(8),
             Constraint::Length(1),
         ])
         .areas(area);
 
         f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    "ᚱ Rune Infer",
-                    Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("  ·  first-time setup", Style::new().fg(DIM)),
-            ])),
+            Paragraph::new(if area.height >= 32 {
+                format!("{}\n RUNE INFER · SETUP", crate::CLI_LOGO)
+            } else {
+                "RUNE INFER · SETUP".into()
+            }),
             title,
         );
 
+        let steps = self.visible_steps();
+        let step_index = steps
+            .iter()
+            .position(|(_, step)| *step == self.step)
+            .unwrap_or(0);
         let mut spans = Vec::new();
         let compact = area.width < 84;
         if compact {
             spans.push(Span::styled(
                 format!(
                     "Step {} of {} · {}",
-                    self.step_index() + 1,
-                    STEPS.len(),
-                    STEPS[self.step_index()].0
+                    step_index + 1,
+                    steps.len(),
+                    steps[step_index].0
                 ),
                 Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
             ));
         }
-        for (i, (name, _)) in STEPS.iter().enumerate().filter(|_| !compact) {
-            let cur = i == self.step_index();
-            let done = i < self.step_index();
+        for (i, (name, _)) in steps.iter().enumerate().filter(|_| !compact) {
+            let cur = i == step_index;
+            let done = i < step_index;
             let style = if cur {
                 Style::new().fg(ACCENT).add_modifier(Modifier::BOLD)
             } else if done {
@@ -637,14 +717,14 @@ impl<'a> Wizard<'a> {
                 "○"
             };
             spans.push(Span::styled(format!("{mark} {name}"), style));
-            if i + 1 < STEPS.len() {
+            if i + 1 < steps.len() {
                 spans.push(Span::styled("  ─  ", Style::new().fg(DIM)));
             }
         }
-        f.render_widget(Paragraph::new(Line::from(spans)), steps);
+        f.render_widget(Paragraph::new(Line::from(spans)), steps_area);
 
         match self.step {
-            Step::Welcome => self.draw_welcome(f, body),
+            Step::Sources => self.draw_sources(f, body),
             Step::Network => self.draw_network(f, body),
             Step::Cloud => self.draw_cloud(f, body),
             Step::Local => self.draw_local(f, body),
@@ -653,32 +733,38 @@ impl<'a> Wizard<'a> {
         }
 
         f.render_widget(Paragraph::new(Line::from(self.hints())), footer);
+        terminal_compatibility(f);
     }
 
     fn hints(&self) -> Vec<Span<'static>> {
         let mut h: Vec<Span<'static>> = Vec::new();
-        let mut add = |k: &'static str, w: &'static str| h.extend(key_hint(k, w));
+        let mut add = |k: &'static str, w: &'static str| {
+            h.extend([
+                Span::styled(format!(" {k} "), Style::new().fg(ACCENT)),
+                Span::styled(format!("{w}  "), Style::new().fg(DIM)),
+            ])
+        };
         match self.step {
-            Step::Welcome => {
-                add("Enter", "begin");
-                add("Esc", "quit");
+            Step::Sources => {
+                add("Space", "select");
+                add("Enter", "next");
+                add("Esc", "back");
             }
             Step::Network => {
                 add("↑↓", "move");
                 add("Space", "toggle");
                 add("Enter", "next");
-                add("Esc", "back");
+                add("Esc", "quit");
             }
             Step::Cloud => match self.cloud_phase {
                 CloudPhase::Pick => {
                     add("Space", "select");
-                    add("Enter", "continue (none = skip)");
+                    add("Enter", "continue");
                     add("Esc", "back");
                 }
                 CloudPhase::Details => {
                     add("Tab", "switch field");
                     add("Enter", "next / test key");
-                    add("empty key + Enter", "skip provider");
                 }
             },
             Step::Local => match self.local_phase {
@@ -706,72 +792,25 @@ impl<'a> Wizard<'a> {
         h
     }
 
-    fn draw_welcome(&self, f: &mut Frame, area: Rect) {
+    fn draw_sources(&self, f: &mut Frame, area: Rect) {
         let mut lines = vec![
-            Line::from(""),
-            Line::from("  Welcome! This takes about a minute and everything is optional."),
-            Line::from("  Nothing is written until the final review.".to_string()),
+            Line::from("Select where your models run. Choose at least one."),
             Line::from(""),
         ];
-        match &self.prereq {
-            None => lines.push(Line::styled(
-                format!("  {} checking your system…", spinner(self.tick)),
-                Style::new().fg(WARN),
-            )),
-            Some(p) => {
-                let ok = |s: String| {
-                    Line::from(vec![
-                        Span::styled("  ✓ ", Style::new().fg(OK)),
-                        Span::raw(s),
-                    ])
-                };
-                let warn = |s: String| {
-                    Line::from(vec![
-                        Span::styled("  ! ", Style::new().fg(WARN)),
-                        Span::raw(s),
-                    ])
-                };
-                lines.push(ok(format!("Platform: {} / {}", p.os, p.arch)));
-                lines.push(ok("Infer home (config/, bin/ and logs/):".into()));
-                lines.push(Line::styled(
-                    format!("      {}", p.home.display()),
-                    Style::new().fg(DIM),
-                ));
-                if self.ws.config_exists() {
-                    lines.push(warn(
-                        "Existing config found — new entries will be merged, nothing is removed."
-                            .into(),
-                    ));
-                }
-                lines.push(match &p.gpu {
-                    Some(g) => ok(format!("GPU: {} ({})", g.name, human_bytes(g.total_bytes))),
-                    None if p.os == "macos" && p.arch == "aarch64" => {
-                        ok("GPU: Apple Silicon (Metal)".into())
-                    }
-                    None => {
-                        warn("No NVIDIA GPU detected — models will run on the CPU (slower).".into())
-                    }
-                });
-                lines.push(match &p.ffmpeg {
-                    Some(v) => ok(v.clone()),
-                    None => warn("FFmpeg not found — video input will be unavailable. Install it from ffmpeg.org.".into()),
-                });
-                lines.push(if p.llama_server_installed {
-                    ok("llama-server engine is installed".into())
-                } else {
-                    warn(
-                        "llama-server engine not installed yet — we can download it for you later."
-                            .into(),
-                    )
-                });
-            }
+        for (i, label) in ["Local models", "Cloud models"].iter().enumerate() {
+            lines.push(Line::styled(
+                format!(
+                    "{} {} {label}",
+                    if i == self.source_cursor { ">" } else { " " },
+                    if self.sources[i] { "●" } else { "○" }
+                ),
+                Style::new().fg(if i == self.source_cursor { ACCENT } else { DIM }),
+            ));
         }
-        f.render_widget(
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: false })
-                .block(panel(" Welcome ")),
-            area,
-        );
+        if let Some(error) = &self.source_error {
+            lines.push(Line::styled(error.as_str(), Style::new().fg(ERR)));
+        }
+        f.render_widget(Paragraph::new(lines).block(panel(" Model sources ")), area);
     }
 
     fn draw_network(&self, f: &mut Frame, area: Rect) {
@@ -818,7 +857,7 @@ impl<'a> Wizard<'a> {
                 ),
             ])
             .block(
-                Block::bordered()
+                Block::default()
                     .border_style(focus_style(0))
                     .title(" Who can connect? "),
             ),
@@ -835,7 +874,7 @@ impl<'a> Wizard<'a> {
                 radio(!self.want_key, "No API key", "only safe on localhost"),
             ])
             .block(
-                Block::bordered()
+                Block::default()
                     .border_style(focus_style(2))
                     .title(" API key "),
             ),
@@ -855,9 +894,7 @@ impl<'a> Wizard<'a> {
             CloudPhase::Pick => {
                 let mut lines = vec![
                     Line::from(""),
-                    Line::from(
-                        "  Route requests to hosted models through the same endpoint (optional).",
-                    ),
+                    Line::from("  Route requests to hosted models through the same endpoint."),
                     Line::styled(
                         "  Keys are stored in .env — never in the config file.",
                         Style::new().fg(DIM),
@@ -870,9 +907,9 @@ impl<'a> Wizard<'a> {
                         Span::styled(if cur { "  ❯ " } else { "    " }, Style::new().fg(ACCENT)),
                         Span::styled(
                             if self.cloud_checked[i] {
-                                "[x] "
+                                "● "
                             } else {
-                                "[ ] "
+                                "○ "
                             },
                             Style::new().fg(if self.cloud_checked[i] { OK } else { DIM }),
                         ),
@@ -886,6 +923,9 @@ impl<'a> Wizard<'a> {
                         ),
                         Span::styled(format!("   {}", p.env_var), Style::new().fg(DIM)),
                     ]));
+                }
+                if let Some(error) = &self.review_error {
+                    lines.push(Line::styled(error.as_str(), Style::new().fg(ERR)));
                 }
                 if !self.cloud_done.is_empty() {
                     lines.push(Line::from(""));
@@ -902,7 +942,7 @@ impl<'a> Wizard<'a> {
                     ));
                 }
                 f.render_widget(
-                    Paragraph::new(lines).block(panel(" Cloud providers (optional) ")),
+                    Paragraph::new(lines).block(panel(" Cloud providers ")),
                     area,
                 );
             }
@@ -941,7 +981,7 @@ impl<'a> Wizard<'a> {
                 );
                 let line = match &self.validation {
                     Validation::Idle => Line::styled(
-                        "  Leave the key empty and press Enter to skip this provider. Enter on the model tests the key.",
+                        "  Enter an API key and model ID. Enter on the model tests the key.",
                         Style::new().fg(DIM),
                     ),
                     Validation::Running(_) => Line::styled(
@@ -953,7 +993,7 @@ impl<'a> Wizard<'a> {
                         Style::new().fg(OK),
                     ),
                     Validation::Failed(e) => Line::styled(
-                        format!("  ✗ Could not verify: {e}.  Enter = keep anyway   r = re-enter"),
+                        format!("  ✗ Could not verify: {e}.  Enter / r = re-enter and retry"),
                         Style::new().fg(ERR),
                     ),
                 };
@@ -965,7 +1005,7 @@ impl<'a> Wizard<'a> {
     fn draw_local(&self, f: &mut Frame, area: Rect) {
         match self.local_phase {
             LocalPhase::Path => {
-                let block = panel(" Local models (optional) ");
+                let block = panel(" Local models ");
                 let inner = block.inner(area);
                 f.render_widget(block, area);
                 let [intro, input, list] = Layout::vertical([
@@ -1029,7 +1069,7 @@ impl<'a> Wizard<'a> {
                     let mut spans = vec![
                         Span::styled(if cur { " ❯ " } else { "   " }, Style::new().fg(ACCENT)),
                         Span::styled(
-                            if self.picks[i] { "[x] " } else { "[ ] " },
+                            if self.picks[i] { "● " } else { "○ " },
                             Style::new().fg(if self.picks[i] { OK } else { DIM }),
                         ),
                         Span::raw(format!("{}  ", c.display_name)),
@@ -1174,9 +1214,6 @@ impl<'a> Wizard<'a> {
             }
             None => lines.push(bullet("No API key (localhost only)".into())),
         }
-        if p.cloud.is_empty() && p.local.is_empty() {
-            lines.push(bullet("No models yet — add them later by editing the config or re-running `rune-infer setup`.".into()));
-        }
         for c in &p.cloud {
             lines.push(bullet(format!("{} → {}", c.preset.label, c.upstream_model)));
         }
@@ -1234,7 +1271,7 @@ fn render_input(
     focused: bool,
     title: &str,
 ) {
-    let block = Block::bordered()
+    let block = Block::default()
         .border_style(Style::new().fg(if focused { ACCENT } else { DIM }))
         .title(title.to_string());
     let inner = block.inner(area);
@@ -1276,9 +1313,40 @@ mod tests {
     }
 
     fn render_all_sizes(w: &Wizard) {
-        for (cols, rows) in [(30, 8), (60, 20), (71, 30), (140, 50)] {
+        for (cols, rows) in [(30, 8), (60, 20), (80, 24), (71, 30), (140, 50)] {
             let mut t = Terminal::new(TestBackend::new(cols, rows)).unwrap();
             t.draw(|f| w.draw(f)).unwrap();
+            if cols == 80 && rows == 24 && w.step == Step::Network {
+                let text = t
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|cell| cell.symbol())
+                    .collect::<String>();
+                assert!(
+                    text.contains("Who can connect?")
+                        && text.contains("Port")
+                        && text.contains("API key")
+                );
+                if w.net_error.is_some() {
+                    assert!(text.contains("Port must") || text.contains("Network access"));
+                }
+            }
+            for cell in &t.backend().buffer().content {
+                if std::env::var_os("NO_COLOR").is_some() {
+                    assert_eq!(cell.fg, Color::Reset);
+                    assert_eq!(cell.bg, Color::Reset);
+                }
+                assert_eq!(cell.bg, Color::Reset);
+                assert!(matches!(
+                    cell.fg,
+                    Color::Reset | Color::White | Color::DarkGray | Color::Red
+                ));
+                if std::env::var_os("RUNE_ASCII").is_some() {
+                    assert!(cell.symbol().is_ascii());
+                }
+            }
         }
     }
 
@@ -1305,23 +1373,18 @@ mod tests {
         let mut w = Wizard::new(&ws, rx);
         render_all_sizes(&w);
 
-        // Welcome -> Network
-        w.on_key(key(KeyCode::Enter));
         assert!(w.step == Step::Network);
-        render_all_sizes(&w);
-        // Network -> Cloud (defaults: localhost, port 8080, generated key)
         w.on_key(key(KeyCode::Enter));
-        assert!(w.step == Step::Cloud);
+        assert!(w.step == Step::Sources);
         assert!(w.server_key.is_some());
         render_all_sizes(&w);
-        // Select Gemini, open details, empty key => skipped, lands on Local
+        w.on_key(key(KeyCode::Enter));
+        assert!(w.step == Step::Sources && w.source_error.is_some());
         w.on_key(key(KeyCode::Char(' ')));
         w.on_key(key(KeyCode::Enter));
-        assert!(w.cloud_phase == CloudPhase::Details);
-        render_all_sizes(&w);
+        assert!(w.step == Step::Local);
         w.on_key(key(KeyCode::Enter));
-        assert!(w.step == Step::Local && w.cloud_done.is_empty());
-        render_all_sizes(&w);
+        assert!(w.step == Step::Local && w.local_error.is_some());
         // Local: scan a folder, pick everything
         type_str(&mut w, &model_dir.to_string_lossy());
         w.on_key(key(KeyCode::Enter));
@@ -1379,7 +1442,6 @@ mod tests {
         let ws = temp_ws();
         let (_tx, rx) = channel();
         let mut w = Wizard::new(&ws, rx);
-        w.on_key(key(KeyCode::Enter)); // -> Network
         w.on_key(key(KeyCode::Char(' '))); // exposure -> Network
         w.on_key(key(KeyCode::Down));
         w.on_key(key(KeyCode::Down));
@@ -1409,6 +1471,44 @@ mod tests {
         assert!(w.local_error.is_some() && w.local_phase == LocalPhase::Path);
         render_all_sizes(&w);
         std::fs::remove_dir_all(&ws.root).ok();
+    }
+
+    #[test]
+    fn source_routes_cloud_retry_and_empty_review_do_not_write() {
+        let ws = temp_ws();
+        let (_tx, rx) = channel();
+        let mut w = Wizard::new(&ws, rx);
+        w.on_key(key(KeyCode::Enter));
+        w.on_key(key(KeyCode::Down));
+        w.on_key(key(KeyCode::Char(' ')));
+        w.on_key(key(KeyCode::Enter));
+        assert!(w.step == Step::Cloud);
+        w.on_key(key(KeyCode::Enter));
+        assert!(w.step == Step::Cloud && w.review_error.is_some());
+        w.on_key(key(KeyCode::Char(' ')));
+        w.on_key(key(KeyCode::Enter));
+        render_all_sizes(&w);
+        w.on_key(key(KeyCode::Enter));
+        assert!(w.cloud_done.is_empty() && w.cloud_phase == CloudPhase::Details);
+        w.validation = Validation::Failed("rejected".into());
+        render_all_sizes(&w);
+        w.on_key(key(KeyCode::Enter));
+        assert!(matches!(w.validation, Validation::Idle) && w.cloud_done.is_empty());
+        w.key_input = Input::new("fixture-key".into());
+        w.validation = Validation::Ok;
+        w.on_key(key(KeyCode::Enter));
+        assert!(w.step == Step::Review && w.cloud_done.len() == 1);
+        render_all_sizes(&w);
+        w.cloud_done.clear();
+        assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Stay));
+        assert!(!ws.server_path.exists() && !ws.catalog_path.exists() && !ws.env_file().exists());
+        w.sources = [true, true];
+        w.next_after_local();
+        assert!(w.step == Step::Cloud);
+        w.sources = [true, false];
+        w.next_after_local();
+        assert!(w.step == Step::Review);
+        std::fs::remove_dir_all(&ws.root).unwrap();
     }
 
     struct ModelRegistryProbe(usize);
