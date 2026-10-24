@@ -330,6 +330,9 @@ Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
 ## 6. Terminal UX & install
 
 - Bare `rune-infer` prints description and command help without accessing configuration.
+  `rune-infer self-update [--check] [--version VERSION]` verifies release archives
+  and updates only the invoked executable, before home/config resolution. Preserve
+  checksum validation, rollback, explicit installation locations and Kit files.
   `rune-infer serve` on a TTY opens the dashboard with the server running inside it;
   `--headless` (or no TTY: Docker, systemd, CI) runs a plain server with console
   logs. With no config present it first runs the **setup wizard** (also

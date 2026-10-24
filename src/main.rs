@@ -10,6 +10,8 @@ use tracing_subscriber::filter::{EnvFilter, filter_fn};
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 
+mod self_update;
+
 #[derive(Parser, Debug)]
 #[command(name = "rune-infer")]
 #[command(author = "Rune Infer Team")]
@@ -50,6 +52,15 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Update this executable from a verified release archive
+    SelfUpdate {
+        /// Check for an update without replacing the executable
+        #[arg(long)]
+        check: bool,
+        /// Install a specific stable version (default: latest, or RUNE_VERSION)
+        #[arg(long)]
+        version: Option<String>,
+    },
     /// Start the inference server (dashboard on a TTY; --headless for background use)
     Serve,
     /// Run the interactive setup wizard (API keys, local models, engines)
@@ -69,6 +80,9 @@ async fn main() -> Result<()> {
         Args::command().print_help()?;
         println!();
         return Ok(());
+    }
+    if let Some(Command::SelfUpdate { check, version }) = &args.command {
+        return self_update::run(*check, version.as_deref()).await;
     }
 
     let ws =

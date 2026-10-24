@@ -478,4 +478,35 @@ shows help without starting the server or accessing configuration. Server flags 
 `rune-infer serve --config /path/to/infer/config --port 8080 --headless`.
 Existing commands: `setup` creates configuration, `migrate --dry-run` previews a
 schema upgrade, `--help` lists options, and `--version` reports the version.
+
+### Self-update
+
+```sh
+rune-infer self-update --check
+rune-infer self-update
+rune-infer self-update --version 0.9.1
+```
+
+Self-update replaces the executable being invoked, including custom installation
+locations. It downloads the platform archive and SHA-256 file, verifies the
+checksum and executable version, and restores the previous binary if installation
+validation fails. Equal or older versions leave the installation unchanged.
+Configuration, models, Kit, plugins and PATH are untouched; restart an existing
+server to use the update. Stable releases on Windows, Linux and macOS x64/arm64
+are supported when the corresponding release asset is available.
+
+`--check` downloads and verifies the archive without replacing the executable.
+Both commands need write access to the executable directory and the system `tar`
+utility (included with current Windows). No Rust toolchain is needed by users.
+`RUNE_VERSION`, `RUNE_REPO` and `RUNE_BASE_URL` retain the installer's meanings;
+the latter accepts a mirror URL or local asset directory. `--version` takes
+precedence over `RUNE_VERSION`. Checksums cannot be disabled for self-update.
+`RUNE_INSTALL_DIR` does not redirect self-update: invoke the installation you want
+to update. Trusted mirrors provide executable code, just like the release source.
+
+Concurrent updates are refused. After an interrupted update, confirm no updater
+is running before removing `.rune-infer-self-update.lock` beside the executable;
+if replacement was interrupted, restore the retained `.rune-infer-previous-*`
+backup first. Windows may retain that backup while the old executable is running;
+the command reports its path so it can be removed after exit.
 See [Screen Insight integration](docs/SCREEN-INSIGHT.md) for the tested image API.
