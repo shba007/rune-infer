@@ -5,7 +5,7 @@
 #
 # Environment overrides:
 #   RUNE_VERSION      release tag to install (default: latest), e.g. v0.2.0
-#   RUNE_INSTALL_DIR  where to put the binary (default: ~/rune)
+#   RUNE_INSTALL_DIR  where to put the binary (default: ~/.rune)
 #   RUNE_REPO         GitHub repo (default: shba007/rune-infer)
 #   RUNE_BASE_URL     download base URL or local directory (mirrors / offline installs)
 #   RUNE_PLATFORM     force a platform name, e.g. linux-x64 (advanced)
@@ -17,7 +17,7 @@ VERSION="${RUNE_VERSION:-latest}"
 if [ -z "${RUNE_INSTALL_DIR:-}" ]; then
   case "${HOME:-}" in /*) ;; *) printf '%s\n' 'error: cannot resolve user home; set RUNE_INSTALL_DIR' >&2; exit 1 ;; esac
 fi
-INSTALL_DIR="${RUNE_INSTALL_DIR:-${HOME}/rune}"
+INSTALL_DIR="${RUNE_INSTALL_DIR:-${HOME}/.rune}"
 BIN="rune-infer"
 
 say()  { printf '%s\n' "$*"; }
@@ -147,11 +147,11 @@ if [ "${RUNE_NO_MODIFY_PATH:-0}" != 1 ]; then
   case "${HOME:-}" in /*) ;; *) die "cannot resolve home for PATH update; set RUNE_NO_MODIFY_PATH=1" ;; esac
   case "${SHELL:-}" in */zsh) PROFILE="$HOME/.zprofile" ;; *) PROFILE="$HOME/.profile" ;; esac
   quoted=$(printf '%s' "$INSTALL_DIR" | sed "s/'/'\\\\''/g")
-  if ! grep -Fq "$INSTALL_DIR" "$PROFILE" 2>/dev/null && ! grep -Fq "_rune_path='$quoted'" "$PROFILE" 2>/dev/null && ! { [ "$INSTALL_DIR" = "$HOME/rune" ] && grep -Fq '$HOME/rune' "$PROFILE" 2>/dev/null; }; then
+  if ! grep -Fq "$INSTALL_DIR" "$PROFILE" 2>/dev/null && ! grep -Fq "_rune_path='$quoted'" "$PROFILE" 2>/dev/null && ! { [ "$INSTALL_DIR" = "$HOME/.rune" ] && grep -Fq '$HOME/.rune' "$PROFILE" 2>/dev/null; }; then
     printf '\n# Rune shared PATH\n_rune_path='\''%s'\''\ncase ":$PATH:" in *":$_rune_path:"*) ;; *) export PATH="$_rune_path:$PATH" ;; esac\nunset _rune_path\n' "$quoted" >> "$PROFILE"
   fi
 fi
 say ""
-say "Next: run 'rune-infer setup'; configuration lives in ${RUNE_HOME:-${HOME:-<user-home>}/rune/infer}/config."
+say "Next: run 'rune-infer setup'; configuration lives in ${RUNE_HOME:-${HOME:-<user-home>}/.rune/infer}/config."
 say "Legacy configuration is copied and validated on first launch; originals and old executable locations are retained."
 say "Optional: install FFmpeg for video input."

@@ -32,16 +32,24 @@ fn run() -> Result<()> {
             else { return Err("Usage: notes [--out FILE]".into()); }
         }
         Some("version") if args.len() == 1 => { validate_versions(&root)?; println!("{}", version(&root)?); }
-        Some("verify-promotion") if args.len() == 1 => { validate_promotion(&root)?; }
+        Some("verify-promotion") if args.len() == 1 => {
+            let pending = validate_promotion(&root)?;
+            println!("{}", if pending { "Valid unpublished prepared release" } else { "No pending release; already published version" });
+            if let Some(output) = env::var_os("GITHUB_OUTPUT") {
+                use std::io::Write;
+                writeln!(fs::OpenOptions::new().append(true).open(output)?, "pending={pending}")?;
+            }
+        }
         Some("verify-event") if args.len() == 1 => {
             let event: serde_json::Value = serde_json::from_slice(&fs::read(env::var_os("GITHUB_EVENT_PATH").ok_or("GITHUB_EVENT_PATH is required")?)?)?;
             validate_event(&root, &event)?;
         }
         Some("example") if args.len() == 1 => {
             let old = semver::Version::parse("0.8.0")?;
-            let messages = vec!["fix(install): preserve existing configuration during updates".into(), "ci(release): update version".into()];
-            let plan = infer_xtask::plan(&old, &old, "# Changelog\n\n## v0.8.0\n\n- Previous functionality.\n", "example-only", &infer_xtask::entries(&messages))?.unwrap();
-            println!("Dry-run example (no files or Git state changed):\n\n{}", plan.notes);
+            let mut commit = git_cliff_core::commit::Commit::new("a".repeat(40), "fix(install): preserve existing configuration during updates (#42)".into());
+            commit.author.name = Some("Example contributor".into());
+            let (_, notes) = infer_xtask::generated_release(&old, vec![commit])?.unwrap();
+            println!("Dry-run git-cliff example (no files or Git state changed):\n\n{notes}");
         }
         _ => return Err("Usage: cargo run --manifest-path xtask/Cargo.toml -- {prepare [--apply]|notes [--out FILE]|version|verify-event|verify-promotion|example}".into()),
     }

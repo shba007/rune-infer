@@ -3,7 +3,7 @@
 Default layout on Windows, Linux and macOS:
 
 ```text
-<user-home>/rune/
+<user-home>/.rune/
   rune-infer[.exe]
   rune-kit[.exe]              # owned by Kit, not modified by Infer
   tools/plugins/             # owned by Kit, not modified by Infer
@@ -19,7 +19,7 @@ Installers verify archive checksums and validate the candidate executable before
 replacing Infer. Explicit `RUNE_INSTALL_DIR`, `RUNE_VERSION`, `RUNE_REPO`,
 `RUNE_BASE_URL`, platform and checksum overrides remain supported. The existing
 Infer executable must identify itself before an update; an unrecognized
-destination is a conflict. Old executables in `~/.local/bin` or
+destination is a conflict. Old executables in `~/rune`, `~/.local/bin` or
 `%LOCALAPPDATA%/Programs/rune-infer` are retained. Remove old PATH entries only
 after checking `rune-infer --version` resolves the intended executable.
 
@@ -27,12 +27,12 @@ The shared install directory is added at most once to user PATH. PowerShell
 updates user PATH; the POSIX installer adds a guarded entry to `.profile` or
 `.zprofile` for zsh. Start a new login shell, or source the applicable profile.
 `RUNE_NO_MODIFY_PATH=1` disables PATH changes on either platform. Other shell
-startup conventions may require adding `~/rune` manually.
+startup conventions may require adding `~/.rune` manually.
 
 ## Home selection
 
 Precedence is unchanged: explicit `--config` > `RUNE_HOME` > a local development
-`./config/server.json` or `./config/models.json` > `~/rune/infer`.
+`./config/server.json` or `./config/models.json` > `~/.rune/infer`.
 `--config` accepts an existing home/config directory or a configuration file.
 `RUNE_HOME` is the Infer home itself, **not** the shared parent. Relative explicit
 paths resolve against the initial working directory. Missing user-home resolution
@@ -45,10 +45,17 @@ silently used. The setup wizard shows this home and writes its `config/` files.
 
 ## Legacy home migration
 
-On implicit default startup, if `~/.rune-infer/config` contains configuration:
+On implicit default startup, configuration can be copied from `~/rune/infer`
+or the older `~/.rune-infer` into `~/.rune/infer`. If both old homes contain
+configuration, the visible home must have a valid receipt of migration from the
+older home, whose configuration/environment must still match. Otherwise startup
+reports an ambiguous-source conflict before writing a new destination. Explicit
+`RUNE_HOME`/`--config` bypasses automatic migration and lets the owner select a home.
+
+Migration steps:
 
 1. Copy `config/` (including custom files), `.env`, `bin/` and `logs/` into a
-   uniquely owned staging directory beside `~/rune/infer`. Links/junctions are
+   uniquely owned staging directory beside `~/.rune/infer`. Links/junctions are
    rejected, not followed. The old `.active_pids` registry is not copied.
 2. Convert schema 1/2 `config/models.json` to schema 3 **in the copy only**.
    Environment templates remain templates, and the copied `.env` stays unchanged.
@@ -60,7 +67,7 @@ On implicit default startup, if `~/.rune-infer/config` contains configuration:
    environment. Validation failures do not print config/secret values and do not
    select the staged home. Check schema/environment values in the original.
 5. Confirm source config/environment did not change, write a migration receipt,
-   then rename the validated staged directory to `~/rune/infer`.
+   then rename the validated staged directory to `~/.rune/infer`.
 
 Original files and directories are never deleted or modified. Unrelated files,
 projects and model directories are not copied. A receipt makes a repeat launch
@@ -79,8 +86,8 @@ command; it is separate from automatic home migration.
 Agents leave changes unstaged and uncommitted. The owner commits/pushes development
 work. GitHub Actions prepares synchronized versions/changelog and opens the single
 release/update-version PR after successful develop validation. The owner merges
-that PR into develop, then promotes develop to main with a merge commit titled
-`ci(release): publish vX.Y.Z`. Main automation creates the tag and publishes the
+that PR into develop, then promotes develop to main with a merge commit preserving ancestry. No special
+merge title is required; every main push validates pending release metadata. Main automation creates the tag and publishes the
 exact prepared changelog section. Merging into develop alone does not publish.
 
 Preview without Git mutation or publication:

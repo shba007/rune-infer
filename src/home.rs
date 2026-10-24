@@ -1,4 +1,4 @@
-//! Resolution of the Rune Infer home directory (`~/rune/infer`) and the
+//! Resolution of the Rune Infer home directory (`~/.rune/infer`) and the
 //! config file location.
 //!
 //! Layout inside the home directory (also used verbatim for a dev checkout,
@@ -20,14 +20,15 @@ pub const DEFAULT_CATALOG_REL: &str = "config/catalog.json";
 pub const LEGACY_CONFIG_REL: &str = "config/models.json";
 
 mod migration;
+#[cfg(test)]
 pub(crate) use migration::migrate_legacy_home;
 
-/// `$RUNE_HOME`, else `~/rune/infer`; never fall back to the current directory.
+/// `$RUNE_HOME`, else `~/.rune/infer`; never fall back to the current directory.
 pub fn rune_home() -> std::io::Result<PathBuf> {
     if let Some(custom) = std::env::var_os(HOME_ENV).filter(|v| !v.is_empty()) {
         return Ok(absolutize(&std::env::current_dir()?, Path::new(&custom)));
     }
-    Ok(user_home()?.join("rune").join("infer"))
+    Ok(user_home()?.join(".rune").join("infer"))
 }
 
 fn user_home() -> std::io::Result<PathBuf> {
@@ -64,7 +65,7 @@ impl Workspace {
     /// * `--config <path>` given: honoured as-is; root is inferred.
     /// * `RUNE_HOME` set: that folder.
     /// * `./config/server.json` or `./config/models.json` exists in current dir: dev checkout.
-    /// * otherwise `~/rune/infer`.
+    /// * otherwise `~/.rune/infer`.
     pub fn resolve(explicit_config: Option<&str>) -> std::io::Result<Self> {
         let cwd = std::env::current_dir()?;
         let custom = std::env::var_os(HOME_ENV)
@@ -164,8 +165,8 @@ impl Workspace {
                     "Cannot resolve the user home; set RUNE_HOME or use --config explicitly",
                 )
             })?;
-            let root = user.join("rune").join("infer");
-            migrate_legacy_home(&user.join(".rune-infer"), &root)?;
+            let root = user.join(".rune").join("infer");
+            migration::migrate_defaults(user, &root)?;
             root
         };
         Ok(Self {
@@ -254,7 +255,7 @@ mod tests {
         let cwd = f.0.join("unrelated");
         std::fs::create_dir(&cwd).unwrap();
         let ws = Workspace::resolve_at(None, &cwd, None, Some(&f.0)).unwrap();
-        assert_eq!(ws.root, f.0.join("rune/infer"));
+        assert_eq!(ws.root, f.0.join(".rune/infer"));
         assert_eq!(ws.server_path, ws.root.join("config/server.json"));
         let plan = crate::setup::SetupPlan {
             exposure: crate::setup::Exposure::Local,
@@ -304,9 +305,9 @@ mod tests {
     fn migration_preserves_settings_secrets_weights_and_customizations_and_repeats_safely() {
         let f = Fixture::new();
         let old = f.legacy();
-        let new = f.0.join("rune/infer");
-        std::fs::create_dir_all(f.0.join("rune/tools/plugins")).unwrap();
-        std::fs::write(f.0.join("rune/rune-kit.exe"), "kit").unwrap();
+        let new = f.0.join(".rune/infer");
+        std::fs::create_dir_all(f.0.join(".rune/tools/plugins")).unwrap();
+        std::fs::write(f.0.join(".rune/rune-kit.exe"), "kit").unwrap();
         assert!(migrate_legacy_home(&old, &new).unwrap());
         assert_eq!(
             std::fs::read(old.join(".env")).unwrap(),
@@ -343,7 +344,7 @@ mod tests {
         assert!(!new.join("models").exists());
         assert!(!new.join("unrelated-project").exists());
         assert_eq!(
-            std::fs::read(f.0.join("rune/rune-kit.exe")).unwrap(),
+            std::fs::read(f.0.join(".rune/rune-kit.exe")).unwrap(),
             b"kit"
         );
         std::fs::write(new.join("config/custom/settings.txt"), "new customization").unwrap();
@@ -361,7 +362,7 @@ mod tests {
     fn conflicts_and_invalid_config_leave_originals_and_destination_untouched() {
         let f = Fixture::new();
         let old = f.legacy();
-        let new = f.0.join("rune/infer");
+        let new = f.0.join(".rune/infer");
         std::fs::create_dir_all(&new).unwrap();
         std::fs::write(new.join(".env"), "destination secret").unwrap();
         assert!(migrate_legacy_home(&old, &new).is_err());
@@ -381,7 +382,7 @@ mod tests {
     fn unified_schema_two_is_converted_only_in_the_new_home() {
         let f = Fixture::new();
         let old = f.legacy();
-        let new = f.0.join("rune/infer");
+        let new = f.0.join(".rune/infer");
         let server: serde_json::Value =
             serde_json::from_slice(&std::fs::read(old.join("config/server.json")).unwrap())
                 .unwrap();
@@ -396,5 +397,71 @@ mod tests {
         assert!(!old.join("config/server.json").exists());
         assert!(new.join("config/server.json").exists());
         assert!(!migrate_legacy_home(&old, &new).unwrap());
+    }
+
+    #[test]
+    fn visible_home_migrates_to_hidden_home_and_preserves_both_products() {
+        let f = Fixture::new();
+        let old = f.legacy();
+        let visible = f.0.join("rune/infer");
+        assert!(migrate_legacy_home(&old, &visible).unwrap());
+        std::fs::write(
+            visible.join("config/custom/settings.txt"),
+            "latest customization",
+        )
+        .unwrap();
+        std::fs::create_dir_all(f.0.join(".rune/tools/plugins")).unwrap();
+        std::fs::write(f.0.join(".rune/rune-kit.exe"), "kit binary").unwrap();
+        std::fs::write(f.0.join(".rune/tools/plugins/keep"), "kit plugin").unwrap();
+        let cwd = f.0.join("unrelated working directory");
+        std::fs::create_dir(&cwd).unwrap();
+        let ws = Workspace::resolve_at(None, &cwd, None, Some(&f.0)).unwrap();
+        assert_eq!(ws.root, f.0.join(".rune/infer"));
+        assert_eq!(
+            std::fs::read(ws.root.join(".env")).unwrap(),
+            std::fs::read(visible.join(".env")).unwrap()
+        );
+        assert_eq!(
+            std::fs::read_to_string(ws.root.join("config/custom/settings.txt")).unwrap(),
+            "latest customization"
+        );
+        assert!(old.join("models/model.gguf").exists());
+        assert!(visible.join("bin/engine/server").exists());
+        assert!(ws.root.join("bin/engine/server").exists());
+        assert!(!ws.root.join("models").exists());
+        assert_eq!(
+            std::fs::read_to_string(f.0.join(".rune/rune-kit.exe")).unwrap(),
+            "kit binary"
+        );
+        assert_eq!(
+            std::fs::read_to_string(f.0.join(".rune/tools/plugins/keep")).unwrap(),
+            "kit plugin"
+        );
+        assert_eq!(
+            Workspace::resolve_at(None, &cwd, None, Some(&f.0))
+                .unwrap()
+                .root,
+            ws.root
+        );
+        std::fs::write(visible.join("config/custom/new.txt"), "later edit").unwrap();
+        assert!(Workspace::resolve_at(None, &cwd, None, Some(&f.0)).is_err());
+    }
+
+    #[test]
+    fn visible_only_and_ambiguous_sources_never_overwrite_data() {
+        let f = Fixture::new();
+        let old = f.legacy();
+        let visible = f.0.join("rune/infer");
+        migrate_legacy_home(&old, &visible).unwrap();
+        std::fs::remove_file(visible.join(".legacy-home-migration.json")).unwrap();
+        let hidden = f.0.join(".rune/infer");
+        assert!(migration::migrate_defaults(&f.0, &hidden).is_err());
+        assert!(!hidden.exists());
+        // Hide the older configuration without deleting it; the visible home
+        // now independently qualifies for migration.
+        std::fs::rename(old.join("config"), old.join("saved-config")).unwrap();
+        assert!(migration::migrate_defaults(&f.0, &hidden).unwrap());
+        assert!(!migration::migrate_defaults(&f.0, &hidden).unwrap());
+        assert!(old.join("saved-config/server.json").exists());
     }
 }

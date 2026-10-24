@@ -25,12 +25,12 @@ def main():
     assert original_weight.is_file() and llama.is_file(), "Model and engine must already exist"
     fixture = args.output.resolve().parent / ("migration owner spaces " + uuid.uuid4().hex)
     old = fixture / ".rune-infer"
-    new = fixture / "rune/infer"
+    new = fixture / ".rune/infer"
     cwd = fixture / "unrelated working directory"
-    for path in [old / "config", old / "bin", fixture / "rune/tools/plugins", cwd]:
+    for path in [old / "config", old / "bin", fixture / ".rune/tools/plugins", cwd]:
         path.mkdir(parents=True, exist_ok=True)
-    (fixture / "rune/rune-kit.exe").write_bytes(b"kit-owned sentinel")
-    (fixture / "rune/tools/plugins/keep.txt").write_bytes(b"kit plugin sentinel")
+    (fixture / ".rune/rune-kit.exe").write_bytes(b"kit-owned sentinel")
+    (fixture / ".rune/tools/plugins/keep.txt").write_bytes(b"kit plugin sentinel")
     (old / "bin/custom-state").write_bytes(b"retained engine customization")
     try:
         reference = os.path.relpath(original_weight, old).replace("\\", "/")
@@ -85,8 +85,8 @@ def main():
         for name, content in originals.items():
             assert (old / "config" / name).read_bytes() == content
         assert (new / "bin/custom-state").read_bytes() == b"retained engine customization"
-        assert (fixture / "rune/rune-kit.exe").read_bytes() == b"kit-owned sentinel"
-        assert (fixture / "rune/tools/plugins/keep.txt").read_bytes() == b"kit plugin sentinel"
+        assert (fixture / ".rune/rune-kit.exe").read_bytes() == b"kit-owned sentinel"
+        assert (fixture / ".rune/tools/plugins/keep.txt").read_bytes() == b"kit plugin sentinel"
         assert original_weight.is_file() and (new / "logs/rune-infer.log").is_file()
         evidence = {"version": health["version"], "backend": health["backend"], "model": args.model,
                     "status": 200, "reply": result["choices"][0]["message"]["content"],

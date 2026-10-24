@@ -1,24 +1,121 @@
+use git_cliff_core::{changelog::Changelog, commit::Commit, config::Config, release::Release};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, fs, path::Path, process::Command};
+use sha2::{Digest, Sha256};
+use std::{fs, path::Path, process::Command};
 use toml_edit::{DocumentMut, value};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
+pub const GENERATOR: &str = "git-cliff-core@2.14.2";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct State {
     pub source_head: String,
     pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes_sha256: Option<String>,
+}
+fn digest(notes: &str) -> String {
+    Sha256::digest(notes.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+/// Parse/classify/bump with the package. Validation never renders fresh release prose.
+fn packaged_release(
+    published: &Version,
+    commits: Vec<Commit<'static>>,
+) -> Result<Option<(Version, Changelog<'static>)>> {
+    let config: Config = include_str!("../../cliff.toml").parse()?;
+    let release = Release {
+        commits,
+        previous: Some(Box::new(Release {
+            version: Some(format!("v{published}")),
+            ..Default::default()
+        })),
+        ..Default::default()
+    };
+    let mut cliff = Changelog::new(vec![release], config, None)?;
+    if cliff.releases.first().is_none_or(|r| r.commits.is_empty()) {
+        return Ok(None);
+    }
+    let tag = cliff
+        .bump_version()?
+        .ok_or("git-cliff returned no version")?;
+    let version = Version::parse(tag.strip_prefix('v').unwrap_or(&tag))?;
+    if version <= *published {
+        return Err("git-cliff produced a non-increasing release version".into());
+    }
+    Ok(Some((version, cliff)))
+}
+/// Render only during preparation/examples, never while publishing a prepared section.
+pub fn generated_release(
+    published: &Version,
+    commits: Vec<Commit<'static>>,
+) -> Result<Option<(Version, String)>> {
+    let Some((version, cliff)) = packaged_release(published, commits)? else {
+        return Ok(None);
+    };
+    // The configured template contains no wall-clock date or network metadata.
+    let mut output = Vec::new();
+    cliff.generate(&mut output)?;
+    let notes = String::from_utf8(output)?.trim().to_owned() + "\n";
+    release_notes(&notes, &version)?;
+    Ok(Some((version, notes)))
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Entry {
-    pub group: &'static str,
-    pub text: String,
-    pub breaking: bool,
+#[derive(Debug)]
+pub struct Plan {
+    pub version: Version,
+    pub changelog: String,
+    pub notes: String,
+    pub state: State,
 }
-
+/// Integrate one package-generated section, preserving every published byte.
+pub fn plan(
+    published: &Version,
+    current: &Version,
+    changelog: &str,
+    source_head: &str,
+    commits: Vec<Commit<'static>>,
+) -> Result<Option<Plan>> {
+    if current < published {
+        return Err("Manifest version decreased below the published release".into());
+    }
+    let Some((version, notes)) = generated_release(published, commits)? else {
+        return Ok(None);
+    };
+    if version < *current {
+        return Err(
+            "Manifest exceeds the package-calculated version; review pending metadata".into(),
+        );
+    }
+    let parts = sections(changelog);
+    let at = parts.first().map_or(changelog.len(), |p| p.1);
+    let end = if current > published {
+        if parts.first().map(|p| &p.0) != Some(current) {
+            return Err("Pending manifest/changelog mismatch".into());
+        }
+        parts.get(1).map_or(changelog.len(), |p| p.1)
+    } else {
+        at
+    };
+    let updated = format!("{}{}\n{}", &changelog[..at], notes, &changelog[end..]);
+    let state = State {
+        source_head: source_head.into(),
+        version: version.to_string(),
+        generator: Some(GENERATOR.into()),
+        notes_sha256: Some(digest(&notes)),
+    };
+    Ok(Some(Plan {
+        version,
+        notes,
+        changelog: updated,
+        state,
+    }))
+}
 fn private_or_placeholder(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     let words: Vec<_> = lower
@@ -43,53 +140,6 @@ fn private_or_placeholder(text: &str) -> bool {
         || lower.contains("bump version")
         || lower.contains("version bump")
         || lower.contains("coming soon")
-}
-
-/// Conventional Commit parsing is supplied by git-conventional, not an AI service.
-pub fn entries(messages: &[String]) -> Vec<Entry> {
-    let mut seen = BTreeSet::new();
-    messages
-        .iter()
-        .filter_map(|message| {
-            let commit = git_conventional::Commit::parse(message).ok()?;
-            let kind = commit.type_().to_string();
-            let scope = commit.scope().map(|s| s.to_string());
-            if (scope.as_deref() == Some("release")
-                && commit.description().starts_with("publish v"))
-                || commit
-                    .description()
-                    .to_ascii_lowercase()
-                    .contains("apply code fixes")
-                || private_or_placeholder(commit.description())
-            {
-                return None;
-            }
-            let group = if commit.breaking() {
-                "Compatibility"
-            } else {
-                match kind.as_str() {
-                    "feat" => "Features",
-                    "fix" => "Fixes",
-                    "perf" => "Performance",
-                    _ => "Maintenance",
-                }
-            };
-            let description = commit.description().replace(['\r', '\n'], " ");
-            let text = if let Some(scope) = scope.filter(|s| !private_or_placeholder(s)) {
-                format!("{scope}: {description}")
-            } else {
-                description
-            };
-            if !seen.insert(text.clone()) {
-                return None;
-            }
-            Some(Entry {
-                group,
-                text,
-                breaking: commit.breaking(),
-            })
-        })
-        .collect()
 }
 
 fn sections(changelog: &str) -> Vec<(Version, usize, usize)> {
@@ -139,111 +189,6 @@ pub fn release_notes(changelog: &str, version: &Version) -> Result<String> {
     ))
 }
 
-#[derive(Debug)]
-pub struct Plan {
-    pub version: Version,
-    pub changelog: String,
-    pub notes: String,
-    pub state: State,
-}
-
-pub fn plan(
-    published: &Version,
-    current: &Version,
-    changelog: &str,
-    source_head: &str,
-    changes: &[Entry],
-) -> Result<Option<Plan>> {
-    if changes.is_empty() {
-        return Ok(None);
-    }
-    if current < published {
-        return Err("Manifest version is older than the latest published tag".into());
-    }
-    let version = {
-        let mut next = published.clone();
-        // Infer's existing cliff rules: features always minor, breaking always major.
-        if changes.iter().any(|c| c.breaking) {
-            next.major += 1;
-            next.minor = 0;
-            next.patch = 0;
-        } else if changes.iter().any(|c| c.group == "Features") {
-            next.minor += 1;
-            next.patch = 0;
-        } else {
-            next.patch += 1;
-        }
-        std::cmp::max(next, current.clone())
-    };
-    let pending = current > published;
-    let old_notes = if pending {
-        release_notes(changelog, current)?
-            .split_once('\n')
-            .ok_or("Missing section body")?
-            .1
-            .trim()
-            .to_owned()
-    } else {
-        String::new()
-    };
-    let mut additions = String::new();
-    for group in [
-        "Features",
-        "Fixes",
-        "Performance",
-        "Maintenance",
-        "Compatibility",
-    ] {
-        let lines: Vec<_> = changes
-            .iter()
-            .filter(|c| c.group == group)
-            .filter(|c| {
-                !old_notes
-                    .lines()
-                    .any(|line| line == format!("- {}", c.text))
-            })
-            .map(|c| format!("- {}\n", c.text))
-            .collect();
-        if !lines.is_empty() {
-            additions.push_str(&format!("### {group}\n\n{}\n", lines.concat()));
-        }
-    }
-    let notes = if old_notes.is_empty() {
-        additions.trim_end().to_owned()
-    } else if additions.is_empty() {
-        old_notes.trim_end().to_owned()
-    } else {
-        format!("{}\n\n{}", old_notes.trim_end(), additions.trim_end())
-    };
-    let parts = sections(changelog);
-    let updated = if pending {
-        let first = parts.first().ok_or("Missing pending version section")?;
-        let end = parts.get(1).map_or(changelog.len(), |p| p.1);
-        format!(
-            "{}## [{version}]\n\n{notes}\n\n{}",
-            &changelog[..first.1],
-            &changelog[end..]
-        )
-    } else {
-        let at = parts.first().map_or(changelog.len(), |p| p.1);
-        format!(
-            "{}## [{version}]\n\n{notes}\n\n{}",
-            &changelog[..at],
-            &changelog[at..]
-        )
-    };
-    let notes = release_notes(&updated, &version)?;
-    Ok(Some(Plan {
-        version: version.clone(),
-        changelog: updated,
-        notes,
-        state: State {
-            source_head: source_head.into(),
-            version: version.to_string(),
-        },
-    }))
-}
-
 pub fn git(root: &Path, args: &[&str]) -> Result<String> {
     let out = Command::new("git").current_dir(root).args(args).output()?;
     if !out.status.success() {
@@ -264,76 +209,6 @@ pub fn version(root: &Path) -> Result<Version> {
             .as_str()
             .ok_or("Missing Cargo package version")?,
     )?)
-}
-
-pub fn repository_plan(root: &Path) -> Result<Option<Plan>> {
-    let tags = git(root, &["tag", "--list", "v*"])?;
-    let published = tags
-        .lines()
-        .filter_map(|tag| Version::parse(tag.strip_prefix('v')?).ok())
-        .filter(|v| v.pre.is_empty())
-        .max()
-        .ok_or("No release tags found; fetch complete history and tags")?;
-    let current = version(root)?;
-    let head = git(root, &["rev-parse", "HEAD"])?.trim().to_owned();
-    let state_path = root.join(".release/prepared.json");
-    let state: Option<State> = if state_path.exists() {
-        Some(serde_json::from_slice(&fs::read(state_path)?)?)
-    } else {
-        None
-    };
-    let base = history_base(&published, &current, state.as_ref())?;
-    if base == format!("v{published}") {
-        // Publication tags the main promotion merge, which need not itself be
-        // an ancestor of develop. tag..HEAD still excludes all reviewed commits
-        // reachable through that merge's develop parent. Require related history.
-        git(root, &["merge-base", &base, "HEAD"])?;
-    } else {
-        git(root, &["merge-base", "--is-ancestor", &base, "HEAD"])?;
-    }
-    let history = git(
-        root,
-        &[
-            "log",
-            "--no-merges",
-            "--reverse",
-            "--format=%B%x00",
-            &format!("{base}..HEAD"),
-        ],
-    )?;
-    let messages = history
-        .split('\0')
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>();
-    plan(
-        &published,
-        &current,
-        &fs::read_to_string(root.join("CHANGELOG.md"))?,
-        &head,
-        &entries(&messages),
-    )
-}
-
-pub fn history_base(
-    published: &Version,
-    current: &Version,
-    state: Option<&State>,
-) -> Result<String> {
-    if let Some(state) = state {
-        if Version::parse(&state.version)? <= *published {
-            return Ok(format!("v{published}"));
-        }
-        if state.version != current.to_string()
-            || state.source_head.len() != 40
-            || !state.source_head.chars().all(|c| c.is_ascii_hexdigit())
-        {
-            return Err("Invalid pending release state".into());
-        }
-        Ok(state.source_head.clone())
-    } else {
-        Ok(format!("v{published}"))
-    }
 }
 
 /// Only changes release-owned files. Does not stage, commit, push or invoke Git mutations.
@@ -360,7 +235,7 @@ pub fn apply(root: &Path, plan: &Plan) -> Result<()> {
     Ok(())
 }
 
-pub fn validate_versions(root: &Path) -> Result<()> {
+pub fn validate_manifests(root: &Path) -> Result<()> {
     let version = version(root)?.to_string();
     let cargo = fs::read_to_string(root.join("Cargo.toml"))?.parse::<DocumentMut>()?;
     let lock = fs::read_to_string(root.join("Cargo.lock"))?.parse::<DocumentMut>()?;
@@ -375,9 +250,14 @@ pub fn validate_versions(root: &Path) -> Result<()> {
     {
         return Err("Cargo.toml and Cargo.lock versions must agree".into());
     }
+    Ok(())
+}
+
+pub fn validate_versions(root: &Path) -> Result<()> {
+    validate_manifests(root)?;
     release_notes(
         &fs::read_to_string(root.join("CHANGELOG.md"))?,
-        &Version::parse(&version)?,
+        &version(root)?,
     )?;
     Ok(())
 }
@@ -394,31 +274,162 @@ pub fn validate_event(root: &Path, event: &serde_json::Value) -> Result<()> {
     Ok(())
 }
 
-/// Main promotion must preserve reviewed history and carry an explicit owner marker.
-pub fn validate_promotion(root: &Path) -> Result<()> {
-    validate_versions(root)?;
-    let version = version(root)?;
-    let state: State = serde_json::from_slice(&fs::read(root.join(".release/prepared.json"))?)?;
-    if state.version != version.to_string()
-        || state.source_head.len() != 40
-        || !state.source_head.chars().all(|c| c.is_ascii_hexdigit())
-    {
-        return Err("Missing or mismatched prepared release state".into());
+pub fn published_version(root: &Path) -> Result<Version> {
+    git(root, &["tag", "--list", "v*"])?
+        .lines()
+        .filter_map(|tag| Version::parse(tag.strip_prefix('v')?).ok())
+        .filter(|v| v.pre.is_empty())
+        .max()
+        .ok_or("No release tags found; fetch full history/tags".into())
+}
+fn state(root: &Path) -> Result<Option<State>> {
+    let path = root.join(".release/prepared.json");
+    if path.exists() {
+        Ok(Some(serde_json::from_slice(&fs::read(path)?)?))
+    } else {
+        Ok(None)
     }
+}
+fn valid_state(state: &State) -> Result<()> {
+    Version::parse(&state.version)?;
+    if state.source_head.len() != 40 || !state.source_head.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Invalid prepared source revision".into());
+    }
+    if state.generator.as_deref().is_some_and(|g| g != GENERATOR)
+        || state.generator.is_some() != state.notes_sha256.is_some()
+    {
+        return Err("Unsupported or incomplete prepared generator metadata".into());
+    }
+    Ok(())
+}
+pub fn history_base(
+    published: &Version,
+    current: &Version,
+    state: Option<&State>,
+) -> Result<String> {
+    if let Some(state) = state {
+        valid_state(state)?;
+        if Version::parse(&state.version)? > *published {
+            if state.version != current.to_string() {
+                return Err("Invalid pending release state".into());
+            }
+            return Ok(state.source_head.clone());
+        }
+    }
+    Ok(format!("v{published}"))
+}
+fn source_commits(root: &Path, base: &str) -> Result<Vec<Commit<'static>>> {
+    let history = git(
+        root,
+        &[
+            "log",
+            "--no-merges",
+            "--reverse",
+            "--format=%H%x00%an%x00%B%x00",
+            &format!("{base}..HEAD"),
+        ],
+    )?;
+    let fields: Vec<_> = history.split('\0').collect();
+    Ok(fields
+        .chunks(3)
+        .filter(|f| f.len() == 3)
+        .map(|f| {
+            let mut commit = Commit::new(f[0].trim().into(), f[2].trim().into());
+            commit.author.name = Some(f[1].trim().into());
+            commit
+        })
+        .collect())
+}
+pub fn repository_plan(root: &Path) -> Result<Option<Plan>> {
+    validate_manifests(root)?;
+    let published = published_version(root)?;
+    let current = version(root)?;
+    if current < published {
+        return Err("Manifest version decreased below the published release".into());
+    }
+    let state = state(root)?;
+    let base = history_base(&published, &current, state.as_ref())?;
+    if base.starts_with('v') {
+        git(root, &["merge-base", &base, "HEAD"])?;
+    } else {
+        git(root, &["merge-base", "--is-ancestor", &base, "HEAD"])?;
+    }
+    // Consumed metadata prevents bookkeeping merge loops; full pending history
+    // still determines the greatest package bump and the complete release prose.
+    if packaged_release(&published, source_commits(root, &base)?)?.is_none() {
+        return Ok(None);
+    }
+    plan(
+        &published,
+        &current,
+        &fs::read_to_string(root.join("CHANGELOG.md"))?,
+        git(root, &["rev-parse", "HEAD"])?.trim(),
+        source_commits(root, &format!("v{published}"))?,
+    )
+}
+/// No subject/parent-count gate: every main push gets a validated decision.
+pub fn pending_release(
+    current: &Version,
+    published: &Version,
+    state: Option<&State>,
+) -> Result<bool> {
+    if current < published {
+        return Err("Manifest version decreased below the published release".into());
+    }
+    if let Some(state) = state {
+        valid_state(state)?;
+        if Version::parse(&state.version)? > *current {
+            return Err("Prepared metadata is newer than the manifest".into());
+        }
+    }
+    if current == published {
+        return Ok(false);
+    }
+    let state = state.ok_or("Unpublished manifest version has no prepared release metadata")?;
+    if state.version != current.to_string() {
+        return Err("Pending version and prepared metadata disagree".into());
+    }
+    Ok(true)
+}
+pub fn validate_promotion(root: &Path) -> Result<bool> {
+    validate_manifests(root)?;
+    let current = version(root)?;
+    let published = published_version(root)?;
+    let state = state(root)?;
+    if !pending_release(&current, &published, state.as_ref())? {
+        return Ok(false);
+    }
+    let state = state.unwrap();
     git(
         root,
         &["merge-base", "--is-ancestor", &state.source_head, "HEAD"],
     )?;
-    if git(root, &["show", "-s", "--format=%P", "HEAD"])?
-        .split_whitespace()
-        .count()
-        != 2
-        || git(root, &["show", "-s", "--format=%s", "HEAD"])?.trim()
-            != format!("ci(release): publish v{version}")
-    {
+    validate_versions(root)?;
+    let notes = release_notes(&fs::read_to_string(root.join("CHANGELOG.md"))?, &current)?;
+    validate_note_receipt(&state, &notes)?;
+    if packaged_release(&published, source_commits(root, &state.source_head)?)?.is_some() {
         return Err(
-            "Promote develop with a merge commit titled ci(release): publish vX.Y.Z".into(),
+            "Unprepared development followed the consumed source; prepare and review again".into(),
         );
+    }
+    let (calculated, _) =
+        packaged_release(&published, source_commits(root, &format!("v{published}"))?)?
+            .ok_or("Prepared version has no releasable reviewed source history")?;
+    if calculated != current {
+        return Err("Prepared manifest does not match the git-cliff-calculated version".into());
+    }
+    Ok(true)
+}
+
+/// Verify the immutable prepared-note receipt without regenerating its prose.
+pub fn validate_note_receipt(state: &State, notes: &str) -> Result<()> {
+    valid_state(state)?;
+    if state
+        .notes_sha256
+        .as_ref()
+        .is_some_and(|hash| *hash != digest(notes))
+    {
+        return Err("Prepared release notes changed after preparation".into());
     }
     Ok(())
 }

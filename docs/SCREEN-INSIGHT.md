@@ -5,7 +5,7 @@ the existing HTTP image-input API; no workflow engine or MCP transport is added.
 
 Start with `rune-infer serve`: the existing dashboard opens on a TTY. Use
 `rune-infer serve --headless` without a terminal. Bare `rune-infer` remains compatible.
-`--config`, `RUNE_HOME`, development-checkout precedence and ~/rune/infer migration
+`--config`, `RUNE_HOME`, development-checkout precedence and ~/.rune/infer migration
 are unchanged. No binary/storage names changed.
 
 ## Tested request
@@ -79,3 +79,11 @@ simultaneous-client GPU latency remain unverified. See STUDIO-CONTRACT.md.
 | Frame-based video | Existing media/frame input handling; Studio must choose frames and timestamps. No workflow scheduler or continuous video guarantee. |
 
 These are plans and acceptance gaps, not new implementations.
+
+## Hidden installation root
+
+Default binary/home paths are now ~/.rune/rune-infer[.exe] and ~/.rune/infer.
+Both previous ~/rune/infer and older ~/.rune-infer configuration can migrate by
+validated copy. The hidden-root migration trial reused the configured MiniCPM
+model and projector and returned HTTP 200 for the image fixture; originals and
+weights remained in place. See INSTALLATION.md for source conflicts and overrides.

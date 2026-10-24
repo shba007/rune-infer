@@ -10,6 +10,32 @@ use sha2::{Digest, Sha256};
 const MARKER: &str = ".legacy-home-migration.json";
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
+/// Select one legacy source before writing anything. Two configured old homes
+/// require explicit user selection; never silently merge divergent histories.
+pub(super) fn migrate_defaults(user: &Path, destination: &Path) -> io::Result<bool> {
+    let mut sources = Vec::new();
+    for source in [user.join("rune/infer"), user.join(".rune-infer")] {
+        if source.try_exists()? {
+            plain_metadata(&source)?;
+            if ["server.json", "catalog.json", "models.json"]
+                .iter()
+                .any(|file| source.join("config").join(file).exists())
+            {
+                sources.push(source);
+            }
+        }
+    }
+    // A valid earlier receipt in ~/rune/infer proves it was copied from the
+    // older home. Verify both source and destination before choosing that chain.
+    if sources.len() == 2 {
+        migrate_legacy_home(&sources[1], &sources[0])?;
+    }
+    match sources.first() {
+        Some(source) => migrate_legacy_home(source, destination),
+        None => Ok(false),
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct Receipt {
     source: PathBuf,

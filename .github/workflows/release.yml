@@ -9,8 +9,6 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
-    if: >-
-      startsWith(github.event.head_commit.message, 'ci(release): publish v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -21,10 +19,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: xtask -> target
-      - name: Validate owner promotion and exact prepared notes
+      - name: Validate release eligibility on every main push
+        id: eligibility
+        run: cargo run --locked --manifest-path xtask/Cargo.toml -- verify-promotion
+      - name: Extract the validated prepared section
+        if: steps.eligibility.outputs.pending == 'true'
         id: release
         run: |
-          cargo run --locked --manifest-path xtask/Cargo.toml -- verify-promotion
           cargo run --locked --manifest-path xtask/Cargo.toml -- notes --out RELEASE_NOTES.md
           VERSION=$(cargo run --quiet --locked --manifest-path xtask/Cargo.toml -- version)
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
@@ -33,6 +34,7 @@ jobs:
             exit 1
           fi
       - name: Publish prepared version after owner promotion
+        if: steps.eligibility.outputs.pending == 'true'
         env:
           # A PAT/App credential lets release.published trigger CD.
           GH_TOKEN: ${{ secrets.GH_TOKEN }}

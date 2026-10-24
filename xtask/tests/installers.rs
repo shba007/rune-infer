@@ -44,15 +44,34 @@ fn exercise(case: Case) {
         .tempdir()
         .unwrap();
     let home = temp.path().join("owner's home");
-    let shared = home.join("rune");
+    let name = if case.windows {
+        "rune-infer.exe"
+    } else {
+        "rune-infer"
+    };
+    let kit_name = if case.windows {
+        "rune-kit.exe"
+    } else {
+        "rune-kit"
+    };
+    let shared = home.join(".rune");
     let target = if case.custom {
         temp.path().join("custom installation")
     } else {
         shared.clone()
     };
     fs::create_dir_all(shared.join("tools/plugins")).unwrap();
-    fs::write(shared.join("rune-kit.exe"), b"kit-owned executable").unwrap();
+    fs::write(shared.join(kit_name), b"kit-owned executable").unwrap();
     fs::write(shared.join("tools/plugins/keep"), b"kit-owned plugin").unwrap();
+    let visible = home.join("rune");
+    fs::create_dir_all(visible.join("tools/plugins")).unwrap();
+    fs::write(visible.join(name), b"retained visible Infer").unwrap();
+    fs::write(visible.join(kit_name), b"retained visible Kit").unwrap();
+    fs::write(
+        visible.join("tools/plugins/keep"),
+        b"retained visible plugin",
+    )
+    .unwrap();
     let legacy = home.join(".rune-infer");
     fs::create_dir(&legacy).unwrap();
     fs::write(legacy.join(".env"), b"KEEP_ORIGINAL=private-fixture\n").unwrap();
@@ -60,11 +79,6 @@ fn exercise(case: Case) {
     let stage = temp.path().join("stage");
     fs::create_dir(&assets).unwrap();
     fs::create_dir(&stage).unwrap();
-    let name = if case.windows {
-        "rune-infer.exe"
-    } else {
-        "rune-infer"
-    };
     let version = infer_xtask::version(&root()).unwrap().to_string();
     let archive_name = if case.windows {
         "rune-infer-windows-x64.zip"
@@ -94,7 +108,7 @@ fn exercise(case: Case) {
         );
     } else {
         let failure = if case.rollback {
-            "case \"$0\" in */rune/rune-infer) exit 1 ;; esac\n"
+            "case \"$0\" in */.rune/rune-infer) exit 1 ;; esac\n"
         } else {
             ""
         };
@@ -224,12 +238,24 @@ fn exercise(case: Case) {
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(
-            fs::read(shared.join("rune-kit.exe")).unwrap(),
+            fs::read(shared.join(kit_name)).unwrap(),
             b"kit-owned executable"
         );
         assert_eq!(
             fs::read(shared.join("tools/plugins/keep")).unwrap(),
             b"kit-owned plugin"
+        );
+        assert_eq!(
+            fs::read(visible.join(name)).unwrap(),
+            b"retained visible Infer"
+        );
+        assert_eq!(
+            fs::read(visible.join(kit_name)).unwrap(),
+            b"retained visible Kit"
+        );
+        assert_eq!(
+            fs::read(visible.join("tools/plugins/keep")).unwrap(),
+            b"retained visible plugin"
         );
         assert_eq!(
             fs::read(legacy.join(".env")).unwrap(),

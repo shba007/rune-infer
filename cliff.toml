@@ -1,57 +1,55 @@
-# Historical generator configuration retained for reference. Active preparation
-# and publication use xtask; do not regenerate CHANGELOG.md with git-cliff.
+# Active release generator: git-cliff-core =2.14.2, invoked by Rust xtask.
 [changelog]
-header = """
-# Changelog\n
-All notable changes to this project will be documented in this file.\n
-"""
+header = ""
 body = """
-{% if version %}\
-    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
-{% else %}\
-    ## [Unreleased]
-{% endif %}\
+## {{ version }}
+
+{% if previous.version %}**[Compare changes](https://github.com/shba007/rune-infer/compare/{{ previous.version }}...{{ version }})**
+{% endif %}
 {% for group, commits in commits | group_by(attribute="group") %}
-    ### {{ group | striptags | trim | upper_first }}
-    {% for commit in commits %}
-        - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
-            {% if commit.breaking %}[**breaking**] {% endif %}\
-            {{ commit.message | upper_first }}\
-            {% if commit.remote.username %} by @{{ commit.remote.username }}{% endif %}\
-            {% if commit.remote.pr_number %} in #{{ commit.remote.pr_number }}{% endif %}
-    {% endfor %}
-{% endfor %}\n
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{% if commit.breaking %}**BREAKING:** {% endif %}{{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/shba007/rune-infer/commit/{{ commit.id }})){% for link in commit.links %} ([{{ link.text }}]({{ link.href }})){% endfor %}
+{% if commit.breaking_description %}  Breaking change: {{ commit.breaking_description | replace(from="\n", to=" ") }}
+{% endif %}{% endfor %}
+{% endfor %}
+{% set authors = commits | map(attribute="author.name") | unique %}
+{% if authors | length > 0 %}### Contributors
+{% for author in authors %}{% if author %}- {{ author }}
+{% endif %}{% endfor %}{% endif %}
 """
 trim = true
+format = true
 footer = ""
 
 [git]
 conventional_commits = true
 filter_unconventional = true
 split_commits = false
-commit_parsers = [
-	{ message = "^feat", group = "<!-- 0 -->🚀 Features" },
-	{ message = "^fix", group = "<!-- 1 -->🐛 Bug Fixes" },
-	{ message = "^perf", group = "<!-- 2 -->⚡ Performance" },
-	{ message = "^refactor", group = "<!-- 3 -->🚜 Refactor" },
-	{ message = "^doc", group = "<!-- 4 -->📚 Documentation" },
-	{ message = "^style", group = "<!-- 5 -->🎨 Styling" },
-	{ message = "^test", group = "<!-- 6 -->🧪 Testing" },
-	{ message = "^chore\\(release\\)", skip = true },
-	{ message = "^ci\\(release\\)", skip = true },
-	{ message = "^chore: apply code fixes", skip = true },
-	{ message = "^chore\\(deps.*\\)", skip = true },
-	{ message = "^chore", group = "<!-- 7 -->⚙️ Miscellaneous Tasks" },
-	{ message = "^ci", group = "<!-- 8 -->🤖 Continuous Integration" },
-	{ body = ".*security", group = "<!-- 9 -->🛡️ Security" },
-]
 protect_breaking_commits = false
-filter_commits = false
-tag_pattern = "v[0-9].*"
-topo_order = false
+filter_commits = true
 sort_commits = "oldest"
+commit_parsers = [
+  { message = '(?i)^(ci|chore)\(release\): (update version|publish v[0-9]|prepare release)', skip = true },
+  { message = '(?i)^[a-z]+(\([^)]*\))?: (apply code fixes|bump version|version bump|update version to)\b', skip = true },
+  { message = '(?i)\b(cycle|milestone|TODO|TBD|placeholder|coming soon)\b|\b(INF|IF|KF|WP|M|K|L|R)[- ]?[0-9]+\b', skip = true },
+  { body = '(?i)\b(cycle|milestone|TODO|TBD|placeholder|coming soon)\b|\b(INF|IF|KF|WP|M|K|L|R)[- ]?[0-9]+\b', skip = true },
+  { message = '^feat', group = '<!-- 0 -->Enhancements' },
+  { message = '^fix', group = '<!-- 1 -->Fixes' },
+  { message = '^docs', group = '<!-- 2 -->Documentation' },
+  { message = '^refactor', group = '<!-- 3 -->Refactors' },
+  { message = '^perf', group = '<!-- 4 -->Performance' },
+  { message = '^test', group = '<!-- 5 -->Tests' },
+  { message = '^build', group = '<!-- 6 -->Build' },
+  { message = '^ci', group = '<!-- 7 -->CI' },
+  { message = '.*', group = '<!-- 8 -->Chore' },
+]
+link_parsers = [{ pattern = '#([0-9]+)', href = 'https://github.com/shba007/rune-infer/pull/$1' }]
 
 [bump]
-initial_tag = "v0.1.0"
 features_always_bump_minor = true
-breaking_always_bump_major = true
+breaking_always_bump_major = false
+initial_tag = "v0.1.0"
+
+[remote]
+offline = true

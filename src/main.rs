@@ -15,7 +15,7 @@ use tracing_subscriber::prelude::*;
 #[command(author = "Rune Infer Team")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "A standalone model server with OpenAI-compatible API and Cloud AI Gateway")]
-#[command(after_help = "Data lives in ~/rune/infer (override with RUNE_HOME). \
+#[command(after_help = "Data lives in ~/.rune/infer (override with RUNE_HOME). \
 Precedence: --config, RUNE_HOME, local ./config (development checkouts), default home.")]
 struct Args {
     #[command(subcommand)]

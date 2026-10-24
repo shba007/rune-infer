@@ -4,7 +4,7 @@
 #
 # Environment overrides:
 #   RUNE_VERSION      release tag to install (default: latest), e.g. v0.2.0
-#   RUNE_INSTALL_DIR  where to put the binary (default: <user-home>\rune)
+#   RUNE_INSTALL_DIR  where to put the binary (default: <user-home>\.rune)
 #   RUNE_REPO         GitHub repo (default: shba007/rune-infer)
 #   RUNE_BASE_URL     download base URL or local directory (mirrors / offline installs)
 #   RUNE_SKIP_VERIFY  set to 1 to skip the SHA-256 check (not recommended)
@@ -28,7 +28,7 @@ if (-not $installDir) {
     if ([string]::IsNullOrWhiteSpace($userHome) -or -not [IO.Path]::IsPathRooted($userHome)) {
         throw 'Cannot resolve user home; set RUNE_INSTALL_DIR explicitly.'
     }
-    $installDir = Join-Path $userHome 'rune'
+    $installDir = Join-Path $userHome '.rune'
 }
 $installDir = [IO.Path]::GetFullPath($installDir)
 $bin = 'rune-infer'
@@ -155,15 +155,15 @@ try {
         Write-Host "Skipped PATH update. Add $installDir to your PATH manually."
     } else {
         if ($normalized -notcontains $wanted) {
-            [Environment]::SetEnvironmentVariable('Path', (($entries + $installDir) -join ';'), 'User')
+            [Environment]::SetEnvironmentVariable('Path', ((@($installDir) + $entries) -join ';'), 'User')
         }
         $sessionEntries = @($env:Path -split ';' | Where-Object { $_ } | ForEach-Object { Normalize-PathEntry $_ })
-        if ($sessionEntries -notcontains $wanted) { $env:Path = "$env:Path;$installDir" }
+        if ($sessionEntries -notcontains $wanted) { $env:Path = "$installDir;$env:Path" }
         Write-Host 'User PATH configured (open a new terminal for other windows).'
     }
 
     Write-Host ''
-    $defaultHome = if ($userHome) { Join-Path $userHome 'rune\infer' } else { '<user-home>\rune\infer' }
+    $defaultHome = if ($userHome) { Join-Path $userHome '.rune\infer' } else { '<user-home>\.rune\infer' }
     $inferHome = Get-Setting 'RUNE_HOME' $defaultHome
     Write-Host "Next: run 'rune-infer setup'; configuration lives in $inferHome\config."
     Write-Host 'Legacy configuration is copied and validated on first launch; originals and old executable locations are retained.'
