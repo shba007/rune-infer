@@ -3,6 +3,17 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.12.0](https://github.com/shba007/rune-infer/compare/v0.11.0..v0.12.0) - 2026-10-24
+
+#### 🚀 Features
+- (**usage**) enhance token usage tracking and telemetry reporting - ([78b0125](https://github.com/shba007/rune-infer/commit/78b0125da5bdb4fbd96d846d2a69b52d90c73f99)) - Shirsendu Bairagi
+- Implement cloud model registry and selection in TUI wizard - ([2a76910](https://github.com/shba007/rune-infer/commit/2a76910758d1a76607d4b81a4e33ad5227a37bf7)) - Shirsendu Bairagi
+
+#### 🚜 Refactoring
+- engine installation and inference checks in setup module - ([464f517](https://github.com/shba007/rune-infer/commit/464f517923ccdc041e1b93d64408279456df71f7)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.11.0](https://github.com/shba007/rune-infer/compare/v0.10.1..v0.11.0) - 2026-10-24
 
 #### 🚀 Features
