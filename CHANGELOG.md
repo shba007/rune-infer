@@ -3,6 +3,13 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.11.0](https://github.com/shba007/rune-infer/compare/v0.10.1..v0.11.0) - 2026-10-24
+
+#### 🚀 Features
+- (**telemetry**) implement request lifecycle tracking and telemetry enhancements - ([edc4351](https://github.com/shba007/rune-infer/commit/edc4351b8135bbb760b810574855c734d44e1cd3)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.10.1](https://github.com/shba007/rune-infer/compare/v0.10.0..v0.10.1) - 2026-10-24
 
 #### 🚜 Refactoring
