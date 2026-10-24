@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 
 - enhance promotion verification and output handling ([1d1c08b](https://github.com/shba007/rune-infer/commit/1d1c08b114b55234dd8beae712f0a405b8d0adbb))
 
+- enhance CI workflow with release metadata validation and classification ([3757ea8](https://github.com/shba007/rune-infer/commit/3757ea853f9fc7dc725ead85a2a9fc498b3e2d9d))
+
 ### Refactors
 
 - model capabilities and projector handling for Omni families ([2162eb5](https://github.com/shba007/rune-infer/commit/2162eb50dc47f2489605d9b34292fd878ea2e689))
