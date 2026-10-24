@@ -28,6 +28,19 @@ struct ToolCallAccumulator {
     arguments: String,
 }
 
+/// Read engine token counts without estimating from response text. Tool calls and
+/// reasoning can consume tokens even when the assistant's content is empty.
+fn upstream_usage(value: &serde_json::Value) -> Option<Usage> {
+    let usage = value.get("usage")?;
+    let prompt = u32::try_from(usage.get("prompt_tokens")?.as_u64()?).ok()?;
+    let output = u32::try_from(usage.get("completion_tokens")?.as_u64()?).ok()?;
+    let mut result = Usage::new(prompt, output);
+    result.prompt_tokens_details = usage
+        .get("prompt_tokens_details")
+        .and_then(|details| serde_json::from_value(details.clone()).ok());
+    Some(result)
+}
+
 pub struct LlamaServerEngine {
     id: String,
     port: u16,
@@ -400,6 +413,11 @@ impl InferenceEngine for LlamaServerEngine {
                     "stream": stream_mode,
                     "max_tokens": max_tokens.unwrap_or(16384)
                 });
+                if stream_mode {
+                    // Collect usage for telemetry even when the caller does not request
+                    // a usage chunk in Infer's public SSE response.
+                    body["stream_options"] = serde_json::json!({ "include_usage": true });
+                }
                 if let Some(k) = top_k {
                     body["top_k"] = serde_json::json!(k);
                 }
@@ -473,18 +491,13 @@ impl InferenceEngine for LlamaServerEngine {
                     let reader = std::io::BufReader::new(resp);
 
                     for line in reader.lines().map_while(Result::ok) {
-                        if let Some(data) = line.strip_prefix("data: ") {
+                        if let Some(data) = line.strip_prefix("data:") {
                             if data.trim() == "[DONE]" {
                                 break;
                             }
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
-                                if let Some(u) = v.get("usage") {
-                                    if let (Some(pt), Some(ct)) = (
-                                        u.get("prompt_tokens").and_then(|t| t.as_u64()),
-                                        u.get("completion_tokens").and_then(|t| t.as_u64()),
-                                    ) {
-                                        stream_usage = Some(Usage::new(pt as u32, ct as u32));
-                                    }
+                                if let Some(usage) = upstream_usage(&v) {
+                                    stream_usage = Some(usage);
                                 }
 
                                 let delta = &v["choices"][0]["delta"];
@@ -598,17 +611,9 @@ impl InferenceEngine for LlamaServerEngine {
                         })
                         .collect();
 
-                    let (prompt_tokens, completion_tokens) = if let Some(u) = stream_usage {
-                        (u.prompt_tokens, u.completion_tokens)
-                    } else {
-                        let img_tok = (images.len() * 576) as u32;
-                        let aud_tok = (audios.len() * 256) as u32;
-                        let txt_tok = (prompt.len() / 4).max(1) as u32;
-                        let pt = txt_tok + img_tok + aud_tok;
-                        let ct = (full_output.len() / 4).max(1) as u32;
-                        (pt, ct)
-                    };
-                    let mut final_usage = Usage::new(prompt_tokens, completion_tokens);
+                    // An absent usage chunk is unknown, not a fabricated one-token
+                    // response. Zero counts are displayed as unavailable by the TUI.
+                    let mut final_usage = stream_usage.unwrap_or_default();
                     if !images.is_empty() || !audios.is_empty() {
                         final_usage.prompt_tokens_details =
                             Some(crate::types::PromptTokensDetails {
@@ -670,22 +675,7 @@ impl InferenceEngine for LlamaServerEngine {
                     raw_content.to_string()
                 };
 
-                let (prompt_tokens, completion_tokens) = if let Some(u) = result.get("usage") {
-                    let pt = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                    let ct = u
-                        .get("completion_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as u32;
-                    (pt, ct)
-                } else {
-                    let img_tok = (images.len() * 576) as u32;
-                    let aud_tok = (audios.len() * 256) as u32;
-                    let txt_tok = (prompt.len() / 4).max(1) as u32;
-                    let pt = txt_tok + img_tok + aud_tok;
-                    let ct = (combined_content.len() / 4).max(1) as u32;
-                    (pt, ct)
-                };
-                let mut non_stream_usage = Usage::new(prompt_tokens, completion_tokens);
+                let mut non_stream_usage = upstream_usage(&result).unwrap_or_default();
                 if !images.is_empty() || !audios.is_empty() {
                     non_stream_usage.prompt_tokens_details =
                         Some(crate::types::PromptTokensDetails {
@@ -1392,5 +1382,61 @@ mod grounding_tests {
         ] {
             assert!(parse_grounding_coordinates(invalid).is_err(), "{invalid}");
         }
+    }
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::upstream_usage;
+    use serde_json::json;
+
+    #[test]
+    fn final_usage_counts_tool_output_even_without_text() {
+        let chunks = [
+            json!({"choices":[{"delta":{"tool_calls":[{"function":{"name":"report","arguments":"{\"answer\":\"A red square\"}"}}]}}],"usage":null}),
+            json!({"choices":[],"usage":{"prompt_tokens":1738,"completion_tokens":186,"total_tokens":1924}}),
+        ];
+        let usage = chunks
+            .iter()
+            .filter_map(upstream_usage)
+            .next_back()
+            .unwrap();
+        assert_eq!(
+            (
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.total_tokens
+            ),
+            (1738, 186, 1924)
+        );
+        let response = json!({"choices":[{"message":{"content":null,"tool_calls":[{"function":{"name":"report","arguments":"{}"}}]}}],"usage":{"prompt_tokens":100,"completion_tokens":42,"total_tokens":142}});
+        assert_eq!(upstream_usage(&response).unwrap().completion_tokens, 42);
+    }
+
+    #[test]
+    fn missing_or_partial_usage_never_fabricates_a_token() {
+        for response in [
+            json!({"choices":[{"message":{"content":null,"tool_calls":[{"function":{"name":"report","arguments":"{}"}}]}}]}),
+            json!({"usage":null}),
+            json!({"usage":{"prompt_tokens":100}}),
+        ] {
+            let usage = upstream_usage(&response).unwrap_or_default();
+            assert_eq!(usage.completion_tokens, 0);
+        }
+    }
+
+    #[test]
+    fn actual_usage_and_details_are_preserved() {
+        let response = json!({"usage":{"prompt_tokens":57,"completion_tokens":0,"prompt_tokens_details":{"cached_tokens":32}}});
+        let usage = upstream_usage(&response).unwrap();
+        assert_eq!(
+            (
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.total_tokens
+            ),
+            (57, 0, 57)
+        );
+        assert_eq!(usage.prompt_tokens_details.unwrap().cached_tokens, 32);
     }
 }

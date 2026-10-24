@@ -77,6 +77,7 @@ struct App {
     index: HashMap<String, usize>,
     requests: VecDeque<RequestRecord>,
     logs: VecDeque<LogLine>,
+    /// Fixed-point thousandths of a token/second preserve fractional rates.
     tps_hist: VecDeque<u64>,
     latency_hist: VecDeque<u64>,
     total_requests: u64,
@@ -203,7 +204,7 @@ impl App {
             }
         }
         if let Some(t) = tps {
-            push_capped(&mut self.tps_hist, t.round() as u64, HISTORY);
+            push_capped(&mut self.tps_hist, (t * 1000.0).round() as u64, HISTORY);
         }
         if !failed {
             push_capped(&mut self.latency_hist, r.latency_ms, HISTORY);
@@ -676,7 +677,11 @@ fn draw_stats(f: &mut Frame, area: Rect, app: &App) {
         nums,
     );
 
-    let latest_tps = app.tps_hist.back().copied().unwrap_or(0);
+    let latest_tps = app
+        .tps_hist
+        .back()
+        .map(|value| format!("{:.1}", *value as f64 / 1000.0))
+        .unwrap_or_else(|| "–".into());
     let tps_data: Vec<u64> = app.tps_hist.iter().copied().collect();
     f.render_widget(
         Sparkline::default()
@@ -843,12 +848,12 @@ fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
             ];
             if detailed {
                 cells.extend([
-                    Cell::from(if finished {
+                    Cell::from(if finished && r.prompt_tokens > 0 {
                         r.prompt_tokens.to_string()
                     } else {
                         "–".into()
                     }),
-                    Cell::from(if finished {
+                    Cell::from(if finished && r.completion_tokens > 0 {
                         r.completion_tokens.to_string()
                     } else {
                         "–".into()
@@ -1122,6 +1127,69 @@ mod tests {
     }
 
     #[test]
+    fn fractional_speed_and_unknown_usage_are_displayed_honestly() {
+        let mut a = app();
+        let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();
+        terminal.draw(|f| draw_stats(f, f.area(), &a)).unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("last – tok/s"));
+        a.on_request(RequestRecord {
+            id: 1,
+            phase: RequestPhase::Succeeded,
+            ts: ts(),
+            model: "a".into(),
+            status: 200,
+            latency_ms: 5000,
+            prompt_tokens: 10,
+            completion_tokens: 1,
+            generation_ms: 5000,
+            error: None,
+        });
+        assert_eq!(a.tps_hist.back(), Some(&200));
+        terminal.draw(|f| draw_stats(f, f.area(), &a)).unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("last 0.2 tok/s"));
+        a.on_request(RequestRecord {
+            id: 2,
+            phase: RequestPhase::Succeeded,
+            ts: ts(),
+            model: "a".into(),
+            status: 200,
+            latency_ms: 5000,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            generation_ms: 5000,
+            error: None,
+        });
+        assert_eq!(
+            a.tps_hist.len(),
+            1,
+            "unknown counts do not add a fake zero rate"
+        );
+        terminal.draw(|f| draw_requests(f, f.area(), &a)).unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains('–'));
+    }
+
+    #[test]
     fn lifecycle_updates_same_rows_without_double_counting_or_reordering() {
         let mut a = app();
         let record = |id, phase, model: &str| RequestRecord {
@@ -1212,7 +1280,7 @@ mod tests {
         assert_eq!((a.total_requests, a.total_errors), (4, 1));
         assert_eq!(a.models[0].requests, 3);
         assert_eq!(a.models[1].errors, 1);
-        assert_eq!(a.tps_hist.back(), Some(&20));
+        assert_eq!(a.tps_hist.back(), Some(&20_000));
         assert_eq!(
             a.latency_hist.len(),
             3,
