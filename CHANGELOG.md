@@ -3,6 +3,13 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.10.0](https://github.com/shba007/rune-infer/compare/v0.9.0..v0.10.0) - 2026-10-24
+
+#### 🚀 Features
+- implement self-update functionality for the executable - ([666de06](https://github.com/shba007/rune-infer/commit/666de06ee7eda0452a1da9c12ff04272ee7a6849)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.9.0](https://github.com/shba007/rune-infer/compare/v0.8.0..v0.9.0) - 2026-10-24
 
 #### 🚀 Features
