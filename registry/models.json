@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "provider": "google",
+      "id": "gemini-3.5-flash-lite",
+      "name": "Gemini 3.5 Flash-Lite",
+      "status": "active",
+      "capabilities": {
+        "chat": true,
+        "vision": true,
+        "tools": true,
+        "structured": true
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 1048576,
+      "max_output_tokens": 65536,
+      "tool_choice_modes": [],
+      "notes": "",
+      "verified_on": "2026-10-25",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite"
+      ]
+    },
+    {
+      "provider": "google",
+      "id": "gemini-3.7-flash",
+      "name": "Gemini 3.7 Flash",
+      "status": "deprecated",
+      "capabilities": {
+        "chat": true,
+        "vision": true,
+        "tools": true,
+        "structured": true
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 1048576,
+      "max_output_tokens": 65536,
+      "tool_choice_modes": [],
+      "notes": "Google documents this ID as automatically routed to gemini-3.8-flash. Infer still sends the exact selected ID.",
+      "verified_on": "2026-10-25",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash"
+      ]
+    },
+    {
+      "provider": "google",
+      "id": "gemini-3.8-flash",
+      "name": "Gemini 3.8 Flash",
+      "status": "active",
+      "capabilities": {
+        "chat": true,
+        "vision": true,
+        "tools": true,
+        "structured": true
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 1048576,
+      "max_output_tokens": 65536,
+      "tool_choice_modes": [],
+      "notes": "",
+      "verified_on": "2026-10-25",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash"
+      ]
+    },
+    {
+      "provider": "openrouter",
+      "id": "stealth/space-bunny-alpha",
+      "name": "Space Bunny Alpha",
+      "status": "unavailable",
+      "capabilities": {
+        "chat": true,
+        "vision": true,
+        "tools": null,
+        "structured": null
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "video"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 1000000,
+      "max_output_tokens": null,
+      "tool_choice_modes": [],
+      "notes": "The stealth period has ended; the provider endpoint list is empty. No replacement ID is selected automatically.",
+      "verified_on": "2026-10-25",
+      "sources": [
+        "https://openrouter.ai/stealth/space-bunny-alpha",
+        "https://openrouter.ai/api/v1/models/stealth/space-bunny-alpha/endpoints"
+      ]
+    },
+    {
+      "provider": "openrouter",
+      "id": "dots-studio/dots-3-note-preview:free",
+      "name": "Dots3-Note Preview (free)",
+      "status": "deprecated",
+      "capabilities": {
+        "chat": true,
+        "vision": true,
+        "tools": true,
+        "structured": true
+      },
+      "modalities_in": [
+        "text",
+        "image"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 512000,
+      "max_output_tokens": 460800,
+      "tool_choice_modes": [
+        "none",
+        "auto"
+      ],
+      "notes": "Provider page lists retirement on 2026-12-31. The observed AtlasCloud endpoint does not support required or named-function tool choice.",
+      "verified_on": "2026-10-25",
+      "sources": [
+        "https://openrouter.ai/dots-studio/dots-3-note-preview:free",
+        "https://openrouter.ai/api/v1/models/dots-studio/dots-3-note-preview:free/endpoints"
+      ]
+    },
+    {
+      "provider": "openrouter",
+      "id": "apodex/apodex-1.1-mini:free",
+      "name": "Apodex 1.1 Mini (free)",
+      "status": "active",
+      "capabilities": {
+        "chat": true,
+        "vision": null,
+        "tools": null,
+        "structured": null
+      },
+      "modalities_in": [
+        "text"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 262144,
+      "max_output_tokens": null,
+      "tool_choice_modes": [],
+      "notes": "Tool API, image input, structured-output support and output limit were not established by the fetched official model page; they are not advertised.",
+      "verified_on": "2026-10-25",
+      "sources": [
+        "https://openrouter.ai/apodex/apodex-1.1-mini:free"
+      ]
+    }
+  ]
+}

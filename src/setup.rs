@@ -4,6 +4,10 @@
 //! This module is UI-agnostic (no terminal code) so it can be unit tested and
 //! reused by other front-ends; the interactive wizard lives in `tui::wizard`.
 
+mod registry;
+pub use registry::{ModelMetadata, RegistryStatus, registered_model};
+mod cloud;
+pub use cloud::{CloudCapabilities, CloudModel, list_provider_models};
 mod local;
 #[cfg(test)]
 pub(crate) use local::prepare_local_models_with;
@@ -212,7 +216,6 @@ pub struct ProviderPreset {
     pub provider: &'static str,
     pub env_var: &'static str,
     pub base_url: &'static str,
-    pub default_model: &'static str,
     pub id_prefix: &'static str,
 }
 
@@ -222,7 +225,6 @@ pub const PROVIDERS: &[ProviderPreset] = &[
         provider: "google",
         env_var: "GEMINI_API_KEY",
         base_url: "https://generativelanguage.googleapis.com/v1beta",
-        default_model: "gemini-flash-latest",
         id_prefix: "gemini",
     },
     ProviderPreset {
@@ -230,7 +232,6 @@ pub const PROVIDERS: &[ProviderPreset] = &[
         provider: "openai",
         env_var: "OPENAI_API_KEY",
         base_url: "https://api.openai.com/v1",
-        default_model: "gpt-4o-mini",
         id_prefix: "openai",
     },
     ProviderPreset {
@@ -238,7 +239,6 @@ pub const PROVIDERS: &[ProviderPreset] = &[
         provider: "anthropic",
         env_var: "ANTHROPIC_API_KEY",
         base_url: "https://api.anthropic.com/v1",
-        default_model: "claude-haiku-5-5",
         id_prefix: "anthropic",
     },
     ProviderPreset {
@@ -246,32 +246,13 @@ pub const PROVIDERS: &[ProviderPreset] = &[
         provider: "openrouter",
         env_var: "OPENROUTER_API_KEY",
         base_url: "https://openrouter.ai/api/v1",
-        default_model: "openrouter/auto",
         id_prefix: "openrouter",
     },
 ];
 
-/// Check an API key by listing models. Blocking; run on a worker thread.
+/// Validate credentials using the same authenticated discovery path as setup.
 pub fn validate_provider_key(preset: &ProviderPreset, key: &str) -> Result<(), String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let url = format!("{}/models", preset.base_url.trim_end_matches('/'));
-    let req = client.get(url);
-    let req = match preset.provider {
-        "google" => req.header("x-goog-api-key", key),
-        "anthropic" => req
-            .header("x-api-key", key)
-            .header("anthropic-version", "2023-06-01"),
-        _ => req.bearer_auth(key),
-    };
-    let resp = req.send().map_err(|e| format!("network error: {e}"))?;
-    match resp.status().as_u16() {
-        200..=299 => Ok(()),
-        401 | 403 => Err("the provider rejected this key (unauthorized)".into()),
-        code => Err(format!("provider returned HTTP {code}")),
-    }
+    list_provider_models(preset, key).map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +286,7 @@ impl Exposure {
 pub struct CloudChoice {
     pub preset: ProviderPreset,
     pub api_key: String,
-    pub upstream_model: String,
+    pub model: ModelMetadata,
 }
 
 #[derive(Debug, Clone)]
@@ -421,23 +402,24 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
 
 fn cloud_entry(c: &CloudChoice) -> ModelEntry {
     ModelEntry {
-        id: format!("{}-{}", c.preset.id_prefix, slugify(&c.upstream_model)),
-        name: format!("{} · {}", c.preset.label, c.upstream_model),
+        id: format!("{}-{}", c.preset.id_prefix, slugify(&c.model.id)),
+        name: format!("{} · {}", c.preset.label, c.model.name),
         description: format!("{} model added by setup wizard", c.preset.label),
-        modality: Modality::VisionText,
-        capabilities: ["Chat", "Tool Call", "Vision", "Structured Output"]
-            .into_iter()
-            .map(String::from)
-            .collect(),
+        modality: if c.model.capabilities.vision == Some(true) {
+            Modality::VisionText
+        } else {
+            Modality::Text
+        },
+        capabilities: c.model.catalog_capabilities(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: None,
-        max_context_length: None,
+        max_context_length: c.model.context_tokens,
         sampling: SamplingConfig::default(),
         local: None,
         remote: Some(RemoteBlock {
             provider: ProviderType::from_name(c.preset.provider).unwrap_or(ProviderType::Custom),
-            upstream_model: c.upstream_model.clone(),
+            upstream_model: c.model.id.clone(),
             api_key: format!("{{{{{}}}}}", c.preset.env_var),
             base_url: Some(c.preset.base_url.to_string()),
             rate_limit: None,
@@ -455,6 +437,25 @@ pub fn write_setup(
     catalog_path: &Path,
     env_path: &Path,
 ) -> Result<usize> {
+    for choice in &plan.cloud {
+        let reviewed = registered_model(choice.preset.provider, &choice.model.id)
+            .map_err(anyhow::Error::msg)?
+            .ok_or_else(|| {
+                anyhow::anyhow!("Selected cloud model is missing from registry/models.json.")
+            })?;
+        if reviewed != choice.model {
+            anyhow::bail!("Selected cloud metadata differs from its reviewed registry entry.");
+        }
+        if choice.api_key.trim().is_empty() {
+            anyhow::bail!("Selected cloud provider requires an API key.");
+        }
+        if choice.model.provider != choice.preset.provider {
+            anyhow::bail!("Cloud model/provider mismatch.");
+        }
+        if let Some(error) = choice.model.selection_error() {
+            anyhow::bail!("{}: {error}", choice.model.id);
+        }
+    }
     let mut server_file: ServerFile = if server_path.exists() {
         let text = std::fs::read_to_string(server_path)?;
         let version = serde_json::from_str::<Value>(&text)
@@ -673,7 +674,9 @@ mod tests {
             cloud: vec![CloudChoice {
                 preset: PROVIDERS[0],
                 api_key: "secret".into(),
-                upstream_model: "gemini-flash-latest".into(),
+                model: registered_model("google", "gemini-3.5-flash-lite")
+                    .unwrap()
+                    .unwrap(),
             }],
             local: found.models,
             gpu_available: true,

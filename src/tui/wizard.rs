@@ -23,8 +23,8 @@ use super::theme::{DIM, ERR, OK, WARN, centered, human_bytes, spinner, terminal_
 use crate::config::EngineKind;
 use crate::home::Workspace;
 use crate::setup::{
-    self, CloudChoice, Exposure, LocalCandidate, LocalPreparationEvent, PROVIDERS, PreparedLocal,
-    Prerequisites, SetupPlan,
+    self, CloudChoice, CloudModel, Exposure, LocalCandidate, LocalPreparationEvent, PROVIDERS,
+    PreparedLocal, Prerequisites, SetupPlan,
 };
 use crate::telemetry::UiEvent;
 use ratatui::style::Color;
@@ -69,8 +69,7 @@ enum Flow {
 
 enum Validation {
     Idle,
-    Running(Receiver<Result<(), String>>),
-    Ok,
+    Running(Receiver<Result<Vec<CloudModel>, String>>),
     Failed(String),
 }
 
@@ -78,6 +77,7 @@ enum Validation {
 enum CloudPhase {
     Pick,
     Details,
+    Models,
 }
 
 #[derive(PartialEq, Eq)]
@@ -120,8 +120,11 @@ struct Wizard<'a> {
     cloud_queue: Vec<usize>,
     cloud_pos: usize,
     key_input: Input,
-    model_input: Input,
-    cloud_focus: usize,
+    cloud_models: Vec<CloudModel>,
+    cloud_model_picks: Vec<bool>,
+    cloud_model_cursor: usize,
+    cloud_filter: Input,
+    cloud_model_error: Option<String>,
     validation: Validation,
     cloud_done: Vec<CloudChoice>,
 
@@ -229,8 +232,11 @@ impl<'a> Wizard<'a> {
             cloud_queue: Vec::new(),
             cloud_pos: 0,
             key_input: Input::default(),
-            model_input: Input::default(),
-            cloud_focus: 0,
+            cloud_models: Vec::new(),
+            cloud_model_picks: Vec::new(),
+            cloud_model_cursor: 0,
+            cloud_filter: Input::default(),
+            cloud_model_error: None,
             validation: Validation::Idle,
             cloud_done: Vec::new(),
             local_phase: LocalPhase::Path,
@@ -274,12 +280,38 @@ impl<'a> Wizard<'a> {
                 self.prereq = Some(p);
             }
         }
-        if let Validation::Running(rx) = &self.validation {
-            if let Ok(res) = rx.try_recv() {
-                self.validation = match res {
-                    Ok(()) => Validation::Ok,
-                    Err(e) => Validation::Failed(e),
-                };
+        let model_result = if let Validation::Running(rx) = &self.validation {
+            match rx.try_recv() {
+                Ok(result) => Some(result),
+                Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    Some(Err("Model discovery stopped unexpectedly. Retry.".into()))
+                }
+            }
+        } else {
+            None
+        };
+        if let Some(result) = model_result {
+            match result {
+                Ok(models) => {
+                    let provider = PROVIDERS[self.cloud_queue[self.cloud_pos]].provider;
+                    self.cloud_model_picks = models
+                        .iter()
+                        .map(|model| {
+                            model.selection_error().is_none()
+                                && self.cloud_done.iter().any(|c| {
+                                    c.preset.provider == provider && c.model.id == model.id
+                                })
+                        })
+                        .collect();
+                    self.cloud_models = models;
+                    self.cloud_model_cursor = 0;
+                    self.cloud_filter = Input::default();
+                    self.cloud_model_error = None;
+                    self.cloud_phase = CloudPhase::Models;
+                    self.validation = Validation::Idle;
+                }
+                Err(error) => self.validation = Validation::Failed(error),
             }
         }
         let mut finished = None;
@@ -444,10 +476,14 @@ impl<'a> Wizard<'a> {
                     self.cloud_checked[self.cloud_cursor] = !self.cloud_checked[self.cloud_cursor]
                 }
                 KeyCode::Enter => {
-                    self.cloud_done.clear();
                     self.cloud_queue = (0..PROVIDERS.len())
                         .filter(|i| self.cloud_checked[*i])
                         .collect();
+                    self.cloud_done.retain(|choice| {
+                        self.cloud_queue
+                            .iter()
+                            .any(|i| PROVIDERS[*i].provider == choice.preset.provider)
+                    });
                     self.cloud_pos = 0;
                     if self.cloud_queue.is_empty() {
                         self.review_error = Some("Select at least one cloud provider.".into());
@@ -460,15 +496,38 @@ impl<'a> Wizard<'a> {
                 _ => {}
             },
             CloudPhase::Details => self.key_cloud_details(k),
+            CloudPhase::Models => self.key_cloud_models(k),
         }
     }
 
     fn begin_provider(&mut self) {
         let preset = PROVIDERS[self.cloud_queue[self.cloud_pos]];
-        self.key_input = Input::default();
-        self.model_input = Input::new(preset.default_model.into());
-        self.cloud_focus = 0;
+        self.key_input = Input::new(
+            self.cloud_done
+                .iter()
+                .find(|c| c.preset.provider == preset.provider)
+                .map(|c| c.api_key.clone())
+                .unwrap_or_default(),
+        );
+        self.cloud_models.clear();
+        self.cloud_model_picks.clear();
+        self.cloud_model_error = None;
+        self.cloud_phase = CloudPhase::Details;
         self.validation = Validation::Idle;
+    }
+
+    fn fetch_cloud_models(&mut self) {
+        let key = self.key_input.value().trim().to_string();
+        if key.is_empty() {
+            self.validation = Validation::Failed("Enter an API key before fetching models.".into());
+            return;
+        }
+        let preset = PROVIDERS[self.cloud_queue[self.cloud_pos]];
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(setup::list_provider_models(&preset, &key));
+        });
+        self.validation = Validation::Running(rx);
     }
 
     fn advance_provider(&mut self) {
@@ -482,63 +541,96 @@ impl<'a> Wizard<'a> {
     }
 
     fn key_cloud_details(&mut self, k: KeyEvent) {
-        let preset = PROVIDERS[self.cloud_queue[self.cloud_pos]];
         match &self.validation {
-            Validation::Running(_) => return,
-            Validation::Failed(_) => {
-                if matches!(k.code, KeyCode::Enter | KeyCode::Char('r') | KeyCode::Esc) {
+            Validation::Running(_) => {}
+            Validation::Failed(_) => match k.code {
+                KeyCode::Enter => self.fetch_cloud_models(),
+                KeyCode::Char('r') => self.validation = Validation::Idle,
+                KeyCode::Esc => {
+                    self.cloud_phase = CloudPhase::Pick;
                     self.validation = Validation::Idle;
-                    self.cloud_focus = 0;
                 }
-                return;
-            }
-            Validation::Ok => {
-                match k.code {
-                    KeyCode::Enter => {
-                        self.cloud_done.push(CloudChoice {
-                            preset,
-                            api_key: self.key_input.value().trim().to_string(),
-                            upstream_model: self.model_input.value().trim().to_string(),
-                        });
-                        self.advance_provider();
-                    }
-                    KeyCode::Char('r') | KeyCode::Esc => {
-                        self.validation = Validation::Idle;
-                        self.cloud_focus = 0;
-                    }
-                    _ => {}
+                _ => {}
+            },
+            Validation::Idle => match k.code {
+                KeyCode::Esc => self.cloud_phase = CloudPhase::Pick,
+                KeyCode::Enter => self.fetch_cloud_models(),
+                _ => {
+                    self.key_input.handle_event(&Event::Key(k));
                 }
-                return;
-            }
-            Validation::Idle => {}
+            },
         }
+    }
 
+    fn filtered_cloud_models(&self) -> Vec<usize> {
+        let query = self.cloud_filter.value().to_lowercase();
+        self.cloud_models
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| {
+                m.id.to_lowercase().contains(&query) || m.name.to_lowercase().contains(&query)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn key_cloud_models(&mut self, k: KeyEvent) {
+        let visible = self.filtered_cloud_models();
         match k.code {
-            KeyCode::Esc => {
-                self.cloud_phase = CloudPhase::Pick;
+            KeyCode::Up => self.cloud_model_cursor = self.cloud_model_cursor.saturating_sub(1),
+            KeyCode::Down => {
+                self.cloud_model_cursor =
+                    (self.cloud_model_cursor + 1).min(visible.len().saturating_sub(1))
             }
-            KeyCode::Tab | KeyCode::Down | KeyCode::Up => self.cloud_focus = 1 - self.cloud_focus,
-            KeyCode::Enter => {
-                let key = self.key_input.value().trim().to_string();
-                if key.is_empty() {
-                    self.cloud_focus = 0;
-                } else if self.cloud_focus == 0 || self.model_input.value().trim().is_empty() {
-                    self.cloud_focus = 1;
-                } else {
-                    let (tx, rx) = channel();
-                    std::thread::spawn(move || {
-                        let _ = tx.send(setup::validate_provider_key(&preset, &key));
-                    });
-                    self.validation = Validation::Running(rx);
+            KeyCode::Esc => {
+                self.cloud_phase = CloudPhase::Details;
+                self.validation = Validation::Idle;
+            }
+            KeyCode::Char(' ') => {
+                if let Some(i) = visible.get(self.cloud_model_cursor).copied() {
+                    if let Some(error) = self.cloud_models[i].selection_error() {
+                        self.cloud_model_error = Some(error.into());
+                    } else {
+                        self.cloud_model_picks[i] = !self.cloud_model_picks[i];
+                        self.cloud_model_error = None;
+                    }
                 }
+            }
+            KeyCode::Enter => {
+                let preset = PROVIDERS[self.cloud_queue[self.cloud_pos]];
+                let mut choices = Vec::new();
+                for (model, picked) in self.cloud_models.iter().zip(&self.cloud_model_picks) {
+                    if !picked {
+                        continue;
+                    }
+                    if let Some(error) = model.selection_error() {
+                        self.cloud_model_error = Some(error.into());
+                        return;
+                    }
+                    let Some(metadata) = model.metadata.clone() else {
+                        self.cloud_model_error = Some("Add registry metadata first.".into());
+                        return;
+                    };
+                    choices.push(CloudChoice {
+                        preset,
+                        api_key: self.key_input.value().trim().to_string(),
+                        model: metadata,
+                    });
+                }
+                if choices.is_empty() {
+                    self.cloud_model_error =
+                        Some("Select at least one registered chat model for this provider.".into());
+                    return;
+                }
+                self.cloud_done
+                    .retain(|c| c.preset.provider != preset.provider);
+                self.cloud_done.extend(choices);
+                self.advance_provider();
             }
             _ => {
-                let input = if self.cloud_focus == 0 {
-                    &mut self.key_input
-                } else {
-                    &mut self.model_input
-                };
-                input.handle_event(&Event::Key(k));
+                self.cloud_filter.handle_event(&Event::Key(k));
+                self.cloud_model_cursor = 0;
+                self.cloud_model_error = None;
             }
         }
     }
@@ -876,9 +968,23 @@ impl<'a> Wizard<'a> {
                     add("Enter", "continue");
                     add("Esc", "back");
                 }
-                CloudPhase::Details => {
-                    add("Tab", "switch field");
-                    add("Enter", "next / test key");
+                CloudPhase::Details => match &self.validation {
+                    Validation::Running(_) => {}
+                    Validation::Failed(_) => {
+                        add("Enter", "retry");
+                        add("r", "edit key");
+                        add("Esc", "providers");
+                    }
+                    Validation::Idle => {
+                        add("Enter", "fetch models");
+                        add("Esc", "providers");
+                    }
+                },
+                CloudPhase::Models => {
+                    add("Type", "filter");
+                    add("Space", "select");
+                    add("Enter", "continue");
+                    add("Esc", "key");
                 }
             },
             Step::Local => match self.local_phase {
@@ -1083,50 +1189,135 @@ impl<'a> Wizard<'a> {
                 ));
                 let inner = block.inner(area);
                 f.render_widget(block, area);
-                let [key, model, status] = Layout::vertical([
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Min(3),
-                ])
-                .areas(inner);
-                let editing = matches!(self.validation, Validation::Idle);
+                let [key, status] =
+                    Layout::vertical([Constraint::Length(3), Constraint::Min(3)]).areas(inner);
                 render_input(
                     f,
                     key,
                     &self.key_input,
                     true,
-                    editing && self.cloud_focus == 0,
+                    matches!(self.validation, Validation::Idle),
                     &format!(" API key ({}) ", preset.env_var),
-                );
-                render_input(
-                    f,
-                    model,
-                    &self.model_input,
-                    false,
-                    editing && self.cloud_focus == 1,
-                    " Model id ",
                 );
                 let line = match &self.validation {
                     Validation::Idle => Line::styled(
-                        "  Enter an API key and model ID. Enter on the model tests the key.",
+                        "Enter validates the key and fetches models. No inference is run.",
                         Style::new().fg(DIM),
                     ),
                     Validation::Running(_) => Line::styled(
-                        format!("  {} testing key…", spinner(self.tick)),
+                        format!("{} Loading provider models…", spinner(self.tick)),
                         Style::new().fg(WARN),
                     ),
-                    Validation::Ok => Line::styled(
-                        "  ✓ Key accepted.  Enter = continue   r = re-enter",
-                        Style::new().fg(OK),
-                    ),
-                    Validation::Failed(e) => Line::styled(
-                        format!("  ✗ Could not verify: {e}.  Enter / r = re-enter and retry"),
+                    Validation::Failed(error) => Line::styled(
+                        format!("Failed: {error} Enter retries; r edits the key."),
                         Style::new().fg(ERR),
                     ),
                 };
                 f.render_widget(Paragraph::new(line).wrap(Wrap { trim: true }), status);
             }
+            CloudPhase::Models => self.draw_cloud_models(f, area),
         }
+    }
+
+    fn draw_cloud_models(&self, f: &mut Frame, area: Rect) {
+        let preset = PROVIDERS[self.cloud_queue[self.cloud_pos]];
+        let selected = self.cloud_model_picks.iter().filter(|p| **p).count();
+        let block = panel(format!(" {} models · {} selected ", preset.label, selected));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let [filter, list, detail] = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(if area.height >= 14 { 7 } else { 3 }),
+        ])
+        .areas(inner);
+        render_input(
+            f,
+            filter,
+            &self.cloud_filter,
+            false,
+            true,
+            " Filter models ",
+        );
+        let visible = self.filtered_cloud_models();
+        let height = list.height as usize;
+        let start = self
+            .cloud_model_cursor
+            .saturating_sub(height.saturating_sub(1));
+        let mut rows = Vec::new();
+        for (position, i) in visible.iter().enumerate().skip(start).take(height) {
+            let model = &self.cloud_models[*i];
+            rows.push(Line::styled(
+                format!(
+                        "{} {} {}{}",
+                        if position == self.cloud_model_cursor {
+                            ">"
+                        } else {
+                            " "
+                        },
+                        if self.cloud_model_picks[*i] {
+                            "●"
+                        } else {
+                            "○"
+                        },
+                        model.id,
+                        if model.selection_error().is_some() {
+                            " [unavailable]"
+                        } else if model.metadata.as_ref().is_some_and(
+                            |metadata| metadata.status == setup::RegistryStatus::Deprecated
+                        ) {
+                            " [deprecated]"
+                        } else {
+                            ""
+                        }
+                    ),
+                Style::new().fg(if position == self.cloud_model_cursor {
+                    ACCENT
+                } else {
+                    DIM
+                }),
+            ));
+        }
+        if rows.is_empty() {
+            rows.push(Line::from("No models match the filter."));
+        }
+        f.render_widget(Paragraph::new(rows), list);
+        let mut lines = Vec::new();
+        if let Some(i) = visible.get(self.cloud_model_cursor) {
+            let model = &self.cloud_models[*i];
+            lines.push(Line::from(model.id.clone()));
+            if let Some(error) = model.selection_error() {
+                lines.push(Line::styled(error, Style::new().fg(ERR)));
+            }
+            if let Some(metadata) = &model.metadata {
+                lines.push(Line::from(metadata.catalog_capabilities().join(" · ")));
+                lines.push(Line::styled(
+                    format!(
+                        "Context: {} · Max output: {}",
+                        metadata
+                            .context_tokens
+                            .map(|n| n.to_string())
+                            .unwrap_or("unknown".into()),
+                        metadata
+                            .max_output_tokens
+                            .map(|n| n.to_string())
+                            .unwrap_or("unknown".into())
+                    ),
+                    Style::new().fg(DIM),
+                ));
+                if !metadata.notes.is_empty() {
+                    lines.push(Line::styled(metadata.notes.as_str(), Style::new().fg(DIM)));
+                }
+            }
+        }
+        if let Some(error) = &self.cloud_model_error {
+            lines.insert(0, Line::styled(error.as_str(), Style::new().fg(ERR)));
+        }
+        lines.push(Line::styled(
+            "Listing validates discovery, not inference access or quota.",
+            Style::new().fg(DIM),
+        ));
+        f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), detail);
     }
 
     fn draw_local(&self, f: &mut Frame, area: Rect) {
@@ -1364,7 +1555,7 @@ impl<'a> Wizard<'a> {
             None => lines.push(bullet("No API key (localhost only)".into())),
         }
         for c in &p.cloud {
-            lines.push(bullet(format!("{} → {}", c.preset.label, c.upstream_model)));
+            lines.push(bullet(format!("{} → {}", c.preset.label, c.model.id)));
         }
         for c in &p.local {
             lines.push(bullet(format!(
@@ -1657,10 +1848,27 @@ mod tests {
         assert!(w.cloud_done.is_empty() && w.cloud_phase == CloudPhase::Details);
         w.validation = Validation::Failed("rejected".into());
         render_all_sizes(&w);
-        w.on_key(key(KeyCode::Enter));
+        w.on_key(key(KeyCode::Char('r')));
         assert!(matches!(w.validation, Validation::Idle) && w.cloud_done.is_empty());
         w.key_input = Input::new("fixture-key".into());
-        w.validation = Validation::Ok;
+        let metadata = setup::registered_model("google", "gemini-3.5-flash-lite")
+            .unwrap()
+            .unwrap();
+        let model = CloudModel {
+            id: metadata.id.clone(),
+            name: metadata.name.clone(),
+            context_tokens: None,
+            max_output_tokens: None,
+            capabilities: setup::CloudCapabilities::default(),
+            metadata: Some(metadata),
+        };
+        let (tx, rx) = channel();
+        w.validation = Validation::Running(rx);
+        tx.send(Ok(vec![model])).unwrap();
+        w.poll_workers();
+        assert!(w.cloud_phase == CloudPhase::Models);
+        render_all_sizes(&w);
+        w.on_key(key(KeyCode::Char(' ')));
         w.on_key(key(KeyCode::Enter));
         assert!(w.step == Step::Review && w.cloud_done.len() == 1);
         render_all_sizes(&w);
@@ -1674,6 +1882,66 @@ mod tests {
         w.next_after_local();
         assert!(w.step == Step::Review);
         std::fs::remove_dir_all(&ws.root).unwrap();
+    }
+
+    #[test]
+    fn cloud_multiselect_filters_without_losing_selection_and_requires_registry_metadata() {
+        let ws = temp_ws();
+        let (_tx, rx) = channel();
+        let mut w = Wizard::new(&ws, rx);
+        w.sources = [false, true];
+        w.step = Step::Cloud;
+        w.cloud_phase = CloudPhase::Models;
+        w.cloud_queue = vec![0];
+        w.key_input = Input::new("fixture-secret".into());
+        for id in ["gemini-3.5-flash-lite", "gemini-3.8-flash"] {
+            let metadata = setup::registered_model("google", id).unwrap().unwrap();
+            w.cloud_models.push(CloudModel {
+                id: id.into(),
+                name: metadata.name.clone(),
+                context_tokens: None,
+                max_output_tokens: None,
+                capabilities: setup::CloudCapabilities::default(),
+                metadata: Some(metadata),
+            });
+        }
+        w.cloud_models.push(CloudModel {
+            id: "unregistered".into(),
+            name: "Unregistered".into(),
+            context_tokens: None,
+            max_output_tokens: None,
+            capabilities: setup::CloudCapabilities::default(),
+            metadata: None,
+        });
+        w.cloud_model_picks = vec![false; 3];
+        w.on_key(key(KeyCode::Enter));
+        assert!(w.cloud_model_error.is_some() && w.cloud_done.is_empty());
+        type_str(&mut w, "3.5");
+        w.on_key(key(KeyCode::Char(' ')));
+        assert_eq!(w.cloud_model_picks, [true, false, false]);
+        render_all_sizes(&w);
+        for _ in 0..3 {
+            w.on_key(key(KeyCode::Backspace));
+        }
+        type_str(&mut w, "3.8");
+        w.on_key(key(KeyCode::Char(' ')));
+        assert_eq!(w.cloud_model_picks, [true, true, false]);
+        for _ in 0..3 {
+            w.on_key(key(KeyCode::Backspace));
+        }
+        type_str(&mut w, "unregistered");
+        w.on_key(key(KeyCode::Char(' ')));
+        assert!(w.cloud_model_error.is_some());
+        assert!(!w.cloud_model_picks[2]);
+        render_all_sizes(&w);
+        w.on_key(key(KeyCode::Enter));
+        assert!(w.step == Step::Review);
+        assert_eq!(w.cloud_done.len(), 2);
+        assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Finish));
+        assert_eq!(ModelRegistryProbe::load(&ws).0, 2);
+        let env = std::fs::read_to_string(ws.env_file()).unwrap();
+        assert_eq!(env.matches("GEMINI_API_KEY=").count(), 1);
+        std::fs::remove_dir_all(ws.root).unwrap();
     }
 
     #[test]
