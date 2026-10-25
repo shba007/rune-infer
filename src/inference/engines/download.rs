@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -45,7 +46,8 @@ fn report(progress: DownloadProgress) {
 
 pub fn create_download_client() -> Result<reqwest::blocking::Client, Box<dyn Error>> {
     let mut builder = reqwest::blocking::Client::builder()
-        .user_agent("rune-infer/0.1.0 (Windows NT 10.0; Win64; x64)")
+        .https_only(true)
+        .user_agent(concat!("rune-infer/", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(300))
         .connect_timeout(Duration::from_secs(15));
 
@@ -72,7 +74,7 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
-pub fn download_to_file(
+fn download_to_file(
     client: &reqwest::blocking::Client,
     url: &str,
     dest_path: &Path,
@@ -82,6 +84,7 @@ pub fn download_to_file(
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("file");
+    let filename = filename.split(".part-").next().unwrap_or(filename);
 
     let mut resp = client.get(url).send()?.error_for_status()?;
     let total_size = resp.content_length().unwrap_or(0);
@@ -152,9 +155,6 @@ pub fn extract_archive(
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("");
-    let is_tar = filename.ends_with(".tar.gz") || filename.ends_with(".tgz");
-    let is_zip = filename.ends_with(".zip");
-
     report(DownloadProgress {
         filename: filename.into(),
         extracting: true,
@@ -163,60 +163,63 @@ pub fn extract_archive(
         bytes_per_second: 0.0,
     });
     tracing::info!("{} Extracting {}...", prefix, filename);
+    validate_archive(archive_file)?;
+    let stage = dest_dir.join(format!(
+        ".extract-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    std::fs::create_dir(&stage)?;
+    let result = (|| -> Result<(), Box<dyn Error>> {
+        let output = crate::inference::process::system_command("tar")
+            .arg("-xf")
+            .arg(archive_file)
+            .arg("-C")
+            .arg(&stage)
+            .args(["--no-same-owner", "--no-same-permissions"])
+            .output()?;
+        if !output.status.success() {
+            return Err("Engine archive extraction failed.".into());
+        }
+        publish_extracted(&stage, dest_dir)?;
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&stage);
+    result
+}
 
-    let tar_flag = if is_tar { "-xzf" } else { "-xf" };
-    if let Ok(status) = Command::new("tar")
-        .args([
-            tar_flag,
-            archive_file.to_str().unwrap(),
-            "-C",
-            dest_dir.to_str().unwrap(),
-        ])
-        .output()
+#[doc(hidden)]
+pub fn validate_archive(archive_file: &Path) -> Result<(), Box<dyn Error>> {
+    // tar is invoked directly, without a shell. No archive Rust dependency exists.
+    let names = crate::inference::process::system_command("tar")
+        .arg("-tf")
+        .arg(archive_file)
+        .output()?;
+    if !names.status.success() {
+        return Err("Cannot list engine archive; install the system tar utility.".into());
+    }
+    let names = String::from_utf8(names.stdout)?;
+    for entry in names.lines() {
+        validate_archive_path(entry)?;
+    }
+    let types = crate::inference::process::system_command("tar")
+        .arg("-tvf")
+        .arg(archive_file)
+        .output()?;
+    if !types.status.success() {
+        return Err("Cannot inspect archive entry types.".into());
+    }
+    let types = String::from_utf8(types.stdout)?;
+    if types.lines().count() != names.lines().count()
+        || types
+            .lines()
+            .any(|line| !matches!(line.as_bytes().first(), Some(b'-' | b'd')))
     {
-        if status.status.success() {
-            return Ok(());
-        }
+        return Err("Archive contains links, special files, or ambiguous entry names; installation refused.".into());
     }
-
-    if is_zip {
-        #[cfg(windows)]
-        {
-            let ps_cmd = format!(
-                "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
-                archive_file.display(),
-                dest_dir.display()
-            );
-            let status = Command::new("powershell")
-                .args(["-NoProfile", "-Command", &ps_cmd])
-                .output();
-            if let Ok(s) = status {
-                if s.status.success() {
-                    return Ok(());
-                }
-            }
-        }
-
-        #[cfg(unix)]
-        {
-            let status = Command::new("unzip")
-                .args([
-                    "-q",
-                    "-o",
-                    archive_file.to_str().unwrap(),
-                    "-d",
-                    dest_dir.to_str().unwrap(),
-                ])
-                .output();
-            if let Ok(s) = status {
-                if s.status.success() {
-                    return Ok(());
-                }
-            }
-        }
-    }
-
-    Err(format!("Failed to extract archive: {}", archive_file.display()).into())
+    Ok(())
 }
 
 pub fn download_and_extract(
@@ -225,12 +228,153 @@ pub fn download_and_extract(
     dest_dir: &Path,
     archive_name: &str,
     prefix: &str,
+    expected_sha256: &str,
 ) -> Result<(), Box<dyn Error>> {
+    validate_archive_path(archive_name)?;
+    if archive_name.contains('/') || matches!(archive_name, "." | "..") {
+        return Err("Invalid archive filename.".into());
+    }
     let temp_archive = dest_dir.join(archive_name);
-    download_to_file(client, url, &temp_archive, prefix)?;
-    extract_archive(&temp_archive, dest_dir, prefix)?;
+    download_verified(client, url, &temp_archive, prefix, expected_sha256)?;
+    let result = extract_archive(&temp_archive, dest_dir, prefix);
     let _ = std::fs::remove_file(&temp_archive);
+    result
+}
+
+fn validate_archive_path(name: &str) -> Result<(), Box<dyn Error>> {
+    if name.is_empty()
+        || name.starts_with('/')
+        || name.contains(['\\', ':'])
+        || name.chars().any(|c| c.is_control())
+        || name.split('/').any(|part| part == "..")
+    {
+        return Err("Unsafe archive entry path; installation refused.".into());
+    }
     Ok(())
+}
+
+fn publish_extracted(source: &Path, target: &Path) -> Result<(), Box<dyn Error>> {
+    fn collect(
+        source: &Path,
+        target: &Path,
+        files: &mut Vec<(PathBuf, PathBuf)>,
+    ) -> Result<(), Box<dyn Error>> {
+        if std::fs::symlink_metadata(target)
+            .is_ok_and(|m| !m.is_dir() || m.file_type().is_symlink())
+        {
+            return Err("Installation directory is not a regular directory.".into());
+        }
+        for entry in std::fs::read_dir(source)? {
+            let entry = entry?;
+            let dest = target.join(entry.file_name());
+            let kind = entry.file_type()?;
+            if std::fs::symlink_metadata(&dest).is_ok_and(|m| m.file_type().is_symlink()) {
+                return Err(
+                    "Installation path contains a symbolic link; refusing to overwrite.".into(),
+                );
+            }
+            if kind.is_dir() {
+                collect(&entry.path(), &dest, files)?;
+            } else if kind.is_file() {
+                if dest.exists() {
+                    if !dest.is_file() || file_sha256(&dest)? != file_sha256(&entry.path())? {
+                        return Err(format!("Conflicting installed file {}; preserve it or use an empty engine directory.", dest.display()).into());
+                    }
+                } else {
+                    files.push((entry.path(), dest));
+                }
+            } else {
+                return Err("Extracted archive contains a non-regular entry.".into());
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    collect(source, target, &mut files)?;
+    let mut installed = Vec::new();
+    for (source, dest) in files {
+        let result = (|| -> std::io::Result<()> {
+            std::fs::create_dir_all(dest.parent().expect("joined path has parent"))?;
+            std::fs::rename(source, &dest)
+        })();
+        if let Err(error) = result {
+            for path in installed {
+                let _ = std::fs::remove_file(path);
+            }
+            return Err(error.into());
+        }
+        installed.push(dest);
+    }
+    Ok(())
+}
+
+pub fn file_sha256(path: &Path) -> Result<String, Box<dyn Error>> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 65536];
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+pub fn download_verified(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
+    prefix: &str,
+    expected: &str,
+) -> Result<(), Box<dyn Error>> {
+    if expected.len() != 64 || !expected.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Missing or invalid published SHA-256; verified installation required.".into());
+    }
+    if reqwest::Url::parse(url)?.scheme() != "https" {
+        return Err("Engine downloads require HTTPS.".into());
+    }
+    let part = dest.with_file_name(format!(
+        "{}.part-{}-{}",
+        dest.file_name()
+            .ok_or("Download destination has no filename")?
+            .to_string_lossy(),
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos()
+    ));
+    let result = (|| -> Result<(), Box<dyn Error>> {
+        download_to_file(client, url, &part, prefix)?;
+        verify_sha256(&part, expected)?;
+        if dest.exists() {
+            return Err(format!(
+                "Download destination {} already exists; refusing to overwrite.",
+                dest.display()
+            )
+            .into());
+        }
+        std::fs::rename(&part, dest)?;
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(part);
+    result
+}
+
+fn verify_sha256(path: &Path, expected: &str) -> Result<(), Box<dyn Error>> {
+    if !file_sha256(path)?.eq_ignore_ascii_case(expected) {
+        return Err("Engine SHA-256 mismatch; installation refused.".into());
+    }
+    Ok(())
+}
+
+pub fn asset_sha256(assets: &[serde_json::Value], name: &str) -> Result<String, Box<dyn Error>> {
+    let digest = assets.iter().find(|a| a["name"].as_str() == Some(name))
+        .and_then(|a| a["digest"].as_str()).and_then(|s| s.strip_prefix("sha256:"))
+        .filter(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit()))
+        .ok_or("Release asset has no published SHA-256; retry a newer release or explicitly configure your own engine binary.")?;
+    Ok(digest.to_owned())
 }
 
 pub fn find_executable_recursive(dir: &Path, name: &str) -> Option<PathBuf> {
@@ -386,6 +530,121 @@ mod progress_tests {
             stream.write_all(response).unwrap();
         });
         (url, worker)
+    }
+
+    #[test]
+    fn digest_metadata_and_archive_paths_fail_closed() {
+        use serde_json::json;
+        assert!(asset_sha256(&[json!({"name":"engine.zip"})], "engine.zip").is_err());
+        let digest = "a".repeat(64);
+        assert_eq!(
+            asset_sha256(
+                &[json!({"name":"engine.zip", "digest":format!("sha256:{digest}")})],
+                "engine.zip"
+            )
+            .unwrap(),
+            digest
+        );
+        for path in [
+            "../escape",
+            "x/../escape",
+            "/absolute",
+            "C:/absolute",
+            "x\\escape",
+            "x\nescape",
+        ] {
+            assert!(validate_archive_path(path).is_err(), "{path}");
+        }
+        assert!(validate_archive_path("./bin/engine.exe").is_ok());
+    }
+
+    #[test]
+    fn extraction_preserves_conflicts_and_checks_hashes() {
+        let root =
+            std::env::temp_dir().join(format!("rune-extract-{}", crate::setup::generate_api_key()));
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(source.join("engine"), b"test").unwrap();
+        assert!(verify_sha256(&source.join("engine"), &"0".repeat(64)).is_err());
+        verify_sha256(
+            &source.join("engine"),
+            &file_sha256(&source.join("engine")).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(source.join("new"), b"new").unwrap();
+        std::fs::write(target.join("engine"), b"preserve").unwrap();
+        assert!(publish_extracted(&source, &target).is_err());
+        assert!(!target.join("new").exists());
+        assert_eq!(std::fs::read(target.join("engine")).unwrap(), b"preserve");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn extraction_uses_literal_paths_and_publishes_regular_files() {
+        let root = std::env::temp_dir().join(format!(
+            "rune's-extract-{}",
+            crate::setup::generate_api_key()
+        ));
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(source.join("asset.txt"), "verified fixture").unwrap();
+        let archive = root.join("fixture.tar");
+        assert!(
+            crate::inference::process::system_command("tar")
+                .arg("-cf")
+                .arg(&archive)
+                .arg("-C")
+                .arg(&source)
+                .arg("asset.txt")
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+        extract_archive(&archive, &target, "test").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(target.join("asset.txt")).unwrap(),
+            "verified fixture"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archive_links_and_traversal_are_rejected_before_extraction() {
+        let root = std::env::temp_dir().join(format!(
+            "rune-unsafe-archive-{}",
+            crate::setup::generate_api_key()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let archive = root.join("unsafe.tar");
+        for (name, kind) in [("../escape", b'0'), ("link", b'2'), ("hardlink", b'1')] {
+            let mut header = [0u8; 512];
+            header[..name.len()].copy_from_slice(name.as_bytes());
+            header[100..108].copy_from_slice(b"0000644\0");
+            header[108..116].copy_from_slice(b"0000000\0");
+            header[116..124].copy_from_slice(b"0000000\0");
+            header[124..136].copy_from_slice(b"00000000000\0");
+            header[136..148].copy_from_slice(b"00000000000\0");
+            header[148..156].fill(b' ');
+            header[156] = kind;
+            if kind != b'0' {
+                header[157..166].copy_from_slice(b"../escape");
+            }
+            header[257..263].copy_from_slice(b"ustar\0");
+            header[263..265].copy_from_slice(b"00");
+            let checksum: u32 = header.iter().map(|b| u32::from(*b)).sum();
+            header[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
+            let mut bytes = header.to_vec();
+            bytes.extend([0u8; 1024]);
+            std::fs::write(&archive, bytes).unwrap();
+            assert!(extract_archive(&archive, &root, "test").is_err(), "{name}");
+            assert!(!root.join("link").exists() && !root.join("hardlink").exists());
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

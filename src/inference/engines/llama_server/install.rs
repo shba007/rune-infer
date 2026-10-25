@@ -1,39 +1,7 @@
 use super::RuntimeFlavor;
 use crate::inference::engines::download;
 use std::error::Error;
-use std::path::{Path, PathBuf};
-
-fn copy_companion_cuda_dlls(target_dir: &Path) {
-    #[cfg(windows)]
-    {
-        let companion_dirs = [
-            "bin/llama-prism",
-            "bin/sd-server",
-            "bin/crispasr",
-            "bin/audiocpp",
-            "bin/nemo-speech",
-            "bin",
-        ];
-        for dir in &companion_dirs {
-            let p = Path::new(dir);
-            if let Ok(entries) = std::fs::read_dir(p) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file() {
-                        let name = entry.file_name().to_string_lossy().to_lowercase();
-                        if name.ends_with(".dll") {
-                            let dest = target_dir.join(entry.file_name());
-                            if !dest.exists() {
-                                let _ = std::fs::copy(&path, &dest);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let _ = target_dir;
-}
+use std::path::PathBuf;
 
 pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn Error>> {
     let exe_name = if cfg!(windows) {
@@ -62,13 +30,11 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
     let exe_path = base_dir.join(exe_name);
 
     if exe_path.exists() {
-        copy_companion_cuda_dlls(&base_dir);
         return Ok(exe_path);
     }
 
     if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
         let _ = std::fs::copy(&nested, &exe_path);
-        copy_companion_cuda_dlls(&base_dir);
         return Ok(exe_path);
     }
 
@@ -107,75 +73,7 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
 
     let release_data: serde_json::Value = match req.send().and_then(|r| r.error_for_status()) {
         Ok(resp) => resp.json()?,
-        Err(_) => {
-            let html_url = match flavor {
-                RuntimeFlavor::Upstream => "https://github.com/ggml-org/llama.cpp/releases/latest",
-                RuntimeFlavor::Prism => "https://github.com/PrismML-Eng/llama.cpp/releases/latest",
-            };
-            let resp = client.get(html_url).send()?;
-            let final_url = resp.url().as_str();
-            let tag = final_url.split("/tag/").nth(1).ok_or_else(|| {
-                format!("Could not determine release tag from redirect: {final_url}")
-            })?;
-
-            let mut direct_urls = Vec::new();
-            let host_cuda = download::detect_host_cuda_version();
-
-            if cfg!(target_os = "windows") {
-                let cuda_ver = host_cuda
-                    .map(|c| format!("{}.{}", c.0, c.1))
-                    .unwrap_or_else(|| "12.4".to_string());
-                let base_dl =
-                    format!("https://github.com/ggml-org/llama.cpp/releases/download/{tag}");
-                let bin_asset = format!("llama-{tag}-bin-win-cuda-{cuda_ver}-x64.zip");
-                let cudart_asset = format!("cudart-llama-bin-win-cuda-{cuda_ver}-x64.zip");
-                direct_urls.push((bin_asset.clone(), format!("{base_dl}/{bin_asset}")));
-                direct_urls.push((cudart_asset.clone(), format!("{base_dl}/{cudart_asset}")));
-            } else if cfg!(target_os = "macos") {
-                let arch = if cfg!(target_arch = "aarch64") {
-                    "arm64"
-                } else {
-                    "x64"
-                };
-                let bin_asset = format!("llama-{tag}-bin-macos-{arch}.tar.gz");
-                direct_urls.push((
-                    bin_asset.clone(),
-                    format!(
-                        "https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{bin_asset}"
-                    ),
-                ));
-            } else {
-                let bin_asset = format!("llama-{tag}-bin-ubuntu-x64.tar.gz");
-                direct_urls.push((
-                    bin_asset.clone(),
-                    format!(
-                        "https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{bin_asset}"
-                    ),
-                ));
-            }
-
-            for (name, url) in direct_urls {
-                let _ = download::download_and_extract(
-                    &client,
-                    &url,
-                    &base_dir,
-                    &name,
-                    "[LlamaServerEngine]",
-                );
-            }
-            download::flatten_dlls(&base_dir);
-            copy_companion_cuda_dlls(&base_dir);
-            if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
-                let _ = std::fs::copy(&nested, &exe_path);
-            }
-            download::make_executable(&exe_path)?;
-            if exe_path.exists() {
-                return Ok(exe_path);
-            }
-            return Err(
-                "Fallback tag extraction did not yield a valid llama-server executable.".into(),
-            );
-        }
+        Err(error) => return Err(format!("Cannot obtain verified release metadata: {error}. Retry or explicitly configure your own engine binary.").into()),
     };
 
     let target_release = if let Some(releases_arr) = release_data.as_array() {
@@ -290,12 +188,22 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
         return Err("No compatible llama-server release asset found for this platform. Please set LLAMA_SERVER_PATH in .env".into());
     }
 
+    for (name, _) in &download_urls {
+        download::asset_sha256(assets, name)?;
+    }
+
     for (name, url) in download_urls {
-        download::download_and_extract(&client, &url, &base_dir, &name, "[LlamaServerEngine]")?;
+        download::download_and_extract(
+            &client,
+            &url,
+            &base_dir,
+            &name,
+            "[LlamaServerEngine]",
+            &download::asset_sha256(assets, &name)?,
+        )?;
     }
 
     download::flatten_dlls(&base_dir);
-    copy_companion_cuda_dlls(&base_dir);
 
     if !exe_path.exists() {
         if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {

@@ -107,7 +107,8 @@ fn verified_update_replaces_running_executable_and_preserves_neighbors() {
         assert!(String::from_utf8_lossy(&unchanged.stdout).contains("Already up to date"));
         assert_eq!(fs::read(&installed).unwrap(), before);
     }
-    fs::write(&source, "fn main() { println!(\"rune-infer 9999.0.0\"); }").unwrap();
+    let execution_marker = root.join("candidate-executed");
+    fs::write(&source, format!("fn main() {{ std::fs::write({:?}, \"executed\").unwrap(); println!(\"rune-infer 9999.0.0\"); }}", execution_marker.to_string_lossy())).unwrap();
     assert!(
         Command::new("rustc")
             .arg(&source)
@@ -122,9 +123,20 @@ fn verified_update_replaces_running_executable_and_preserves_neighbors() {
     let checksum = mirror.join(format!("{archive_name}.sha256"));
     let valid_checksum = package(&mirror, &archive_name, exe_name);
 
-    let check = invoke(&installed, &mirror, &["--check"]);
+    let check = invoke(&installed, &mirror, &["--check", "--version", "9999.0.0"]);
     assert!(check.status.success(), "{check:?}");
     assert!(String::from_utf8_lossy(&check.stdout).contains("Update available"));
+    assert!(
+        !execution_marker.exists(),
+        "--check must never run the downloaded executable"
+    );
+    let insecure = Command::new(&installed)
+        .args(["self-update", "--check", "--version", "9999.0.0"])
+        .env("RUNE_BASE_URL", "http://127.0.0.1:1")
+        .output()
+        .unwrap();
+    assert!(!insecure.status.success());
+    assert!(String::from_utf8_lossy(&insecure.stderr).contains("HTTPS"));
     assert_eq!(fs::read(&installed).unwrap(), before);
     let mismatch = invoke(&installed, &mirror, &["--version", "9998.0.0"]);
     assert!(!mismatch.status.success());

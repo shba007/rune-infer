@@ -12,6 +12,29 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(windows)]
+fn run_fixed_speech_script(
+    script: &'static str,
+    payload: &[u8],
+) -> std::io::Result<std::process::Output> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = crate::inference::process::system_command("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        if let Err(error) = stdin.write_all(payload) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+    }
+    child.wait_with_output()
+}
+
 static AUDIO_REQ_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn generate_unique_audio_id() -> String {
@@ -98,13 +121,7 @@ impl AudioEngine {
 
     fn configure_command_env(cmd: &mut Command, bin_dir: &Path) {
         let mut search_paths = vec![bin_dir.to_path_buf()];
-        if let Ok(entries) = std::fs::read_dir("bin") {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    search_paths.push(entry.path());
-                }
-            }
-        }
+
         if let Ok(sys_path) = std::env::var("PATH") {
             search_paths.extend(std::env::split_paths(&sys_path));
         }
@@ -133,12 +150,10 @@ impl AudioEngine {
         let base_dir = PathBuf::from("bin").join("audiocpp");
         let exe_path = base_dir.join(exe_name);
         if exe_path.exists() {
-            Self::copy_companion_cuda_dlls(&base_dir);
             return Ok(exe_path);
         }
 
         if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
-            Self::copy_companion_cuda_dlls(&base_dir);
             return Ok(nested);
         }
 
@@ -233,6 +248,10 @@ impl AudioEngine {
             }
         }
 
+        for (name, _) in &download_urls {
+            download::asset_sha256(assets, name)?;
+        }
+
         for (archive_name, download_url) in download_urls {
             download::download_and_extract(
                 &client,
@@ -240,11 +259,11 @@ impl AudioEngine {
                 &base_dir,
                 &archive_name,
                 "[AudioEngine]",
+                &download::asset_sha256(assets, &archive_name)?,
             )?;
         }
 
         download::flatten_dlls(&base_dir);
-        Self::copy_companion_cuda_dlls(&base_dir);
 
         if !exe_path.exists() {
             if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
@@ -254,41 +273,6 @@ impl AudioEngine {
 
         download::make_executable(&exe_path)?;
         Ok(exe_path)
-    }
-
-    fn copy_companion_cuda_dlls(target_dir: &Path) {
-        #[cfg(windows)]
-        {
-            let companion_dirs = [
-                "bin/llama-upstream",
-                "bin/llama-prism",
-                "bin/sd-server",
-                "bin/crispasr",
-                "bin",
-            ];
-            for dir in &companion_dirs {
-                let p = Path::new(dir);
-                if let Ok(entries) = std::fs::read_dir(p) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.is_file() {
-                            let name = entry.file_name().to_string_lossy().to_lowercase();
-                            if name.starts_with("cudart64_")
-                                || name.starts_with("cublas64_")
-                                || name.starts_with("cublaslt64_")
-                                || name.starts_with("vcomp140")
-                            {
-                                let dest = target_dir.join(entry.file_name());
-                                if !dest.exists() {
-                                    let _ = std::fs::copy(&path, &dest);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let _ = target_dir;
     }
 
     fn ensure_wav_16k(
@@ -414,19 +398,12 @@ impl AudioEngine {
         #[cfg(windows)]
         {
             let fallback_wav = temp_dir.join(format!("voice_fallback_{}.wav", req_id));
-            let escaped_text = text
-                .replace('"', "\\\"")
-                .replace('$', "`$")
-                .replace('`', "``");
-            let script = format!(
-                "Add-Type -AssemblyName System.Speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.SetOutputToWaveFile('{}'); $synth.Speak(\"{}\"); $synth.Dispose();",
-                fallback_wav.display(),
-                escaped_text
-            );
-            if let Ok(out) = Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-                .output()
-            {
+            // System.Speech has no existing native binding here. Keep a fixed script
+            // and pass all request/path values as JSON data, never PowerShell source.
+            const SCRIPT: &str = r#"$ErrorActionPreference='Stop'; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $data=[Console]::In.ReadToEnd() | ConvertFrom-Json; Add-Type -AssemblyName System.Speech; $synth=New-Object System.Speech.Synthesis.SpeechSynthesizer; try { $synth.SetOutputToWaveFile($data.path); $synth.Speak($data.text) } finally { $synth.Dispose() }"#;
+            let payload = serde_json::json!({"text": text, "path": fallback_wav}).to_string();
+            let output = run_fixed_speech_script(SCRIPT, payload.as_bytes());
+            if let Ok(out) = output {
                 if out.status.success() && fallback_wav.exists() {
                     if let Ok(bytes) = std::fs::read(&fallback_wav) {
                         let _ = std::fs::remove_file(&fallback_wav);
@@ -972,6 +949,23 @@ impl InferenceEngine for AudioEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn speech_payload_remains_data_including_shell_syntax_and_unicode() {
+        let data = serde_json::json!({"text":"\"); Write-Output RUNE_AUDIT_MARKER; # $env:USERNAME ` \n नमस्ते", "path":"D:/O'Brien/voice.wav"});
+        const ECHO: &str = r#"$ErrorActionPreference='Stop'; [Console]::InputEncoding=[Text.Encoding]::UTF8; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); $data=[Console]::In.ReadToEnd() | ConvertFrom-Json; [Console]::Write(($data | ConvertTo-Json -Compress))"#;
+        let output = run_fixed_speech_script(ECHO, data.to_string().as_bytes()).unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+            data
+        );
+    }
 
     #[test]
     fn test_audio_speech_fallback_synthesis() {

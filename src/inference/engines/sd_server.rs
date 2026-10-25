@@ -293,6 +293,10 @@ impl SdServerEngine {
             download_urls.push(download::extract_release_asset_info(asset)?);
         }
 
+        for (name, _) in &download_urls {
+            download::asset_sha256(assets, name)?;
+        }
+
         for (archive_name, download_url) in download_urls {
             download::download_and_extract(
                 &client,
@@ -300,6 +304,7 @@ impl SdServerEngine {
                 &base_dir,
                 &archive_name,
                 "[SdServerEngine]",
+                &download::asset_sha256(assets, &archive_name)?,
             )?;
         }
 

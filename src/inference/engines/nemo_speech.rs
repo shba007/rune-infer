@@ -52,13 +52,7 @@ impl NemoSpeechEngine {
 
         // Ensure bin_dir and companion DLL directories are visible in PATH
         let mut search_paths = vec![bin_dir.to_path_buf()];
-        if let Ok(entries) = std::fs::read_dir("bin") {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    search_paths.push(entry.path());
-                }
-            }
-        }
+
         if let Ok(sys_path) = std::env::var("PATH") {
             search_paths.extend(std::env::split_paths(&sys_path));
         }
@@ -176,7 +170,6 @@ impl NemoSpeechEngine {
 
         if exe_path.exists() {
             Self::flatten_all_dlls_recursive(&base_dir, &base_dir);
-            Self::copy_companion_cuda_dlls(&base_dir);
             Self::repair_dependencies(&exe_path, &base_dir);
             return Ok(exe_path);
         }
@@ -185,7 +178,6 @@ impl NemoSpeechEngine {
             let nested_dir = nested.parent().unwrap_or(&base_dir);
             Self::flatten_all_dlls_recursive(&base_dir, nested_dir);
             Self::flatten_all_dlls_recursive(&base_dir, &base_dir);
-            Self::copy_companion_cuda_dlls(nested_dir);
             Self::repair_dependencies(&nested, nested_dir);
             return Ok(nested);
         }
@@ -318,6 +310,10 @@ impl NemoSpeechEngine {
             );
         }
 
+        for (name, _) in &download_urls {
+            download::asset_sha256(assets, name)?;
+        }
+
         for (archive_name, download_url) in download_urls {
             download::download_and_extract(
                 &client,
@@ -325,12 +321,12 @@ impl NemoSpeechEngine {
                 &base_dir,
                 &archive_name,
                 "[NemoSpeechEngine]",
+                &download::asset_sha256(assets, &archive_name)?,
             )?;
         }
 
         Self::flatten_all_dlls_recursive(&base_dir, &base_dir);
         download::flatten_dlls(&base_dir);
-        Self::copy_companion_cuda_dlls(&base_dir);
         Self::repair_dependencies(&exe_path, &base_dir);
 
         if !exe_path.exists() {
@@ -350,38 +346,6 @@ impl NemoSpeechEngine {
             exe_path.display()
         );
         Ok(exe_path)
-    }
-
-    fn copy_companion_cuda_dlls(target_dir: &Path) {
-        #[cfg(windows)]
-        {
-            let companion_dirs = [
-                "bin/llama-upstream",
-                "bin/llama-prism",
-                "bin/sd-server",
-                "bin/crispasr",
-                "bin/audiocpp",
-                "bin",
-            ];
-            for dir in &companion_dirs {
-                let p = Path::new(dir);
-                if let Ok(entries) = std::fs::read_dir(p) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.is_file() {
-                            let name = entry.file_name().to_string_lossy().to_lowercase();
-                            if name.ends_with(".dll") {
-                                let dest = target_dir.join(entry.file_name());
-                                if !dest.exists() {
-                                    let _ = std::fs::copy(&path, &dest);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let _ = target_dir;
     }
 
     fn flatten_all_dlls_recursive(src_dir: &Path, dest_dir: &Path) {
@@ -408,8 +372,6 @@ impl NemoSpeechEngine {
 
     #[cfg(windows)]
     fn repair_dependencies(exe_path: &Path, target_dir: &Path) {
-        Self::copy_companion_cuda_dlls(target_dir);
-
         let imported_dlls = match Self::get_pe_imported_dlls(exe_path) {
             Ok(list) => list,
             Err(_) => return,
@@ -418,14 +380,7 @@ impl NemoSpeechEngine {
         let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
         let system32 = PathBuf::from(&system_root).join("System32");
 
-        let mut search_dirs: Vec<PathBuf> = vec![
-            PathBuf::from("bin/llama-upstream"),
-            PathBuf::from("bin/llama-prism"),
-            PathBuf::from("bin/sd-server"),
-            PathBuf::from("bin/crispasr"),
-            PathBuf::from("bin/audiocpp"),
-            PathBuf::from("bin"),
-        ];
+        let mut search_dirs: Vec<PathBuf> = vec![target_dir.to_path_buf()];
 
         if let Ok(cuda_path) = std::env::var("CUDA_PATH") {
             search_dirs.push(PathBuf::from(cuda_path).join("bin"));

@@ -49,13 +49,7 @@ impl CrispAsrEngine {
 
         // Ensure bin_dir and companion DLL directories are visible in PATH
         let mut search_paths = vec![bin_dir.to_path_buf()];
-        if let Ok(entries) = std::fs::read_dir("bin") {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    search_paths.push(entry.path());
-                }
-            }
-        }
+
         if let Ok(sys_path) = std::env::var("PATH") {
             search_paths.extend(std::env::split_paths(&sys_path));
         }
@@ -145,12 +139,10 @@ impl CrispAsrEngine {
         let base_dir = PathBuf::from("bin").join("crispasr");
         let exe_path = base_dir.join(exe_name);
         if exe_path.exists() {
-            Self::copy_companion_cuda_dlls(&base_dir);
             return Ok(exe_path);
         }
 
         if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
-            Self::copy_companion_cuda_dlls(&base_dir);
             return Ok(nested);
         }
 
@@ -312,6 +304,10 @@ impl CrispAsrEngine {
             return Err("No compatible CrispASR release asset found for this platform".into());
         }
 
+        for (name, _) in &download_urls {
+            download::asset_sha256(assets, name)?;
+        }
+
         for (archive_name, download_url) in download_urls {
             download::download_and_extract(
                 &client,
@@ -319,11 +315,11 @@ impl CrispAsrEngine {
                 &base_dir,
                 &archive_name,
                 "[CrispAsrEngine]",
+                &download::asset_sha256(assets, &archive_name)?,
             )?;
         }
 
         download::flatten_dlls(&base_dir);
-        Self::copy_companion_cuda_dlls(&base_dir);
 
         if !exe_path.exists() {
             if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
@@ -342,40 +338,6 @@ impl CrispAsrEngine {
             exe_path.display()
         );
         Ok(exe_path)
-    }
-
-    fn copy_companion_cuda_dlls(target_dir: &Path) {
-        #[cfg(windows)]
-        {
-            let companion_dirs = [
-                "bin/llama-upstream",
-                "bin/llama-prism",
-                "bin/sd-server",
-                "bin",
-            ];
-            for dir in &companion_dirs {
-                let p = Path::new(dir);
-                if let Ok(entries) = std::fs::read_dir(p) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.is_file() {
-                            let name = entry.file_name().to_string_lossy().to_lowercase();
-                            if name.starts_with("cudart64_")
-                                || name.starts_with("cublas64_")
-                                || name.starts_with("cublaslt64_")
-                                || name.starts_with("vcomp140")
-                            {
-                                let dest = target_dir.join(entry.file_name());
-                                if !dest.exists() {
-                                    let _ = std::fs::copy(&path, &dest);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let _ = target_dir;
     }
 
     fn wait_for_server(

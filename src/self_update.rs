@@ -59,6 +59,10 @@ async fn fetch(client: &reqwest::Client, base: &str, name: &str, dest: &Path) ->
         fs::copy(Path::new(base).join(name), dest).context("Cannot read mirror asset")?;
         return Ok(());
     }
+    ensure!(
+        reqwest::Url::parse(base)?.scheme() == "https",
+        "Remote update sources must use HTTPS"
+    );
     let mut response = client
         .get(format!("{}/{name}", base.trim_end_matches('/')))
         .send()
@@ -199,11 +203,94 @@ pub async fn run(check: bool, requested: Option<&str>) -> Result<()> {
             )
         }
     });
+    if !Path::new(&base).is_dir() {
+        ensure!(
+            reqwest::Url::parse(&base)?.scheme() == "https",
+            "Remote update sources must use HTTPS"
+        );
+    }
     let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
     let name = format!("rune-infer-{}.{extension}", platform()?);
+    // Check published release metadata without downloading or executing a candidate.
+    if check {
+        let version = if requested != "latest" {
+            requested.trim_start_matches('v').to_owned()
+        } else {
+            ensure!(
+                std::env::var_os("RUNE_BASE_URL").is_none(),
+                "For a custom update mirror, use self-update --check --version VERSION; latest version metadata is unavailable"
+            );
+            ensure!(
+                repo.split('/').count() == 2
+                    && repo.split('/').all(|part| !part.is_empty()
+                        && part
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))),
+                "Invalid update repository"
+            );
+            let metadata: serde_json::Value = reqwest::Client::builder()
+                .https_only(true)
+                .user_agent(concat!("rune-infer/", env!("CARGO_PKG_VERSION")))
+                .connect_timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(30))
+                .build()?
+                .get(format!(
+                    "https://api.github.com/repos/{repo}/releases/latest"
+                ))
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            ensure!(
+                metadata["assets"].as_array().is_some_and(|assets| assets
+                    .iter()
+                    .any(|asset| asset["name"].as_str() == Some(&name))),
+                "Latest release has no binary for this platform yet"
+            );
+            metadata["tag_name"]
+                .as_str()
+                .context("Release has no version tag")?
+                .trim_start_matches('v')
+                .to_owned()
+        };
+        if Path::new(&base).is_dir() {
+            ensure!(
+                Path::new(&base).join(&name).is_file()
+                    && Path::new(&base).join(format!("{name}.sha256")).is_file(),
+                "Requested release assets are unavailable in this mirror"
+            );
+        } else if requested != "latest" {
+            reqwest::Client::builder()
+                .https_only(true)
+                .user_agent(concat!("rune-infer/", env!("CARGO_PKG_VERSION")))
+                .connect_timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(30))
+                .build()?
+                .head(format!("{}/{name}", base.trim_end_matches('/')))
+                .send()
+                .await?
+                .error_for_status()?;
+        }
+        let available = stable_version(&version)?;
+        let current = stable_version(env!("CARGO_PKG_VERSION"))?;
+        if available > current {
+            println!(
+                "Update available: {} -> {version}. Run rune-infer self-update to install. Availability is based on release metadata; binaries are not downloaded or executed.",
+                env!("CARGO_PKG_VERSION")
+            );
+        } else {
+            println!(
+                "Already up to date: {} (release {version}).",
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+        return Ok(());
+    }
     let archive = scratch.0.join(&name);
     let checksum = scratch.0.join(format!("{name}.sha256"));
     let client = reqwest::Client::builder()
+        .https_only(true)
         .user_agent(concat!("rune-infer/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(600))
@@ -212,16 +299,19 @@ pub async fn run(check: bool, requested: Option<&str>) -> Result<()> {
     fetch(&client, &base, &name, &archive).await?;
     fetch(&client, &base, &format!("{name}.sha256"), &checksum).await?;
     verify_checksum(&archive, &checksum, &name)?;
+    rune_infer::inference::engines::download::validate_archive(&archive)
+        .map_err(|error| anyhow::anyhow!("Unsafe update archive: {error}"))?;
     let executable = if cfg!(windows) {
         "rune-infer.exe"
     } else {
         "rune-infer"
     };
-    let unpack = Command::new("tar")
+    let unpack = rune_infer::inference::process::system_command("tar")
         .arg(if cfg!(windows) { "-xf" } else { "-xzf" })
         .arg(&archive)
         .arg("-C")
         .arg(&scratch.0)
+        .args(["--no-same-owner", "--no-same-permissions"])
         .arg("--")
         .arg(executable)
         .output()
@@ -249,13 +339,6 @@ pub async fn run(check: bool, requested: Option<&str>) -> Result<()> {
     if available <= current {
         println!(
             "Already up to date: {} (release {version}); downgrades are not installed.",
-            env!("CARGO_PKG_VERSION")
-        );
-        return Ok(());
-    }
-    if check {
-        println!(
-            "Update available: {} -> {version}. Run rune-infer self-update to install.",
             env!("CARGO_PKG_VERSION")
         );
         return Ok(());

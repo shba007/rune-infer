@@ -57,13 +57,29 @@ impl NeedleEngine {
             _ => "linux-x86_64",
         };
 
-        let download_url = format!(
-            "https://huggingface.co/Cactus-Compute/needle3/resolve/main/{}/{}",
-            platform, exe_name
-        );
-
         let client = download::create_download_client()?;
-        download::download_to_file(&client, &download_url, &exe_path, "[NeedleEngine]")?;
+        let metadata: serde_json::Value = client
+            .get("https://huggingface.co/api/models/Cactus-Compute/needle3?blobs=true")
+            .send()?
+            .error_for_status()?
+            .json()?;
+        let revision = metadata["sha"]
+            .as_str()
+            .filter(|sha| sha.len() == 40 && sha.bytes().all(|c| c.is_ascii_hexdigit()))
+            .ok_or("Needle metadata has no immutable revision; installation refused.")?;
+        let file = format!("{platform}/{exe_name}");
+        let sha256 = metadata["siblings"]
+            .as_array()
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|e| e["rfilename"].as_str() == Some(&file))
+            })
+            .and_then(|entry| entry["lfs"]["sha256"].as_str())
+            .ok_or("Needle metadata has no SHA-256 for this platform; installation refused.")?;
+        let download_url =
+            format!("https://huggingface.co/Cactus-Compute/needle3/resolve/{revision}/{file}");
+        download::download_verified(&client, &download_url, &exe_path, "[NeedleEngine]", sha256)?;
         download::make_executable(&exe_path)?;
 
         tracing::info!(

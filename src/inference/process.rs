@@ -4,6 +4,28 @@ use std::path::Path;
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 
+/// Resolve Windows system utilities outside CWD/engine search paths.
+#[doc(hidden)]
+pub fn system_command(name: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let root = std::env::var_os("SystemRoot")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| "C:/Windows".into());
+        let relative = match name {
+            "tar" => "System32/tar.exe",
+            "taskkill" => "System32/taskkill.exe",
+            "powershell" => "System32/WindowsPowerShell/v1.0/powershell.exe",
+            _ => unreachable!("only fixed system utilities are resolved here"),
+        };
+        Command::new(root.join(relative))
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new(name)
+    }
+}
+
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
 
@@ -160,7 +182,7 @@ pub fn cleanup_orphaned_pids() {
 pub fn kill_pid(pid: u32) {
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill")
+        let _ = crate::inference::process::system_command("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .output();
     }
