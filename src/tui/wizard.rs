@@ -139,6 +139,8 @@ struct Wizard<'a> {
     // engine installation and real inference checks
     engine: EnginePhase,
     engine_choices: Vec<Vec<EngineKind>>,
+    engine_available: Vec<EngineKind>,
+    engine_selected: Vec<bool>,
     engine_cursor: usize,
     engine_option: usize,
     engine_status: String,
@@ -239,6 +241,8 @@ impl<'a> Wizard<'a> {
             local_error: None,
             engine: EnginePhase::Pick,
             engine_choices: Vec::new(),
+            engine_available: Vec::new(),
+            engine_selected: Vec::new(),
             engine_cursor: 0,
             engine_option: 0,
             engine_status: String::new(),
@@ -349,6 +353,25 @@ impl<'a> Wizard<'a> {
     fn next_after_local(&mut self) {
         if self.engine_needed() {
             self.engine_choices = self.chosen.iter().map(|m| vec![m.engine()]).collect();
+            self.engine_available.clear();
+            for model in &self.chosen {
+                for &engine in &model.engines {
+                    if engine != EngineKind::Encoder && !self.engine_available.contains(&engine) {
+                        self.engine_available.push(engine);
+                    }
+                }
+            }
+            self.engine_selected = self
+                .engine_available
+                .iter()
+                .map(|engine| {
+                    self.engine_choices
+                        .iter()
+                        .any(|choices| choices.first() == Some(engine))
+                })
+                .collect();
+            self.refresh_engine_choices();
+            self.engine_status.clear();
             self.engine_cursor = 0;
             self.engine_option = 0;
             self.engine = EnginePhase::Pick;
@@ -719,6 +742,57 @@ impl<'a> Wizard<'a> {
         }
     }
 
+    fn refresh_engine_choices(&mut self) {
+        for (model, choices) in self.chosen.iter().zip(&mut self.engine_choices) {
+            choices.retain(|engine| {
+                model.engines.contains(engine)
+                    && self
+                        .engine_available
+                        .iter()
+                        .zip(&self.engine_selected)
+                        .any(|(available, selected)| *selected && available == engine)
+            });
+            for &engine in &model.engines {
+                if self
+                    .engine_available
+                    .iter()
+                    .zip(&self.engine_selected)
+                    .any(|(available, selected)| *selected && *available == engine)
+                    && !choices.contains(&engine)
+                {
+                    choices.push(engine);
+                }
+            }
+        }
+    }
+
+    fn engine_models(&self) -> Vec<usize> {
+        self.chosen
+            .iter()
+            .enumerate()
+            .filter_map(|(index, model)| {
+                self.engine_available
+                    .get(self.engine_cursor)
+                    .is_some_and(|engine| model.engines.contains(engine))
+                    .then_some(index)
+            })
+            .collect()
+    }
+
+    fn enabled_local_models(&self) -> Result<Vec<LocalCandidate>, String> {
+        if self.chosen.len() != self.engine_choices.len() {
+            return Err("Choose engines before continuing.".into());
+        }
+        let (models, choices): (Vec<_>, Vec<_>) = self
+            .chosen
+            .iter()
+            .zip(&self.engine_choices)
+            .filter(|(_, engines)| !engines.is_empty())
+            .map(|(model, engines)| (model.clone(), engines.clone()))
+            .unzip();
+        setup::select_local_engines(&models, &choices)
+    }
+
     fn begin_engine_install(&mut self) {
         if self.prereq.is_none() {
             self.engine = EnginePhase::Done(Err(
@@ -726,13 +800,20 @@ impl<'a> Wizard<'a> {
             ));
             return;
         }
-        let models = match setup::select_local_engines(&self.chosen, &self.engine_choices) {
+        let models = match self.enabled_local_models() {
             Ok(models) => models,
             Err(error) => {
                 self.engine = EnginePhase::Done(Err(error));
                 return;
             }
         };
+        if models.is_empty() && !self.sources[1] {
+            self.engine = EnginePhase::Done(Err(
+                "Select at least one engine that enables a local model, or enable cloud models."
+                    .into(),
+            ));
+            return;
+        }
         let (tx, rx) = channel();
         let gpu = self.gpu_available();
         std::thread::spawn(move || {
@@ -761,34 +842,30 @@ impl<'a> Wizard<'a> {
                     if k.code == KeyCode::Left {
                         self.engine_cursor = self.engine_cursor.saturating_sub(1);
                     } else {
-                        self.engine_cursor =
-                            (self.engine_cursor + 1).min(self.chosen.len().saturating_sub(1));
+                        self.engine_cursor = (self.engine_cursor + 1)
+                            .min(self.engine_available.len().saturating_sub(1));
                     }
                     self.engine_option = 0;
                 }
                 KeyCode::Up => self.engine_option = self.engine_option.saturating_sub(1),
                 KeyCode::Down => {
-                    if let Some(model) = self.chosen.get(self.engine_cursor) {
-                        self.engine_option =
-                            (self.engine_option + 1).min(model.engines.len().saturating_sub(1));
+                    self.engine_option =
+                        (self.engine_option + 1).min(self.engine_models().len().saturating_sub(1))
+                }
+                KeyCode::Char(' ') => {
+                    if let Some(selected) = self.engine_selected.get_mut(self.engine_cursor) {
+                        *selected = !*selected;
+                        self.refresh_engine_choices();
                     }
                 }
-                KeyCode::Char(' ') | KeyCode::Char('d') => {
-                    if let Some(engine) = self
-                        .chosen
-                        .get(self.engine_cursor)
-                        .and_then(|m| m.engines.get(self.engine_option))
-                        .copied()
-                    {
-                        let choices = &mut self.engine_choices[self.engine_cursor];
-                        if k.code == KeyCode::Char('d') {
-                            choices.retain(|e| *e != engine);
-                            choices.insert(0, engine);
-                        } else if choices.contains(&engine) {
-                            choices.retain(|e| *e != engine);
-                        } else {
-                            choices.push(engine);
-                        }
+                KeyCode::Char('d') => {
+                    if let Some(&model_index) = self.engine_models().get(self.engine_option) {
+                        self.engine_selected[self.engine_cursor] = true;
+                        self.refresh_engine_choices();
+                        let engine = self.engine_available[self.engine_cursor];
+                        let choices = &mut self.engine_choices[model_index];
+                        choices.retain(|candidate| *candidate != engine);
+                        choices.insert(0, engine);
                     }
                 }
                 KeyCode::Enter => self.begin_engine_install(),
@@ -819,7 +896,7 @@ impl<'a> Wizard<'a> {
             port: self.port.value().trim().parse().unwrap_or(8080),
             server_api_key: self.server_key.clone(),
             cloud: self.cloud_done.clone(),
-            local: setup::select_local_engines(&self.chosen, &self.engine_choices)?,
+            local: self.enabled_local_models()?,
             gpu_available: self.gpu_available(),
         })
     }
@@ -837,16 +914,6 @@ impl<'a> Wizard<'a> {
                 }
             }
             KeyCode::Enter => {
-                if self.chosen.is_empty() && self.cloud_done.is_empty() {
-                    self.review_error = Some("Configure at least one model before saving.".into());
-                    return Flow::Stay;
-                }
-                if !self.chosen.is_empty() && !matches!(self.engine, EnginePhase::Done(Ok(_))) {
-                    self.review_error = Some(
-                        "Install and smoke-test every selected local model before saving.".into(),
-                    );
-                    return Flow::Stay;
-                }
                 let plan = match self.plan() {
                     Ok(plan) => plan,
                     Err(error) => {
@@ -854,6 +921,11 @@ impl<'a> Wizard<'a> {
                         return Flow::Stay;
                     }
                 };
+                if plan.local.is_empty() && plan.cloud.is_empty() {
+                    self.review_error =
+                        Some("Configure at least one enabled model before saving.".into());
+                    return Flow::Stay;
+                }
                 if !plan.local.is_empty() {
                     match &self.engine {
                         EnginePhase::Done(Ok(prepared)) => {
@@ -864,7 +936,7 @@ impl<'a> Wizard<'a> {
                         }
                         _ => {
                             self.review_error = Some(
-                                "Every local model must pass a real inference check before saving."
+                                "Every enabled local model must pass a real inference check before saving."
                                     .into(),
                             );
                             return Flow::Stay;
@@ -1021,10 +1093,10 @@ impl<'a> Wizard<'a> {
             },
             Step::Engine => match &self.engine {
                 EnginePhase::Pick => {
-                    add("Left/Right", "model");
-                    add("Up/Down", "engine");
-                    add("Space", "toggle");
-                    add("d", "default");
+                    add("Left/Right", "engine");
+                    add("Up/Down", "model");
+                    add("Space", "select engine");
+                    add("d", "model default");
                     add("Enter", "install & check");
                     add("Esc", "back");
                 }
@@ -1464,43 +1536,78 @@ impl<'a> Wizard<'a> {
     }
 
     fn draw_engine(&self, f: &mut Frame, area: Rect) {
+        let enabled = self
+            .engine_choices
+            .iter()
+            .filter(|choices| !choices.is_empty())
+            .count();
         let mut lines = vec![
-            Line::from("Select engines to install; choose one default per model."),
+            Line::from("Select engines to install. Models need at least one selected engine."),
             Line::from(""),
         ];
-        if let Some(model) = self.chosen.get(self.engine_cursor) {
+        if let Some(engine) = self.engine_available.get(self.engine_cursor) {
             lines.push(Line::from(format!(
-                "Model {}/{}: {}",
+                "Engine {}/{}: {}",
                 self.engine_cursor + 1,
-                self.chosen.len(),
-                model.display_name
+                self.engine_available.len(),
+                engine
             )));
-            let choices = &self.engine_choices[self.engine_cursor];
-            let height = area.height.saturating_sub(12).max(1) as usize;
+            lines.push(Line::styled(
+                format!(
+                    "> [{}] Install {}",
+                    if self.engine_selected[self.engine_cursor] {
+                        "x"
+                    } else {
+                        " "
+                    },
+                    engine
+                ),
+                Style::new().fg(ACCENT),
+            ));
+            let models = self.engine_models();
+            let height = area.height.saturating_sub(13).max(1) as usize;
             let start = self.engine_option.saturating_sub(height.saturating_sub(1));
-            for (i, engine) in model.engines.iter().enumerate().skip(start).take(height) {
+            lines.push(Line::from(format!(
+                "Supported models ({}-{}/{}):",
+                start + 1,
+                (start + height).min(models.len()),
+                models.len()
+            )));
+            for (position, &index) in models.iter().enumerate().skip(start).take(height) {
+                let model = &self.chosen[index];
+                let choices = &self.engine_choices[index];
+                let status = match choices.first() {
+                    None => "disabled · no selected engine".to_owned(),
+                    Some(default) if default == engine => "enabled · default engine".to_owned(),
+                    Some(default) if self.engine_selected[self.engine_cursor] => {
+                        format!("enabled · default: {default}; this engine untested")
+                    }
+                    Some(default) => format!("enabled · default: {default}"),
+                };
                 lines.push(Line::styled(
                     format!(
-                        "{} [{}] {}{}",
-                        if i == self.engine_option { ">" } else { " " },
-                        if choices.contains(engine) { "x" } else { " " },
-                        engine,
-                        if choices.first() == Some(engine) {
-                            " · default (inference check)"
-                        } else if choices.contains(engine) {
-                            " · untested"
+                        "{} {} · {}",
+                        if position == self.engine_option {
+                            ">"
                         } else {
-                            ""
-                        }
+                            " "
+                        },
+                        model.display_name,
+                        status
                     ),
-                    Style::new().fg(if i == self.engine_option { ACCENT } else { DIM }),
+                    Style::new().fg(if choices.is_empty() { DIM } else { ACCENT }),
                 ));
             }
         }
+        lines.push(Line::from(format!(
+            "{} enabled · {} disabled models",
+            enabled,
+            self.chosen.len().saturating_sub(enabled)
+        )));
         lines.push(Line::from(""));
         match &self.engine {
             EnginePhase::Pick => lines.push(Line::from(
-                "Enter installs all selections; only each model’s default runs an inference check.",
+                "Enter installs selected engines and checks enabled models with their defaults.",
             )),
             EnginePhase::Installing(_) => {
                 lines.push(Line::from(format!(
@@ -1541,10 +1648,9 @@ impl<'a> Wizard<'a> {
                 }
             }
             EnginePhase::Done(Ok(installed)) => {
-                lines.push(Line::from(format!(
-                    "● {} engine(s) installed; defaults passed inference. Other engines untested. Enter to continue.",
-                    installed.engines.len()
-                )));
+                lines.push(Line::from(if enabled == 0 {
+                    "No local models enabled. Enter to continue with cloud models.".to_owned()
+                } else { format!("● {} engines installed; {} defaults passed. Other combinations untested. Enter to continue.", installed.engines.len(), enabled) }));
             }
             EnginePhase::Done(Err(error)) => {
                 lines.push(Line::styled(
@@ -1591,6 +1697,13 @@ impl<'a> Wizard<'a> {
                 }
             )),
         ];
+        if !self.chosen.is_empty() {
+            lines.push(bullet(format!(
+                "Local models: {} enabled · {} disabled",
+                p.local.len(),
+                self.chosen.len().saturating_sub(p.local.len())
+            )));
+        }
         match &p.server_api_key {
             Some(k) => {
                 lines.push(bullet(
@@ -1623,6 +1736,20 @@ impl<'a> Wizard<'a> {
                     Style::new().fg(WARN),
                 ));
             }
+        }
+        for (model, _) in self
+            .chosen
+            .iter()
+            .zip(&self.engine_choices)
+            .filter(|(_, engines)| engines.is_empty())
+        {
+            lines.push(Line::styled(
+                format!(
+                    "  Disabled: {} · no selected engine (not added)",
+                    model.display_name
+                ),
+                Style::new().fg(DIM),
+            ));
         }
         lines.push(Line::from(""));
         lines.push(Line::styled(
@@ -1995,6 +2122,149 @@ mod tests {
     }
 
     #[test]
+    fn engine_first_selection_disables_only_models_without_a_selected_engine() {
+        let ws = temp_ws();
+        crate::detect::testing::Gguf::llm("llama", "Tiny").write(&ws.root.join("tiny.gguf"));
+        crate::detect::testing::Gguf::new("audiocpp")
+            .string("audiocpp.model_spec.family", "audio8_tts")
+            .write(&ws.root.join("audio.gguf"));
+        let (_tx, rx) = channel();
+        let mut w = Wizard::new(&ws, rx);
+        w.sources = [true, false];
+        w.chosen = setup::discover_models(&ws.root).unwrap().models;
+        w.next_after_local();
+        assert_eq!(
+            w.engine_available.len(),
+            3,
+            "engines are unique across models"
+        );
+        w.engine_cursor = w
+            .engine_available
+            .iter()
+            .position(|engine| *engine == EngineKind::AudioCpp)
+            .unwrap();
+        assert_eq!(w.engine_models().len(), 1);
+        w.on_key(key(KeyCode::Char(' ')));
+        let enabled = w.plan().unwrap().local;
+        assert_eq!(enabled.len(), 1);
+        assert_eq!(enabled[0].engine(), EngineKind::LlamaServer);
+        let mut screen = Terminal::new(TestBackend::new(100, 28)).unwrap();
+        screen.draw(|f| w.draw_engine(f, f.area())).unwrap();
+        let text = screen
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(
+            text.contains("Engine 1/3") && text.contains("disabled") && text.contains("audio-cpp")
+        );
+        render_all_sizes(&w);
+        // Disabling one model cannot lead to its engine being installed or smoke-tested.
+        let binary = ws.root.join("fixture-engine");
+        std::fs::write(&binary, "fixture").unwrap();
+        let mut installed = Vec::new();
+        let mut checked = Vec::new();
+        let prepared = setup::prepare_local_models_with(
+            &enabled,
+            false,
+            |engine| {
+                installed.push(engine);
+                Ok(binary.clone())
+            },
+            |model| {
+                checked.push(model.path.clone());
+                Ok(())
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(installed, [EngineKind::LlamaServer]);
+        assert_eq!(checked, [ws.root.join("tiny.gguf")]);
+        w.engine = EnginePhase::Done(Ok(prepared));
+        w.step = Step::Review;
+        assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Finish));
+        assert_eq!(ModelRegistryProbe::load(&ws).0, 1);
+        let catalog = std::fs::read_to_string(&ws.catalog_path).unwrap();
+        assert!(!catalog.contains("audio.gguf"));
+        // A model with two compatible engines remains enabled through the other one.
+        w.engine = EnginePhase::Pick;
+        w.step = Step::Engine;
+        w.engine_cursor = w
+            .engine_available
+            .iter()
+            .position(|engine| *engine == EngineKind::LlamaServerPrism)
+            .unwrap();
+        w.on_key(key(KeyCode::Char(' ')));
+        w.engine_cursor = w
+            .engine_available
+            .iter()
+            .position(|engine| *engine == EngineKind::LlamaServer)
+            .unwrap();
+        w.on_key(key(KeyCode::Char(' ')));
+        assert_eq!(
+            w.plan().unwrap().local[0].engine(),
+            EngineKind::LlamaServerPrism
+        );
+        // Re-enabling an engine restores its uniquely supported models.
+        w.engine_cursor = w
+            .engine_available
+            .iter()
+            .position(|engine| *engine == EngineKind::AudioCpp)
+            .unwrap();
+        w.on_key(key(KeyCode::Char(' ')));
+        assert_eq!(w.plan().unwrap().local.len(), 2);
+        std::fs::remove_dir_all(ws.root).unwrap();
+    }
+
+    #[test]
+    fn all_local_models_disabled_requires_cloud_or_an_enabled_model() {
+        let ws = temp_ws();
+        crate::detect::testing::Gguf::llm("llama", "Tiny").write(&ws.root.join("tiny.gguf"));
+        let (_tx, rx) = channel();
+        let mut w = Wizard::new(&ws, rx);
+        w.sources = [true, false];
+        w.chosen = setup::discover_models(&ws.root).unwrap().models;
+        w.next_after_local();
+        w.on_key(key(KeyCode::Char(' ')));
+        assert!(w.plan().unwrap().local.is_empty());
+        w.prereq = Some(Prerequisites {
+            os: "test",
+            arch: "test",
+            home: ws.root.clone(),
+            gpu: None,
+            ffmpeg: None,
+            llama_server_installed: false,
+        });
+        w.on_key(key(KeyCode::Enter));
+        assert!(
+            matches!(&w.engine, EnginePhase::Done(Err(error)) if error.contains("at least one"))
+        );
+        w.step = Step::Review;
+        assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Stay));
+        assert!(!ws.catalog_path.exists());
+        // Cloud-only completion requires no installation or proof for disabled locals.
+        w.sources[1] = true;
+        w.cloud_done.push(CloudChoice {
+            preset: PROVIDERS[0],
+            api_key: "fixture-key".into(),
+            model: setup::registered_model("google", "gemini-3.5-flash-lite")
+                .unwrap()
+                .unwrap(),
+        });
+        render_all_sizes(&w);
+        assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Finish));
+        assert_eq!(ModelRegistryProbe::load(&ws).0, 1);
+        assert!(
+            !std::fs::read_to_string(&ws.catalog_path)
+                .unwrap()
+                .contains("tiny.gguf")
+        );
+        std::fs::remove_dir_all(ws.root).unwrap();
+    }
+
+    #[test]
     fn local_engine_choice_failure_progress_and_ready_save_guard() {
         let ws = temp_ws();
         crate::detect::testing::Gguf::llm("llama", "Tiny").write(&ws.root.join("tiny.gguf"));
@@ -2004,9 +2274,9 @@ mod tests {
         w.chosen = setup::discover_models(&ws.root).unwrap().models;
         assert!(w.chosen[0].engines.contains(&EngineKind::LlamaServerPrism));
         w.next_after_local();
-        w.on_key(key(KeyCode::Down));
+        w.on_key(key(KeyCode::Right));
         w.on_key(key(KeyCode::Char('d')));
-        w.on_key(key(KeyCode::Up));
+        w.on_key(key(KeyCode::Left));
         w.on_key(key(KeyCode::Char(' ')));
         assert_eq!(w.engine_choices, [vec![EngineKind::LlamaServerPrism]]);
         w.on_key(key(KeyCode::Char(' ')));

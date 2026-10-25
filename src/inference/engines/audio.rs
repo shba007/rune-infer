@@ -46,11 +46,141 @@ fn generate_unique_audio_id() -> String {
     format!("{}_{}_{}", std::process::id(), now, count)
 }
 
+fn audio_failure(task: &str, output: &std::process::Output) -> String {
+    let status = output
+        .status
+        .code()
+        .map(|code| format!("{code} (0x{:08X})", code as u32))
+        .unwrap_or_else(|| output.status.to_string());
+    if output.status.code() == Some(0xC0000135_u32 as i32) {
+        return format!(
+            "audio.cpp {task} could not start: missing runtime DLL (Windows 0xC0000135). Retry engine installation to fetch its verified CUDA runtime package; custom engines require their matching dependencies."
+        );
+    }
+    let details = [output.stderr.as_slice(), output.stdout.as_slice()]
+        .into_iter()
+        .map(|bytes| String::from_utf8_lossy(bytes).trim().to_owned())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let details: String = details.chars().take(1200).collect();
+    format!(
+        "audio.cpp {task} exited {status}: {}",
+        if details.is_empty() {
+            "no diagnostics from engine"
+        } else {
+            &details
+        }
+    )
+}
+
+fn windows_audio_assets(
+    assets: &[serde_json::Value],
+    cuda: Option<(u32, u32)>,
+) -> Result<Vec<&serde_json::Value>, Box<dyn Error>> {
+    let cuda_asset = cuda.and_then(|host| {
+        assets
+            .iter()
+            .filter(|asset| {
+                let name = asset["name"].as_str().unwrap_or("");
+                name.contains("-bin-windows-")
+                    && name.contains("-cuda")
+                    && download::matches_arch(name)
+                    && download::extract_cuda_version(name)
+                        .is_some_and(|version| version.0 <= host.0)
+            })
+            .max_by_key(|asset| {
+                download::extract_cuda_version(asset["name"].as_str().unwrap_or(""))
+            })
+    });
+    if let Some(binary) = cuda_asset {
+        let name = binary["name"].as_str().ok_or("Audio asset has no name")?;
+        let companion_name = name.replacen("-bin-windows-", "-cudart-windows-", 1);
+        let companion = assets.iter().find(|asset| asset["name"].as_str() == Some(&companion_name))
+            .ok_or("Selected audio.cpp CUDA build has no matching runtime archive; installation refused.")?;
+        // Install dependencies first, so an interrupted setup cannot leave a bare executable.
+        return Ok(vec![companion, binary]);
+    }
+    assets
+        .iter()
+        .find(|asset| {
+            let name = asset["name"].as_str().unwrap_or("");
+            name.contains("-bin-windows-") && name.contains("-cpu") && download::matches_arch(name)
+        })
+        .map(|asset| vec![asset])
+        .ok_or_else(|| "No compatible Windows audio.cpp build was found.".into())
+}
+
+fn repair_managed_runtime(executable: &Path) -> Result<(), Box<dyn Error>> {
+    #[cfg(windows)]
+    {
+        let output = Command::new(executable).arg("--version").output()?;
+        if output.status.success() {
+            return Ok(());
+        }
+        if output.status.code() != Some(0xC0000135_u32 as i32) {
+            return Err(audio_failure("startup check", &output).into());
+        }
+        let bytes = std::fs::read(executable)?;
+        let versions: Vec<_> = [
+            (b"cudart64_12.dll\0".as_slice(), "cuda12."),
+            (b"cudart64_13.dll\0".as_slice(), "cuda13."),
+        ]
+        .into_iter()
+        .filter(|(dll, _)| bytes.windows(dll.len()).any(|part| part == *dll))
+        .collect();
+        if versions.len() != 1 {
+            return Err(audio_failure("startup check", &output).into());
+        }
+        let client = download::create_download_client()?;
+        let releases: serde_json::Value = client
+            .get("https://api.github.com/repos/0xShug0/audio.cpp/releases?per_page=5")
+            .header("Accept", "application/vnd.github+json")
+            .send()?
+            .error_for_status()?
+            .json()?;
+        let asset = releases.as_array().into_iter().flatten().flat_map(|release| release["assets"].as_array().into_iter().flatten())
+            .find(|asset| {
+                let name = asset["name"].as_str().unwrap_or("");
+                name.contains("-cudart-windows-") && name.contains(versions[0].1) && download::matches_arch(name)
+            }).ok_or("No verified CUDA runtime package matches this audio.cpp executable; configure a complete engine installation.")?;
+        let (name, url) = download::extract_release_asset_info(asset)?;
+        let digest = download::asset_sha256(std::slice::from_ref(asset), &name)?;
+        tracing::info!("Repairing audio.cpp startup with verified runtime package {name}");
+        let directory = executable
+            .parent()
+            .ok_or("Engine executable has no parent")?;
+        download::download_and_extract(&client, &url, directory, &name, "[AudioEngine]", &digest)?;
+        download::flatten_dlls(directory);
+        let output = Command::new(executable).arg("--version").output()?;
+        if !output.status.success() {
+            return Err(audio_failure("startup check", &output).into());
+        }
+    }
+    let _ = executable;
+    Ok(())
+}
+
+fn audio_model_family(path: &Path) -> Option<String> {
+    let info = crate::detect::read_gguf(path).ok()?;
+    info.audiocpp_family.or_else(|| {
+        (info.architecture == "audio8").then(|| {
+            if info.audio_tower {
+                "audio8_asr".into()
+            } else {
+                "audio8_tts".into()
+            }
+        })
+    })
+}
+
 pub struct AudioEngine {
     id: String,
     bin_path: PathBuf,
     model_path: PathBuf,
     allow_synthetic_fallback: bool,
+    family: Option<String>,
+    use_gpu: bool,
 }
 
 impl AudioEngine {
@@ -111,11 +241,17 @@ impl AudioEngine {
             model.id
         );
 
+        let family = audio_model_family(&abs_model_path);
         Ok(Self {
             id: model.id.clone(),
             bin_path: abs_bin_path,
             model_path: abs_model_path,
             allow_synthetic_fallback,
+            family,
+            use_gpu: model
+                .runtime
+                .as_ref()
+                .is_none_or(|runtime| runtime.gpu_layers > 0),
         })
     }
 
@@ -150,10 +286,12 @@ impl AudioEngine {
         let base_dir = PathBuf::from("bin").join("audiocpp");
         let exe_path = base_dir.join(exe_name);
         if exe_path.exists() {
+            repair_managed_runtime(&exe_path)?;
             return Ok(exe_path);
         }
 
         if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
+            repair_managed_runtime(&nested)?;
             return Ok(nested);
         }
 
@@ -199,27 +337,8 @@ impl AudioEngine {
         let mut download_urls = Vec::new();
 
         if cfg!(target_os = "windows") {
-            let cuda_asset = if host_cuda.is_some() {
-                assets.iter().find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    (n.contains("bin-windows") || n.contains("bin-win"))
-                        && n.contains("cuda")
-                        && !n.contains("cudart")
-                        && !n.contains("lib-")
-                })
-            } else {
-                None
-            };
-
-            let fallback = assets.iter().find(|a| {
-                let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                (n.contains("bin-windows") || n.contains("bin-win"))
-                    && (n.contains("cpu") || !n.contains("cuda"))
-                    && !n.contains("lib-")
-            });
-
-            if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push(download::extract_release_asset_info(target)?);
+            for asset in windows_audio_assets(assets, host_cuda)? {
+                download_urls.push(download::extract_release_asset_info(asset)?);
             }
         } else if cfg!(target_os = "macos") {
             if let Some(asset) = assets.iter().find(|a| {
@@ -456,7 +575,8 @@ impl InferenceEngine for AudioEngine {
                 cmd.current_dir(bin_dir);
                 Self::configure_command_env(&mut cmd, bin_dir);
 
-                let backend_flag = if download::detect_host_cuda_version().is_some() {
+                let backend_flag = if self.use_gpu && download::detect_host_cuda_version().is_some()
+                {
                     "cuda"
                 } else {
                     "cpu"
@@ -641,7 +761,8 @@ impl InferenceEngine for AudioEngine {
                 cmd.current_dir(bin_dir);
                 Self::configure_command_env(&mut cmd, bin_dir);
 
-                let backend_flag = if download::detect_host_cuda_version().is_some() {
+                let backend_flag = if self.use_gpu && download::detect_host_cuda_version().is_some()
+                {
                     "cuda"
                 } else {
                     "cpu"
@@ -846,13 +967,16 @@ impl InferenceEngine for AudioEngine {
                 cmd.current_dir(bin_dir);
                 Self::configure_command_env(&mut cmd, bin_dir);
 
-                let backend_flag = if download::detect_host_cuda_version().is_some() {
+                let backend_flag = if self.use_gpu && download::detect_host_cuda_version().is_some()
+                {
                     "cuda"
                 } else {
                     "cpu"
                 };
 
-                let family = if self.id.contains("audio8") {
+                let family = if let Some(family) = self.family.as_deref() {
+                    family
+                } else if self.id.contains("audio8") {
                     "audio8_tts"
                 } else if self.id.contains("voxcpm") {
                     "voxcpm2"
@@ -887,10 +1011,7 @@ impl InferenceEngine for AudioEngine {
                         Ok(output) if output.status.success() => {
                             std::fs::read(&output_wav_path).map_err(|e| e.to_string())
                         }
-                        Ok(output) => Err(format!(
-                            "audio.cpp TTS failed: {}",
-                            String::from_utf8_lossy(&output.stderr).trim()
-                        )),
+                        Ok(output) => Err(audio_failure("TTS", &output)),
                         Err(error) => Err(format!("audio.cpp could not start: {error}")),
                     };
                     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -968,6 +1089,81 @@ mod tests {
     }
 
     #[test]
+    fn windows_cuda_build_installs_its_matching_runtime_first() {
+        use serde_json::json;
+        let arch = if cfg!(target_arch = "aarch64") {
+            "arm64"
+        } else {
+            "x64"
+        };
+        let assets = vec![
+            json!({"name":format!("audio-bin-windows-{arch}-cuda12.4.zip")}),
+            json!({"name":format!("audio-cudart-windows-{arch}-cuda12.4.zip")}),
+            json!({"name":format!("audio-bin-windows-{arch}-cuda13.3.zip")}),
+            json!({"name":format!("audio-cudart-windows-{arch}-cuda13.3.zip")}),
+            json!({"name":format!("audio-bin-windows-{arch}-cpu-portable.zip")}),
+        ];
+        let selected = windows_audio_assets(&assets, Some((13, 4))).unwrap();
+        assert!(
+            selected[0]["name"]
+                .as_str()
+                .unwrap()
+                .contains("cudart-windows")
+        );
+        assert!(
+            selected
+                .iter()
+                .all(|a| a["name"].as_str().unwrap().contains("cuda13.3"))
+        );
+        assert_eq!(
+            windows_audio_assets(&assets, Some((12, 9))).unwrap()[1],
+            &assets[0]
+        );
+        assert_eq!(windows_audio_assets(&assets, None).unwrap(), [&assets[4]]);
+        assert!(windows_audio_assets(&assets[..1], Some((12, 4))).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_loader_failures_are_actionable_even_without_output() {
+        use std::os::windows::process::ExitStatusExt;
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0xC0000135),
+            stdout: vec![],
+            stderr: vec![],
+        };
+        let error = audio_failure("TTS", &output);
+        assert!(error.contains("0xC0000135") && error.contains("runtime DLL"));
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(1),
+            stdout: b"model configuration missing".to_vec(),
+            stderr: vec![],
+        };
+        assert!(audio_failure("TTS", &output).contains("model configuration missing"));
+    }
+
+    #[test]
+    fn setup_uses_gguf_family_metadata_instead_of_its_temporary_id() {
+        let root = std::env::temp_dir().join(format!(
+            "rune-audio-family-{}",
+            crate::setup::generate_api_key()
+        ));
+        crate::detect::testing::Gguf::new("audiocpp")
+            .string("audiocpp.model_spec.family", "voxcpm2")
+            .write(&root.join("model.gguf"));
+        assert_eq!(
+            audio_model_family(&root.join("model.gguf")).as_deref(),
+            Some("voxcpm2")
+        );
+        crate::detect::testing::Gguf::new("audio8").write(&root.join("audio8.gguf"));
+        assert_eq!(
+            audio_model_family(&root.join("audio8.gguf")).as_deref(),
+            Some("audio8_tts")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn test_audio_speech_fallback_synthesis() {
         let wav = AudioEngine::generate_sine_wav_fallback(0.5, 16000);
         assert!(wav.len() > 44);
@@ -1029,6 +1225,8 @@ mod strict_setup_tests {
             )),
             model_path: PathBuf::from("fixture.gguf"),
             allow_synthetic_fallback: false,
+            family: None,
+            use_gpu: false,
         };
         let task = InferenceTaskRequest::AudioSpeech {
             input: "Hello".into(),
