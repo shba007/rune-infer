@@ -3,6 +3,13 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.14.0](https://github.com/shba007/rune-infer/compare/v0.13.0..v0.14.0) - 2026-10-25
+
+#### 🚀 Features
+- (**wizard**) enhance engine selection and installation logic - ([ac9c6e0](https://github.com/shba007/rune-infer/commit/ac9c6e0f1c2589f48cd70a68859d1f3c0dbe3f00)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.13.0](https://github.com/shba007/rune-infer/compare/v0.12.0..v0.13.0) - 2026-10-25
 
 #### 🚀 Features
