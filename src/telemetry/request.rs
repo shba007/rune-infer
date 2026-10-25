@@ -81,7 +81,7 @@ fn emit(r: &RequestRecord) {
         RequestPhase::Succeeded => "succeeded",
         RequestPhase::Failed => "failed",
     };
-    // No request or response payloads are logged.
+    // Lifecycle events contain metadata only; bodies use the separate payload log.
     tracing::info!(target: "audit", event = "request_state", request_id = r.id,
         phase, model = %r.model, status = r.status, latency_ms = r.latency_ms,
         prompt_tokens = r.prompt_tokens, completion_tokens = r.completion_tokens,

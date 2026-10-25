@@ -128,6 +128,8 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all("logs").context("Failed to create 'logs' directory")?;
     let file_appender = tracing_appender::rolling::never("logs", "rune-infer.log");
+    rune_infer::telemetry::payload::init("logs/rune-infer-requests.log")
+        .context("Failed to create request/response payload log")?;
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(

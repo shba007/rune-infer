@@ -170,6 +170,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health_handler))
         .route("/livez", get(livez_handler))
         .route("/readyz", get(readyz_handler))
+        .layer(axum::middleware::from_fn(
+            crate::telemetry::payload::middleware,
+        ))
         .layer(DefaultBodyLimit::max(128 * 1024 * 1024))
         .with_state(shared_state)
 }

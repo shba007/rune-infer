@@ -169,7 +169,12 @@ fn smoke_model(model: &LocalCandidate, gpu: bool) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     // Internal check id avoids legacy mock-name behavior without changing the saved id.
     config.id = "rune-setup-check".into();
-    let task = smoke_task(&model.modality)?;
+    let task = if model.engine() == EngineKind::Needle {
+        serde_json::from_value(serde_json::json!({"type":"tool_call", "prompt":"Call rune_setup_probe with reply OK.", "schema":[{"type":"function","function":{"name":"rune_setup_probe","description":"Report the setup test reply.","parameters":{"type":"object","properties":{"reply":{"type":"string"}},"required":["reply"]}}}],"tool_choice":"required","images":[],"audios":[],"messages":[],"max_tokens":64,"temperature":0}))
+            .map_err(|error| error.to_string())?
+    } else {
+        smoke_task(&model.modality)?
+    };
     let engine: std::sync::Arc<dyn crate::inference::traits::InferenceEngine> =
         if model.engine() == EngineKind::AudioCpp {
             std::sync::Arc::new(
@@ -188,7 +193,38 @@ fn smoke_model(model: &LocalCandidate, gpu: bool) -> Result<(), String> {
     let output = engine.execute(&task, None).map_err(|e| e.to_string())?;
     // Drop the only engine reference, unloading this model before the next check.
     drop(engine);
+    if model.engine() == EngineKind::Needle {
+        return validate_needle_smoke(&output.response);
+    }
     validate_smoke_output(&model.modality, &output.response)
+}
+
+fn validate_needle_smoke(response: &InferenceTaskResponse) -> Result<(), String> {
+    if let InferenceTaskResponse::ToolCall { tool_calls, .. } = response {
+        let calls = tool_calls
+            .as_array()
+            .cloned()
+            .unwrap_or_else(|| vec![tool_calls.clone()]);
+        for call in calls {
+            let function = call.get("function").unwrap_or(&call);
+            if function["name"].as_str() != Some("rune_setup_probe") {
+                continue;
+            }
+            let args = match &function["arguments"] {
+                serde_json::Value::String(value) => {
+                    serde_json::from_str(value).unwrap_or(serde_json::Value::Null)
+                }
+                value => value.clone(),
+            };
+            if args["reply"]
+                .as_str()
+                .is_some_and(|reply| !reply.trim().is_empty())
+            {
+                return Ok(());
+            }
+        }
+    }
+    Err("Needle did not return a complete rune_setup_probe tool call with JSON arguments.".into())
 }
 
 fn smoke_task(modality: &Modality) -> Result<InferenceTaskRequest, String> {
@@ -455,6 +491,29 @@ mod tests {
         models[0].engines.reverse();
         assert!(proof.validate(&models, false).is_err());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn needle_probe_requires_a_complete_requested_tool_call() {
+        use serde_json::json;
+        let response = |tool_calls| InferenceTaskResponse::ToolCall {
+            content: None,
+            tool_calls,
+        };
+        assert!(
+            validate_needle_smoke(&response(
+                json!([{"name":"rune_setup_probe","arguments":{"reply":"OK"}}])
+            ))
+            .is_ok()
+        );
+        for calls in [
+            json!([]),
+            json!([{"name":"other","arguments":{"reply":"OK"}}]),
+            json!([{"name":"rune_setup_probe","arguments":"{"}]),
+        ] {
+            assert!(validate_needle_smoke(&response(calls)).is_err());
+        }
+        assert!(validate_needle_smoke(&InferenceTaskResponse::Text("OK".into())).is_err());
     }
 
     #[test]

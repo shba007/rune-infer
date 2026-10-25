@@ -745,7 +745,7 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
             walk(&path, depth + 1, out);
         } else if path
             .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("gguf"))
+            .is_some_and(|e| e.eq_ignore_ascii_case("gguf") || e.eq_ignore_ascii_case("cact"))
         {
             out.push(path);
         }
@@ -985,6 +985,69 @@ pub const OMNI_PARTIAL_NOTE: &str = "omni family, but its projector only provide
 pub const OMNI_NO_ENCODER_NOTE: &str = "omni family, but only the language model was found — \
      add extra.mmproj_path (its vision/audio encoder GGUF) for image, audio and video input";
 
+/// Read the documented Needle 3 container without loading weights. Speech
+/// attachments are excluded: the existing Needle adapter only handles tool calls.
+fn cactus_candidate(path: &Path) -> Result<LocalCandidate> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    let header = rd::<196>(&mut file)?;
+    let field =
+        |offset| u32::from_le_bytes(header[offset..offset + 4].try_into().expect("header field"));
+    anyhow::ensure!(
+        field(0) == 0x05E12A84,
+        "unsupported Cactus generation; the installed adapter requires Needle 3"
+    );
+    let count = field(4);
+    let codebook = field(8);
+    anyhow::ensure!(
+        count > 0 && count <= 100_000 && codebook <= 1024,
+        "invalid Cactus directory"
+    );
+    let directory = 196 + u64::from(codebook) * 4;
+    let data_start = directory + u64::from(count) * 44;
+    anyhow::ensure!(data_start <= size, "truncated Cactus directory");
+    file.seek(SeekFrom::Start(directory))?;
+    let mut raw = 0;
+    let mut weights = 0;
+    for _ in 0..count {
+        let entry = rd::<44>(&mut file)?;
+        let offset = u64::from_le_bytes(entry[20..28].try_into()?);
+        let length = u64::from_le_bytes(entry[28..36].try_into()?);
+        anyhow::ensure!(
+            (1..=4).contains(&entry[0])
+                && entry[1] <= 4
+                && offset >= data_start
+                && length > 0
+                && offset.checked_add(length).is_some_and(|end| end <= size),
+            "invalid Cactus tensor bounds"
+        );
+        raw += usize::from(entry[0] == 4);
+        weights += usize::from(entry[0] != 4);
+    }
+    anyhow::ensure!(
+        raw == 1 && weights > 0,
+        "Cactus archive has additional or missing attachments; speech containers are not supported by the Needle tool adapter"
+    );
+    Ok(LocalCandidate {
+        path: path.to_path_buf(),
+        size_bytes: size,
+        architecture: "needle3".into(),
+        display_name: file_stem(path),
+        context_length: None,
+        modality: Modality::Text,
+        engines: vec![EngineKind::Needle],
+        kind_label: "tool-calling model",
+        capabilities: vec!["Tool Call".into()],
+        extra: Map::new(),
+        needs: Vec::new(),
+        notes: vec!["Needle 3 Cactus container; requires the compatible Needle runtime.".into()],
+        class: Class::Other,
+        embedding_length: None,
+        omni_family: false,
+    })
+}
+
 /// Scan `input` (a file, or a folder searched up to 9 levels) and classify
 /// every GGUF found.
 pub fn discover(input: &Path) -> Result<Discovery> {
@@ -1003,8 +1066,22 @@ pub fn discover(input: &Path) -> Result<Discovery> {
     let mut projectors: Vec<(PathBuf, GgufInfo)> = Vec::new();
     let mut drafts: Vec<(PathBuf, GgufInfo)> = Vec::new();
     let mut found: Vec<(PathBuf, GgufInfo, Detected)> = Vec::new();
+    let mut cactus = Vec::new();
 
     for path in files {
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("cact"))
+        {
+            match cactus_candidate(&path) {
+                Ok(model) => cactus.push(model),
+                Err(error) => out.skipped.push(Skipped {
+                    path,
+                    reason: format!("not a supported Cactus model ({error})"),
+                }),
+            }
+            continue;
+        }
         let file_name = path
             .file_name()
             .unwrap_or_default()
@@ -1116,6 +1193,7 @@ pub fn discover(input: &Path) -> Result<Discovery> {
         }
     }
 
+    candidates.extend(cactus);
     candidates.sort_by(|a, b| a.path.cmp(&b.path));
     out.models = candidates;
     Ok(out)
@@ -1247,6 +1325,37 @@ mod tests {
         assert!(i.has_tokenizer && i.has_prism_keys && i.has_token_embd && i.has_first_block);
         assert_eq!(i.tensor_count, 2);
         assert!(parse_gguf(&mut b"NOPE....".as_slice()).is_err());
+    }
+
+    #[test]
+    fn cactus_discovery_checks_format_and_excludes_speech_attachments() {
+        let root = tmp("cactus");
+        let fixture = |raw_count: usize| {
+            let count = 1 + raw_count;
+            let start = 196 + count * 44;
+            let mut bytes = vec![0u8; start + count * 64];
+            bytes[0..4].copy_from_slice(&0x05E12A84u32.to_le_bytes());
+            bytes[4..8].copy_from_slice(&(count as u32).to_le_bytes());
+            for i in 0..count {
+                let entry = 196 + i * 44;
+                bytes[entry] = if i == 0 { 1 } else { 4 };
+                bytes[entry + 1] = 1;
+                bytes[entry + 20..entry + 28]
+                    .copy_from_slice(&((start + i * 64) as u64).to_le_bytes());
+                bytes[entry + 28..entry + 36].copy_from_slice(&64u64.to_le_bytes());
+            }
+            bytes
+        };
+        std::fs::write(root.join("model.cact"), fixture(1)).unwrap();
+        std::fs::write(root.join("speech.cact"), fixture(2)).unwrap();
+        std::fs::write(root.join("invalid.cact"), b"invalid").unwrap();
+        let found = discover(&root).unwrap();
+        assert_eq!(found.models.len(), 1);
+        assert_eq!(found.skipped.len(), 2);
+        assert_eq!(found.models[0].engines, [EngineKind::Needle]);
+        assert_eq!(found.models[0].capabilities, ["Tool Call"]);
+        assert_eq!(discover(&root.join("model.cact")).unwrap().models.len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

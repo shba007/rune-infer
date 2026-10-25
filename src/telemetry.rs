@@ -5,6 +5,7 @@
 //! typed [`UiEvent`]s and forwards them over a channel. Nothing here depends on
 //! a terminal, so library users can install the layer for their own display.
 
+pub mod payload;
 mod request;
 pub(crate) use request::{request_lifecycle, set_request_model, spawn_blocking};
 

@@ -452,3 +452,176 @@ async fn completed_background_stream_does_not_wait_for_a_future_foreground() {
     .unwrap();
     assert!(String::from_utf8_lossy(&bytes).contains("[DONE]"));
 }
+
+struct StructuredEngine(&'static str);
+impl InferenceEngine for StructuredEngine {
+    fn id(&self) -> &str {
+        "fixture"
+    }
+    fn execute(
+        &self,
+        _: &InferenceTaskRequest,
+        _: Option<&mut dyn FnMut(&str) -> bool>,
+    ) -> Result<InferenceOutput, Box<dyn std::error::Error>> {
+        Ok(InferenceOutput {
+            response: crate::inference::types::InferenceTaskResponse::Text(self.0.into()),
+            usage: crate::types::Usage::new(10, 20),
+        })
+    }
+}
+
+#[tokio::test]
+async fn structured_chat_preserves_root_and_rejects_invalid_completions() {
+    for (content, expected) in [
+        (r#"{"answer":"ok","findings":[]}"#, StatusCode::OK),
+        (
+            r#"[{"answer":"ok","findings":[]}]"#,
+            StatusCode::BAD_GATEWAY,
+        ),
+        (r#"{"findings":[]}"#, StatusCode::BAD_GATEWAY),
+        ("{", StatusCode::BAD_GATEWAY),
+    ] {
+        let (router, state) = app(Some(Arc::new(StructuredEngine(content))));
+        state.config.write().unwrap().models[0].capabilities = Some(vec![
+            "Chat".into(),
+            "Vision".into(),
+            "Structured Output".into(),
+        ]);
+        let body = serde_json::json!({"model":"fixture","messages":[{"role":"user","content":"describe"}],
+            "response_format":{"type":"json_schema","json_schema":{"name":"report","strict":true,
+                "schema":{"type":"object","additionalProperties":false,"required":["answer","findings"],
+                "properties":{"answer":{"type":"string"},"findings":{"type":"array"}}}}}});
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        let value: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        if expected == StatusCode::OK {
+            assert_eq!(value["choices"][0]["message"]["content"], content);
+            assert!(value["choices"][0]["message"]["tool_calls"].is_null());
+        } else {
+            assert_eq!(value["error"]["code"], "structured_output_invalid");
+        }
+    }
+}
+
+#[tokio::test]
+async fn structured_chat_rejects_streaming_and_invalid_schema_before_execution() {
+    for (format, stream, code) in [
+        (
+            serde_json::json!({"type":"json_schema","json_schema":{"name":"fixture_schema","schema":{"type":"object"}}}),
+            true,
+            "unsupported_response_format",
+        ),
+        (
+            serde_json::json!({"type":"json_schema","json_schema":{"name":"fixture_schema","schema":{"type":"invalid"}}}),
+            false,
+            "invalid_json_schema",
+        ),
+        (
+            serde_json::json!({"type":"json_schema"}),
+            false,
+            "invalid_json_schema",
+        ),
+    ] {
+        let (router, _) = app(Some(Arc::new(FailingEngine)));
+        let body = serde_json::json!({"model":"fixture","messages":[{"role":"user","content":"test"}],"response_format":format,"stream":stream});
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let value: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(value["error"]["code"], code);
+    }
+}
+
+#[tokio::test]
+#[ignore = "temporary owner-authorized real-model replay"]
+async fn live_structured_replay() {
+    let catalog: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string("config/catalog.json").unwrap()).unwrap();
+    let entry: crate::schema::ModelEntry = serde_json::from_value(
+        catalog["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["id"] == "gemma-4-12b-it")
+            .unwrap()
+            .clone(),
+    )
+    .unwrap();
+    let mut config = ModelRegistry::default();
+    config
+        .models
+        .push(crate::config::ModelConfig::try_from(entry).unwrap());
+    let inference = Arc::new(crate::inference::AppState::new(&config));
+    let state = AppState::new(
+        inference.clone(),
+        Arc::new(ProxyService::new(&config)),
+        config,
+    );
+    let router = create_router(state);
+    for id in [29, 3] {
+        let body = std::fs::read(format!("target/structured-replay-{id}.json")).unwrap();
+        let request: crate::types::ChatCompletionRequest = serde_json::from_slice(&body).unwrap();
+        let validator = jsonschema::validator_for(
+            request
+                .response_format
+                .as_ref()
+                .unwrap()
+                .json_schema
+                .as_ref()
+                .unwrap()
+                .schema
+                .as_ref()
+                .unwrap(),
+        )
+        .unwrap();
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        println!(
+            "REPLAY {id} status={status} raw_body={}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert_eq!(status, StatusCode::OK);
+        let content = value["choices"][0]["message"]["content"].as_str().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+        assert!(parsed.is_object());
+        validator.validate(&parsed).unwrap();
+    }
+    drop(router);
+    drop(inference);
+}

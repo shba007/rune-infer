@@ -33,7 +33,7 @@
         "path": "D:/Models/huggingface/hub/models--unsloth--gemma-4-12b-it-GGUF/snapshots/fc034cfff751157913579611efad8462ac1be606/gemma-4-12b-it-UD-Q6_K_XL.gguf",
         "params": 12000000000,
         "bits_per_weight": 4.5,
-        "context_length": 262144,
+        "context_length": -1,
         "gpu_layers": 99,
         "args": "-fa on"
       },

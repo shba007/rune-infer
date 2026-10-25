@@ -1,6 +1,7 @@
 pub mod prompt;
 pub mod response;
 pub mod stream;
+mod structured;
 pub mod tools;
 
 pub use prompt::*;
@@ -238,6 +239,20 @@ pub async fn chat_completions_handler(
             }),
         )
             .into_response();
+    }
+
+    let structured_validator = match structured::validator(&request) {
+        Ok(value) => value,
+        Err(message) => {
+            return structured::error(StatusCode::BAD_REQUEST, "invalid_json_schema", message);
+        }
+    };
+    if structured_validator.is_some() && (request.stream || !model_config.is_local()) {
+        return structured::error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_response_format",
+            "Validated structured output currently requires a local, non-streaming request.".into(),
+        );
     }
 
     if !model_config.is_local() {
@@ -499,7 +514,7 @@ pub async fn chat_completions_handler(
         (res, gen_started.elapsed())
     });
 
-    let (res, gen_elapsed) = if is_background {
+    let (mut res, gen_elapsed) = if is_background {
         let yield_notified = state.concurrency.wait_for_foreground(foreground_epoch);
         tokio::select! {
             join_res = exec_handle => {
@@ -538,6 +553,13 @@ pub async fn chat_completions_handler(
             ),
         }
     };
+    let mut invalid_structured_output = false;
+    if let (Some(validator), Ok(output)) = (&structured_validator, &res) {
+        if let Err(error) = structured::validate_output(validator, &output.response) {
+            invalid_structured_output = true;
+            res = Err(error);
+        }
+    }
     is_completed.store(true, std::sync::atomic::Ordering::Relaxed);
 
     if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -558,7 +580,7 @@ pub async fn chat_completions_handler(
             ),
             Err(e) => crate::telemetry::record_failure(
                 &model_for_stats,
-                500,
+                if invalid_structured_output { 502 } else { 500 },
                 start_time.elapsed().as_millis(),
                 e,
             ),
@@ -571,21 +593,7 @@ pub async fn chat_completions_handler(
                 content,
                 tool_calls,
             } => {
-                let json_resp = if prepared.is_structured_mode {
-                    let content_str = match &tool_calls {
-                        serde_json::Value::String(s) => s.clone(),
-                        other => serde_json::to_string_pretty(other).unwrap_or_default(),
-                    };
-                    let resp = response::chat_completion_response(
-                        &model_config.id,
-                        Some(content_str),
-                        None,
-                        "stop",
-                        created,
-                        output.usage,
-                    );
-                    Json(resp).into_response()
-                } else if let Some(parsed_calls) =
+                let json_resp = if let Some(parsed_calls) =
                     tools::convert_to_tool_calls(&tool_calls, created)
                 {
                     let resp = response::chat_completion_response(
@@ -644,6 +652,11 @@ pub async fn chat_completions_handler(
                     .into_response(),
             ),
         },
+        Err(e) if invalid_structured_output => attach_attribution_headers(structured::error(
+            StatusCode::BAD_GATEWAY,
+            "structured_output_invalid",
+            e,
+        )),
         Err(e) => {
             let status = if e.contains("context") || e.contains("tokens") || e.contains("limit") {
                 StatusCode::PAYLOAD_TOO_LARGE

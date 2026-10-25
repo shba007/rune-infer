@@ -472,7 +472,7 @@ impl InferenceEngine for LlamaServerEngine {
                 } else if schema.is_object() && !schema.as_object().is_none_or(|o| o.is_empty()) {
                     body["response_format"] = serde_json::json!({
                         "type": "json_schema",
-                        "json_schema": { "schema": schema.clone() }
+                        "schema": schema.clone()
                     });
                 }
 
@@ -485,6 +485,7 @@ impl InferenceEngine for LlamaServerEngine {
 
                 if stream_mode {
                     let mut full_output = String::new();
+                    let mut structured_content = String::new();
                     let mut in_reasoning = false;
                     let mut tool_accumulators: Vec<ToolCallAccumulator> = Vec::new();
                     let mut stream_usage: Option<Usage> = None;
@@ -535,6 +536,7 @@ impl InferenceEngine for LlamaServerEngine {
                                         }
                                     }
                                     full_output.push_str(content);
+                                    structured_content.push_str(content);
                                     if let Some(ref mut cb) = on_token {
                                         if !cb(content) {
                                             self.cancel();
@@ -623,6 +625,13 @@ impl InferenceEngine for LlamaServerEngine {
                             });
                     }
 
+                    if schema.is_object() && !schema.as_object().is_none_or(|o| o.is_empty()) {
+                        return Ok(InferenceOutput {
+                            response: InferenceTaskResponse::Text(structured_content),
+                            usage: final_usage,
+                        });
+                    }
+
                     if !valid_accumulated.is_empty() {
                         return Ok(InferenceOutput {
                             response: InferenceTaskResponse::ToolCall {
@@ -683,6 +692,14 @@ impl InferenceEngine for LlamaServerEngine {
                             audio_tokens: (audios.len() * 256) as u32,
                             cached_tokens: 0,
                         });
+                }
+
+                // Constrained JSON is content, never a candidate for tool-call extraction.
+                if schema.is_object() && !schema.as_object().is_none_or(|o| o.is_empty()) {
+                    return Ok(InferenceOutput {
+                        response: InferenceTaskResponse::Text(raw_content.to_string()),
+                        usage: non_stream_usage,
+                    });
                 }
 
                 if let Some(tc) = choice["message"]
@@ -1438,5 +1455,92 @@ mod usage_tests {
             (57, 0, 57)
         );
         assert_eq!(usage.prompt_tokens_details.unwrap().cached_tokens, 32);
+    }
+}
+
+#[cfg(test)]
+mod structured_transport_tests {
+    use super::*;
+    use serde_json::json;
+    use std::io::{Read, Write};
+
+    #[test]
+    fn sends_full_schema_and_preserves_json_content_in_both_backend_modes() {
+        for streaming in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let content = r#"{"answer":"ok","findings":[{"box":null}]}"#;
+            let schema = json!({"type":"object","required":["answer","findings"],"additionalProperties":false,
+                "properties":{"answer":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"box":{"type":["array","null"]}}}}}});
+            let expected = schema.clone();
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(10)))
+                    .unwrap();
+                let mut reader = std::io::BufReader::new(socket.try_clone().unwrap());
+                let mut length = 0;
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap();
+                    }
+                }
+                let mut bytes = vec![0; length];
+                reader.read_exact(&mut bytes).unwrap();
+                let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(
+                    request["response_format"],
+                    json!({"type":"json_schema","schema":expected})
+                );
+                let body = if streaming {
+                    format!(
+                        "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+                        json!({"choices":[{"delta":{"content":content}}]}),
+                        json!({"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":12}})
+                    )
+                } else {
+                    json!({"choices":[{"message":{"content":content}}],"usage":{"prompt_tokens":4,"completion_tokens":12}}).to_string()
+                };
+                write!(
+                    socket,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            });
+            let child = Command::new(std::env::current_exe().unwrap())
+                .arg("--list")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let engine = LlamaServerEngine {
+                id: "fixture".into(),
+                port,
+                client: crate::inference::process::SafeBlockingClient::new(
+                    reqwest::blocking::Client::new(),
+                ),
+                _process: ProcessGuard::new(child, "structured-test"),
+            };
+            let task: InferenceTaskRequest =
+                serde_json::from_value(json!({"type":"tool_call","prompt":"test","schema":schema}))
+                    .unwrap();
+            let mut callback = |_: &str| true;
+            let output = engine
+                .execute(&task, if streaming { Some(&mut callback) } else { None })
+                .unwrap();
+            let InferenceTaskResponse::Text(text) = output.response else {
+                panic!("JSON was converted into tool calls")
+            };
+            assert_eq!(text, content);
+            assert_eq!(output.usage.completion_tokens, 12);
+            server.join().unwrap();
+        }
     }
 }
