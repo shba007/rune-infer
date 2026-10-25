@@ -151,29 +151,37 @@ pub fn install_engine(engine: EngineKind) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Restrict newly configured models to the owner's one selected compatible engine.
+/// Keep compatible selections in preference order; the first engine is the default.
 pub fn select_local_engines(
     models: &[LocalCandidate],
-    choices: &[EngineKind],
+    choices: &[Vec<EngineKind>],
 ) -> Result<Vec<LocalCandidate>, String> {
     if models.len() != choices.len() {
-        return Err("Choose one engine for every local model.".into());
+        return Err("Choose engines for every local model.".into());
     }
     models
         .iter()
         .zip(choices)
-        .map(|(model, engine)| {
-            if *engine == EngineKind::Encoder {
-                return Err("Synthetic encoder is not available in setup.".into());
-            }
-            if !model.engines.contains(engine) {
+        .map(|(model, engines)| {
+            if engines.is_empty() {
                 return Err(format!(
-                    "{} is not compatible with {engine}",
+                    "Choose at least one engine for {}.",
                     model.display_name
                 ));
             }
             let mut selected = model.clone();
-            selected.engines = vec![*engine];
+            selected.engines.clear();
+            for engine in engines {
+                if *engine == EngineKind::Encoder || !model.engines.contains(engine) {
+                    return Err(format!(
+                        "{} is not available for {}",
+                        engine, model.display_name
+                    ));
+                }
+                if !selected.engines.contains(engine) {
+                    selected.engines.push(*engine);
+                }
+            }
             Ok(selected)
         })
         .collect()

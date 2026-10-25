@@ -4,6 +4,45 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+#[derive(Debug, Clone)]
+pub struct DownloadProgress {
+    pub filename: String,
+    pub extracting: bool,
+    pub downloaded: u64,
+    pub total: Option<u64>,
+    pub bytes_per_second: f64,
+}
+
+type ProgressCallback = Box<dyn FnMut(DownloadProgress)>;
+thread_local! {
+    static PROGRESS: std::cell::RefCell<Option<ProgressCallback>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Scope download reporting to this setup worker; runtime downloads remain independent.
+pub fn with_progress<T>(
+    callback: impl FnMut(DownloadProgress) + 'static,
+    work: impl FnOnce() -> T,
+) -> T {
+    struct Restore(Option<ProgressCallback>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PROGRESS.with(|slot| {
+                slot.replace(self.0.take());
+            });
+        }
+    }
+    let _restore = Restore(PROGRESS.with(|slot| slot.replace(Some(Box::new(callback)))));
+    work()
+}
+
+fn report(progress: DownloadProgress) {
+    PROGRESS.with(|slot| {
+        if let Some(callback) = slot.borrow_mut().as_mut() {
+            callback(progress);
+        }
+    });
+}
+
 pub fn create_download_client() -> Result<reqwest::blocking::Client, Box<dyn Error>> {
     let mut builder = reqwest::blocking::Client::builder()
         .user_agent("rune-infer/0.1.0 (Windows NT 10.0; Win64; x64)")
@@ -58,37 +97,48 @@ pub fn download_to_file(
         }
     );
 
-    {
+    let result = (|| -> std::io::Result<()> {
         let mut file = std::fs::File::create(dest_path)?;
         let mut buffer = [0u8; 65536];
-        let mut downloaded: u64 = 0;
-        let mut last_log = Instant::now();
-
-        while let Ok(n) = resp.read(&mut buffer) {
+        let mut downloaded = 0u64;
+        let started = Instant::now();
+        let mut last_update = Instant::now();
+        let update = |downloaded| {
+            report(DownloadProgress {
+                filename: filename.to_owned(),
+                extracting: false,
+                downloaded,
+                total: (total_size > 0).then_some(total_size),
+                bytes_per_second: downloaded as f64 / started.elapsed().as_secs_f64().max(0.001),
+            })
+        };
+        update(0);
+        loop {
+            let n = resp.read(&mut buffer)?;
             if n == 0 {
                 break;
             }
             file.write_all(&buffer[..n])?;
             downloaded += n as u64;
-
-            if last_log.elapsed() >= Duration::from_secs(3) {
-                if total_size > 0 {
-                    let pct = (downloaded as f64 / total_size as f64) * 100.0;
-                    tracing::info!(
-                        "{}   -> {} / {} ({:.1}%)",
-                        prefix,
-                        format_bytes(downloaded),
-                        format_bytes(total_size),
-                        pct
-                    );
-                } else {
-                    tracing::info!("{}   -> {}", prefix, format_bytes(downloaded));
-                }
-                last_log = Instant::now();
+            if last_update.elapsed() >= Duration::from_millis(100) {
+                update(downloaded);
+                last_update = Instant::now();
             }
         }
+        if total_size > 0 && downloaded != total_size {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Incomplete engine download; retry.",
+            ));
+        }
         file.flush()?;
+        update(downloaded);
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(dest_path);
     }
+    result?;
 
     Ok(())
 }
@@ -105,6 +155,13 @@ pub fn extract_archive(
     let is_tar = filename.ends_with(".tar.gz") || filename.ends_with(".tgz");
     let is_zip = filename.ends_with(".zip");
 
+    report(DownloadProgress {
+        filename: filename.into(),
+        extracting: true,
+        downloaded: 0,
+        total: None,
+        bytes_per_second: 0.0,
+    });
     tracing::info!("{} Extracting {}...", prefix, filename);
 
     let tar_flag = if is_tar { "-xzf" } else { "-xf" };
@@ -115,9 +172,9 @@ pub fn extract_archive(
             "-C",
             dest_dir.to_str().unwrap(),
         ])
-        .status()
+        .output()
     {
-        if status.success() {
+        if status.status.success() {
             return Ok(());
         }
     }
@@ -132,9 +189,9 @@ pub fn extract_archive(
             );
             let status = Command::new("powershell")
                 .args(["-NoProfile", "-Command", &ps_cmd])
-                .status();
+                .output();
             if let Ok(s) = status {
-                if s.success() {
+                if s.status.success() {
                     return Ok(());
                 }
             }
@@ -150,9 +207,9 @@ pub fn extract_archive(
                     "-d",
                     dest_dir.to_str().unwrap(),
                 ])
-                .status();
+                .output();
             if let Ok(s) = status {
-                if s.success() {
+                if s.status.success() {
                     return Ok(());
                 }
             }
@@ -310,4 +367,73 @@ pub fn extract_release_asset_info(
         .ok_or("GitHub release asset is missing 'browser_download_url' field")?
         .to_string();
     Ok((name, url))
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn serve(response: &'static [u8]) -> (String, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/asset", listener.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let count = stream.read(&mut request).unwrap();
+            assert!(count > 0);
+            stream.write_all(response).unwrap();
+        });
+        (url, worker)
+    }
+
+    #[test]
+    fn reports_bytes_and_rejects_incomplete_transfers() {
+        let root = std::env::temp_dir().join(format!(
+            "rune-download-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let dest = root.join("engine.zip");
+        let progress = Rc::new(RefCell::new(Vec::new()));
+        let capture = progress.clone();
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap();
+        let (url, worker) =
+            serve(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ntest");
+        with_progress(
+            move |update| capture.borrow_mut().push(update),
+            || download_to_file(&client, &url, &dest, "test"),
+        )
+        .unwrap();
+        worker.join().unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"test");
+        let updates = progress.borrow();
+        assert_eq!(updates.first().unwrap().downloaded, 0);
+        let done = updates.last().unwrap();
+        assert_eq!(done.filename, "engine.zip");
+        assert_eq!(done.downloaded, 4);
+        assert_eq!(done.total, Some(4));
+        assert!(done.bytes_per_second.is_finite() && done.bytes_per_second > 0.0);
+        drop(updates);
+        let count = progress.borrow().len();
+        let (url, worker) =
+            serve(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\nshort");
+        assert!(download_to_file(&client, &url, &dest, "test").is_err());
+        worker.join().unwrap();
+        assert!(!dest.exists());
+        assert_eq!(
+            progress.borrow().len(),
+            count,
+            "callback must be scoped to setup worker"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

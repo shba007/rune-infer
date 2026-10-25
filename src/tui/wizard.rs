@@ -3,7 +3,6 @@
 //! Configure at least one model before saving. Engine downloads may write files
 //! before the final configuration review.
 
-use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
@@ -96,7 +95,6 @@ struct Wizard<'a> {
     ws: &'a Workspace,
     step: Step,
     tick: u64,
-    log_tail: VecDeque<String>,
 
     prereq: Option<Prerequisites>,
     prereq_rx: Receiver<Prerequisites>,
@@ -140,9 +138,11 @@ struct Wizard<'a> {
 
     // engine installation and real inference checks
     engine: EnginePhase,
-    engine_choices: Vec<EngineKind>,
+    engine_choices: Vec<Vec<EngineKind>>,
     engine_cursor: usize,
+    engine_option: usize,
     engine_status: String,
+    engine_download: Option<crate::inference::engines::download::DownloadProgress>,
 
     // review
     review_error: Option<String>,
@@ -162,16 +162,7 @@ pub fn run_wizard(
     let mut w = Wizard::new(ws, prx);
 
     loop {
-        while let Ok(ev) = rx.try_recv() {
-            if let UiEvent::Log(l) = ev {
-                if l.level <= tracing::Level::INFO {
-                    if w.log_tail.len() >= 6 {
-                        w.log_tail.pop_front();
-                    }
-                    w.log_tail.push_back(l.message);
-                }
-            }
-        }
+        while rx.try_recv().is_ok() {}
         w.poll_workers();
         w.tick += 1;
         terminal.draw(|f| w.draw(f))?;
@@ -217,7 +208,6 @@ impl<'a> Wizard<'a> {
             source_cursor: 0,
             source_error: None,
             tick: 0,
-            log_tail: VecDeque::new(),
             prereq: None,
             prereq_rx,
             exposure: Exposure::Local,
@@ -250,7 +240,9 @@ impl<'a> Wizard<'a> {
             engine: EnginePhase::Pick,
             engine_choices: Vec::new(),
             engine_cursor: 0,
+            engine_option: 0,
             engine_status: String::new(),
+            engine_download: None,
             review_error: None,
         }
     }
@@ -318,7 +310,13 @@ impl<'a> Wizard<'a> {
         if let EnginePhase::Installing(rx) = &self.engine {
             loop {
                 match rx.try_recv() {
-                    Ok(LocalPreparationEvent::Progress(status)) => self.engine_status = status,
+                    Ok(LocalPreparationEvent::Progress(status)) => {
+                        self.engine_status = status;
+                        self.engine_download = None;
+                    }
+                    Ok(LocalPreparationEvent::Download(progress)) => {
+                        self.engine_download = Some(progress)
+                    }
                     Ok(LocalPreparationEvent::Finished(result)) => {
                         finished = Some(result);
                         break;
@@ -350,8 +348,9 @@ impl<'a> Wizard<'a> {
 
     fn next_after_local(&mut self) {
         if self.engine_needed() {
-            self.engine_choices = self.chosen.iter().map(LocalCandidate::engine).collect();
+            self.engine_choices = self.chosen.iter().map(|m| vec![m.engine()]).collect();
             self.engine_cursor = 0;
+            self.engine_option = 0;
             self.engine = EnginePhase::Pick;
             self.go(Step::Engine);
         } else {
@@ -737,37 +736,58 @@ impl<'a> Wizard<'a> {
         let (tx, rx) = channel();
         let gpu = self.gpu_available();
         std::thread::spawn(move || {
-            let result = setup::prepare_local_models(&models, gpu, |status| {
-                let _ = tx.send(LocalPreparationEvent::Progress(status));
-            });
+            let downloads = tx.clone();
+            let result = crate::inference::engines::download::with_progress(
+                move |progress| {
+                    let _ = downloads.send(LocalPreparationEvent::Download(progress));
+                },
+                || {
+                    setup::prepare_local_models(&models, gpu, |status| {
+                        let _ = tx.send(LocalPreparationEvent::Progress(status));
+                    })
+                },
+            );
             let _ = tx.send(LocalPreparationEvent::Finished(result));
         });
         self.engine_status = "Checking local model files".into();
+        self.engine_download = None;
         self.engine = EnginePhase::Installing(rx);
     }
 
     fn key_engine(&mut self, k: KeyEvent) {
         match &self.engine {
             EnginePhase::Pick => match k.code {
-                KeyCode::Up => self.engine_cursor = self.engine_cursor.saturating_sub(1),
-                KeyCode::Down => {
-                    self.engine_cursor =
-                        (self.engine_cursor + 1).min(self.chosen.len().saturating_sub(1))
+                KeyCode::Left | KeyCode::Right => {
+                    if k.code == KeyCode::Left {
+                        self.engine_cursor = self.engine_cursor.saturating_sub(1);
+                    } else {
+                        self.engine_cursor =
+                            (self.engine_cursor + 1).min(self.chosen.len().saturating_sub(1));
+                    }
+                    self.engine_option = 0;
                 }
-                KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') => {
+                KeyCode::Up => self.engine_option = self.engine_option.saturating_sub(1),
+                KeyCode::Down => {
                     if let Some(model) = self.chosen.get(self.engine_cursor) {
-                        if let Some(choice) = self.engine_choices.get_mut(self.engine_cursor) {
-                            let index = model
-                                .engines
-                                .iter()
-                                .position(|engine| engine == choice)
-                                .unwrap_or(0);
-                            let next = if k.code == KeyCode::Left {
-                                (index + model.engines.len() - 1) % model.engines.len()
-                            } else {
-                                (index + 1) % model.engines.len()
-                            };
-                            *choice = model.engines[next];
+                        self.engine_option =
+                            (self.engine_option + 1).min(model.engines.len().saturating_sub(1));
+                    }
+                }
+                KeyCode::Char(' ') | KeyCode::Char('d') => {
+                    if let Some(engine) = self
+                        .chosen
+                        .get(self.engine_cursor)
+                        .and_then(|m| m.engines.get(self.engine_option))
+                        .copied()
+                    {
+                        let choices = &mut self.engine_choices[self.engine_cursor];
+                        if k.code == KeyCode::Char('d') {
+                            choices.retain(|e| *e != engine);
+                            choices.insert(0, engine);
+                        } else if choices.contains(&engine) {
+                            choices.retain(|e| *e != engine);
+                        } else {
+                            choices.push(engine);
                         }
                     }
                 }
@@ -1001,8 +1021,10 @@ impl<'a> Wizard<'a> {
             },
             Step::Engine => match &self.engine {
                 EnginePhase::Pick => {
-                    add("Up/Down", "model");
-                    add("Left/Right", "engine");
+                    add("Left/Right", "model");
+                    add("Up/Down", "engine");
+                    add("Space", "toggle");
+                    add("d", "default");
                     add("Enter", "install & check");
                     add("Esc", "back");
                 }
@@ -1443,43 +1465,42 @@ impl<'a> Wizard<'a> {
 
     fn draw_engine(&self, f: &mut Frame, area: Rect) {
         let mut lines = vec![
-            Line::from("Choose one compatible engine for each local model."),
+            Line::from("Select engines to install; choose one default per model."),
             Line::from(""),
         ];
-        let height = area.height.saturating_sub(10).max(1) as usize;
-        let start = self.engine_cursor.saturating_sub(height.saturating_sub(1));
-        for (i, model) in self.chosen.iter().enumerate().skip(start).take(height) {
-            let selected = self.engine_choices.get(i).copied();
-            lines.push(Line::styled(
-                format!(
-                    "{} {} · {}",
-                    if i == self.engine_cursor { ">" } else { " " },
-                    model.display_name,
-                    selected
-                        .map(|engine| engine.as_str())
-                        .unwrap_or("choose an engine")
-                ),
-                Style::new().fg(if i == self.engine_cursor { ACCENT } else { DIM }),
-            ));
-        }
         if let Some(model) = self.chosen.get(self.engine_cursor) {
-            lines.push(Line::styled(
-                format!(
-                    "Compatible: {}",
-                    model
-                        .engines
-                        .iter()
-                        .map(|engine| engine.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-                Style::new().fg(DIM),
-            ));
+            lines.push(Line::from(format!(
+                "Model {}/{}: {}",
+                self.engine_cursor + 1,
+                self.chosen.len(),
+                model.display_name
+            )));
+            let choices = &self.engine_choices[self.engine_cursor];
+            let height = area.height.saturating_sub(12).max(1) as usize;
+            let start = self.engine_option.saturating_sub(height.saturating_sub(1));
+            for (i, engine) in model.engines.iter().enumerate().skip(start).take(height) {
+                lines.push(Line::styled(
+                    format!(
+                        "{} [{}] {}{}",
+                        if i == self.engine_option { ">" } else { " " },
+                        if choices.contains(engine) { "x" } else { " " },
+                        engine,
+                        if choices.first() == Some(engine) {
+                            " · default (inference check)"
+                        } else if choices.contains(engine) {
+                            " · untested"
+                        } else {
+                            ""
+                        }
+                    ),
+                    Style::new().fg(if i == self.engine_option { ACCENT } else { DIM }),
+                ));
+            }
         }
         lines.push(Line::from(""));
         match &self.engine {
             EnginePhase::Pick => lines.push(Line::from(
-                "Enter installs selected engines, then loads and smoke-tests each model in turn.",
+                "Enter installs all selections; only each model’s default runs an inference check.",
             )),
             EnginePhase::Installing(_) => {
                 lines.push(Line::from(format!(
@@ -1487,13 +1508,41 @@ impl<'a> Wizard<'a> {
                     spinner(self.tick),
                     self.engine_status
                 )));
-                for line in self.log_tail.iter().rev().take(2).rev() {
-                    lines.push(Line::styled(line.as_str(), Style::new().fg(DIM)));
+                if let Some(download) = &self.engine_download {
+                    use crate::inference::engines::download::format_bytes;
+                    if download.extracting {
+                        lines.push(Line::from(format!(
+                            "{} Extracting {}",
+                            spinner(self.tick),
+                            download.filename
+                        )));
+                    } else {
+                        let total = download
+                            .total
+                            .map(format_bytes)
+                            .unwrap_or_else(|| "unknown size".into());
+                        let dots = download
+                            .total
+                            .map(|total| {
+                                let filled = (download.downloaded.saturating_mul(16) / total.max(1))
+                                    .min(16) as usize;
+                                format!("[{}{}] ", "●".repeat(filled), "·".repeat(16 - filled))
+                            })
+                            .unwrap_or_default();
+                        lines.push(Line::from(download.filename.clone()));
+                        lines.push(Line::from(format!(
+                            "{}{} / {} · {}/s",
+                            dots,
+                            format_bytes(download.downloaded),
+                            total,
+                            format_bytes(download.bytes_per_second as u64)
+                        )));
+                    }
                 }
             }
             EnginePhase::Done(Ok(installed)) => {
                 lines.push(Line::from(format!(
-                    "● {} engine(s) installed; all selected models passed inference. Enter to continue.",
+                    "● {} engine(s) installed; defaults passed inference. Other engines untested. Enter to continue.",
                     installed.engines.len()
                 )));
             }
@@ -1559,10 +1608,11 @@ impl<'a> Wizard<'a> {
         }
         for c in &p.local {
             lines.push(bullet(format!(
-                "Local: {}  ({} · {})",
+                "Local: {}  ({} · {} default; {} additional untested)",
                 c.display_name,
                 c.kind_label,
-                c.engine()
+                c.engine(),
+                c.engines.len().saturating_sub(1)
             )));
             if !c.needs.is_empty() {
                 lines.push(Line::styled(
@@ -1952,10 +2002,19 @@ mod tests {
         let mut w = Wizard::new(&ws, rx);
         w.sources = [true, false];
         w.chosen = setup::discover_models(&ws.root).unwrap().models;
-        w.chosen[0].engines.push(EngineKind::LlamaServerPrism);
+        assert!(w.chosen[0].engines.contains(&EngineKind::LlamaServerPrism));
         w.next_after_local();
-        w.on_key(key(KeyCode::Right));
-        assert_eq!(w.engine_choices, [EngineKind::LlamaServerPrism]);
+        w.on_key(key(KeyCode::Down));
+        w.on_key(key(KeyCode::Char('d')));
+        w.on_key(key(KeyCode::Up));
+        w.on_key(key(KeyCode::Char(' ')));
+        assert_eq!(w.engine_choices, [vec![EngineKind::LlamaServerPrism]]);
+        w.on_key(key(KeyCode::Char(' ')));
+        assert_eq!(
+            w.plan().unwrap().local[0].engines,
+            [EngineKind::LlamaServerPrism, EngineKind::LlamaServer]
+        );
+        w.on_key(key(KeyCode::Char(' ')));
         assert_eq!(
             w.plan().unwrap().local[0].engines,
             [EngineKind::LlamaServerPrism]
@@ -1977,6 +2036,30 @@ mod tests {
         w.poll_workers();
         assert_eq!(w.engine_status, "Loading Tiny");
         render_all_sizes(&w);
+        let download = crate::inference::engines::download::DownloadProgress {
+            filename: "engine.zip".into(),
+            extracting: false,
+            downloaded: 512,
+            total: Some(1024),
+            bytes_per_second: 128.0,
+        };
+        tx.send(LocalPreparationEvent::Download(download.clone()))
+            .unwrap();
+        w.poll_workers();
+        assert_eq!(w.engine_download.as_ref().unwrap().downloaded, 512);
+        render_all_sizes(&w);
+        let mut extraction = download;
+        extraction.extracting = true;
+        tx.send(LocalPreparationEvent::Download(extraction))
+            .unwrap();
+        w.poll_workers();
+        render_all_sizes(&w);
+        tx.send(LocalPreparationEvent::Progress(
+            "Checking Tiny default".into(),
+        ))
+        .unwrap();
+        w.poll_workers();
+        assert!(w.engine_download.is_none());
         tx.send(LocalPreparationEvent::Finished(Err(
             "inference failed".into()
         )))

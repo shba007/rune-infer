@@ -9,7 +9,7 @@
 //! (with modality, engine and engine-specific `extra` filled in) plus the
 //! files it deliberately skipped and why.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
@@ -48,6 +48,8 @@ pub struct GgufInfo {
     /// `audiocpp.model_spec.family`
     pub audiocpp_family: Option<String>,
     pub tensor_count: u64,
+    /// Distinct GGML tensor storage types, read without loading weights.
+    pub tensor_types: BTreeSet<u32>,
     pub has_token_embd: bool,
     pub has_first_block: bool,
     /// Tensor names typical of diffusion transformers / UNets (some GGUFs carry no metadata at all).
@@ -175,7 +177,10 @@ pub fn parse_gguf(r: &mut impl Read) -> Result<GgufInfo> {
         let name = rd_string(r)?;
         let dims = rd_u32(r)?;
         anyhow::ensure!(dims <= 8, "implausible tensor rank");
-        skip_bytes(r, u64::from(dims) * 8 + 4 + 8)?;
+        skip_bytes(r, u64::from(dims) * 8)?;
+        let tensor_type = rd_u32(r)?;
+        info.tensor_types.insert(tensor_type);
+        skip_bytes(r, 8)?;
         if name == "token_embd.weight" {
             info.has_token_embd = true;
         } else if name.starts_with("blk.0.") {
@@ -613,6 +618,54 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
     })
 }
 
+// Reviewed 2026-10-25 against the Prism architecture table and multimodal guide:
+// https://github.com/PrismML-Eng/llama.cpp/blob/prism/src/llama-arch.cpp
+// https://github.com/PrismML-Eng/llama.cpp/blob/prism/docs/multimodal.md
+// These are alternatives for stock GGUFs, not an assertion that every installed
+// binary supports every model. Setup tests only the owner's chosen default.
+const PRISM_TEXT_ALTERNATIVES: &[&str] = &[
+    "llama",
+    "qwen2",
+    "qwen2moe",
+    "qwen3",
+    "qwen3moe",
+    "qwen35",
+    "qwen35moe",
+    "gemma",
+    "gemma2",
+    "gemma3",
+    "gemma4",
+    "qwen2vl",
+];
+const PRISM_VISION_ALTERNATIVES: &[&str] = &["gemma3", "gemma4", "qwen2vl"];
+
+fn reviewed_stock_tensors(info: &GgufInfo) -> bool {
+    // Conservative shared F32/F16, Q4/Q5/Q8, K-quant, IQ and BF16 encodings.
+    // Removed, newer and fork-private ids are deliberately excluded.
+    // https://github.com/PrismML-Eng/llama.cpp/blob/prism/ggml/include/ggml.h
+    info.tensor_count > 0
+        && info.tensor_count <= 500_000
+        && !info.tensor_types.is_empty()
+        && info
+            .tensor_types
+            .iter()
+            .all(|ty| matches!(ty, 0..=3 | 6..=30))
+}
+
+fn with_reviewed_alternatives(info: &GgufInfo, detected: &Detected) -> Vec<EngineKind> {
+    let mut engines = detected.engines.clone();
+    if engines == [EngineKind::LlamaServer]
+        && detected.class == Class::Llm
+        && detected.modality == Modality::Text
+        && !info.has_prism_keys
+        && PRISM_TEXT_ALTERNATIVES.contains(&info.architecture.to_lowercase().as_str())
+        && reviewed_stock_tensors(info)
+    {
+        engines.push(EngineKind::LlamaServerPrism);
+    }
+    engines
+}
+
 // ---------------------------------------------------------------------------
 // Discovery
 // ---------------------------------------------------------------------------
@@ -856,6 +909,15 @@ fn pair_projectors(
         if let Some(&best) = options.first() {
             let (path, info) = &projectors[best];
             let (vision, audio) = projector_abilities(info);
+            if c.engine() == EngineKind::LlamaServer
+                && (audio
+                    || !vision
+                    || !PRISM_VISION_ALTERNATIVES.contains(&c.architecture.to_lowercase().as_str())
+                    || !reviewed_stock_tensors(info))
+            {
+                c.engines
+                    .retain(|engine| *engine != EngineKind::LlamaServerPrism);
+            }
             c.extra
                 .insert("mmproj_path".into(), json!(path.to_string_lossy()));
             let cap = |c: &mut LocalCandidate, name: &str| {
@@ -993,7 +1055,7 @@ pub fn discover(input: &Path) -> Result<Discovery> {
                 display_name: sensible_name(&info.name).unwrap_or_else(|| file_stem(&path)),
                 context_length: info.context_length,
                 modality,
-                engines: d.engines,
+                engines: with_reviewed_alternatives(&info, &d),
                 kind_label: label,
                 capabilities: caps,
                 extra,
@@ -1024,6 +1086,11 @@ pub fn discover(input: &Path) -> Result<Discovery> {
         match base {
             Some(i) => {
                 let base = &mut candidates[i];
+                // Draft compatibility is separate from base-model compatibility.
+                if base.engine() == EngineKind::LlamaServer {
+                    base.engines
+                        .retain(|engine| *engine != EngineKind::LlamaServerPrism);
+                }
                 base.extra
                     .insert("mtp_path".into(), json!(path.to_string_lossy()));
                 base.capabilities.push("MTP".into());
@@ -1196,6 +1263,88 @@ mod tests {
         assert_eq!(prism.engines, vec![EngineKind::LlamaServerPrism]);
         let by_arch = model(cls(&Gguf::llm("ternary-bonsai-vl", "B"), "b.gguf"));
         assert_eq!(by_arch.engines, vec![EngineKind::LlamaServerPrism]);
+    }
+
+    #[test]
+    fn discovery_offers_only_reviewed_stock_engine_alternatives() {
+        let root = tmp("engine-alternatives");
+        for arch in PRISM_TEXT_ALTERNATIVES {
+            Gguf::llm(arch, "Stock").write(&root.join(format!("{arch}.gguf")));
+        }
+        Gguf::llm("future-unreviewed", "Qwen3").write(&root.join("unknown.gguf"));
+        Gguf::llm("llama", "Private")
+            .string("prism.x", "1")
+            .write(&root.join("private.gguf"));
+        for ty in [4, 39, 142, 999] {
+            let mut bytes = Gguf::llm("llama", "New tensor format").bytes();
+            let offset = bytes.len() - 12;
+            bytes[offset..offset + 4].copy_from_slice(&(ty as u32).to_le_bytes());
+            std::fs::write(root.join(format!("type-{ty}.gguf")), bytes).unwrap();
+        }
+        for candidate in discover(&root).unwrap().models {
+            let file = candidate.path.file_stem().unwrap().to_string_lossy();
+            if file == "private" {
+                assert_eq!(candidate.engines, [EngineKind::LlamaServerPrism]);
+            } else if file == "unknown" || file.starts_with("type-") {
+                assert_eq!(candidate.engines, [EngineKind::LlamaServer]);
+            } else {
+                assert_eq!(
+                    candidate.engines,
+                    [EngineKind::LlamaServer, EngineKind::LlamaServerPrism],
+                    "{}",
+                    candidate.architecture
+                );
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn projector_and_draft_require_their_own_engine_compatibility() {
+        let root = tmp("companion-alternatives");
+        for (folder, arch, vision, audio) in [
+            ("vision", "gemma3", true, false),
+            ("omni", "gemma4", true, true),
+            ("unknown-projector", "qwen3", true, false),
+        ] {
+            let dir = root.join(folder);
+            Gguf::llm(arch, "Base model").write(&dir.join("model.gguf"));
+            Gguf::new("clip")
+                .u32("clip.vision.projection_dim", 4096)
+                .bool_kv("clip.has_vision_encoder", vision)
+                .bool_kv("clip.has_audio_encoder", audio)
+                .tensor("v.patch_embd.weight")
+                .write(&dir.join("mmproj.gguf"));
+        }
+        let dir = root.join("draft");
+        Gguf::llm("llama", "Base model").write(&dir.join("model.gguf"));
+        Gguf::new("llama")
+            .string("general.name", "Base model")
+            .string_array("tokenizer.ggml.tokens", &["a"])
+            .tensor("token_embd.weight")
+            .write(&dir.join("draft.gguf"));
+        let found = discover(&root).unwrap();
+        assert_eq!(found.models.len(), 4);
+        for candidate in found.models {
+            let folder = candidate
+                .path
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap();
+            if folder == "vision" {
+                assert_eq!(candidate.modality, Modality::VisionText);
+                assert_eq!(
+                    candidate.engines,
+                    [EngineKind::LlamaServer, EngineKind::LlamaServerPrism]
+                );
+            } else {
+                assert_eq!(candidate.engines, [EngineKind::LlamaServer], "{folder}");
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

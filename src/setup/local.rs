@@ -38,7 +38,7 @@ pub struct PreparedLocal {
 impl PreparedLocal {
     /// Refuse stale verification if selections or checked files changed before save.
     pub fn validate(&self, models: &[LocalCandidate], gpu: bool) -> Result<(), String> {
-        if self.gpu != gpu || models.iter().any(|m| m.engines.len() != 1) {
+        if self.gpu != gpu || models.iter().any(|m| m.engines.is_empty()) {
             return Err("Local engine settings changed; run the model checks again.".into());
         }
         let choices = planned_models(models, gpu)?;
@@ -69,6 +69,7 @@ fn planned_models(models: &[LocalCandidate], gpu: bool) -> Result<Vec<serde_json
 
 pub enum LocalPreparationEvent {
     Progress(String),
+    Download(crate::inference::engines::download::DownloadProgress),
     Finished(Result<PreparedLocal, String>),
 }
 
@@ -126,8 +127,8 @@ pub(crate) fn prepare_local_models_with(
     };
     // Validate the entire selection before installing anything.
     for model in models {
-        if model.engines.len() != 1 || model.engine() == EngineKind::Encoder {
-            return Err("Choose one real inference engine per model.".into());
+        if model.engines.is_empty() || model.engines.contains(&EngineKind::Encoder) {
+            return Err("Choose at least one real inference engine per model.".into());
         }
         validate_local_files(model)?;
         smoke_task(&model.modality)?;
@@ -137,12 +138,13 @@ pub(crate) fn prepare_local_models_with(
         }
     }
     for model in models {
-        let engine = model.engine();
-        if !report.engines.iter().any(|(kind, _)| *kind == engine) {
-            progress(format!("Installing or locating {engine}"));
-            let path = install(engine)?;
-            report.files.push(CheckedFile::read(&path)?);
-            report.engines.push((engine, path));
+        for &engine in &model.engines {
+            if !report.engines.iter().any(|(kind, _)| *kind == engine) {
+                progress(format!("Installing or locating {engine}"));
+                let path = install(engine)?;
+                report.files.push(CheckedFile::read(&path)?);
+                report.engines.push((engine, path));
+            }
         }
     }
     for (i, model) in models.iter().enumerate() {
@@ -161,8 +163,10 @@ pub(crate) fn prepare_local_models_with(
 }
 
 fn smoke_model(model: &LocalCandidate, gpu: bool) -> Result<(), String> {
-    let mut config =
-        ModelConfig::try_from(super::local_entry(model, gpu)).map_err(|e| e.to_string())?;
+    let mut default_model = model.clone();
+    default_model.engines = vec![model.engine()];
+    let mut config = ModelConfig::try_from(super::local_entry(&default_model, gpu))
+        .map_err(|e| e.to_string())?;
     // Internal check id avoids legacy mock-name behavior without changing the saved id.
     config.id = "rune-setup-check".into();
     let task = smoke_task(&model.modality)?;
@@ -298,7 +302,10 @@ mod tests {
         Gguf::llm("llama", "Second").write(&root.join("second.gguf"));
         let binary = root.join("fixture-engine");
         std::fs::write(&binary, "fixture executable").unwrap();
-        let models = crate::setup::discover_models(&root).unwrap().models;
+        let mut models = crate::setup::discover_models(&root).unwrap().models;
+        for model in &mut models {
+            model.engines.truncate(1);
+        }
         (root, models, binary)
     }
 
@@ -392,16 +399,61 @@ mod tests {
     }
 
     #[test]
-    fn chosen_engine_is_exactly_one_and_must_be_compatible() {
+    fn chosen_engines_must_be_nonempty_and_compatible() {
         let (root, mut models, _) = fixture();
         models.truncate(1);
         models[0].engines.push(EngineKind::LlamaServerPrism);
         let chosen =
-            crate::setup::select_local_engines(&models, &[EngineKind::LlamaServerPrism]).unwrap();
+            crate::setup::select_local_engines(&models, &[vec![EngineKind::LlamaServerPrism]])
+                .unwrap();
         assert_eq!(chosen[0].engines, vec![EngineKind::LlamaServerPrism]);
-        assert!(crate::setup::select_local_engines(&models, &[EngineKind::AudioCpp]).is_err());
+        assert!(crate::setup::select_local_engines(&models, &[vec![]]).is_err());
+        let both = crate::setup::select_local_engines(
+            &models,
+            &[vec![EngineKind::LlamaServerPrism, EngineKind::LlamaServer]],
+        )
+        .unwrap();
+        assert_eq!(both[0].engine(), EngineKind::LlamaServerPrism);
+        assert_eq!(both[0].engines.len(), 2);
+        assert!(
+            crate::setup::select_local_engines(&models, &[vec![EngineKind::AudioCpp]]).is_err()
+        );
         assert!(crate::setup::select_local_engines(&models, &[]).is_err());
-        assert!(crate::setup::select_local_engines(&models, &[EngineKind::Encoder]).is_err());
+        assert!(crate::setup::select_local_engines(&models, &[vec![EngineKind::Encoder]]).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn installs_all_selected_engines_but_checks_only_each_default() {
+        let (root, mut models, binary) = fixture();
+        let defaults: Vec<_> = models.iter().map(LocalCandidate::engine).collect();
+        for model in &mut models {
+            model.engines.push(EngineKind::LlamaServerPrism);
+        }
+        let mut installed = Vec::new();
+        let mut checked = Vec::new();
+        let proof = prepare_local_models_with(
+            &models,
+            false,
+            |engine| {
+                installed.push(engine);
+                Ok(binary.clone())
+            },
+            |model| {
+                checked.push(model.engine());
+                Ok(())
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            installed,
+            [EngineKind::LlamaServer, EngineKind::LlamaServerPrism]
+        );
+        assert_eq!(checked, defaults);
+        proof.validate(&models, false).unwrap();
+        models[0].engines.reverse();
+        assert!(proof.validate(&models, false).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
