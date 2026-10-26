@@ -3,6 +3,16 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.15.0](https://github.com/shba007/rune-infer/compare/v0.14.0..v0.15.0) - 2026-10-26
+
+#### 🚀 Features
+- (**telemetry**) implement complete API body capture and logging middleware - ([8399549](https://github.com/shba007/rune-infer/commit/8399549403652ca67bf08b2e83438dc124c14d58)) - Shirsendu Bairagi
+
+#### 🐛 Bug Fixes
+- update context_length to -1 and adjust JSON schema structure in responses - ([927e4b2](https://github.com/shba007/rune-infer/commit/927e4b25e1ca388ae37870df59e9ef6e6714c5fb)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.14.0](https://github.com/shba007/rune-infer/compare/v0.13.0..v0.14.0) - 2026-10-25
 
 #### 🚀 Features
