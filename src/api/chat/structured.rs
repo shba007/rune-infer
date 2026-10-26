@@ -94,6 +94,8 @@ mod tests {
             json!([]),
             json!([{"answer":"ok","findings":[]}]),
             json!({"findings":[]}),
+            json!({"answer":"ok","findings":[{"box":null,"kind":"issue"},{"box":null,"kind":"issue"}]}),
+            json!({"answer":"ok","findings":[{"box":[0,1,"two",3],"kind":"issue"}]}),
             json!({"answer":"ok","findings":[{"box":[1,2],"kind":"issue"}]}),
             json!({"answer":"ok","findings":[{"box":null,"kind":"bad"}]}),
             json!({"answer":"ok","findings":[{"kind":"issue"}]}),

@@ -472,7 +472,7 @@ impl InferenceEngine for LlamaServerEngine {
                 } else if schema.is_object() && !schema.as_object().is_none_or(|o| o.is_empty()) {
                     body["response_format"] = serde_json::json!({
                         "type": "json_schema",
-                        "schema": schema.clone()
+                        "json_schema": { "schema": schema.clone() }
                     });
                 }
 
@@ -1495,7 +1495,7 @@ mod structured_transport_tests {
                 let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
                 assert_eq!(
                     request["response_format"],
-                    json!({"type":"json_schema","schema":expected})
+                    json!({"type":"json_schema","json_schema":{"schema":expected}})
                 );
                 let body = if streaming {
                     format!(
