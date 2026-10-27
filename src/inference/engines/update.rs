@@ -14,6 +14,242 @@ pub(crate) enum UpdateEvent {
     Finished(Result<String, String>),
 }
 
+pub(crate) fn install_engine(
+    state: Arc<AppState>,
+    stop: Arc<AtomicBool>,
+    kind: EngineKind,
+    events: std::sync::mpsc::Sender<UpdateEvent>,
+) -> UpdateResult<String> {
+    let directory = match kind {
+        EngineKind::LlamaServer => "llama-upstream",
+        EngineKind::LlamaServerPrism => "llama-prism",
+        EngineKind::AudioCpp => "audiocpp",
+        EngineKind::SdServer => "sd-server",
+        EngineKind::Crispasr => "crispasr",
+        EngineKind::NemoSpeech => "nemo-speech",
+        EngineKind::WhisperCpp => "whisper-cpp",
+        EngineKind::Needle => return Err("Needle has a pinned, checksum-verified revision but no confirmed stable release; automatic installation is unavailable".into()),
+        EngineKind::Encoder => return Err("Encoder is built in and uses synthetic output".into()),
+    };
+    if !cfg!(any(
+        windows,
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos"
+    )) {
+        return Err(
+            "Atomic no-overwrite engine installation is not available on this platform".into(),
+        );
+    }
+    let emit = |message: String| {
+        let _ = events.send(UpdateEvent::Progress(message));
+    };
+    emit("Waiting for models to unload".into());
+    let _reservation = loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err("Installation cancelled".into());
+        }
+        if let Some(guard) = state.try_reserve_engine_update(kind) {
+            break guard;
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    };
+    stage_engine_install(
+        PathBuf::from("bin"),
+        directory,
+        kind,
+        &stop,
+        &events,
+        |stage| download::with_install_bin(stage, || crate::setup::install_engine(kind)),
+        |path| validate_install_binary(kind, path),
+    )
+}
+
+fn stage_engine_install(
+    bin: PathBuf,
+    directory: &str,
+    kind: EngineKind,
+    stop: &AtomicBool,
+    events: &std::sync::mpsc::Sender<UpdateEvent>,
+    installer: impl FnOnce(PathBuf) -> UpdateResult<PathBuf>,
+    validate: impl FnOnce(&Path) -> UpdateResult<()>,
+) -> UpdateResult<String> {
+    let emit = |message: String| {
+        let _ = events.send(UpdateEvent::Progress(message));
+    };
+    std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
+    let meta = std::fs::symlink_metadata(&bin).map_err(|e| e.to_string())?;
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return Err("Engine directory is not a regular directory".into());
+    }
+    let bin = std::fs::canonicalize(&bin).map_err(|e| e.to_string())?;
+    let destination = bin.join(directory);
+    if std::fs::symlink_metadata(&destination).is_ok() {
+        return Err(format!(
+            "{} already exists; preserve its files and choose a different installation location",
+            destination.display()
+        ));
+    }
+    let id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let stage = bin.join(format!(".engine-install-{}-{id}", std::process::id()));
+    std::fs::create_dir(&stage).map_err(|e| e.to_string())?;
+    let result = (|| {
+        emit("Checking verified stable release".into());
+        let tx = events.clone();
+        let path = download::with_progress(
+            move |progress| {
+                let status = if progress.extracting {
+                    format!("Extracting {}", progress.filename)
+                } else if let Some(total) = progress.total {
+                    format!(
+                        "Downloading {} · {} / {}",
+                        progress.filename,
+                        download::format_bytes(progress.downloaded),
+                        download::format_bytes(total)
+                    )
+                } else {
+                    format!(
+                        "Downloading {} · {}",
+                        progress.filename,
+                        download::format_bytes(progress.downloaded)
+                    )
+                };
+                let _ = tx.send(UpdateEvent::Progress(status));
+            },
+            || installer(stage.clone()),
+        )?;
+        let engine_dir = stage.join(directory);
+        let resolved_engine = std::fs::canonicalize(&engine_dir)
+            .map_err(|_| "Installer did not produce a managed engine in the staging directory")?;
+        let resolved_binary = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+        if resolved_engine.parent() != Some(stage.as_path())
+            || !resolved_binary.starts_with(&resolved_engine)
+            || !resolved_binary.is_file()
+        {
+            return Err(
+                "Installer resolved an external executable; no managed installation was made"
+                    .into(),
+            );
+        }
+        ensure_no_links(&engine_dir)?;
+        validate(&resolved_binary)?;
+        if stop.load(Ordering::Relaxed) {
+            return Err("Installation cancelled".into());
+        }
+        emit("Installing verified engine".into());
+        publish_new_engine(&engine_dir, &destination).map_err(|e| {
+            format!("Cannot publish installation without overwriting existing files: {e}")
+        })?;
+        Ok(format!("Installed {kind}"))
+    })();
+    if stage.exists() {
+        if let Ok(resolved) = std::fs::canonicalize(&stage) {
+            if resolved.parent() == Some(bin.as_path()) {
+                let _ = std::fs::remove_dir_all(resolved);
+            }
+        }
+    }
+    result
+}
+
+fn publish_new_engine(source: &Path, destination: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn MoveFileW(existing: *const u16, new: *const u16) -> i32;
+        }
+        let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+        let destination: Vec<u16> = destination
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let result = unsafe { MoveFileW(source.as_ptr(), destination.as_ptr()) };
+        if result != 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let source = std::ffi::CString::new(source.as_os_str().as_bytes())
+            .map_err(|_| std::io::ErrorKind::InvalidInput)?;
+        let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())
+            .map_err(|_| std::io::ErrorKind::InvalidInput)?;
+        let result = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD,
+                source.as_ptr(),
+                libc::AT_FDCWD,
+                destination.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let source = std::ffi::CString::new(source.as_os_str().as_bytes())
+            .map_err(|_| std::io::ErrorKind::InvalidInput)?;
+        let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())
+            .map_err(|_| std::io::ErrorKind::InvalidInput)?;
+        let result =
+            unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+    #[cfg(not(any(
+        windows,
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos"
+    )))]
+    {
+        let _ = (source, destination);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Atomic no-overwrite engine installation is not available on this platform",
+        ))
+    }
+}
+
+fn validate_install_binary(kind: EngineKind, path: &Path) -> UpdateResult<()> {
+    if kind == EngineKind::SdServer {
+        return Ok(());
+    }
+    let version =
+        candidate_version(path).map_err(|e| format!("Cannot verify engine startup: {e}"))?;
+    let lower = version.to_ascii_lowercase();
+    if lower.contains("nightly") || lower.contains("-dev") {
+        return Err(
+            "The verified archive contains a development build; a production build is required"
+                .into(),
+        );
+    }
+    if kind == EngineKind::WhisperCpp && !version.contains("whisper.cpp version:") {
+        return Err("Cannot verify whisper.cpp version".into());
+    }
+    if kind == EngineKind::Crispasr && crispasr_version(&version).is_none() {
+        return Err("Cannot verify CrispASR version".into());
+    }
+    Ok(())
+}
+
 pub(crate) fn update_audio(
     state: Arc<AppState>,
     stop: Arc<AtomicBool>,
@@ -971,6 +1207,81 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         root
     }
+    #[test]
+    fn installation_publish_refuses_existing_empty_directory() {
+        let root = root();
+        let source = root.join("stage");
+        let destination = root.join("existing");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(source.join("engine"), "new").unwrap();
+        assert!(publish_new_engine(&source, &destination).is_err());
+        assert!(source.join("engine").exists());
+        assert_eq!(std::fs::read_dir(&destination).unwrap().count(), 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn install_failure_cleans_staging_retry_succeeds_and_existing_files_survive() {
+        let root = root();
+        let bin = root.join("bin");
+        let stop = AtomicBool::new(false);
+        let (tx, _) = std::sync::mpsc::channel();
+        let install = |stage: PathBuf| {
+            let dir = stage.join("whisper-cpp");
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::write(dir.join("whisper-cli.exe"), "fixture").unwrap();
+            Ok(dir.join("whisper-cli.exe"))
+        };
+        let failed = stage_engine_install(
+            bin.clone(),
+            "whisper-cpp",
+            EngineKind::WhisperCpp,
+            &stop,
+            &tx,
+            |stage| {
+                install(stage)?;
+                Err("download failed".into())
+            },
+            |_| Ok(()),
+        );
+        assert!(failed.is_err());
+        assert_eq!(std::fs::read_dir(&bin).unwrap().count(), 0);
+        assert!(
+            stage_engine_install(
+                bin.clone(),
+                "whisper-cpp",
+                EngineKind::WhisperCpp,
+                &stop,
+                &tx,
+                install,
+                |_| Ok(())
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            std::fs::read_to_string(bin.join("whisper-cpp/whisper-cli.exe")).unwrap(),
+            "fixture"
+        );
+        assert!(
+            stage_engine_install(
+                bin.clone(),
+                "whisper-cpp",
+                EngineKind::WhisperCpp,
+                &stop,
+                &tx,
+                |_| panic!("must not overwrite"),
+                |_| Ok(())
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(bin.join("whisper-cpp/whisper-cli.exe")).unwrap(),
+            "fixture"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn installed_version_matches_exact_release_without_network() {
         assert!(version_matches("audio.cpp 0.9.3\ngit: abc", "v0.9.3"));

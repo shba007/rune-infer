@@ -214,7 +214,7 @@ impl AudioEngine {
                 } else {
                     "audiocpp_cli"
                 };
-                PathBuf::from("bin").join("audiocpp").join(exe_name)
+                download::engine_bin().join("audiocpp").join(exe_name)
             }
             Err(e) => return Err(e),
         };
@@ -282,7 +282,7 @@ impl AudioEngine {
             }
         }
 
-        let base_dir = PathBuf::from("bin").join("audiocpp");
+        let base_dir = download::engine_bin().join("audiocpp");
         let exe_path = base_dir.join(exe_name);
         if exe_path.exists() {
             repair_managed_runtime(&exe_path)?;
@@ -294,7 +294,7 @@ impl AudioEngine {
             return Ok(nested);
         }
 
-        let root_bin = PathBuf::from("bin").join(exe_name);
+        let root_bin = download::engine_bin().join(exe_name);
         if root_bin.exists() {
             return Ok(root_bin);
         }

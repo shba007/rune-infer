@@ -158,7 +158,7 @@ impl NemoSpeechEngine {
             }
         }
 
-        let base_dir = PathBuf::from("bin").join("nemo-speech");
+        let base_dir = download::engine_bin().join("nemo-speech");
         let exe_path = base_dir.join(exe_name);
 
         // If binary is in a nested archive directory, promote it to base_dir
@@ -182,7 +182,7 @@ impl NemoSpeechEngine {
             return Ok(nested);
         }
 
-        let root_bin = PathBuf::from("bin").join(exe_name);
+        let root_bin = download::engine_bin().join(exe_name);
         if root_bin.exists() {
             return Ok(root_bin);
         }

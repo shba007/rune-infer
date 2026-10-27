@@ -79,6 +79,7 @@ struct App {
     engine_selected: usize,
     refresh_engines: bool,
     update_requested: bool,
+    install_requested: bool,
     update_status: Option<String>,
     update_engine: Option<String>,
     update_rx: Option<std::sync::mpsc::Receiver<crate::inference::engines::update::UpdateEvent>>,
@@ -130,6 +131,7 @@ impl App {
             engine_selected: 0,
             refresh_engines: false,
             update_requested: false,
+            install_requested: false,
             update_status: None,
             update_engine: None,
             update_rx: None,
@@ -276,6 +278,7 @@ impl App {
             }
             KeyCode::Char('r') if self.tab == Tab::Engines => self.refresh_engines = true,
             KeyCode::Char('u') if self.tab == Tab::Engines => self.update_requested = true,
+            KeyCode::Char('i') if self.tab == Tab::Engines => self.install_requested = true,
             KeyCode::Up if self.tab == Tab::Engines => {
                 self.engine_selected = self.engine_selected.saturating_sub(1)
             }
@@ -348,6 +351,48 @@ fn run_dashboard_inner(
         if app.refresh_engines && app.engine_rx.is_none() {
             app.engine_rx = Some(start_engine_inventory());
             app.refresh_engines = false;
+        }
+        if app.install_requested {
+            app.install_requested = false;
+            if app.update_rx.is_some() {
+                app.update_status = Some("Another engine operation is in progress".into());
+            } else {
+                let selected = app.engines.get(app.engine_selected).cloned();
+                app.update_engine = selected.as_ref().map(|engine| engine.name.to_string());
+                match (selected, state.clone()) {
+                    (Some(engine), _) if engine.installed => {
+                        app.update_status = Some("Engine is already installed".into())
+                    }
+                    (Some(engine), Some(state)) => {
+                        if let Some(kind) = install_engine_kind(engine.name) {
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            let cancel = stop.clone();
+                            std::thread::spawn(move || {
+                                let result = crate::inference::engines::update::install_engine(
+                                    state,
+                                    cancel,
+                                    kind,
+                                    tx.clone(),
+                                );
+                                let _ = tx.send(
+                                    crate::inference::engines::update::UpdateEvent::Finished(
+                                        result,
+                                    ),
+                                );
+                            });
+                            app.update_rx = Some(rx);
+                            app.update_status = Some("Preparing installation".into());
+                        } else {
+                            app.update_status =
+                                Some("Installation is unavailable for this engine".into());
+                        }
+                    }
+                    _ => {
+                        app.update_status =
+                            Some("Select an engine; managed server state is required".into())
+                    }
+                }
+            }
         }
         if app.update_requested && app.update_rx.is_some() {
             app.update_requested = false;
@@ -449,7 +494,7 @@ fn run_dashboard_inner(
                                 app.refresh_engines = true;
                                 message
                             }
-                            Err(error) => format!("Update failed: {error}"),
+                            Err(error) => format!("Failed: {error}"),
                         });
                         app.update_rx = None;
                         break;
@@ -601,6 +646,7 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     if app.tab == Tab::Engines {
         spans.extend(key_hint("↑↓", "select"));
         spans.extend(key_hint("r", "check versions"));
+        spans.extend(key_hint("i", "install"));
         spans.extend(key_hint("u", "update"));
     }
     if app.tab == Tab::Logs {
@@ -728,7 +774,7 @@ fn discover_engines() -> Vec<EngineRow> {
         path: "Built into Rune Infer".into(),
         managed: false,
         installed: true,
-        version: env!("CARGO_PKG_VERSION").into(),
+        version: "Built in".into(),
         latest: "Built in".into(),
         check_detail: Some("Built-in encoder uses synthetic outputs".into()),
     });
@@ -749,7 +795,12 @@ fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
             match check_latest_release(rows[index].name) {
                 Ok(version) => rows[index].latest = version,
                 Err(error) => {
-                    rows[index].latest = "Check failed".into();
+                    rows[index].latest = if error.starts_with("No verified stable") {
+                        "No stable release"
+                    } else {
+                        "Check failed"
+                    }
+                    .into();
                     rows[index].check_detail = Some(error);
                 }
             }
@@ -759,6 +810,21 @@ fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
         }
     });
     rx
+}
+
+fn install_engine_kind(name: &str) -> Option<crate::config::EngineKind> {
+    use crate::config::EngineKind;
+    Some(match name {
+        "llama-server" => EngineKind::LlamaServer,
+        "llama-server-prism" => EngineKind::LlamaServerPrism,
+        "audio-cpp" => EngineKind::AudioCpp,
+        "sd-server" => EngineKind::SdServer,
+        "crispasr" => EngineKind::Crispasr,
+        "nemo-speech" => EngineKind::NemoSpeech,
+        "needle" => EngineKind::Needle,
+        "whisper-cpp" => EngineKind::WhisperCpp,
+        _ => return None,
+    })
 }
 
 fn release_url(name: &str) -> Option<&'static str> {
@@ -818,7 +884,7 @@ fn check_latest_release(name: &str) -> Result<String, String> {
         return value["sha"]
             .as_str()
             .filter(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()))
-            .map(|sha| format!("rev {}", &sha[..12]))
+            .map(|sha| format!("revision {}", &sha[..12]))
             .ok_or_else(|| "No immutable Needle revision found".into());
     }
     if name == "whisper-cpp" {
@@ -826,7 +892,10 @@ fn check_latest_release(name: &str) -> Result<String, String> {
             .map(|(tag, _)| tag.to_owned())
             .ok_or_else(|| "No verified stable release asset for this platform".into());
     }
-    latest_release_tag(&value).ok_or_else(|| "No published release found".into())
+    latest_release_tag(&value).ok_or_else(|| {
+        "No verified stable release found; retry later or configure a verified engine manually"
+            .into()
+    })
 }
 
 fn latest_release_tag(value: &serde_json::Value) -> Option<String> {
@@ -902,6 +971,22 @@ fn parse_engine_version(stdout: &str, stderr: &str) -> Option<String> {
 }
 
 fn release_status(engine: &EngineRow) -> &'static str {
+    if engine.name == "encoder" {
+        return "Built in · synthetic";
+    }
+    if !engine.installed {
+        return "Not installed";
+    }
+    let lower = engine.version.to_ascii_lowercase();
+    if lower.contains("nightly") || lower.contains("-dev") {
+        return "Development build";
+    }
+    if engine.latest == "Check failed" {
+        return "Check failed";
+    }
+    if engine.latest == "No stable release" {
+        return "No stable release";
+    }
     let compare = if engine.name == "llama-server" || engine.name == "llama-server-prism" {
         let installed = engine
             .version
@@ -980,15 +1065,15 @@ fn draw_engines(f: &mut Frame, area: Rect, app: &App) {
             "",
             "Engine",
             "Installed version",
-            "Latest release",
+            "Available version",
             "Status",
         ])
         .style(Style::new().fg(DIM)),
     )
     .block(panel(if app.engine_rx.is_some() {
-        " Engines · checking installed versions "
+        " Engines · checking versions "
     } else {
-        " Engines · installed "
+        " Engines "
     }));
     f.render_widget(table, table_area);
     let detail = app
@@ -1649,6 +1734,7 @@ fn draw_help(f: &mut Frame) {
         Line::from("  e               toggle engines"),
         Line::from("  ↑ ↓             select an engine"),
         Line::from("  r               check engine releases"),
+        Line::from("  i               install selected engine"),
         Line::from("  u               update selected engine"),
         Line::from("  ↑ ↓  PgUp PgDn  scroll the log view"),
         Line::from("  f               follow the newest log line"),
@@ -1918,7 +2004,32 @@ mod tests {
         row.name = "llama-server";
         row.version = "0.6.0-dev (build 11512, commit abc)".into();
         row.latest = "b11512".into();
-        assert_eq!(release_status(&row), "Up to date");
+        assert_eq!(release_status(&row), "Development build");
+    }
+
+    #[test]
+    fn engine_status_distinguishes_not_installed_development_and_built_in() {
+        let mut row = EngineRow {
+            name: "whisper-cpp",
+            path: "bin/whisper-cpp".into(),
+            managed: false,
+            installed: false,
+            version: "Not installed".into(),
+            latest: "v1.9.2".into(),
+            check_detail: None,
+        };
+        assert_eq!(release_status(&row), "Not installed");
+        row.installed = true;
+        row.version = "nemo-speech 0.2.0+nightly.123".into();
+        assert_eq!(release_status(&row), "Development build");
+        row.name = "encoder";
+        assert_eq!(release_status(&row), "Built in · synthetic");
+        assert!(install_engine_kind("needle").is_some());
+        assert!(install_engine_kind("encoder").is_none());
+        let mut app = app();
+        app.on_key(KeyCode::Char('e'), KeyModifiers::NONE);
+        app.on_key(KeyCode::Char('i'), KeyModifiers::NONE);
+        assert!(app.install_requested);
     }
 
     #[test]

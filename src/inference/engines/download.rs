@@ -14,6 +14,31 @@ pub struct DownloadProgress {
     pub bytes_per_second: f64,
 }
 
+thread_local! {
+    static INSTALL_BIN: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn engine_bin() -> PathBuf {
+    INSTALL_BIN.with(|root| {
+        root.borrow()
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("bin"))
+    })
+}
+
+pub(crate) fn with_install_bin<T>(path: PathBuf, work: impl FnOnce() -> T) -> T {
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            INSTALL_BIN.with(|slot| {
+                slot.replace(self.0.take());
+            });
+        }
+    }
+    let _restore = Restore(INSTALL_BIN.with(|slot| slot.replace(Some(path))));
+    work()
+}
+
 type ProgressCallback = Box<dyn FnMut(DownloadProgress)>;
 thread_local! {
     static PROGRESS: std::cell::RefCell<Option<ProgressCallback>> = const { std::cell::RefCell::new(None) };
