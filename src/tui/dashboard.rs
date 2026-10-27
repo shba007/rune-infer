@@ -358,14 +358,14 @@ fn run_dashboard_inner(
             app.update_engine = selected.as_ref().map(|engine| engine.name.to_string());
             match (selected, state.clone()) {
                 (Some(engine), _)
-                    if matches!(engine.name, "audio-cpp" | "whisper-cpp")
+                    if matches!(engine.name, "audio-cpp" | "whisper-cpp" | "crispasr")
                         && engine.managed
                         && release_status(&engine) == "Up to date" =>
                 {
                     app.update_status = Some("Already up to date; no download needed".into());
                 }
                 (Some(engine), _)
-                    if engine.name == "whisper-cpp"
+                    if matches!(engine.name, "whisper-cpp" | "crispasr")
                         && engine.managed
                         && release_status(&engine) == "Ahead" =>
                 {
@@ -375,7 +375,7 @@ fn run_dashboard_inner(
                     );
                 }
                 (Some(engine), Some(state))
-                    if matches!(engine.name, "audio-cpp" | "whisper-cpp")
+                    if matches!(engine.name, "audio-cpp" | "whisper-cpp" | "crispasr")
                         && engine.managed
                         && cfg!(windows)
                         && !matches!(
@@ -388,6 +388,13 @@ fn run_dashboard_inner(
                     std::thread::spawn(move || {
                         let result = if engine.name == "whisper-cpp" {
                             crate::inference::engines::update::update_whisper(
+                                state,
+                                cancel,
+                                engine.latest,
+                                tx.clone(),
+                            )
+                        } else if engine.name == "crispasr" {
+                            crate::inference::engines::update::update_crispasr(
                                 state,
                                 cancel,
                                 engine.latest,
@@ -416,7 +423,8 @@ fn run_dashboard_inner(
                         Some("Externally managed engines cannot be updated here".into())
                 }
                 (Some(engine), _)
-                    if !matches!(engine.name, "audio-cpp" | "whisper-cpp") || !cfg!(windows) =>
+                    if !matches!(engine.name, "audio-cpp" | "whisper-cpp" | "crispasr")
+                        || !cfg!(windows) =>
                 {
                     app.update_status =
                         Some("Update is not available for this engine on this platform".into())
@@ -1899,6 +1907,14 @@ mod tests {
         assert_eq!(release_status(&row), "Up to date");
         row.latest = "nightly".into();
         assert_eq!(release_status(&row), "Unknown");
+        row.name = "whisper-cpp";
+        row.version = "whisper.cpp version: 1.9.2".into();
+        row.latest = "v1.9.2".into();
+        assert_eq!(release_status(&row), "Up to date");
+        row.latest = "v1.9.3".into();
+        assert_eq!(release_status(&row), "New release");
+        row.latest = "v1.9.1".into();
+        assert_eq!(release_status(&row), "Ahead");
         row.name = "llama-server";
         row.version = "0.6.0-dev (build 11512, commit abc)".into();
         row.latest = "b11512".into();

@@ -236,6 +236,7 @@ pub(crate) fn update_whisper(
             return Err("Managed engine directory is not a regular directory".into());
         }
     }
+    ensure_no_links(&current)?;
     let exe = "whisper-cli.exe";
     let direct = current.join(exe);
     let current_exe = if direct.is_file() {
@@ -253,6 +254,16 @@ pub(crate) fn update_whisper(
     }
     if version_matches(&installed, &expected_tag) {
         return Ok("Already up to date; no download needed".into());
+    }
+    if let (Some(installed), Some(available)) = (
+        semantic_version(&installed),
+        semantic_version(&expected_tag),
+    ) {
+        if installed > available {
+            return Ok(
+                "Installed version is newer than the available release; no download needed".into(),
+            );
+        }
     }
     emit("Checking release assets".into());
     let client = download::create_download_client().map_err(|e| e.to_string())?;
@@ -344,7 +355,7 @@ pub(crate) fn update_whisper(
         }
         emit("Installing verified engine".into());
         publish(&current, &stage, &backup)?;
-        match cleanup_backup_for(&backup, &current, true) {
+        match cleanup_backup_for(&backup, &current, BackupKind::Whisper) {
             Ok(true) => Ok(format!(
                 "Updated to {expected_tag}; old engine files removed"
             )),
@@ -370,6 +381,319 @@ pub(crate) fn update_whisper(
     result
 }
 
+pub(crate) fn update_crispasr(
+    state: Arc<AppState>,
+    stop: Arc<AtomicBool>,
+    expected_tag: String,
+    events: std::sync::mpsc::Sender<UpdateEvent>,
+) -> UpdateResult<String> {
+    let emit = |message: String| {
+        let _ = events.send(UpdateEvent::Progress(message));
+    };
+    if !cfg!(all(windows, target_arch = "x86_64")) {
+        return Err("CrispASR updates are currently supported on Windows x86-64 only".into());
+    }
+    emit("Waiting for models to unload".into());
+    let _reservation = loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        if let Some(guard) = state.try_reserve_engine_update(EngineKind::Crispasr) {
+            break guard;
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    };
+    let bin = PathBuf::from("bin");
+    let current = bin.join("crispasr");
+    for path in [&bin, &current] {
+        let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("Managed engine directory is not a regular directory".into());
+        }
+    }
+    ensure_no_links(&current)?;
+    let exe = "crispasr.exe";
+    let direct = current.join(exe);
+    let current_exe = if direct.is_file() {
+        direct
+    } else {
+        download::find_executable_recursive(&current, exe)
+            .ok_or("Installed CrispASR executable not found")?
+    };
+    let installed = candidate_version(&current_exe)
+        .map_err(|e| format!("Cannot verify installed CrispASR version: {e}"))?;
+    let installed_version = crispasr_version(&installed)
+        .ok_or("Cannot determine installed CrispASR version; use a supported managed build")?;
+    if version_matches(installed_version, &expected_tag) {
+        return Ok("Already up to date; no download needed".into());
+    }
+    if let (Some(installed), Some(available)) = (
+        semantic_version(installed_version),
+        semantic_version(&expected_tag),
+    ) {
+        if installed > available {
+            return Ok(
+                "Installed version is newer than the available release; no download needed".into(),
+            );
+        }
+    }
+    let asset_name = crispasr_asset_name(&installed).unwrap_or_else(|_| crispasr_hardware_asset());
+    emit(format!("Selected hardware build: {asset_name}"));
+    emit("Checking release assets".into());
+    let client = download::create_download_client().map_err(|e| e.to_string())?;
+    let mut request = client
+        .get("https://api.github.com/repos/CrispStrobe/CrispASR/releases?per_page=5")
+        .header("Accept", "application/vnd.github+json");
+    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
+        request = request.bearer_auth(token.trim());
+    }
+    let releases: serde_json::Value = request
+        .send()
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .map_err(|e| e.to_string())?;
+    let release = download::stable_release(&releases).map_err(|e| e.to_string())?;
+    if release["tag_name"].as_str() != Some(expected_tag.as_str()) {
+        return Err("The selected release has changed; check versions again".into());
+    }
+    let asset = release["assets"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|asset| asset["name"].as_str() == Some(asset_name))
+        })
+        .ok_or(
+            "The stable release has no verified asset matching the installed CrispASR backend",
+        )?;
+    let (name, url) = download::extract_release_asset_info(asset).map_err(|e| e.to_string())?;
+    let digest =
+        download::asset_sha256(std::slice::from_ref(asset), &name).map_err(|e| e.to_string())?;
+    let id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let stage = bin.join(format!(".crispasr-update-{}-{id}", std::process::id()));
+    let backup = bin.join(format!(".crispasr-backup-{}-{id}", std::process::id()));
+    std::fs::create_dir(&stage).map_err(|e| e.to_string())?;
+    let result = (|| {
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        let tx = events.clone();
+        download::with_progress(
+            move |progress| {
+                let status = if progress.extracting {
+                    format!("Extracting {}", progress.filename)
+                } else if let Some(total) = progress.total {
+                    format!(
+                        "Downloading {} · {} / {}",
+                        progress.filename,
+                        download::format_bytes(progress.downloaded),
+                        download::format_bytes(total)
+                    )
+                } else {
+                    format!(
+                        "Downloading {} · {}",
+                        progress.filename,
+                        download::format_bytes(progress.downloaded)
+                    )
+                };
+                let complete = !progress.extracting
+                    && progress
+                        .total
+                        .is_some_and(|total| progress.downloaded == total);
+                let _ = tx.send(UpdateEvent::Progress(status));
+                if complete {
+                    let _ = tx.send(UpdateEvent::Progress("Verifying checksum".into()));
+                }
+            },
+            || {
+                download::download_and_extract(
+                    &client,
+                    &url,
+                    &stage,
+                    &name,
+                    "[CrispAsrUpdate]",
+                    &digest,
+                )
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        let staged = download::find_executable_recursive(&stage, exe)
+            .ok_or("Verified archive does not contain crispasr.exe")?;
+        download::make_executable(&staged).map_err(|e| e.to_string())?;
+        emit("Checking replacement engine".into());
+        let actual = candidate_version(&staged)?;
+        if !crispasr_version(&actual).is_some_and(|version| version_matches(version, &expected_tag))
+            || crispasr_asset_name(&actual)? != asset_name
+        {
+            return Err(format!(
+                "Replacement version does not match release {expected_tag}"
+            ));
+        }
+        preserve_extras(&current, &stage)?;
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        emit("Installing verified engine".into());
+        publish(&current, &stage, &backup)?;
+        match cleanup_backup_for(&backup, &current, BackupKind::Crispasr) {
+            Ok(true) => Ok(format!(
+                "Updated to {expected_tag}; old engine files removed"
+            )),
+            Ok(false) => Ok(format!(
+                "Updated to {expected_tag}; extra files preserved in {}",
+                backup.display()
+            )),
+            Err(error) => Ok(format!(
+                "Updated to {expected_tag}; cleanup failed: {error}. Backup: {}",
+                backup.display()
+            )),
+        }
+    })();
+    if stage.exists() {
+        if let (Ok(parent), Ok(resolved)) =
+            (std::fs::canonicalize(&bin), std::fs::canonicalize(&stage))
+        {
+            if resolved.parent() == Some(parent.as_path()) {
+                let _ = std::fs::remove_dir_all(resolved);
+            }
+        }
+    }
+    result
+}
+
+fn crispasr_version(output: &str) -> Option<&str> {
+    output.lines().find_map(|line| {
+        let (name, value) = line.trim().split_once(':')?;
+        (name.trim().eq_ignore_ascii_case("version") && semantic_version(value.trim()).is_some())
+            .then_some(value.trim())
+    })
+}
+
+fn crispasr_asset_name(version: &str) -> UpdateResult<&'static str> {
+    let field = |key: &str| {
+        version.lines().find_map(|line| {
+            let (name, value) = line.trim().split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case(key)
+                .then_some(value.trim())
+        })
+    };
+    let backends = field("ggml backends").ok_or(
+        "Cannot identify the installed CrispASR backend; select a compatible build manually",
+    )?;
+    let backends: Vec<_> = backends.split(',').map(str::trim).collect();
+    if backends.contains(&"cuda") {
+        return match field("cuda toolkit").and_then(|value| value.split_whitespace().next()) {
+            Some(value) if value.starts_with("13.") => Ok("crispasr-windows-x86_64-cuda13.zip"),
+            Some(value) if value.starts_with("12.8.") => Ok("crispasr-windows-x86_64-cuda.zip"),
+            Some(value) if value.starts_with("12.6.") => Ok("crispasr-windows-x86_64-cuda126.zip"),
+            _ => Err("Cannot identify the installed CrispASR CUDA toolkit".into()),
+        };
+    }
+    if backends.contains(&"vulkan") {
+        return Ok("crispasr-windows-x86_64-vulkan.zip");
+    }
+    if backends == ["cpu"] {
+        #[cfg(target_arch = "x86_64")]
+        if std::is_x86_feature_detected!("avx2") {
+            return Ok("crispasr-windows-x86_64-cpu.zip");
+        }
+        return Ok("crispasr-windows-x86_64-cpu-legacy.zip");
+    }
+    Err("Cannot identify the installed CrispASR backend; select a compatible build manually".into())
+}
+
+fn crispasr_hardware_asset() -> &'static str {
+    let cuda = download::detect_host_cuda_version();
+    let capability = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|text| {
+            text.lines()
+                .next()?
+                .trim()
+                .split_once('.')
+                .and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.parse::<u32>().ok()?)))
+        });
+    crispasr_hardware_asset_for(cuda, capability, cpu_has_avx2())
+}
+
+fn cpu_has_avx2() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::is_x86_feature_detected!("avx2")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+fn crispasr_hardware_asset_for(
+    cuda: Option<(u32, u32)>,
+    capability: Option<(u32, u32)>,
+    avx2: bool,
+) -> &'static str {
+    if avx2 {
+        if let (Some(cuda), Some(cap)) = (cuda, capability) {
+            if cuda >= (13, 0) && cap >= (7, 5) {
+                return "crispasr-windows-x86_64-cuda13.zip";
+            }
+            if cuda >= (12, 8) && cap >= (7, 5) {
+                return "crispasr-windows-x86_64-cuda.zip";
+            }
+            if cuda >= (12, 6) && cap >= (6, 0) {
+                return "crispasr-windows-x86_64-cuda126.zip";
+            }
+        }
+    }
+    if avx2 {
+        "crispasr-windows-x86_64-cpu.zip"
+    } else {
+        "crispasr-windows-x86_64-cpu-legacy.zip"
+    }
+}
+
+fn semantic_version(text: &str) -> Option<(u64, u64, u64)> {
+    text.split_whitespace().find_map(|word| {
+        let mut parts = word.trim_start_matches('v').split('.');
+        let version = (
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+        );
+        if parts.next().is_some() {
+            None
+        } else {
+            Some(version)
+        }
+    })
+}
+
+fn ensure_no_links(directory: &Path) -> UpdateResult<()> {
+    for entry in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let kind = entry.file_type().map_err(|e| e.to_string())?;
+        if kind.is_symlink() {
+            return Err("Engine directory contains a symbolic link; update refused".into());
+        }
+        if kind.is_dir() {
+            ensure_no_links(&entry.path())?;
+        } else if !kind.is_file() {
+            return Err("Engine directory has a special file; update refused".into());
+        }
+    }
+    Ok(())
+}
+
 fn version_matches(output: &str, tag: &str) -> bool {
     let version = tag.trim_start_matches('v');
     !version.is_empty() && output.split_whitespace().any(|part| part == version)
@@ -378,10 +702,17 @@ fn version_matches(output: &str, tag: &str) -> bool {
 // Delete only known old audio.cpp runtime binaries and exact duplicate files.
 // Differing extra files stay in the backup instead of being silently discarded.
 fn cleanup_backup(backup: &Path, current: &Path) -> UpdateResult<bool> {
-    cleanup_backup_for(backup, current, false)
+    cleanup_backup_for(backup, current, BackupKind::Audio)
 }
 
-fn cleanup_backup_for(backup: &Path, current: &Path, whisper: bool) -> UpdateResult<bool> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BackupKind {
+    Audio,
+    Whisper,
+    Crispasr,
+}
+
+fn cleanup_backup_for(backup: &Path, current: &Path, kind: BackupKind) -> UpdateResult<bool> {
     for path in [backup, current] {
         let metadata = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
         if !metadata.is_dir() || metadata.file_type().is_symlink() {
@@ -395,10 +726,10 @@ fn cleanup_backup_for(backup: &Path, current: &Path, whisper: bool) -> UpdateRes
             .file_name()
             .and_then(|s| s.to_str())
             .is_some_and(|n| {
-                n.starts_with(if whisper {
-                    ".whisper-backup-"
-                } else {
-                    ".audio-backup-"
+                n.starts_with(match kind {
+                    BackupKind::Whisper => ".whisper-backup-",
+                    BackupKind::Audio => ".audio-backup-",
+                    BackupKind::Crispasr => ".crispasr-backup-",
                 })
             })
     {
@@ -409,7 +740,7 @@ fn cleanup_backup_for(backup: &Path, current: &Path, whisper: bool) -> UpdateRes
         current: &Path,
         root: &Path,
         current_root: &Path,
-        whisper: bool,
+        backup_kind: BackupKind,
     ) -> UpdateResult<()> {
         for entry in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
@@ -424,7 +755,7 @@ fn cleanup_backup_for(backup: &Path, current: &Path, whisper: bool) -> UpdateRes
             }
             let counterpart = current.join(entry.file_name());
             if kind.is_dir() {
-                clean(&checked, &counterpart, root, current_root, whisper)?;
+                clean(&checked, &counterpart, root, current_root, backup_kind)?;
                 if std::fs::read_dir(&checked)
                     .map_err(|e| e.to_string())?
                     .next()
@@ -434,7 +765,9 @@ fn cleanup_backup_for(backup: &Path, current: &Path, whisper: bool) -> UpdateRes
                 }
             } else if kind.is_file() {
                 let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
-                let known_executable = if whisper {
+                let known_executable = if backup_kind == BackupKind::Crispasr {
+                    matches!(name.as_str(), "crispasr.exe" | "crispasr-quantize.exe")
+                } else if backup_kind == BackupKind::Whisper {
                     matches!(name.as_str(), "whisper-cli.exe" | "whisper-server.exe")
                 } else {
                     matches!(
@@ -447,7 +780,12 @@ fn cleanup_backup_for(backup: &Path, current: &Path, whisper: bool) -> UpdateRes
                             | "audiocpp_server"
                     )
                 };
-                let known_dll = (whisper && name == "whisper.dll")
+                let known_dll = (backup_kind != BackupKind::Audio && name == "whisper.dll")
+                    || (backup_kind == BackupKind::Crispasr
+                        && matches!(
+                            name.as_str(),
+                            "crispasr.dll" | "openblas.dll" | "vcomp140.dll"
+                        ))
                     || matches!(
                         name.as_str(),
                         "ggml.dll"
@@ -499,7 +837,7 @@ fn cleanup_backup_for(backup: &Path, current: &Path, whisper: bool) -> UpdateRes
         }
         Ok(())
     }
-    clean(&backup, &current, &backup, &current, whisper)?;
+    clean(&backup, &current, &backup, &current, kind)?;
     if std::fs::read_dir(&backup)
         .map_err(|e| e.to_string())?
         .next()
@@ -692,7 +1030,7 @@ mod tests {
         std::fs::write(stage.join("whisper.dll"), "new library").unwrap();
         preserve_extras(&current, &stage).unwrap();
         publish(&current, &stage, &backup).unwrap();
-        assert!(!cleanup_backup_for(&backup, &current, true).unwrap());
+        assert!(!cleanup_backup_for(&backup, &current, BackupKind::Whisper).unwrap());
         assert_eq!(
             std::fs::read_to_string(current.join("whisper-cli.exe")).unwrap(),
             "new"
@@ -712,6 +1050,72 @@ mod tests {
         assert!(version_matches("whisper.cpp version: 1.9.2", "v1.9.2"));
         assert!(!version_matches("whisper.cpp version: 1.9.20", "v1.9.2"));
         assert!(!version_matches("whisper.cpp version: 1.9.2-dev", "v1.9.2"));
+        assert!(semantic_version("whisper.cpp version: 1.9.3") > semantic_version("v1.9.2"));
+        assert_eq!(semantic_version("whisper.cpp version: 1.9.2-dev"), None);
+    }
+
+    #[test]
+    fn crispasr_selects_only_matching_known_backends() {
+        let cuda = "version : 0.8.43\nggml backends : cpu,cuda\ncuda toolkit : 13.0.48 (build/link target)\n";
+        assert_eq!(crispasr_version(cuda), Some("0.8.43"));
+        assert_eq!(
+            crispasr_asset_name(cuda).unwrap(),
+            "crispasr-windows-x86_64-cuda13.zip"
+        );
+        assert_eq!(
+            crispasr_asset_name("ggml backends : cpu,vulkan").unwrap(),
+            "crispasr-windows-x86_64-vulkan.zip"
+        );
+        assert!(crispasr_asset_name("ggml backends : cpu,cuda\ncuda toolkit: unknown").is_err());
+        assert!(crispasr_asset_name("version : 0.8.43").is_err());
+        assert!(crispasr_version("version : malformed").is_none());
+        assert_eq!(
+            crispasr_hardware_asset_for(Some((13, 0)), Some((8, 9)), true),
+            "crispasr-windows-x86_64-cuda13.zip"
+        );
+        assert_eq!(
+            crispasr_hardware_asset_for(Some((13, 0)), Some((6, 1)), true),
+            "crispasr-windows-x86_64-cuda126.zip"
+        );
+        assert_eq!(
+            crispasr_hardware_asset_for(Some((12, 8)), Some((8, 0)), true),
+            "crispasr-windows-x86_64-cuda.zip"
+        );
+        assert_eq!(
+            crispasr_hardware_asset_for(None, None, false),
+            "crispasr-windows-x86_64-cpu-legacy.zip"
+        );
+    }
+
+    #[test]
+    fn crispasr_replacement_preserves_custom_files_and_cleans_known_runtime() {
+        let root = root();
+        let current = root.join("crispasr");
+        let stage = root.join("stage");
+        let backup = root.join(".crispasr-backup-fixture");
+        std::fs::create_dir(&current).unwrap();
+        std::fs::create_dir(&stage).unwrap();
+        std::fs::write(current.join("crispasr.exe"), "old").unwrap();
+        std::fs::write(current.join("crispasr.dll"), "old library").unwrap();
+        std::fs::write(current.join("config.json"), "user config").unwrap();
+        std::fs::write(current.join("custom.dll"), "user library").unwrap();
+        std::fs::write(stage.join("crispasr.exe"), "new").unwrap();
+        std::fs::write(stage.join("crispasr.dll"), "new library").unwrap();
+        preserve_extras(&current, &stage).unwrap();
+        publish(&current, &stage, &backup).unwrap();
+        assert!(!cleanup_backup_for(&backup, &current, BackupKind::Crispasr).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(current.join("config.json")).unwrap(),
+            "user config"
+        );
+        assert_eq!(
+            std::fs::read_to_string(current.join("crispasr.exe")).unwrap(),
+            "new"
+        );
+        assert!(!backup.join("crispasr.exe").exists());
+        assert!(!backup.join("crispasr.dll").exists());
+        assert!(backup.join("custom.dll").exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
