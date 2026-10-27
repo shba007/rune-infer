@@ -47,6 +47,26 @@ pub async fn serve_with_paths(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
     let inference = Arc::new(InferenceAppState::new(&config));
+    serve_with_inference(
+        config,
+        server_path,
+        catalog_path,
+        listener,
+        shutdown,
+        inference,
+    )
+    .await
+}
+
+/// Serve with a shared inference state for local management interfaces.
+pub async fn serve_with_inference(
+    config: ModelRegistry,
+    server_path: Option<PathBuf>,
+    catalog_path: Option<PathBuf>,
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+    inference: Arc<InferenceAppState>,
+) -> Result<()> {
     let reaper = spawn_idle_reaper(inference.clone(), config.server.idle_unload_seconds);
     let state = AppState::new(inference, Arc::new(ProxyService::new(&config)), config);
 

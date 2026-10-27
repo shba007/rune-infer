@@ -151,7 +151,7 @@
         "path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-IQ3_S.gguf",
         "params": 27000000000,
         "bits_per_weight": 3.44,
-        "context_length": -1,
+        "context_length": 49152,
         "gpu_layers": 99,
         "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
       },

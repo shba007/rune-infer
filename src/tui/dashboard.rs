@@ -64,6 +64,7 @@ struct ModelState {
 enum Tab {
     Dashboard,
     Models,
+    Engines,
     Logs,
 }
 
@@ -74,6 +75,14 @@ const HISTORY: usize = 80;
 struct App {
     info: DashboardInfo,
     models: Vec<ModelState>,
+    engines: Vec<EngineRow>,
+    engine_selected: usize,
+    refresh_engines: bool,
+    update_requested: bool,
+    update_status: Option<String>,
+    update_engine: Option<String>,
+    update_rx: Option<std::sync::mpsc::Receiver<crate::inference::engines::update::UpdateEvent>>,
+    engine_rx: Option<std::sync::mpsc::Receiver<Vec<EngineRow>>>,
     index: HashMap<String, usize>,
     requests: VecDeque<RequestRecord>,
     logs: VecDeque<LogLine>,
@@ -117,6 +126,14 @@ impl App {
         Self {
             info,
             models,
+            engines: Vec::new(),
+            engine_selected: 0,
+            refresh_engines: false,
+            update_requested: false,
+            update_status: None,
+            update_engine: None,
+            update_rx: None,
+            engine_rx: None,
             index,
             requests: VecDeque::new(),
             logs: VecDeque::new(),
@@ -234,44 +251,57 @@ impl App {
             return;
         }
         match code {
-            KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
-            KeyCode::Char('?') | KeyCode::F(1) => self.help = true,
-            KeyCode::Tab | KeyCode::Char('l') => {
-                self.tab = if self.tab == Tab::Dashboard {
-                    Tab::Logs
-                } else {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Char('?') => self.help = true,
+            KeyCode::Char('l') => {
+                self.tab = if self.tab == Tab::Logs {
                     Tab::Dashboard
+                } else {
+                    Tab::Logs
                 }
             }
-            KeyCode::Char('m') | KeyCode::Char('M') => {
+            KeyCode::Char('m') => {
                 self.tab = if self.tab == Tab::Models {
                     Tab::Dashboard
                 } else {
                     Tab::Models
                 }
             }
-            KeyCode::Char('1') => self.tab = Tab::Dashboard,
-            KeyCode::Char('2') => self.tab = Tab::Models,
-            KeyCode::Char('3') => self.tab = Tab::Logs,
             KeyCode::Char('e') => {
+                self.tab = if self.tab == Tab::Engines {
+                    Tab::Dashboard
+                } else {
+                    Tab::Engines
+                }
+            }
+            KeyCode::Char('r') if self.tab == Tab::Engines => self.refresh_engines = true,
+            KeyCode::Char('u') if self.tab == Tab::Engines => self.update_requested = true,
+            KeyCode::Up if self.tab == Tab::Engines => {
+                self.engine_selected = self.engine_selected.saturating_sub(1)
+            }
+            KeyCode::Down if self.tab == Tab::Engines => {
+                self.engine_selected =
+                    (self.engine_selected + 1).min(self.engines.len().saturating_sub(1))
+            }
+            KeyCode::Char('w') if self.tab == Tab::Logs => {
                 self.errors_only = !self.errors_only;
                 self.follow = true;
             }
-            KeyCode::Char('c') => {
+            KeyCode::Char('c') if self.tab == Tab::Logs => {
                 self.logs.clear();
                 self.log_scroll = 0;
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up if self.tab == Tab::Logs => {
                 self.follow = false;
                 self.log_scroll = self.log_scroll.saturating_sub(1);
             }
-            KeyCode::Down | KeyCode::Char('j') => self.log_scroll += 1,
-            KeyCode::PageUp => {
+            KeyCode::Down if self.tab == Tab::Logs => self.log_scroll += 1,
+            KeyCode::PageUp if self.tab == Tab::Logs => {
                 self.follow = false;
                 self.log_scroll = self.log_scroll.saturating_sub(15);
             }
-            KeyCode::PageDown => self.log_scroll += 15,
-            KeyCode::End | KeyCode::Char('f') => self.follow = true,
+            KeyCode::PageDown if self.tab == Tab::Logs => self.log_scroll += 15,
+            KeyCode::Char('f') if self.tab == Tab::Logs => self.follow = true,
             _ => {}
         }
     }
@@ -288,14 +318,157 @@ fn push_capped(q: &mut VecDeque<u64>, v: u64, cap: usize) {
 pub fn run_dashboard(
     terminal: &mut DefaultTerminal,
     info: DashboardInfo,
+    rx: UnboundedReceiver<UiEvent>,
+) -> Result<()> {
+    run_dashboard_inner(terminal, info, rx, None)
+}
+
+pub fn run_dashboard_with_state(
+    terminal: &mut DefaultTerminal,
+    info: DashboardInfo,
+    rx: UnboundedReceiver<UiEvent>,
+    state: Arc<crate::inference::AppState>,
+) -> Result<()> {
+    run_dashboard_inner(terminal, info, rx, Some(state))
+}
+
+fn run_dashboard_inner(
+    terminal: &mut DefaultTerminal,
+    info: DashboardInfo,
     mut rx: UnboundedReceiver<UiEvent>,
+    state: Option<Arc<crate::inference::AppState>>,
 ) -> Result<()> {
     let vram = Arc::new(Mutex::new(None));
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     spawn_vram_poller(vram.clone(), stop.clone());
 
     let mut app = App::new(info, vram);
+    app.engine_rx = Some(start_engine_inventory());
     while !app.quit {
+        if app.refresh_engines && app.engine_rx.is_none() {
+            app.engine_rx = Some(start_engine_inventory());
+            app.refresh_engines = false;
+        }
+        if app.update_requested && app.update_rx.is_some() {
+            app.update_requested = false;
+        }
+        if app.update_requested && app.update_rx.is_none() {
+            app.update_requested = false;
+            let selected = app.engines.get(app.engine_selected).cloned();
+            app.update_engine = selected.as_ref().map(|engine| engine.name.to_string());
+            match (selected, state.clone()) {
+                (Some(engine), _)
+                    if matches!(engine.name, "audio-cpp" | "whisper-cpp")
+                        && engine.managed
+                        && release_status(&engine) == "Up to date" =>
+                {
+                    app.update_status = Some("Already up to date; no download needed".into());
+                }
+                (Some(engine), _)
+                    if engine.name == "whisper-cpp"
+                        && engine.managed
+                        && release_status(&engine) == "Ahead" =>
+                {
+                    app.update_status = Some(
+                        "Installed version is newer than the available release; no download needed"
+                            .into(),
+                    );
+                }
+                (Some(engine), Some(state))
+                    if matches!(engine.name, "audio-cpp" | "whisper-cpp")
+                        && engine.managed
+                        && cfg!(windows)
+                        && !matches!(
+                            engine.latest.as_str(),
+                            "Checking…" | "Check failed" | "External"
+                        ) =>
+                {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let cancel = stop.clone();
+                    std::thread::spawn(move || {
+                        let result = if engine.name == "whisper-cpp" {
+                            crate::inference::engines::update::update_whisper(
+                                state,
+                                cancel,
+                                engine.latest,
+                                tx.clone(),
+                            )
+                        } else {
+                            crate::inference::engines::update::update_audio(
+                                state,
+                                cancel,
+                                engine.latest,
+                                tx.clone(),
+                            )
+                        };
+                        let _ = tx.send(crate::inference::engines::update::UpdateEvent::Finished(
+                            result,
+                        ));
+                    });
+                    app.update_rx = Some(rx);
+                    app.update_status = Some("Preparing update".into());
+                }
+                (Some(engine), _) if !engine.installed => {
+                    app.update_status = Some("Engine is not installed".into());
+                }
+                (Some(engine), _) if !engine.managed => {
+                    app.update_status =
+                        Some("Externally managed engines cannot be updated here".into())
+                }
+                (Some(engine), _)
+                    if !matches!(engine.name, "audio-cpp" | "whisper-cpp") || !cfg!(windows) =>
+                {
+                    app.update_status =
+                        Some("Update is not available for this engine on this platform".into())
+                }
+                (None, _) => app.update_status = Some("Select an installed engine".into()),
+                _ => {
+                    app.update_status = Some(
+                        "Check versions before updating; managed server state is required".into(),
+                    )
+                }
+            }
+        }
+        if app.update_rx.is_some() {
+            loop {
+                match app.update_rx.as_ref().unwrap().try_recv() {
+                    Ok(crate::inference::engines::update::UpdateEvent::Progress(status)) => {
+                        app.update_status = Some(status)
+                    }
+                    Ok(crate::inference::engines::update::UpdateEvent::Finished(result)) => {
+                        app.update_status = Some(match result {
+                            Ok(message) => {
+                                app.refresh_engines = true;
+                                message
+                            }
+                            Err(error) => format!("Update failed: {error}"),
+                        });
+                        app.update_rx = None;
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        app.update_status = Some("Update worker stopped unexpectedly".into());
+                        app.update_rx = None;
+                        break;
+                    }
+                }
+            }
+        }
+        while let Some(result) = app.engine_rx.as_ref().map(|rx| rx.try_recv()) {
+            match result {
+                Ok(rows) => {
+                    app.engines = rows;
+                    app.engine_selected =
+                        app.engine_selected.min(app.engines.len().saturating_sub(1));
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    app.engine_rx = None;
+                    break;
+                }
+            }
+        }
         while let Ok(ev) = rx.try_recv() {
             app.on_event(ev);
         }
@@ -351,6 +524,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     match app.tab {
         Tab::Dashboard => draw_dashboard(f, body, app),
         Tab::Models => draw_all_models(f, body, app),
+        Tab::Engines => draw_engines(f, body, app),
         Tab::Logs => draw_logs(f, body, app),
     }
     draw_footer(f, footer, app);
@@ -392,24 +566,44 @@ fn draw_header(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let mut spans = Vec::new();
-    spans.extend(key_hint("Tab", "dashboard / logs"));
+    spans.extend(key_hint(
+        "l",
+        if app.tab == Tab::Logs {
+            "dashboard"
+        } else {
+            "logs"
+        },
+    ));
     spans.extend(key_hint(
         "m",
         if app.tab == Tab::Models {
             "dashboard"
         } else {
-            "all models"
+            "models"
         },
     ));
+    spans.extend(key_hint(
+        "e",
+        if app.tab == Tab::Engines {
+            "dashboard"
+        } else {
+            "engines"
+        },
+    ));
+    if app.tab == Tab::Engines {
+        spans.extend(key_hint("↑↓", "select"));
+        spans.extend(key_hint("r", "check versions"));
+        spans.extend(key_hint("u", "update"));
+    }
     if app.tab == Tab::Logs {
         spans.extend(key_hint("↑↓ PgUp/Dn", "scroll"));
         spans.extend(key_hint("f", "follow"));
         spans.extend(key_hint(
-            "e",
+            "w",
             if app.errors_only {
-                "show all"
+                "all levels"
             } else {
-                "errors only"
+                "warnings + errors"
             },
         ));
         spans.extend(key_hint("c", "clear"));
@@ -419,6 +613,470 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+#[derive(Clone, Debug)]
+struct EngineRow {
+    name: &'static str,
+    path: PathBuf,
+    managed: bool,
+    installed: bool,
+    version: String,
+    latest: String,
+    check_detail: Option<String>,
+}
+
+fn discover_engines() -> Vec<EngineRow> {
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let definitions = [
+        ("llama-server", "llama-upstream", "llama-server", true),
+        ("llama-server-prism", "llama-prism", "llama-server", true),
+        ("audio-cpp", "audiocpp", "audiocpp_cli", true),
+        ("sd-server", "sd-server", "sd-server", false),
+        ("crispasr", "crispasr", "crispasr", true),
+        ("nemo-speech", "nemo-speech", "nemo-speech", true),
+        ("needle", "needle", "needle", false),
+        ("whisper-cpp", "whisper-cpp", "whisper-cli", true),
+    ];
+    let mut rows: Vec<EngineRow> = definitions
+        .into_iter()
+        .map(|(name, directory, executable, version_supported)| {
+            let filename = format!("{executable}{suffix}");
+            let custom_vars: &[&str] = match name {
+                "llama-server" | "llama-server-prism" => &["LLAMA_SERVER_PATH"],
+                "audio-cpp" => &["AUDIOCPP_PATH", "AUDIO8_PATH"],
+                "sd-server" => &["SD_SERVER_PATH"],
+                "crispasr" => &["CRISPASR_PATH"],
+                "nemo-speech" => &["NEMO_SPEECH_PATH"],
+                "whisper-cpp" => &["WHISPER_CPP_PATH"],
+                _ => &[],
+            };
+            let custom = custom_vars
+                .iter()
+                .find_map(std::env::var_os)
+                .map(PathBuf::from)
+                .filter(|p| p.is_file());
+            let base = PathBuf::from("bin").join(directory);
+            let direct = base.join(&filename);
+            let managed = direct.is_file().then_some(direct).or_else(|| {
+                crate::inference::engines::download::find_executable_recursive(&base, &filename)
+            });
+            let root = PathBuf::from("bin").join(&filename);
+            let root = root.is_file().then_some(root);
+            let on_path = || {
+                std::env::var_os("PATH").and_then(|paths| {
+                    std::env::split_paths(&paths)
+                        .map(|dir| dir.join(&filename))
+                        .find(|p| p.is_file())
+                })
+            };
+            let candidate = if let Some(path) = custom {
+                Some((path, false))
+            } else if name == "llama-server" || name == "llama-server-prism" {
+                root.map(|p| (p, false))
+                    .or_else(|| managed.map(|p| (p, true)))
+                    .or_else(|| on_path().map(|p| (p, false)))
+            } else {
+                managed.map(|p| (p, true)).or_else(|| {
+                    if name == "needle" {
+                        None
+                    } else {
+                        root.map(|p| (p, false))
+                            .or_else(|| on_path().map(|p| (p, false)))
+                    }
+                })
+            };
+            let (path, managed, installed) = match candidate {
+                Some((path, managed)) => (path, managed, true),
+                None => (base.join(&filename), false, false),
+            };
+            let version = if version_supported && managed {
+                probe_engine_version(&path)
+            } else {
+                None
+            }
+            .unwrap_or_else(|| {
+                if installed {
+                    "Unknown".into()
+                } else {
+                    "Not installed".into()
+                }
+            });
+            EngineRow {
+                name,
+                path,
+                managed,
+                installed,
+                version,
+                latest: if managed || !installed {
+                    "Checking…".into()
+                } else {
+                    "External".into()
+                },
+                check_detail: None,
+            }
+        })
+        .collect();
+    rows.push(EngineRow {
+        name: "encoder",
+        path: "Built into Rune Infer".into(),
+        managed: false,
+        installed: true,
+        version: env!("CARGO_PKG_VERSION").into(),
+        latest: "Built in".into(),
+        check_detail: Some("Built-in encoder uses synthetic outputs".into()),
+    });
+    rows
+}
+
+fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut rows = discover_engines();
+        if tx.send(rows.clone()).is_err() {
+            return;
+        }
+        for index in 0..rows.len() {
+            if rows[index].installed && !rows[index].managed {
+                continue;
+            }
+            match check_latest_release(rows[index].name) {
+                Ok(version) => rows[index].latest = version,
+                Err(error) => {
+                    rows[index].latest = "Check failed".into();
+                    rows[index].check_detail = Some(error);
+                }
+            }
+            if tx.send(rows.clone()).is_err() {
+                return;
+            }
+        }
+    });
+    rx
+}
+
+fn release_url(name: &str) -> Option<&'static str> {
+    match name {
+        "llama-server" => {
+            Some("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5")
+        }
+        "llama-server-prism" => {
+            Some("https://api.github.com/repos/PrismML-Eng/llama.cpp/releases?per_page=5")
+        }
+        "audio-cpp" => Some("https://api.github.com/repos/0xShug0/audio.cpp/releases?per_page=5"),
+        "sd-server" => {
+            Some("https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=5")
+        }
+        "crispasr" => Some("https://api.github.com/repos/CrispStrobe/CrispASR/releases?per_page=5"),
+        "nemo-speech" => {
+            Some("https://api.github.com/repos/NVIDIA/NeMo-Speech.cpp/releases?per_page=5")
+        }
+        "needle" => Some("https://huggingface.co/api/models/Cactus-Compute/needle3"),
+        "whisper-cpp" => {
+            Some("https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=100")
+        }
+        _ => None,
+    }
+}
+
+fn check_latest_release(name: &str) -> Result<String, String> {
+    let url = release_url(name).ok_or("No release version source is available for this engine")?;
+    let client = reqwest::blocking::Client::builder()
+        .https_only(true)
+        .user_agent(concat!("rune-infer/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|_| "Could not create release client")?;
+    let mut request = client
+        .get(url)
+        .header("Accept", "application/vnd.github+json");
+    if name != "needle" {
+        if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
+            request = request.bearer_auth(token.trim());
+        }
+    }
+    let response = request
+        .send()
+        .map_err(|_| "Cannot reach release source; press r to retry")?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Release source returned HTTP {}; press r to retry",
+            response.status().as_u16()
+        ));
+    }
+    let value: serde_json::Value = response
+        .json()
+        .map_err(|_| "Invalid release response; press r to retry")?;
+    if name == "needle" {
+        return value["sha"]
+            .as_str()
+            .filter(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()))
+            .map(|sha| format!("rev {}", &sha[..12]))
+            .ok_or_else(|| "No immutable Needle revision found".into());
+    }
+    if name == "whisper-cpp" {
+        return crate::inference::engines::whisper::stable_asset(&value)
+            .map(|(tag, _)| tag.to_owned())
+            .ok_or_else(|| "No verified stable release asset for this platform".into());
+    }
+    latest_release_tag(&value).ok_or_else(|| "No published release found".into())
+}
+
+fn latest_release_tag(value: &serde_json::Value) -> Option<String> {
+    crate::inference::engines::download::stable_release(value).ok()?["tag_name"]
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn probe_engine_version(path: &std::path::Path) -> Option<String> {
+    use std::process::{Command, Stdio};
+    let mut command = Command::new(path);
+    command
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let mut child = command.spawn().ok()?;
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => {
+                use std::io::Read;
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+                child
+                    .stdout
+                    .take()?
+                    .take(4096)
+                    .read_to_string(&mut stdout)
+                    .ok()?;
+                child
+                    .stderr
+                    .take()?
+                    .take(4096)
+                    .read_to_string(&mut stderr)
+                    .ok()?;
+                return parse_engine_version(&stdout, &stderr);
+            }
+            Ok(Some(_)) | Err(_) => return None,
+            Ok(None) if start.elapsed() >= Duration::from_secs(3) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
+        }
+    }
+}
+
+fn parse_engine_version(stdout: &str, stderr: &str) -> Option<String> {
+    let lines: Vec<_> = stdout
+        .lines()
+        .chain(stderr.lines())
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    lines
+        .iter()
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            if key.trim().eq_ignore_ascii_case("version") && !value.trim().is_empty() {
+                Some(value.trim().to_owned())
+            } else {
+                None
+            }
+        })
+        .or_else(|| lines.first().map(|line| (*line).to_owned()))
+}
+
+fn release_status(engine: &EngineRow) -> &'static str {
+    let compare = if engine.name == "llama-server" || engine.name == "llama-server-prism" {
+        let installed = engine
+            .version
+            .split("build ")
+            .nth(1)
+            .and_then(|tail| tail.split(|c: char| !c.is_ascii_digit()).next())
+            .and_then(|v| v.parse::<u64>().ok());
+        let published = engine
+            .latest
+            .strip_prefix('b')
+            .and_then(|v| v.parse::<u64>().ok());
+        installed.zip(published).map(|(a, b)| a.cmp(&b))
+    } else {
+        let parse = |text: &str| {
+            let text = text.trim_start_matches('v');
+            let mut parts = text.split('.');
+            let major = parts.next()?.parse::<u64>().ok()?;
+            let minor = parts.next()?.parse::<u64>().ok()?;
+            let patch = parts.next()?.parse::<u64>().ok()?;
+            if parts.next().is_some() {
+                return None;
+            }
+            Some((major, minor, patch))
+        };
+        let installed = engine.version.split_whitespace().find_map(parse);
+        installed.zip(parse(&engine.latest)).map(|(a, b)| a.cmp(&b))
+    };
+    match compare {
+        Some(std::cmp::Ordering::Equal) => "Up to date",
+        Some(std::cmp::Ordering::Less) => "New release",
+        Some(std::cmp::Ordering::Greater) => "Ahead",
+        None => "Unknown",
+    }
+}
+
+fn draw_engines(f: &mut Frame, area: Rect, app: &App) {
+    let [table_area, details] =
+        Layout::vertical([Constraint::Min(4), Constraint::Length(5)]).areas(area);
+    let visible = table_area.height.saturating_sub(3) as usize;
+    let start = app
+        .engine_selected
+        .saturating_add(1)
+        .saturating_sub(visible);
+    let rows = app
+        .engines
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible)
+        .map(|(index, engine)| {
+            let marker = if index == app.engine_selected {
+                ">"
+            } else {
+                " "
+            };
+            Row::new(vec![
+                marker.to_string(),
+                engine.name.to_string(),
+                engine.version.clone(),
+                engine.latest.clone(),
+                release_status(engine).to_string(),
+            ])
+        });
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(2),
+            Constraint::Percentage(25),
+            Constraint::Percentage(30),
+            Constraint::Percentage(23),
+            Constraint::Percentage(22),
+        ],
+    )
+    .header(
+        Row::new([
+            "",
+            "Engine",
+            "Installed version",
+            "Latest release",
+            "Status",
+        ])
+        .style(Style::new().fg(DIM)),
+    )
+    .block(panel(if app.engine_rx.is_some() {
+        " Engines · checking installed versions "
+    } else {
+        " Engines · installed "
+    }));
+    f.render_widget(table, table_area);
+    let detail = app
+        .engines
+        .get(app.engine_selected)
+        .map(|engine| {
+            let models = app
+                .models
+                .iter()
+                .filter(|model| model.row.engine.as_deref() == Some(engine.name))
+                .map(|model| model.row.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let status = app
+                .update_status
+                .as_deref()
+                .filter(|_| app.update_engine.as_deref() == Some(engine.name))
+                .or(engine.check_detail.as_deref())
+                .unwrap_or("Release compatibility is checked before updating.");
+            format!(
+                "{}\nPath: {} · {}\nPreferred by: {}",
+                status,
+                engine.path.display(),
+                if !engine.installed {
+                    "not installed"
+                } else if engine.name == "encoder" {
+                    "built in"
+                } else if engine.managed {
+                    "managed"
+                } else {
+                    "external"
+                },
+                if models.is_empty() { "none" } else { &models }
+            )
+        })
+        .unwrap_or_else(|| {
+            if app.engine_rx.is_some() {
+                "Checking installed engines…".into()
+            } else {
+                "No engine binaries found.".into()
+            }
+        });
+    f.render_widget(
+        Paragraph::new(detail)
+            .wrap(Wrap { trim: false })
+            .block(panel(" Details ")),
+        details,
+    );
+}
+
+fn draw_engine_overview(f: &mut Frame, area: Rect, app: &App) {
+    let mut active = Vec::<&str>::new();
+    for model in &app.models {
+        if let Status::Loaded { detail, .. } = &model.status {
+            let name = detail.split(" · ").next().unwrap_or("").trim();
+            if !name.is_empty() && !active.contains(&name) {
+                active.push(name);
+            }
+        }
+    }
+    let title = format!(" Engines · {} active · e to list all ", active.len());
+    if active.is_empty() {
+        f.render_widget(
+            Paragraph::new("No engines active.").block(panel(title)),
+            area,
+        );
+        return;
+    }
+    let rows = active.into_iter().map(|name| {
+        let version = app
+            .engines
+            .iter()
+            .find(|engine| engine.name == name)
+            .map(|engine| engine.version.as_str())
+            .unwrap_or("Unknown");
+        let latest = app
+            .engines
+            .iter()
+            .find(|engine| engine.name == name)
+            .map(|engine| engine.latest.as_str())
+            .unwrap_or("Unknown");
+        Row::new([name, version, latest])
+    });
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Percentage(30),
+            Constraint::Percentage(40),
+            Constraint::Percentage(30),
+        ],
+    )
+    .header(Row::new(["Engine", "Installed", "Latest"]).style(Style::new().fg(DIM)))
+    .block(panel(title));
+    f.render_widget(table, area);
+}
+
 fn draw_dashboard(f: &mut Frame, area: Rect, app: &App) {
     let [top, mid, bottom] = Layout::vertical([
         Constraint::Percentage(42),
@@ -426,12 +1084,15 @@ fn draw_dashboard(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Percentage(28),
     ])
     .areas(area);
-    let [models, stats] =
+    let [models, engines] =
         Layout::horizontal([Constraint::Percentage(62), Constraint::Percentage(38)]).areas(top);
+    let [requests, stats] =
+        Layout::horizontal([Constraint::Percentage(62), Constraint::Percentage(38)]).areas(mid);
 
     draw_models(f, models, app);
+    draw_engine_overview(f, engines, app);
+    draw_requests(f, requests, app);
     draw_stats(f, stats, app);
-    draw_requests(f, mid, app);
     draw_recent_logs(f, bottom, app);
 }
 
@@ -971,17 +1632,21 @@ fn draw_logs(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn draw_help(f: &mut Frame) {
-    let area = centered(f.area(), 60, 14);
+    let area = centered(f.area(), 60, 19);
     f.render_widget(Clear, area);
     let text = vec![
         Line::from(""),
-        Line::from("  Tab / 1 / 2 / 3 switch Dashboard, Models, and Logs"),
-        Line::from("  m               toggle full models catalog"),
+        Line::from("  l               toggle logs"),
+        Line::from("  m               toggle models"),
+        Line::from("  e               toggle engines"),
+        Line::from("  ↑ ↓             select an engine"),
+        Line::from("  r               check engine releases"),
+        Line::from("  u               update selected engine"),
         Line::from("  ↑ ↓  PgUp PgDn  scroll the log view"),
         Line::from("  f               follow the newest log line"),
-        Line::from("  e               errors and warnings only"),
+        Line::from("  w               toggle warnings and errors"),
         Line::from("  c               clear logs"),
-        Line::from("  q  Esc  Ctrl-C  stop the server and quit"),
+        Line::from("  q / Ctrl-C      stop the server and quit"),
         Line::from(""),
         Line::styled(
             "  Models load on first request and are evicted",
@@ -1118,12 +1783,196 @@ mod tests {
     fn draw_all(app: &mut App) {
         for (w, h) in [(20, 6), (60, 20), (120, 40)] {
             let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
-            for tab in [Tab::Dashboard, Tab::Models, Tab::Logs] {
+            for tab in [Tab::Dashboard, Tab::Models, Tab::Logs, Tab::Engines] {
                 app.tab = tab;
                 t.draw(|f| draw(f, app)).unwrap();
             }
         }
         app.tab = Tab::Dashboard;
+    }
+
+    #[test]
+    fn dashboard_places_engines_above_performance_and_requests_on_the_left() {
+        let mut app = app();
+        app.engines.push(EngineRow {
+            name: "audio-cpp",
+            path: "bin/audio".into(),
+            managed: true,
+            installed: true,
+            version: "0.9.2".into(),
+            latest: "Not checked".into(),
+            check_detail: None,
+        });
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let locate = |word: &str| -> (u16, u16) {
+            for y in 0..buffer.area.height {
+                let line: String = (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect();
+                if let Some(x) = line.find(word) {
+                    return (x as u16, y);
+                }
+            }
+            panic!("missing {word}");
+        };
+        let engines = locate("Engines");
+        let performance = locate("Performance");
+        let requests = locate("Recent requests");
+        assert!(engines.0 > requests.0 && performance.0 > requests.0);
+        assert!(engines.1 < performance.1 && requests.1 == performance.1);
+    }
+
+    #[test]
+    fn dashboard_shows_only_actual_loaded_engines_and_navigation_toggles() {
+        let mut app = app();
+        app.engines = vec![
+            EngineRow {
+                name: "audio-cpp",
+                path: "audio".into(),
+                managed: true,
+                installed: true,
+                version: "0.9.2".into(),
+                latest: "Not checked".into(),
+                check_detail: None,
+            },
+            EngineRow {
+                name: "llama-server",
+                path: "llama".into(),
+                managed: true,
+                installed: true,
+                version: "1.0".into(),
+                latest: "Not checked".into(),
+                check_detail: None,
+            },
+        ];
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        let render = |terminal: &mut Terminal<TestBackend>, app: &App| {
+            terminal
+                .draw(|f| draw_engine_overview(f, f.area(), app))
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        };
+        let idle = render(&mut terminal, &app);
+        assert!(idle.contains("No engines active"));
+        assert!(!idle.contains("audio-cpp"));
+        app.models[0].status = Status::Loaded {
+            load_ms: 10,
+            detail: "audio-cpp · +1 GiB VRAM".into(),
+        };
+        let active = render(&mut terminal, &app);
+        assert!(active.contains("audio-cpp"));
+        assert!(!active.contains("llama-server"));
+        app.models[0].status = Status::Idle;
+        assert!(render(&mut terminal, &app).contains("No engines active"));
+        for (key, tab) in [('l', Tab::Logs), ('m', Tab::Models), ('e', Tab::Engines)] {
+            app.on_key(KeyCode::Char(key), KeyModifiers::NONE);
+            assert!(app.tab == tab);
+            app.on_key(KeyCode::Char(key), KeyModifiers::NONE);
+            assert!(app.tab == Tab::Dashboard);
+        }
+        app.on_key(KeyCode::Tab, KeyModifiers::NONE);
+        app.on_key(KeyCode::Char('g'), KeyModifiers::NONE);
+        assert!(app.tab == Tab::Dashboard);
+    }
+
+    #[test]
+    fn compares_only_recognised_release_versions() {
+        let mut row = EngineRow {
+            name: "audio-cpp",
+            path: "bin".into(),
+            managed: true,
+            installed: true,
+            version: "audio.cpp 0.9.2".into(),
+            latest: "v0.9.3".into(),
+            check_detail: None,
+        };
+        assert_eq!(release_status(&row), "New release");
+        row.latest = "v0.9.2".into();
+        assert_eq!(release_status(&row), "Up to date");
+        row.latest = "nightly".into();
+        assert_eq!(release_status(&row), "Unknown");
+        row.name = "llama-server";
+        row.version = "0.6.0-dev (build 11512, commit abc)".into();
+        row.latest = "b11512".into();
+        assert_eq!(release_status(&row), "Up to date");
+    }
+
+    #[test]
+    fn release_tag_check_skips_unpublished_releases() {
+        let data = serde_json::json!([
+            {"tag_name":"v3","draft":true}, {"tag_name":"v2-rc","prerelease":true},
+            {"tag_name":"v1.0.0","draft":false,"prerelease":false}
+        ]);
+        assert_eq!(latest_release_tag(&data).as_deref(), Some("v1.0.0"));
+        assert_eq!(latest_release_tag(&serde_json::json!([])), None);
+    }
+
+    #[test]
+    fn engine_versions_are_read_from_stdout_and_stderr() {
+        assert_eq!(
+            parse_engine_version("", "version: 0.6.0-dev (build 11512)\n"),
+            Some("0.6.0-dev (build 11512)".into())
+        );
+        assert_eq!(
+            parse_engine_version("=== build info ===\n version : 0.8.43\n", ""),
+            Some("0.8.43".into())
+        );
+        assert_eq!(
+            parse_engine_version("audio.cpp 0.9.2\n", ""),
+            Some("audio.cpp 0.9.2".into())
+        );
+        assert_eq!(parse_engine_version("", ""), None);
+    }
+
+    #[test]
+    fn engine_inventory_renders_selection_and_unknown_update_status() {
+        let mut app = app();
+        app.engines = vec![
+            EngineRow {
+                name: "audio-cpp",
+                path: "bin/audiocpp/audiocpp_cli".into(),
+                managed: true,
+                installed: true,
+                version: "audio.cpp 0.9.2".into(),
+                latest: "Not checked".into(),
+                check_detail: None,
+            },
+            EngineRow {
+                name: "needle",
+                path: "bin/needle/needle".into(),
+                managed: true,
+                installed: true,
+                version: "Unknown".into(),
+                latest: "Not checked".into(),
+                check_detail: None,
+            },
+        ];
+        app.on_key(KeyCode::Char('e'), KeyModifiers::NONE);
+        app.on_key(KeyCode::Down, KeyModifiers::NONE);
+        assert!(app.tab == Tab::Engines);
+        assert_eq!(app.engine_selected, 1);
+        let mut terminal = Terminal::new(TestBackend::new(100, 16)).unwrap();
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("needle"));
+        assert!(text.contains("Not checked"));
+        assert!(text.contains("bin/needle/needle"));
+        app.on_key(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.engine_selected, 1);
     }
 
     #[test]
@@ -1322,13 +2171,13 @@ mod tests {
         }
         assert_eq!(a.logs.len(), MAX_LOGS);
         a.tab = Tab::Logs;
-        a.on_key(KeyCode::Char('e'), KeyModifiers::NONE);
+        a.on_key(KeyCode::Char('w'), KeyModifiers::NONE);
         for code in [
             KeyCode::Up,
             KeyCode::PageUp,
             KeyCode::PageDown,
             KeyCode::Down,
-            KeyCode::End,
+            KeyCode::Char('f'),
             KeyCode::Char('?'),
         ] {
             a.on_key(code, KeyModifiers::NONE);

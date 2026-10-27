@@ -6,3 +6,7 @@ pub mod llama_server;
 pub mod needle;
 pub mod nemo_speech;
 pub mod sd_server;
+pub mod whisper;
+
+#[cfg(feature = "tui")]
+pub(crate) mod update;

@@ -39,6 +39,8 @@ pub struct ModelRegistry {
     pub(crate) load_durations: HashMap<String, u64>,
     pub(crate) last_evicted: Option<String>,
     load_evictions: HashMap<String, Option<String>>,
+    pub(crate) engine_leases: Vec<(EngineKind, std::sync::Weak<dyn InferenceEngine>)>,
+    pub(crate) updating_engines: std::collections::HashSet<EngineKind>,
 }
 
 impl ModelRegistry {
@@ -59,6 +61,8 @@ impl ModelRegistry {
             load_durations: HashMap::new(),
             last_evicted: None,
             load_evictions: HashMap::new(),
+            engine_leases: Vec::new(),
+            updating_engines: std::collections::HashSet::new(),
         }
     }
 
@@ -198,6 +202,8 @@ impl ModelRegistry {
             .insert(canonical_id.clone(), self.last_evicted.clone());
         crate::telemetry::model_loaded(&canonical_id, elapsed_ms as u128, &vram_detail);
 
+        self.engine_leases
+            .push((engine_kind, Arc::downgrade(&engine)));
         self.engines.insert(canonical_id.clone(), engine);
         self.touch_lru(&canonical_id);
         self.last_used.insert(canonical_id.clone(), Instant::now());
@@ -546,6 +552,12 @@ impl ModelRegistry {
                 real_str
             );
             return Ok(Arc::new(engine));
+        }
+
+        if kind == EngineKind::WhisperCpp {
+            return Ok(Arc::new(
+                crate::inference::engines::whisper::WhisperCppEngine::new(model)?,
+            ));
         }
 
         if kind == EngineKind::Encoder {

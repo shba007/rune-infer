@@ -300,8 +300,9 @@ async fn run(
             .collect(),
     };
 
+    let inference_state = std::sync::Arc::new(rune_infer::inference::AppState::new(&config));
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-    let server = tokio::spawn(rune_infer::server::serve_with_paths(
+    let server = tokio::spawn(rune_infer::server::serve_with_inference(
         config,
         Some(ws.server_path.clone()),
         Some(ws.catalog_path.clone()),
@@ -309,12 +310,13 @@ async fn run(
         async {
             let _ = stop_rx.await;
         },
+        inference_state.clone(),
     ));
 
     #[cfg(feature = "tui")]
     if let Some(term) = terminal.as_mut() {
         let result = tokio::task::block_in_place(|| {
-            rune_infer::tui::run_dashboard(term, dashboard_data, ui_rx)
+            rune_infer::tui::run_dashboard_with_state(term, dashboard_data, ui_rx, inference_state)
         });
         finish_terminal(true);
         let _ = stop_tx.send(());

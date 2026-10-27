@@ -743,13 +743,66 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             walk(&path, depth + 1, out);
-        } else if path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("gguf") || e.eq_ignore_ascii_case("cact"))
-        {
+        } else if path.extension().is_some_and(|e| {
+            e.eq_ignore_ascii_case("gguf")
+                || e.eq_ignore_ascii_case("cact")
+                || (e.eq_ignore_ascii_case("bin") && has_ggml_magic(&path))
+        }) {
             out.push(path);
         }
     }
+}
+
+fn has_ggml_magic(path: &Path) -> bool {
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+    let mut magic = [0; 4];
+    file.read_exact(&mut magic).is_ok() && &magic == b"lmgg"
+}
+
+fn whisper_candidate(path: &Path) -> Result<LocalCandidate> {
+    let size = std::fs::metadata(path)?.len();
+    anyhow::ensure!(size > 1024 * 1024, "Whisper GGML model file is too small");
+    let mut file = std::fs::File::open(path)?;
+    let mut bytes = [0u8; 48];
+    file.read_exact(&mut bytes)?;
+    anyhow::ensure!(&bytes[..4] == b"lmgg", "not a Whisper GGML model");
+    let mut h = [0u32; 11];
+    for (index, value) in h.iter_mut().enumerate() {
+        *value = u32::from_le_bytes(bytes[4 + index * 4..8 + index * 4].try_into()?);
+    }
+    anyhow::ensure!(
+        (50_000..=100_000).contains(&h[0])
+            && (1..=4096).contains(&h[1])
+            && (64..=8192).contains(&h[2])
+            && (1..=128).contains(&h[3])
+            && [4, 6, 12, 24, 32].contains(&h[4])
+            && (1..=4096).contains(&h[5])
+            && h[6] == h[2]
+            && (1..=128).contains(&h[7])
+            && [4, 6, 12, 24, 32].contains(&h[8])
+            && [80, 128].contains(&h[9]),
+        "invalid Whisper GGML model header"
+    );
+    Ok(LocalCandidate {
+        path: path.to_path_buf(),
+        size_bytes: size,
+        architecture: "whisper-ggml".into(),
+        display_name: file_stem(path),
+        context_length: None,
+        modality: Modality::SpeechToText,
+        engines: vec![EngineKind::WhisperCpp, EngineKind::Crispasr],
+        kind_label: "speech-to-text",
+        capabilities: vec!["Speech-to-Text".into()],
+        extra: Map::new(),
+        needs: Vec::new(),
+        notes: vec!["Whisper GGML format; audio.cpp GGUF packages are a different format.".into()],
+        class: Class::Other,
+        embedding_length: None,
+        omni_family: false,
+    })
 }
 
 fn file_stem(p: &Path) -> String {
@@ -1067,8 +1120,22 @@ pub fn discover(input: &Path) -> Result<Discovery> {
     let mut drafts: Vec<(PathBuf, GgufInfo)> = Vec::new();
     let mut found: Vec<(PathBuf, GgufInfo, Detected)> = Vec::new();
     let mut cactus = Vec::new();
+    let mut whisper = Vec::new();
 
     for path in files {
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
+        {
+            match whisper_candidate(&path) {
+                Ok(model) => whisper.push(model),
+                Err(error) => out.skipped.push(Skipped {
+                    path,
+                    reason: format!("not a supported Whisper GGML model ({error})"),
+                }),
+            }
+            continue;
+        }
         if path
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("cact"))
@@ -1194,6 +1261,7 @@ pub fn discover(input: &Path) -> Result<Discovery> {
     }
 
     candidates.extend(cactus);
+    candidates.extend(whisper);
     candidates.sort_by(|a, b| a.path.cmp(&b.path));
     out.models = candidates;
     Ok(out)
@@ -1355,6 +1423,31 @@ mod tests {
         assert_eq!(found.models[0].engines, [EngineKind::Needle]);
         assert_eq!(found.models[0].capabilities, ["Tool Call"]);
         assert_eq!(discover(&root.join("model.cact")).unwrap().models.len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn whisper_ggml_discovery_prefers_compatible_engines_and_rejects_invalid_headers() {
+        let root = tmp("whisper-ggml");
+        let path = root.join("whisper.bin");
+        let mut bytes = vec![0u8; 1024 * 1024 + 1];
+        bytes[..4].copy_from_slice(b"lmgg");
+        for (i, n) in [51866u32, 1500, 1280, 20, 32, 448, 1280, 20, 4, 128, 1]
+            .iter()
+            .enumerate()
+        {
+            bytes[4 + i * 4..8 + i * 4].copy_from_slice(&n.to_le_bytes());
+        }
+        std::fs::write(&path, &bytes).unwrap();
+        let candidate = whisper_candidate(&path).unwrap();
+        assert_eq!(
+            candidate.engines,
+            [EngineKind::WhisperCpp, EngineKind::Crispasr]
+        );
+        assert_eq!(discover(&root).unwrap().models.len(), 1);
+        bytes[4..8].copy_from_slice(&0u32.to_le_bytes());
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(whisper_candidate(&path).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 

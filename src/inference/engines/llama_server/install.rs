@@ -76,20 +76,7 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
         Err(error) => return Err(format!("Cannot obtain verified release metadata: {error}. Retry or explicitly configure your own engine binary.").into()),
     };
 
-    let target_release = if let Some(releases_arr) = release_data.as_array() {
-        releases_arr
-            .iter()
-            .find(|rel| {
-                rel["assets"].as_array().is_some_and(|assets| {
-                    assets
-                        .iter()
-                        .any(|a| a["name"].as_str().unwrap_or("").contains("bin-"))
-                })
-            })
-            .unwrap_or(&release_data[0])
-    } else {
-        &release_data
-    };
+    let target_release = download::stable_release(&release_data)?;
 
     let assets = target_release["assets"]
         .as_array()

@@ -558,6 +558,8 @@ pub enum EngineKind {
     NemoSpeech,
     /// CrispASR: Whisper-family and other speech models.
     Crispasr,
+    /// whisper.cpp server for original Whisper GGML models.
+    WhisperCpp,
     /// Native Rust encoders (embeddings, moderation, NLU, vision encoders).
     Encoder,
     /// Cactus Needle (`.cact`) tool-calling engine.
@@ -573,6 +575,7 @@ impl EngineKind {
             EngineKind::AudioCpp => "audio-cpp",
             EngineKind::NemoSpeech => "nemo-speech",
             EngineKind::Crispasr => "crispasr",
+            EngineKind::WhisperCpp => "whisper-cpp",
             EngineKind::Encoder => "encoder",
             EngineKind::Needle => "needle",
         }

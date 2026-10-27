@@ -127,6 +127,7 @@ pub fn install_engine(engine: EngineKind) -> Result<PathBuf, String> {
         needle::NeedleEngine,
         nemo_speech::NemoSpeechEngine,
         sd_server::SdServerEngine,
+        whisper::WhisperCppEngine,
     };
     let result = match engine {
         EngineKind::LlamaServer => install::ensure_binary_installed(RuntimeFlavor::Upstream),
@@ -135,6 +136,7 @@ pub fn install_engine(engine: EngineKind) -> Result<PathBuf, String> {
         EngineKind::AudioCpp => AudioEngine::ensure_binary_installed(),
         EngineKind::NemoSpeech => NemoSpeechEngine::ensure_binary_installed(),
         EngineKind::Crispasr => CrispAsrEngine::ensure_binary_installed(),
+        EngineKind::WhisperCpp => WhisperCppEngine::ensure_binary_installed(),
         EngineKind::Needle => NeedleEngine::ensure_binary_installed(),
         EngineKind::Encoder => return Err(
             "encoder is built in; external installation does not validate its inference support"

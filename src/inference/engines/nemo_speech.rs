@@ -243,15 +243,9 @@ impl NemoSpeechEngine {
             }
         };
 
-        let assets = if let Some(arr) = release_val.as_array() {
-            arr.first()
-                .and_then(|r| r["assets"].as_array())
-                .ok_or("No release assets found in NeMo-Speech.cpp")?
-        } else {
-            release_val["assets"]
-                .as_array()
-                .ok_or("Invalid release payload: missing assets")?
-        };
+        let assets = download::stable_release(&release_val)?["assets"]
+            .as_array()
+            .ok_or("Stable release has no engine assets")?;
 
         let host_cuda = download::detect_host_cuda_version();
         let mut download_urls = Vec::new();

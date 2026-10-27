@@ -34,6 +34,21 @@ impl AppState {
                 return Ok(engine);
             }
 
+            // Do not start a model while any engine in its fallback plan is being replaced.
+            if registry.config.find(id).is_some_and(|model| {
+                model
+                    .engine_plan()
+                    .iter()
+                    .any(|kind| registry.updating_engines.contains(kind))
+            }) {
+                drop(
+                    self.load_slot_condvar
+                        .wait(registry)
+                        .unwrap_or_else(|p| p.into_inner()),
+                );
+                continue;
+            }
+
             // 2. Coalesce callers: if another thread is currently loading this exact model, wait on its barrier
             if let Some(barrier) = registry.get_loading(id) {
                 drop(registry); // Release global registry lock while waiting on load barrier!
@@ -141,6 +156,32 @@ impl AppState {
         }
     }
 
+    /// Reserve an idle engine for replacement. A live lease includes evicted models
+    /// still referenced by requests, and a load in progress may choose any fallback.
+    pub fn try_reserve_engine_update(
+        self: &Arc<Self>,
+        kind: crate::config::EngineKind,
+    ) -> Option<EngineUpdateGuard> {
+        let mut registry = self.registry.lock().unwrap_or_else(|p| p.into_inner());
+        registry
+            .engine_leases
+            .retain(|(_, lease)| lease.strong_count() > 0);
+        if !registry.loading.is_empty()
+            || registry.updating_engines.contains(&kind)
+            || registry
+                .engine_leases
+                .iter()
+                .any(|(k, lease)| *k == kind && lease.strong_count() > 0)
+        {
+            return None;
+        }
+        registry.updating_engines.insert(kind);
+        Some(EngineUpdateGuard {
+            state: self.clone(),
+            kind,
+        })
+    }
+
     /// Unload engines idle for at least `idle`; see [`registry::ModelRegistry::evict_idle`].
     pub fn evict_idle(&self, idle: std::time::Duration) -> Vec<String> {
         let mut registry = self
@@ -173,6 +214,23 @@ impl AppState {
     }
 }
 
+/// Holds the model-load fence while an engine installation is replaced.
+pub struct EngineUpdateGuard {
+    state: Arc<AppState>,
+    kind: crate::config::EngineKind,
+}
+impl Drop for EngineUpdateGuard {
+    fn drop(&mut self) {
+        let mut registry = self
+            .state
+            .registry
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        registry.updating_engines.remove(&self.kind);
+        self.state.load_slot_condvar.notify_all();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,6 +248,95 @@ mod tests {
         ) -> Result<types::InferenceOutput, Box<dyn std::error::Error>> {
             Err("not used in mock".into())
         }
+    }
+
+    #[test]
+    fn update_reservation_waits_for_live_leases_and_loads() {
+        use crate::config::EngineKind;
+        let state = Arc::new(AppState::new(&crate::config::ModelRegistry::default()));
+        let engine: Arc<dyn traits::InferenceEngine> = Arc::new(MockEngine("loaded"));
+        {
+            let mut registry = state.registry.lock().unwrap();
+            registry
+                .engine_leases
+                .push((EngineKind::AudioCpp, Arc::downgrade(&engine)));
+        }
+        assert!(
+            state
+                .try_reserve_engine_update(EngineKind::AudioCpp)
+                .is_none()
+        );
+        assert!(
+            state
+                .try_reserve_engine_update(EngineKind::LlamaServer)
+                .is_some()
+        );
+        drop(engine);
+        {
+            let mut registry = state.registry.lock().unwrap();
+            registry
+                .loading
+                .insert("pending".into(), Arc::new(registry::LoadBarrier::new()));
+        }
+        assert!(
+            state
+                .try_reserve_engine_update(EngineKind::AudioCpp)
+                .is_none()
+        );
+        state.registry.lock().unwrap().loading.clear();
+        let guard = state
+            .try_reserve_engine_update(EngineKind::AudioCpp)
+            .unwrap();
+        assert!(
+            state
+                .try_reserve_engine_update(EngineKind::AudioCpp)
+                .is_none()
+        );
+        drop(guard);
+        assert!(
+            state
+                .try_reserve_engine_update(EngineKind::AudioCpp)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn model_load_waits_until_update_reservation_is_released() {
+        let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+            "id":"update-fixture","name":"fixture","modality":"TextToSpeech",
+            "engine":{"supported":["audio-cpp"]},"local":{"path":"Cargo.toml"},"extra":{}
+        }))
+        .unwrap();
+        let mut config = crate::config::ModelRegistry::default();
+        config
+            .models
+            .push(crate::config::ModelConfig::try_from(entry).unwrap());
+        let state = Arc::new(AppState::new(&config));
+        let guard = state
+            .try_reserve_engine_update(crate::config::EngineKind::AudioCpp)
+            .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker_state = state.clone();
+        let worker = std::thread::spawn(move || {
+            let _ = tx.send(
+                worker_state
+                    .get_engine("update-fixture")
+                    .map(|engine| engine.id().to_owned()),
+            );
+        });
+        assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
+        {
+            let mut registry = state.registry.lock().unwrap();
+            registry
+                .engines
+                .insert("update-fixture".into(), Arc::new(MockEngine("fixture")));
+        }
+        drop(guard);
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap(),
+            "fixture"
+        );
+        worker.join().unwrap();
     }
 
     #[test]

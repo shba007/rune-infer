@@ -74,7 +74,7 @@ fn audio_failure(task: &str, output: &std::process::Output) -> String {
     )
 }
 
-fn windows_audio_assets(
+pub(crate) fn windows_audio_assets(
     assets: &[serde_json::Value],
     cuda: Option<(u32, u32)>,
 ) -> Result<Vec<&serde_json::Value>, Box<dyn Error>> {
@@ -86,8 +86,7 @@ fn windows_audio_assets(
                 name.contains("-bin-windows-")
                     && name.contains("-cuda")
                     && download::matches_arch(name)
-                    && download::extract_cuda_version(name)
-                        .is_some_and(|version| version.0 <= host.0)
+                    && download::extract_cuda_version(name).is_some_and(|version| version <= host)
             })
             .max_by_key(|asset| {
                 download::extract_cuda_version(asset["name"].as_str().unwrap_or(""))
@@ -139,7 +138,7 @@ fn repair_managed_runtime(executable: &Path) -> Result<(), Box<dyn Error>> {
             .send()?
             .error_for_status()?
             .json()?;
-        let asset = releases.as_array().into_iter().flatten().flat_map(|release| release["assets"].as_array().into_iter().flatten())
+        let asset = releases.as_array().into_iter().flatten().filter(|release| download::is_stable_release(release)).flat_map(|release| release["assets"].as_array().into_iter().flatten())
             .find(|asset| {
                 let name = asset["name"].as_str().unwrap_or("");
                 name.contains("-cudart-windows-") && name.contains(versions[0].1) && download::matches_arch(name)
@@ -323,15 +322,9 @@ impl AudioEngine {
         }
 
         let release_val: serde_json::Value = req.send()?.error_for_status()?.json()?;
-        let assets = if let Some(arr) = release_val.as_array() {
-            arr.first()
-                .and_then(|r| r["assets"].as_array())
-                .ok_or("No release assets found in audio.cpp")?
-        } else {
-            release_val["assets"]
-                .as_array()
-                .ok_or("Invalid release payload from audio.cpp")?
-        };
+        let assets = download::stable_release(&release_val)?["assets"]
+            .as_array()
+            .ok_or("Stable release has no engine assets")?;
 
         let host_cuda = download::detect_host_cuda_version();
         let mut download_urls = Vec::new();
@@ -1117,6 +1110,10 @@ mod tests {
         );
         assert_eq!(
             windows_audio_assets(&assets, Some((12, 9))).unwrap()[1],
+            &assets[0]
+        );
+        assert_eq!(
+            windows_audio_assets(&assets, Some((13, 0))).unwrap()[1],
             &assets[0]
         );
         assert_eq!(windows_audio_assets(&assets, None).unwrap(), [&assets[4]]);

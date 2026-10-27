@@ -7,7 +7,7 @@ mod dashboard;
 mod theme;
 mod wizard;
 
-pub use dashboard::{DashboardInfo, ModelRow, run_dashboard};
+pub use dashboard::{DashboardInfo, ModelRow, run_dashboard, run_dashboard_with_state};
 pub use wizard::{WizardOutcome, run_wizard};
 
 use ratatui::DefaultTerminal;

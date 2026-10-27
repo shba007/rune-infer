@@ -150,6 +150,7 @@ pub fn allowed_extra_keys(kind: EngineKind) -> &'static [&'static str] {
         EngineKind::AudioCpp
         | EngineKind::NemoSpeech
         | EngineKind::Crispasr
+        | EngineKind::WhisperCpp
         | EngineKind::Encoder
         | EngineKind::Needle => &[],
     }

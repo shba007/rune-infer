@@ -58,6 +58,33 @@ pub fn create_download_client() -> Result<reqwest::blocking::Client, Box<dyn Err
     Ok(builder.build()?)
 }
 
+/// Only stable semantic-versioned GitHub releases are eligible for automatic installation.
+pub fn is_stable_release(release: &serde_json::Value) -> bool {
+    if release["draft"].as_bool() != Some(false) || release["prerelease"].as_bool() != Some(false) {
+        return false;
+    }
+    let Some(tag) = release["tag_name"].as_str() else {
+        return false;
+    };
+    let tag = tag.strip_prefix('v').unwrap_or(tag);
+    let pieces: Vec<_> = tag.split('.').collect();
+    pieces.len() == 3
+        && pieces
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+}
+
+pub fn stable_release(value: &serde_json::Value) -> Result<&serde_json::Value, Box<dyn Error>> {
+    let release = if let Some(releases) = value.as_array() {
+        releases.iter().find(|r| is_stable_release(r))
+    } else if is_stable_release(value) {
+        Some(value)
+    } else {
+        None
+    };
+    release.ok_or_else(|| "No verified stable production release was found; install a verified stable engine manually or retry later.".into())
+}
+
 pub fn format_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
@@ -530,6 +557,26 @@ mod progress_tests {
             stream.write_all(response).unwrap();
         });
         (url, worker)
+    }
+
+    #[test]
+    fn production_release_selection_rejects_nightly_development_and_unverified_tags() {
+        let releases = serde_json::json!([
+            {"tag_name":"b12345","draft":false,"prerelease":false},
+            {"tag_name":"v1.0.0-nightly","draft":false,"prerelease":false},
+            {"tag_name":"v1.2.3","draft":false,"prerelease":true},
+            {"tag_name":"v1.0.0","draft":false,"prerelease":false}
+        ]);
+        assert_eq!(stable_release(&releases).unwrap()["tag_name"], "v1.0.0");
+        assert!(
+            stable_release(
+                &serde_json::json!([{"tag_name":"b123","draft":false,"prerelease":false}])
+            )
+            .is_err()
+        );
+        assert!(!is_stable_release(
+            &serde_json::json!({"tag_name":"v1.0.0"})
+        ));
     }
 
     #[test]
