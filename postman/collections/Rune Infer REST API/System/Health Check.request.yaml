@@ -5,7 +5,7 @@ method: GET
 headers:
   - key: Accept
     value: application/json
-params:
+queryParams:
   - key: probe
     value: live
     description: "Optional probe type: 'live' (or 'livez') for liveness check, 'ready' (or 'readyz') for readiness check, or omit for standard health."

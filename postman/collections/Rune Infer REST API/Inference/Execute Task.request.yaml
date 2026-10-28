@@ -2,6 +2,9 @@ $kind: http-request
 name: Execute Task
 url: '{{base_url}}/v1/inference?engine=encoder'
 method: POST
+queryParams:
+  - key: engine
+    value: encoder
 headers:
   - key: Content-Type
     value: application/json

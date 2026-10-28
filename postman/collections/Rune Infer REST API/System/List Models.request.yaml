@@ -1,0 +1,67 @@
+$kind: http-request
+url: "{{base_url}}/v1/models?censorship=uncensored&modality=text-to-image"
+method: GET
+headers:
+  Accept: application/json
+queryParams:
+  - key: censorship
+    value: uncensored
+    disabled: false
+    description: censored or uncensored; models without an Uncensored capability count as censored.
+    $type: |-
+      {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "enum": ["censored", "uncensored"]
+          }
+        }
+      }
+  - key: modality
+    value: text-to-image
+    disabled: false
+    description: Match explicitly recorded model tasks; missing task metadata does not match.
+    $type: |-
+      {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "default": "text-to-image",
+            "enum": [
+              "text-to-image",
+              "image-to-image",
+              "text-to-audio",
+              "audio-to-text",
+              "text-to-text",
+              "text-image-to-text",
+              "text-image-to-image",
+              "image-to-text",
+              "text-to-embedding",
+              "image-to-embedding",
+              "audio-to-embedding",
+              "text-to-decision",
+              "text-image-to-decision",
+              "audio-to-audio",
+              "audio-to-diarization",
+              "image-to-detection",
+              "text-to-moderation"
+            ]
+          }
+        }
+      }
+  - key: min_params
+    value: "1000000000"
+    disabled: true
+    description: Inclusive minimum parameter count; excludes models with unknown size.
+  - key: max_params
+    value: "7000000000"
+    disabled: true
+    description: Inclusive maximum parameter count; excludes models with unknown size.
+  - key: quantization
+    value: Q8_0
+    disabled: true
+    description: Exact quantization label, case insensitive; excludes unknown quantization.
+examples: .resources/List Models.resources/examples
+order: 1100

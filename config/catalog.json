@@ -15,6 +15,7 @@
         "Tool Call",
         "Structured Output"
       ],
+      "tasks": ["text-to-text", "text-image-to-text"],
       "engine": {
         "supported": [
           "llama-server",
@@ -52,6 +53,7 @@
         "Tool Call",
         "Structured Output"
       ],
+      "tasks": ["text-to-text", "text-image-to-text"],
       "engine": {
         "supported": [
           "llama-server"
@@ -91,6 +93,7 @@
         "Structured Output",
         "Uncensored"
       ],
+      "tasks": ["text-to-text", "text-image-to-text"],
       "engine": {
         "supported": [
           "llama-server"
@@ -133,6 +136,7 @@
         "Person Identification",
         "MTP"
       ],
+      "tasks": ["text-to-text", "text-image-to-text"],
       "engine": {
         "supported": [
           "llama-server"
@@ -172,6 +176,7 @@
         "Structured Output",
         "Tool Call"
       ],
+      "tasks": ["text-to-text"],
       "engine": {
         "supported": [
           "llama-server-prism"
@@ -212,6 +217,7 @@
         "Structured Output",
         "Tool Call"
       ],
+      "tasks": ["text-to-text"],
       "engine": {
         "supported": [
           "llama-server"
@@ -337,6 +343,7 @@
         "Structured Output",
         "Error Recovery"
       ],
+      "tasks": ["text-to-text"],
       "engine": {
         "supported": [
           "llama-server"
@@ -477,6 +484,7 @@
         "Scoring",
         "Vision"
       ],
+      "tasks": ["text-to-decision"],
       "engine": {
         "supported": [
           "llama-server",
@@ -508,6 +516,7 @@
         "Image Editing",
         "Transparency (RGBA)"
       ],
+      "tasks": ["text-to-image"],
       "engine": {
         "supported": [
           "sd-server"
@@ -543,6 +552,7 @@
         "Uncensored",
         "Transparency (RGBA)"
       ],
+      "tasks": ["text-to-image"],
       "engine": {
         "supported": [
           "sd-server"
@@ -578,6 +588,7 @@
         "Image Editing",
         "Photorealism"
       ],
+      "tasks": ["text-to-image"],
       "engine": {
         "supported": [
           "sd-server"
@@ -648,6 +659,7 @@
         "Photorealism",
         "Bilingual Rendering"
       ],
+      "tasks": ["text-to-image"],
       "engine": {
         "supported": [
           "sd-server"
@@ -780,6 +792,7 @@
         "Timestamps",
         "Translation"
       ],
+      "tasks": ["audio-to-text"],
       "engine": {
         "supported": [
           "crispasr"
@@ -810,6 +823,7 @@
         "Punctuation",
         "FastConformer-TDT"
       ],
+      "tasks": ["audio-to-text"],
       "engine": {
         "supported": [
           "nemo-speech"
@@ -839,6 +853,7 @@
         "Low WER",
         "Timestamps"
       ],
+      "tasks": ["audio-to-text"],
       "engine": {
         "supported": [
           "crispasr"
@@ -868,6 +883,7 @@
         "Low WER",
         "Timestamps"
       ],
+      "tasks": ["audio-to-text"],
       "engine": {
         "supported": [
           "crispasr"
@@ -1064,6 +1080,7 @@
         "Low Latency",
         "Realtime"
       ],
+      "tasks": ["text-to-audio"],
       "engine": {
         "supported": [
           "audio-cpp"
@@ -1122,6 +1139,7 @@
         "Code Retrieval",
         "Matryoshka Representations"
       ],
+      "tasks": ["text-to-embedding"],
       "engine": {
         "supported": [
           "llama-server"

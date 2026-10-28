@@ -114,6 +114,7 @@ async fn test_runtime_catalog_hot_reloading() {
         description: "Initial".to_string(),
         modality: Modality::Text,
         capabilities: vec!["Chat".to_string()],
+        tasks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {
@@ -153,6 +154,7 @@ async fn test_runtime_catalog_hot_reloading() {
         description: "Added dynamically at runtime".to_string(),
         modality: Modality::Text,
         capabilities: vec!["Chat".to_string()],
+        tasks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {

@@ -402,8 +402,9 @@ fn model_config_to_info(
         .and_then(|e| e.preferred)
         .or_else(|| m.engine.as_ref().and_then(|e| e.supported.first().cloned()));
 
-    ModelInfo::new(&m.id)
-        .with_mtp_heads(heads)
+    let mut info = ModelInfo::new(&m.id);
+    info.tasks = m.tasks.clone();
+    info.with_mtp_heads(heads)
         .with_capabilities(m.resolved_capabilities())
         .with_locality(m.locality())
         .with_modalities_in(m.modalities_in())
@@ -423,8 +424,84 @@ fn model_config_to_info(
         .with_aliases(m.aliases.clone())
 }
 
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModelFilters {
+    censorship: Option<String>,
+    modality: Option<String>,
+    min_params: Option<u64>,
+    max_params: Option<u64>,
+    quantization: Option<String>,
+}
+
+impl ModelFilters {
+    fn matches(&self, model: &crate::config::ModelConfig) -> bool {
+        let caps = model.capabilities.as_deref().unwrap_or(&[]);
+        let uncensored = caps
+            .iter()
+            .any(|cap| cap.eq_ignore_ascii_case("uncensored"));
+        if let Some(value) = &self.censorship {
+            if (value == "uncensored") != uncensored {
+                return false;
+            }
+        }
+        if let Some(value) = &self.modality {
+            let normalize = |text: &str| text.to_ascii_lowercase().replace([' ', '_'], "-");
+            if !model
+                .tasks
+                .iter()
+                .any(|task| normalize(task) == normalize(value))
+            {
+                return false;
+            }
+        }
+        if self.min_params.is_some() || self.max_params.is_some() {
+            let Some(params) = model.total_params else {
+                return false;
+            };
+            if self.min_params.is_some_and(|min| params < min)
+                || self.max_params.is_some_and(|max| params > max)
+            {
+                return false;
+            }
+        }
+        if let Some(value) = &self.quantization {
+            if !model
+                .quantization()
+                .is_some_and(|q| q.eq_ignore_ascii_case(value))
+            {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 #[axum::debug_handler]
-async fn models_handler(State(state): State<Arc<AppState>>) -> Response {
+async fn models_handler(
+    State(state): State<Arc<AppState>>,
+    Query(filters): Query<ModelFilters>,
+) -> Response {
+    if filters.modality.as_deref().is_some_and(|task| {
+        !crate::schema::valid_task(&task.to_ascii_lowercase().replace([' ', '_'], "-"))
+    }) {
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+            error: ApiError::new("modality must be an explicit input-to-output task, for example text-image-to-text".to_owned()).with_type("invalid_request_error"),
+        })).into_response();
+    }
+    if filters
+        .censorship
+        .as_deref()
+        .is_some_and(|v| v != "censored" && v != "uncensored")
+        || filters
+            .min_params
+            .zip(filters.max_params)
+            .is_some_and(|(min, max)| min > max)
+    {
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+            error: ApiError::new("Invalid model filters: use censorship=censored or uncensored and min_params <= max_params".to_string()).with_type("invalid_request_error"),
+        })).into_response();
+    }
     let (vram_total_bytes, vram_used_bytes, vram_free_bytes) = match (
         crate::inference::budget::detect_total_gpu_vram(),
         crate::inference::budget::detect_used_gpu_vram(),
@@ -446,6 +523,7 @@ async fn models_handler(State(state): State<Arc<AppState>>) -> Response {
         .config()
         .models
         .iter()
+        .filter(|m| filters.matches(m))
         .map(|m| {
             if m.has_mtp() {
                 mtp_models.push(m.id.clone());

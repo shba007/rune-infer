@@ -744,6 +744,7 @@ pub struct ModelConfig {
     pub max_resolution: Option<String>,
     pub mtp_heads: Option<u32>,
     pub capabilities: Option<Vec<String>>,
+    pub tasks: Vec<String>,
     pub sampling: Option<SamplingConfig>,
     /// `Some` for local models, `None` for cloud models.
     pub engine: Option<EngineConfig>,
@@ -763,83 +764,25 @@ impl ModelConfig {
     }
 
     pub fn modalities_in(&self) -> Vec<String> {
-        let mut list = Vec::new();
-        match self.modality {
-            Modality::Omni => {
-                list.push("text".to_string());
-                list.push("image".to_string());
-                list.push("audio".to_string());
-                list.push("video".to_string());
-            }
-            Modality::VisionText => {
-                list.push("text".to_string());
-                list.push("image".to_string());
-            }
-            Modality::SpeechToText | Modality::SpeechAnalysis => {
-                list.push("audio".to_string());
-            }
-            Modality::SpeechToSpeech => {
-                list.push("audio".to_string());
-            }
-            Modality::ImageGeneration => {
-                list.push("text".to_string());
-                list.push("image".to_string());
-            }
-            Modality::Text
-            | Modality::TextToSpeech
-            | Modality::Embedding
-            | Modality::Moderation
-            | Modality::Nlu
-            | Modality::Decision => {
-                list.push("text".to_string());
-                if self.is_vision() {
-                    list.push("image".to_string());
-                }
-            }
-            Modality::Ocr | Modality::ObjectDetection => {
-                list.push("image".to_string());
-            }
-            _ => {
-                list.push("image".to_string());
-            }
-        }
-        list
+        self.task_modalities(true)
     }
 
     pub fn modalities_out(&self) -> Vec<String> {
-        let mut list = Vec::new();
-        match self.modality {
-            Modality::Omni => {
-                list.push("text".to_string());
-                list.push("audio".to_string());
-            }
-            Modality::TextToSpeech | Modality::SpeechToSpeech => {
-                list.push("audio".to_string());
-            }
-            Modality::ImageGeneration => {
-                list.push("image".to_string());
-            }
-            Modality::SpeechToText
-            | Modality::Text
-            | Modality::VisionText
-            | Modality::Ocr
-            | Modality::Nlu
-            | Modality::Decision
-            | Modality::Moderation
-            | Modality::SpeechAnalysis => {
-                list.push("text".to_string());
-            }
-            Modality::Embedding => {
-                list.push("embedding".to_string());
-            }
-            Modality::ObjectDetection => {
-                list.push("box_2d".to_string());
-            }
-            _ => {
-                list.push("image".to_string());
+        self.task_modalities(false)
+    }
+
+    fn task_modalities(&self, input: bool) -> Vec<String> {
+        let mut result = Vec::new();
+        for task in &self.tasks {
+            if let Some((inputs, outputs)) = task.split_once("-to-") {
+                for value in if input { inputs } else { outputs }.split('-') {
+                    if !result.iter().any(|item| item == value) {
+                        result.push(value.to_owned());
+                    }
+                }
             }
         }
-        list
+        result
     }
 
     pub fn supports_tool_calls(&self) -> bool {

@@ -74,6 +74,8 @@ pub struct ModelEntry {
     #[serde(default)]
     pub capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub roles: Vec<String>,
@@ -201,11 +203,43 @@ fn check_extra_keys(id: &str, supported: &[EngineKind], extra: &Map<String, Valu
     Ok(())
 }
 
+pub(crate) fn valid_task(task: &str) -> bool {
+    let Some((inputs, outputs)) = task.split_once("-to-") else {
+        return false;
+    };
+    [inputs, outputs].into_iter().all(|side| {
+        let mut seen = std::collections::HashSet::new();
+        side.split('-').all(|kind| {
+            matches!(
+                kind,
+                "text"
+                    | "image"
+                    | "audio"
+                    | "video"
+                    | "embedding"
+                    | "decision"
+                    | "diarization"
+                    | "detection"
+                    | "moderation"
+            ) && seen.insert(kind)
+        })
+    })
+}
+
 impl TryFrom<ModelEntry> for ModelConfig {
     type Error = anyhow::Error;
 
     fn try_from(e: ModelEntry) -> Result<Self> {
         let id = e.id.clone();
+        let mut seen = std::collections::HashSet::new();
+        for task in &e.tasks {
+            anyhow::ensure!(
+                valid_task(task),
+                "Model '{id}' has invalid input/output task '{task}'"
+            );
+            anyhow::ensure!(seen.insert(task), "Model '{id}' repeats task '{task}'");
+        }
+
         let (
             provider,
             model_path,
@@ -304,6 +338,7 @@ impl TryFrom<ModelEntry> for ModelConfig {
             max_resolution: extra.max_resolution,
             mtp_heads: extra.mtp_heads,
             capabilities: (!e.capabilities.is_empty()).then_some(e.capabilities),
+            tasks: e.tasks,
             sampling: (sampling != SamplingConfig::default()).then_some(sampling),
             engine,
             lora: extra.lora,

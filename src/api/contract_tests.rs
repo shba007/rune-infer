@@ -6,6 +6,147 @@ use axum::body::{Body, to_bytes};
 use base64::Engine;
 use tower::ServiceExt;
 
+#[tokio::test]
+async fn models_filter_matches_explicit_metadata_and_rejects_invalid_bounds() {
+    let (router, state) = app(None);
+    let model = state.config().models[0].clone();
+    let mut known = model.clone();
+    known.capabilities = Some(vec!["Uncensored".into(), "Text-to-Image".into()]);
+    known.tasks = vec!["text-to-image".into()];
+    assert_eq!(known.modalities_in(), vec!["text"]);
+    assert_eq!(known.modalities_out(), vec!["image"]);
+    let mut multimodal = known.clone();
+    multimodal.tasks = vec!["text-to-text".into(), "text-image-to-text".into()];
+    assert_eq!(multimodal.modalities_in(), vec!["text", "image"]);
+    assert_eq!(multimodal.modalities_out(), vec!["text"]);
+    assert!(model.modalities_in().is_empty());
+    assert!(model.modalities_out().is_empty());
+    known.total_params = Some(7_000_000_000);
+    known.model_path = "model-Q8_0.gguf".into();
+    assert!(
+        ModelFilters {
+            censorship: Some("uncensored".into()),
+            modality: Some("text_to_image".into()),
+            min_params: Some(7_000_000_000),
+            max_params: Some(7_000_000_000),
+            quantization: Some("q8_0".into()),
+        }
+        .matches(&known)
+    );
+    assert!(
+        ModelFilters {
+            censorship: Some("censored".into()),
+            ..Default::default()
+        }
+        .matches(&model)
+    );
+    assert!(
+        !ModelFilters {
+            censorship: Some("uncensored".into()),
+            ..Default::default()
+        }
+        .matches(&model)
+    );
+    assert!(
+        !ModelFilters {
+            min_params: Some(1),
+            ..Default::default()
+        }
+        .matches(&model)
+    );
+    assert!(
+        !ModelFilters {
+            modality: Some("text-to-image".into()),
+            ..Default::default()
+        }
+        .matches(&model)
+    );
+    for (uri, status, count) in [
+        ("/v1/models?censorship=censored", StatusCode::OK, Some(1)),
+        ("/v1/models?censorship=uncensored", StatusCode::OK, Some(0)),
+        ("/v1/models?uncensored=true", StatusCode::BAD_REQUEST, None),
+        ("/v1/models?modality=vision", StatusCode::BAD_REQUEST, None),
+        (
+            "/v1/models?min_params=10&max_params=1",
+            StatusCode::BAD_REQUEST,
+            None,
+        ),
+    ] {
+        let response = router
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        if let Some(count) = count {
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(value["data"].as_array().unwrap().len(), count);
+        }
+    }
+}
+
+#[test]
+fn task_metadata_requires_explicit_unique_input_output_types() {
+    for task in [
+        "text-to-text",
+        "text-image-to-image",
+        "text-image-audio-video-to-text",
+        "audio-to-embedding",
+        "text-image-to-decision",
+    ] {
+        assert!(crate::schema::valid_task(task), "{task}");
+    }
+    for task in [
+        "vision",
+        "omni",
+        "text-to-",
+        "-to-text",
+        "text-text-to-image",
+        "text-to-audio-audio",
+        "text-to-unknown",
+    ] {
+        assert!(!crate::schema::valid_task(task), "{task}");
+    }
+}
+
+#[test]
+fn catalog_vision_models_do_not_match_unrelated_filters() {
+    let catalog: crate::schema::CatalogFile =
+        serde_json::from_str(include_str!("../../config/catalog.json")).unwrap();
+    for id in [
+        "gemma-4-12b-it",
+        "minicpm-o-4-5-q8-0",
+        "qwen3.8-27b",
+        "ternary-bonsai-2-27b-pq2-0",
+        "ornith-1.5-9b",
+    ] {
+        let entry = catalog
+            .models
+            .iter()
+            .find(|entry| entry.id == id)
+            .unwrap()
+            .clone();
+        let model = crate::config::ModelConfig::try_from(entry).unwrap();
+        assert!(
+            !ModelFilters {
+                censorship: Some("uncensored".into()),
+                ..Default::default()
+            }
+            .matches(&model),
+            "{id}"
+        );
+        assert!(
+            !ModelFilters {
+                modality: Some("text-to-image".into()),
+                ..Default::default()
+            }
+            .matches(&model),
+            "{id}"
+        );
+    }
+}
+
 struct FailingEngine;
 impl InferenceEngine for FailingEngine {
     fn id(&self) -> &str {

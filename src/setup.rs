@@ -347,6 +347,7 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
         description,
         modality: c.modality.clone(),
         capabilities: c.capabilities.clone(),
+        tasks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {
@@ -421,6 +422,7 @@ fn cloud_entry(c: &CloudChoice) -> ModelEntry {
             Modality::Text
         },
         capabilities: c.model.catalog_capabilities(),
+        tasks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: None,

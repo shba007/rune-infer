@@ -541,6 +541,8 @@ pub struct ModelInfo {
     pub mtp_heads: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locality: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -605,6 +607,7 @@ impl ModelInfo {
             parent: None,
             mtp_heads: None,
             capabilities: None,
+            tasks: Vec::new(),
             locality: None,
             modalities_in: None,
             modalities_out: None,
