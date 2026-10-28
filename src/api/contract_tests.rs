@@ -7,9 +7,53 @@ use base64::Engine;
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn unverified_models_are_refused_before_execution() {
+    let (router, state) = app(Some(Arc::new(FailingEngine)));
+    state.config.write().unwrap().models[0].tasks.clear();
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/embeddings")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"model":"fixture","input":"hello"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(value["error"]["code"], "model_tasks_unverified");
+}
+
+#[test]
+fn primitive_catalog_roundtrip_keeps_tasks_and_engine_order() {
+    let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+        "id":"fixture","name":"Fixture","tasks":["text-to-text", "text-image-to-text"],
+        "engine":{"supported":["llama-server","llama-server-prism"],"preferred":"llama-server-prism"},
+        "local":{"path":"model.gguf"}
+    })).unwrap();
+    let value = serde_json::to_value(&entry).unwrap();
+    assert!(value.get("modality").is_none());
+    assert!(value.get("sampling").is_none());
+    assert!(value.get("extra").is_none());
+    assert_eq!(
+        value["engine"],
+        serde_json::json!(["llama-server-prism", "llama-server"])
+    );
+    let restored: crate::schema::ModelEntry = serde_json::from_value(value).unwrap();
+    let model = crate::config::ModelConfig::try_from(restored).unwrap();
+    assert!(model.is_vision());
+    assert!(!model.supports_audio());
+    assert!(!model.supports_tool_calls());
+}
+
+#[tokio::test]
 async fn models_filter_matches_explicit_metadata_and_rejects_invalid_bounds() {
     let (router, state) = app(None);
-    let model = state.config().models[0].clone();
+    let mut model = state.config().models[0].clone();
+    model.tasks.clear();
     let mut known = model.clone();
     known.capabilities = Some(vec!["Uncensored".into(), "Text-to-Image".into()]);
     known.tasks = vec!["text-to-image".into()];
@@ -165,6 +209,7 @@ fn app(engine: Option<Arc<dyn InferenceEngine>>) -> (Router, Arc<AppState>) {
     let model: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
         "id": "fixture", "name": "Fixture", "modality": "VisionText",
         "engine": {"supported": ["encoder"]},
+        "tasks": ["text-image-to-text"],
         "local": {"path": "Cargo.toml"}, "extra": {}
     }))
     .unwrap();

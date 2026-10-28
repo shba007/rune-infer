@@ -162,6 +162,13 @@ impl ModelExecutionGate {
             }
         };
 
+        if model_config.tasks.is_empty() {
+            return Err((StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse {
+                error: ApiError::new(format!("Model '{}' has no verified input/output tasks; add verified task metadata before inference.", model_config.id))
+                    .with_type("invalid_request_error").with_code("model_tasks_unverified"),
+            })).into_response());
+        }
+
         let no_swap = headers
             .get("x-no-swap")
             .and_then(|v| v.to_str().ok())

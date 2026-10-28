@@ -597,11 +597,46 @@ impl std::fmt::Display for EngineKind {
 /// The preferred engine is tried first; if it fails to start, the remaining
 /// `supported` engines are tried in the order listed. `preferred` defaults to
 /// the first supported engine.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineConfig {
     pub supported: Vec<EngineKind>,
-    #[serde(default)]
     pub preferred: Option<EngineKind>,
+}
+
+impl Serialize for EngineConfig {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.validate("engine").map_err(serde::ser::Error::custom)?;
+        self.plan().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for EngineConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Legacy {
+            supported: Vec<EngineKind>,
+            #[serde(default)]
+            preferred: Option<EngineKind>,
+        }
+        let raw = serde_json::Value::deserialize(deserializer)?;
+        let config = if raw.is_array() {
+            Self {
+                supported: serde_json::from_value(raw).map_err(serde::de::Error::custom)?,
+                preferred: None,
+            }
+        } else {
+            let value: Legacy = serde_json::from_value(raw).map_err(serde::de::Error::custom)?;
+            Self {
+                supported: value.supported,
+                preferred: value.preferred,
+            }
+        };
+        config
+            .validate("engine")
+            .map_err(serde::de::Error::custom)?;
+        Ok(config)
+    }
 }
 
 impl EngineConfig {
@@ -901,6 +936,9 @@ impl ModelConfig {
 
     /// Whether the model accepts image input.
     pub fn is_vision(&self) -> bool {
+        if !self.tasks.is_empty() {
+            return self.modalities_in().iter().any(|v| v == "image");
+        }
         self.modality == Modality::VisionText
             || self.modality == Modality::Omni
             || (self.modality == Modality::Decision
@@ -928,6 +966,9 @@ impl ModelConfig {
 
     /// Whether the model accepts audio input.
     pub fn supports_audio(&self) -> bool {
+        if !self.tasks.is_empty() {
+            return self.modalities_in().iter().any(|v| v == "audio");
+        }
         self.modality == Modality::Omni
             || self.modality == Modality::SpeechToText
             || self.modality == Modality::SpeechAnalysis
@@ -951,6 +992,12 @@ impl ModelConfig {
 
     /// Whether the model is an omni multimodal model (text, image, audio, video).
     pub fn is_omni(&self) -> bool {
+        if !self.tasks.is_empty() {
+            let inputs = self.modalities_in();
+            return ["text", "image", "audio", "video"]
+                .iter()
+                .all(|kind| inputs.iter().any(|v| v == kind));
+        }
         self.modality == Modality::Omni
             || self
                 .capabilities
@@ -966,6 +1013,9 @@ impl ModelConfig {
 
     /// Whether the model is a fast System 1 decision model.
     pub fn is_decision(&self) -> bool {
+        if !self.tasks.is_empty() {
+            return self.modalities_out().iter().any(|v| v == "decision");
+        }
         self.modality == Modality::Decision
     }
 
@@ -989,12 +1039,45 @@ impl ModelConfig {
     }
 
     pub fn resolved_capabilities(&self) -> Vec<String> {
+        if !self.tasks.is_empty() {
+            let redundant = [
+                "chat",
+                "vision",
+                "audio",
+                "video",
+                "omni",
+                "text-to-image",
+                "image-to-image",
+                "text-to-speech",
+                "speech-to-text",
+                "text embeddings",
+                "embeddings",
+                "decision",
+                "system1",
+            ];
+            let mut caps: Vec<String> = self
+                .capabilities
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|cap| !redundant.contains(&cap.to_ascii_lowercase().as_str()))
+                .collect();
+            for task in &self.tasks {
+                if !caps.contains(task) {
+                    caps.push(task.clone());
+                }
+            }
+            if self.has_mtp() && !caps.iter().any(|v| v.eq_ignore_ascii_case("mtp")) {
+                caps.push("MTP".into());
+            }
+            return caps;
+        }
         if let Some(ref caps) = self.capabilities {
             if !caps.is_empty() {
                 return caps.clone();
             }
         }
-        let mut caps = vec!["Chat".to_string(), "Tool Call".to_string()];
+        let mut caps = Vec::new();
         if self.is_vision() {
             caps.push("Vision".to_string());
         }

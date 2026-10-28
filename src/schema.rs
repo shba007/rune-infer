@@ -70,6 +70,7 @@ pub struct ModelEntry {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default = "legacy_modality", skip_serializing)]
     pub modality: Modality,
     #[serde(default)]
     pub capabilities: Vec<String>,
@@ -84,14 +85,14 @@ pub struct ModelEntry {
     pub engine: Option<EngineConfig>,
     #[serde(default)]
     pub max_context_length: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "sampling_is_default")]
     pub sampling: SamplingConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local: Option<LocalBlock>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote: Option<RemoteBlock>,
     /// Engine-specific settings; see [`allowed_extra_keys`].
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub extra: Map<String, Value>,
 }
 
@@ -123,6 +124,10 @@ pub struct RemoteBlock {
     pub base_url: Option<String>,
     #[serde(default)]
     pub rate_limit: Option<RateLimitConfig>,
+}
+
+fn sampling_is_default(value: &SamplingConfig) -> bool {
+    *value == SamplingConfig::default()
 }
 
 fn default_context_length() -> i64 {
@@ -226,6 +231,54 @@ pub(crate) fn valid_task(task: &str) -> bool {
     })
 }
 
+fn legacy_modality() -> Modality {
+    Modality::Text
+}
+
+fn derived_modality(tasks: &[String]) -> Modality {
+    let outputs = |kind: &str| {
+        tasks.iter().any(|task| {
+            task.split_once("-to-")
+                .is_some_and(|(_, out)| out.split('-').any(|v| v == kind))
+        })
+    };
+    let inputs = |kind: &str| {
+        tasks.iter().any(|task| {
+            task.split_once("-to-")
+                .is_some_and(|(input, _)| input.split('-').any(|v| v == kind))
+        })
+    };
+    if outputs("decision") {
+        Modality::Decision
+    } else if outputs("embedding") {
+        if inputs("image") {
+            Modality::ImageEmbedding
+        } else {
+            Modality::Embedding
+        }
+    } else if outputs("diarization") {
+        Modality::SpeechAnalysis
+    } else if outputs("detection") {
+        Modality::ObjectDetection
+    } else if outputs("moderation") {
+        Modality::Moderation
+    } else if outputs("image") {
+        Modality::ImageGeneration
+    } else if outputs("audio") {
+        if inputs("audio") {
+            Modality::SpeechToSpeech
+        } else {
+            Modality::TextToSpeech
+        }
+    } else if inputs("image") {
+        Modality::VisionText
+    } else if inputs("audio") {
+        Modality::SpeechToText
+    } else {
+        Modality::Text
+    }
+}
+
 impl TryFrom<ModelEntry> for ModelConfig {
     type Error = anyhow::Error;
 
@@ -317,7 +370,11 @@ impl TryFrom<ModelEntry> for ModelConfig {
             id: e.id,
             name: e.name,
             provider,
-            modality: e.modality,
+            modality: if e.tasks.is_empty() {
+                e.modality
+            } else {
+                derived_modality(&e.tasks)
+            },
             model_path,
             upstream_model,
             api_key,

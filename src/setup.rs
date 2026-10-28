@@ -723,7 +723,7 @@ mod tests {
         let chat = get("chat-q6-k");
         assert_eq!(
             (chat.modality.clone(), chat.engine_plan()),
-            (Modality::VisionText, vec![EngineKind::LlamaServer])
+            (Modality::Text, vec![EngineKind::LlamaServer])
         );
         assert!(
             chat.mmproj_path
@@ -735,7 +735,7 @@ mod tests {
         let voice = get("voxcpm2-q8-0");
         assert_eq!(
             (voice.modality.clone(), voice.engine_plan()),
-            (Modality::TextToSpeech, vec![EngineKind::AudioCpp])
+            (Modality::Text, vec![EngineKind::AudioCpp])
         );
         assert!(
             voice.sampling.is_none(),
@@ -744,12 +744,16 @@ mod tests {
         let img = get("z-image-q8-0");
         assert_eq!(
             (img.modality.clone(), img.engine_plan()),
-            (Modality::ImageGeneration, vec![EngineKind::SdServer])
+            (Modality::Text, vec![EngineKind::SdServer])
         );
         assert!(
             img.description.contains("extra.vae_path"),
             "{}",
             img.description
+        );
+        assert!(
+            reg.models.iter().all(|model| model.tasks.is_empty()),
+            "Discovery alone must not establish verified tasks"
         );
         let raw = std::fs::read_to_string(&cat).unwrap();
         assert!(raw.contains("{{GEMINI_API_KEY}}") && !raw.contains("secret"));
