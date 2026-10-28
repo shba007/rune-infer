@@ -1,10 +1,10 @@
 $kind: http-request
 name: Execute Task
-url: '{{base_url}}/v1/inference?engine=encoder'
+url: '{{base_url}}/v1/inference?engine={{chat_model}}'
 method: POST
 queryParams:
   - key: engine
-    value: encoder
+    value: '{{chat_model}}'
 headers:
   - key: Content-Type
     value: application/json
@@ -14,28 +14,13 @@ body:
   type: json
   content: |-
     {
-      "ToolCall": {
-        "prompt": "Click the submit button.",
-        "schema": [
-          {
-            "type": "function",
-            "function": {
-              "name": "click_coordinate",
-              "parameters": {
-                "type": "object",
-                "properties": {
-                  "x": { "type": "number" },
-                  "y": { "type": "number" }
-                },
-                "required": ["x", "y"]
-              }
-            }
-          }
-        ],
-        "tool_choice": "required",
-        "images": [],
-        "audios": []
-      }
+      "type": "tool_call",
+      "prompt": "Reply with READY only.",
+      "schema": [],
+      "images": [],
+      "audios": [],
+      "max_tokens": 64,
+      "temperature": 0
     }
 examples: .resources/Execute Task.resources/examples
 order: 10000

@@ -788,47 +788,45 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_encoder_is_refused_before_construction() {
-        let model = model_json("Cargo.toml", r#", "engine":["encoder"]"#);
-        let error = ModelRegistry::create_engine(&model, &Default::default(), None)
-            .err()
-            .expect("synthetic engine must be refused")
-            .to_string();
-        assert!(
-            error.contains("encoder: synthetic output is unavailable"),
-            "{error}"
-        );
+    fn synthetic_encoder_is_skipped_in_direct_and_fallback_plans() {
+        for (plan, real_succeeds) in [
+            (r#", "engine":["encoder"]"#, false),
+            (r#", "engine":["llama-server","encoder"]"#, false),
+            (r#", "engine":["encoder","llama-server"]"#, true),
+        ] {
+            let model = model_json("Cargo.toml", plan);
+            let mut tried = Vec::new();
+            let result = ModelRegistry::start_first_working(&model, |kind| {
+                tried.push(kind);
+                if real_succeeds {
+                    Ok(Arc::new(Dummy("real")) as Arc<dyn InferenceEngine>)
+                } else {
+                    Err("real engine failed".into())
+                }
+            });
+            assert!(!tried.contains(&EngineKind::Encoder), "{plan}");
+            if real_succeeds {
+                assert_eq!(result.unwrap().1, EngineKind::LlamaServer);
+            } else {
+                let error = result
+                    .err()
+                    .expect("synthetic output must be refused")
+                    .to_string();
+                assert!(
+                    error.contains("encoder: synthetic output is unavailable"),
+                    "{error}"
+                );
+                if !tried.is_empty() {
+                    assert!(error.contains("real engine failed"), "{error}");
+                } else {
+                    assert!(
+                        ModelRegistry::create_engine(&model, &Default::default(), None).is_err()
+                    );
+                }
+            }
+            assert_eq!(tried.len(), usize::from(plan.contains("llama-server")));
+        }
     }
-
-    #[test]
-    fn failed_real_engine_cannot_fall_back_to_synthetic_output() {
-        let model = model_json("Cargo.toml", r#", "engine":["llama-server","encoder"]"#);
-        let mut tried = Vec::new();
-        let error = ModelRegistry::start_first_working(&model, |kind| {
-            tried.push(kind);
-            Err("real engine failed".into())
-        })
-        .err()
-        .expect("synthetic fallback must not succeed")
-        .to_string();
-        assert_eq!(tried, vec![EngineKind::LlamaServer]);
-        assert!(error.contains("real engine failed"));
-        assert!(error.contains("encoder: synthetic output is unavailable"));
-    }
-
-    #[test]
-    fn synthetic_preference_does_not_prevent_real_engine_fallback() {
-        let model = model_json("Cargo.toml", r#", "engine":["encoder","llama-server"]"#);
-        let mut tried = Vec::new();
-        let (_, kind) = ModelRegistry::start_first_working(&model, |kind| {
-            tried.push(kind);
-            Ok(Arc::new(Dummy("real")) as Arc<dyn InferenceEngine>)
-        })
-        .expect("real engine should still start");
-        assert_eq!(tried, vec![EngineKind::LlamaServer]);
-        assert_eq!(kind, EngineKind::LlamaServer);
-    }
-
     #[test]
     fn falls_back_to_the_next_supported_engine_when_preferred_fails() {
         let mut tried = Vec::new();

@@ -79,11 +79,6 @@ pub async fn image_generation_handler(
         Err(resp) => return resp,
     };
 
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
-
     let resolved_size = resolve_image_dimensions(
         request.size.as_deref(),
         request.aspect_ratio.as_deref(),
@@ -102,6 +97,11 @@ pub async fn image_generation_handler(
             .sample_method
             .clone()
             .or_else(|| gate.model_config.default_sample_method.clone()),
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let output = match gate.execute_task(&state, engine, task).await {
@@ -222,10 +222,6 @@ pub async fn image_edit_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
 
     let task = InferenceTaskRequest::ImageGeneration {
         prompt: prompt.unwrap_or_default(),
@@ -236,6 +232,11 @@ pub async fn image_edit_handler(
         cfg_scale: None,
         seed: None,
         sample_method: None,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let output = match gate.execute_task(&state, engine, task).await {

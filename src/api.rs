@@ -8,6 +8,7 @@ pub mod images;
 pub mod moderation;
 pub mod nlu;
 pub mod ocr;
+mod task;
 // pub mod responses;
 
 pub use gate::ModelExecutionGate;
@@ -629,7 +630,7 @@ async fn inference_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };

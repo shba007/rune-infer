@@ -106,11 +106,6 @@ pub async fn document_ocr_handler(
 
     let (image_bytes, width, height) = decoded_frames.into_iter().next().unwrap();
 
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
-
     let features = request
         .features
         .unwrap_or_else(|| vec!["text".to_string(), "selection_marks".to_string()]);
@@ -122,6 +117,11 @@ pub async fn document_ocr_handler(
         height,
         features,
         response_format: request.response_format,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let output = match gate.execute_task(&state, engine, task).await {

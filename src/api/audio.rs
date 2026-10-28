@@ -187,11 +187,6 @@ pub async fn audio_transcriptions_handler(
         Err(resp) => return resp,
     };
 
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
-
     let diar_audio_bytes = if diarize {
         Some(file_bytes.clone())
     } else {
@@ -206,6 +201,11 @@ pub async fn audio_transcriptions_handler(
         language,
         temperature,
         response_format,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let mut output = match gate.execute_task(&state, engine, task).await {
@@ -228,15 +228,17 @@ pub async fn audio_transcriptions_handler(
                     Ok(gate) => gate,
                     Err(resp) => return resp,
                 };
-            let diar_engine = match auxiliary_gate.load_engine(&state).await {
-                Ok(engine) => engine,
-                Err(resp) => return resp,
-            };
+
             let diar_task = InferenceTaskRequest::AudioDiarization {
                 audio_bytes: diar_audio_bytes.unwrap_or_default(),
                 filename: diar_filename.clone(),
                 speaker_threshold: None,
                 max_speakers: None,
+            };
+
+            let diar_engine = match auxiliary_gate.load_task_engine(&state, &diar_task).await {
+                Ok(engine) => engine,
+                Err(resp) => return resp,
             };
             let diar_output = match auxiliary_gate
                 .execute_task(&state, diar_engine, diar_task)
@@ -429,17 +431,17 @@ pub async fn audio_translations_handler(
         Err(resp) => return resp,
     };
 
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
-
     let task = InferenceTaskRequest::AudioTranslation {
         audio_bytes: file_bytes,
         filename,
         prompt,
         temperature,
         response_format,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let output = match gate.execute_task(&state, engine, task).await {
@@ -528,11 +530,6 @@ pub async fn audio_speech_handler(
         Err(resp) => return resp,
     };
 
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
-
     let format_str = request
         .response_format
         .clone()
@@ -542,6 +539,11 @@ pub async fn audio_speech_handler(
         voice: request.voice,
         response_format: Some(format_str.clone()),
         speed: request.speed,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let output = match gate.execute_task(&state, engine, task).await {
@@ -675,16 +677,17 @@ pub async fn speech_to_speech_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
 
     let task = InferenceTaskRequest::SpeechToSpeech {
         audio_bytes: file_bytes,
         target_language,
         source_language,
         response_format: response_format.clone(),
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let exec_res = gate.execute_task(&state, engine, task).await;
@@ -995,10 +998,6 @@ pub async fn audio_diarization_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
 
     let asr_audio_bytes = file_bytes.clone();
     let asr_filename = filename.clone();
@@ -1008,6 +1007,11 @@ pub async fn audio_diarization_handler(
         filename,
         speaker_threshold,
         max_speakers,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let exec_res = gate.execute_task(&state, engine, task).await;
@@ -1042,10 +1046,7 @@ pub async fn audio_diarization_handler(
                         Ok(gate) => gate,
                         Err(resp) => return resp,
                     };
-                    let asr_engine = match auxiliary_gate.load_engine(&state).await {
-                        Ok(engine) => engine,
-                        Err(resp) => return resp,
-                    };
+
                     let asr_task = InferenceTaskRequest::AudioTranscription {
                         audio_bytes: asr_audio_bytes,
                         filename: asr_filename,
@@ -1053,6 +1054,12 @@ pub async fn audio_diarization_handler(
                         language,
                         temperature: None,
                         response_format: Some("verbose_json".to_string()),
+                    };
+
+                    let asr_engine = match auxiliary_gate.load_task_engine(&state, &asr_task).await
+                    {
+                        Ok(engine) => engine,
+                        Err(resp) => return resp,
                     };
 
                     let asr_output = match auxiliary_gate

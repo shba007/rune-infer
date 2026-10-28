@@ -38,6 +38,16 @@ pub struct ModelExecutionGate {
 }
 
 impl ModelExecutionGate {
+    #[allow(clippy::result_large_err)]
+    pub async fn load_task_engine(
+        &self,
+        state: &Arc<AppState>,
+        task: &InferenceTaskRequest,
+    ) -> Result<Arc<dyn InferenceEngine>, Response> {
+        super::task::Requirements::task(task).check(state, &self.model_config, None)?;
+        self.load_engine(state).await
+    }
+
     fn yielded_response(&self, state: &Arc<AppState>) -> Response {
         self.attach_headers(
             state,
@@ -317,6 +327,7 @@ impl ModelExecutionGate {
                 ));
             }
         }
+        super::task::Requirements::task(&task).check(state, &self.model_config, Some(&engine))?;
         let engine_clone = engine.clone();
         let task_clone = task.clone();
         let start_time = std::time::Instant::now();

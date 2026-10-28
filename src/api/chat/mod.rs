@@ -162,6 +162,18 @@ pub async fn chat_completions_handler(
         _ => {}
     }
 
+    if body_val
+        .get("modalities")
+        .is_some_and(|value| !value.is_null() && value != &serde_json::json!(["text"]))
+        || body_val.get("audio").is_some_and(|value| !value.is_null())
+    {
+        return structured::error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_output_modality",
+            "Chat completions currently produce text output only.".into(),
+        );
+    }
+
     if let Err(err_resp) = tools::validate_tools(&body_val) {
         return err_resp.into_response();
     }
@@ -208,6 +220,11 @@ pub async fn chat_completions_handler(
                 .into_response();
         }
     };
+
+    let requirements = crate::api::task::Requirements::chat(&request);
+    if let Err(response) = requirements.check(&state, &model_config, None) {
+        return response;
+    }
 
     let no_swap = headers
         .get("x-no-swap")
@@ -383,6 +400,10 @@ pub async fn chat_completions_handler(
                 .into_response();
         }
     };
+
+    if let Err(response) = requirements.check(&state, &model_config, Some(&engine)) {
+        return response;
+    }
 
     let load_duration_ms = state
         .inference

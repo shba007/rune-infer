@@ -123,16 +123,16 @@ pub async fn decisions_handler(
         }
     }
 
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
-
     let task = InferenceTaskRequest::Decision {
         model: Some(gate.model_config.id.clone()),
         text,
         images: decoded_images,
         questions,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let output = match gate.execute_task(&state, engine, task).await {

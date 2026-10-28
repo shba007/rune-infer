@@ -48,16 +48,16 @@ pub async fn nlu_intents_handler(
         Err(resp) => return resp,
     };
 
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
-
     let task = InferenceTaskRequest::NluIntent {
         model: Some(gate.model_config.id.clone()),
         text,
         candidate_intents: request.candidate_intents,
         candidate_entities: request.candidate_entities,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let output = match gate.execute_task(&state, engine, task).await {

@@ -66,7 +66,7 @@ pub async fn image_caption_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };
@@ -117,7 +117,7 @@ pub async fn image_upscale_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };
@@ -169,7 +169,7 @@ pub async fn image_restoration_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };
@@ -231,7 +231,7 @@ pub async fn image_style_transfer_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };

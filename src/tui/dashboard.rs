@@ -670,6 +670,7 @@ struct EngineRow {
     installed: bool,
     version: String,
     latest: String,
+    build_tag: Option<String>,
     published_at: Option<String>,
     check_detail: Option<String>,
 }
@@ -763,6 +764,7 @@ fn discover_engines() -> Vec<EngineRow> {
                 } else {
                     "External".into()
                 },
+                build_tag: None,
                 published_at: None,
                 check_detail: None,
             }
@@ -775,6 +777,7 @@ fn discover_engines() -> Vec<EngineRow> {
         installed: true,
         version: "Built in".into(),
         latest: "Built in".into(),
+        build_tag: None,
         published_at: None,
         check_detail: Some("Built-in encoder uses synthetic outputs".into()),
     });
@@ -795,11 +798,13 @@ fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
             match check_latest_release(rows[index].name) {
                 Ok(release) => {
                     rows[index].latest = release.tag;
+                    rows[index].build_tag = release.build_tag;
                     rows[index].published_at = release.published_at;
                     rows[index].check_detail = Some(release.detail);
                 }
                 Err(error) => {
                     rows[index].latest = "Check failed".into();
+                    rows[index].build_tag = None;
                     rows[index].check_detail = Some(error);
                 }
             }
@@ -842,6 +847,7 @@ fn release_url(name: &str) -> Option<&'static str> {
 
 struct AvailableRelease {
     tag: String,
+    build_tag: Option<String>,
     published_at: Option<String>,
     detail: String,
 }
@@ -871,6 +877,7 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
             .ok_or("No immutable Needle revision found")?;
         return Ok(AvailableRelease {
             tag: format!("revision {revision}"),
+            build_tag: None,
             published_at: value["lastModified"].as_str().map(str::to_owned),
             detail:
                 "Approved Needle distribution · revision and SHA-256 verified during installation"
@@ -911,6 +918,7 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
         .map(str::to_owned);
     Ok(AvailableRelease {
         tag,
+        build_tag: value["rune_build_tag"].as_str().map(str::to_owned),
         published_at,
         detail,
     })
@@ -1006,12 +1014,33 @@ fn release_status(engine: &EngineRow) -> &'static str {
         }
         return "Revision unknown";
     }
+    if engine.latest == "Check failed" {
+        return "Check failed";
+    }
+    if matches!(engine.name, "llama-server" | "llama-server-prism") {
+        let available = engine.build_tag.as_deref().unwrap_or(&engine.latest);
+        if let Some((installed, published)) =
+            engine_build_identity(&engine.version).zip(engine_build_identity(available))
+        {
+            return match installed.0.cmp(&published.0) {
+                std::cmp::Ordering::Less => "New release",
+                std::cmp::Ordering::Greater => "Ahead",
+                std::cmp::Ordering::Equal => match (installed.1, published.1) {
+                    (Some(a), Some(b))
+                        if !a.to_ascii_lowercase().starts_with(&b.to_ascii_lowercase())
+                            && !b.to_ascii_lowercase().starts_with(&a.to_ascii_lowercase()) =>
+                    {
+                        "Different revision"
+                    }
+                    (None, Some(_)) => "Unknown",
+                    _ => "Up to date",
+                },
+            };
+        }
+    }
     let lower = engine.version.to_ascii_lowercase();
     if lower.contains("nightly") || lower.contains("-dev") {
         return "Development build";
-    }
-    if engine.latest == "Check failed" {
-        return "Check failed";
     }
     let compare = if matches!(engine.name, "llama-server" | "llama-server-prism")
         && engine.latest.starts_with('b')
@@ -1048,6 +1077,26 @@ fn release_status(engine: &EngineRow) -> &'static str {
         Some(std::cmp::Ordering::Greater) => "Ahead",
         None => "Unknown",
     }
+}
+
+fn engine_build_identity(text: &str) -> Option<(u64, Option<&str>)> {
+    let (build, commit) = if let Some((_, tail)) = text.split_once("build ") {
+        let build = tail.split(|c: char| !c.is_ascii_digit()).next()?;
+        let commit = tail.split_once("commit ").map(|(_, commit)| commit);
+        (build, commit)
+    } else {
+        let tail = text
+            .strip_prefix("prism-")
+            .unwrap_or(text)
+            .strip_prefix('b')?;
+        tail.split_once('-')
+            .map_or((tail, None), |(build, commit)| (build, Some(commit)))
+    };
+    let commit = commit.and_then(|value| {
+        let value = value.split(|c: char| !c.is_ascii_hexdigit()).next()?;
+        (value.len() >= 7).then_some(value)
+    });
+    Some((build.parse().ok()?, commit))
 }
 
 fn release_age(published_at: &str, now: chrono::DateTime<chrono::Utc>) -> Option<String> {
@@ -2018,6 +2067,7 @@ mod tests {
             installed: true,
             version: "0.9.2".into(),
             latest: "Not checked".into(),
+            build_tag: None,
             published_at: None,
             check_detail: None,
         });
@@ -2053,6 +2103,7 @@ mod tests {
                 installed: true,
                 version: "0.9.2".into(),
                 latest: "Not checked".into(),
+                build_tag: None,
                 published_at: None,
                 check_detail: None,
             },
@@ -2063,6 +2114,7 @@ mod tests {
                 installed: true,
                 version: "1.0".into(),
                 latest: "Not checked".into(),
+                build_tag: None,
                 published_at: None,
                 check_detail: None,
             },
@@ -2112,6 +2164,7 @@ mod tests {
             installed: true,
             version: "audio.cpp 0.9.2".into(),
             latest: "v0.9.3".into(),
+            build_tag: None,
             published_at: None,
             check_detail: None,
         };
@@ -2131,7 +2184,75 @@ mod tests {
         row.name = "llama-server";
         row.version = "0.6.0-dev (build 11512, commit abc)".into();
         row.latest = "b11512".into();
-        assert_eq!(release_status(&row), "Development build");
+        assert_eq!(release_status(&row), "Up to date");
+        for (name, version, latest, build, expected) in [
+            (
+                "llama-server",
+                "0.7.0-dev (build 11669, commit 620d2225c)",
+                "v0.7.0",
+                Some("b11669"),
+                "Up to date",
+            ),
+            (
+                "llama-server",
+                "0.7.0-dev (build 11668, commit 620d2225c)",
+                "v0.7.0",
+                Some("b11669"),
+                "New release",
+            ),
+            (
+                "llama-server",
+                "0.7.0-dev (build 11670, commit 620d2225c)",
+                "v0.7.0",
+                Some("b11669"),
+                "Ahead",
+            ),
+            (
+                "llama-server",
+                "0.7.0-dev (build 11669, commit 620d2225c)",
+                "v0.7.0",
+                None,
+                "Development build",
+            ),
+            (
+                "llama-server-prism",
+                "0.2.0-dev (build 10826, commit c9c34bc9c)",
+                "prism-b10826-c9c34bc",
+                None,
+                "Up to date",
+            ),
+            (
+                "llama-server-prism",
+                "0.2.0-dev (build 10826, commit aaaaaaa)",
+                "prism-b10826-c9c34bc",
+                None,
+                "Different revision",
+            ),
+            (
+                "llama-server-prism",
+                "0.2.0-dev (build 10826)",
+                "prism-b10826-c9c34bc",
+                None,
+                "Unknown",
+            ),
+            (
+                "llama-server",
+                "0.7.0-dev (build 11669)",
+                "Check failed",
+                Some("b11669"),
+                "Check failed",
+            ),
+        ] {
+            row.name = name;
+            row.version = version.into();
+            row.latest = latest.into();
+            row.build_tag = build.map(str::to_owned);
+            assert_eq!(
+                release_status(&row),
+                expected,
+                "{name}: {version} / {latest}"
+            );
+        }
     }
 
     #[test]
@@ -2168,6 +2289,7 @@ mod tests {
             installed: false,
             version: "Not installed".into(),
             latest: "v1.9.2".into(),
+            build_tag: None,
             published_at: None,
             check_detail: None,
         });
@@ -2221,6 +2343,7 @@ mod tests {
             installed: false,
             version: "Not installed".into(),
             latest: "v1.9.2".into(),
+            build_tag: None,
             published_at: None,
             check_detail: None,
         };
@@ -2282,6 +2405,7 @@ mod tests {
                 installed: true,
                 version: "audio.cpp 0.9.2".into(),
                 latest: "Not checked".into(),
+                build_tag: None,
                 published_at: None,
                 check_detail: None,
             },
@@ -2292,6 +2416,7 @@ mod tests {
                 installed: true,
                 version: "Unknown".into(),
                 latest: "Not checked".into(),
+                build_tag: None,
                 published_at: None,
                 check_detail: None,
             },

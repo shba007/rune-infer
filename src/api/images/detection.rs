@@ -66,7 +66,7 @@ pub async fn detect_objects_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };
@@ -147,7 +147,7 @@ pub async fn image_embeddings_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };
@@ -198,7 +198,7 @@ pub async fn recognize_objects_handler(
         Ok(gate) => gate,
         Err(resp) => return resp,
     };
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };
@@ -306,7 +306,7 @@ pub async fn image_grounding_handler(
         height: h,
     };
 
-    let engine = match gate.load_engine(&state).await {
+    let engine = match gate.load_task_engine(&state, &task).await {
         Ok(engine) => engine,
         Err(resp) => return resp,
     };

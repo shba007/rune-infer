@@ -12,29 +12,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-#[cfg(windows)]
-fn run_fixed_speech_script(
-    script: &'static str,
-    payload: &[u8],
-) -> std::io::Result<std::process::Output> {
-    use std::io::Write;
-    use std::process::Stdio;
-    let mut child = crate::inference::process::system_command("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let Some(mut stdin) = child.stdin.take() {
-        if let Err(error) = stdin.write_all(payload) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(error);
-        }
-    }
-    child.wait_with_output()
-}
-
 static AUDIO_REQ_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn generate_unique_audio_id() -> String {
@@ -185,11 +162,11 @@ pub struct AudioEngine {
 
 impl AudioEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
-        Self::new_with_fallback(model, true)
+        Self::new_with_fallback(model, false)
     }
 
     pub(crate) fn new_for_setup(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
-        Self::new_with_fallback(model, false)
+        Self::new(model)
     }
 
     fn new_with_fallback(
@@ -478,62 +455,6 @@ impl AudioEngine {
                 Ok(fallback)
             }
         }
-    }
-
-    fn generate_sine_wav_fallback(duration_secs: f32, sample_rate: u32) -> Vec<u8> {
-        let num_samples = (duration_secs * sample_rate as f32) as u32;
-        let byte_rate = sample_rate * 2;
-        let block_align = 2u16;
-        let bits_per_sample = 16u16;
-        let data_len = num_samples * 2;
-        let file_len = 36 + data_len;
-
-        let mut buf = Vec::with_capacity(file_len as usize + 8);
-        buf.extend_from_slice(b"RIFF");
-        buf.extend_from_slice(&file_len.to_le_bytes());
-        buf.extend_from_slice(b"WAVE");
-        buf.extend_from_slice(b"fmt ");
-        buf.extend_from_slice(&16u32.to_le_bytes());
-        buf.extend_from_slice(&1u16.to_le_bytes());
-        buf.extend_from_slice(&1u16.to_le_bytes());
-        buf.extend_from_slice(&sample_rate.to_le_bytes());
-        buf.extend_from_slice(&byte_rate.to_le_bytes());
-        buf.extend_from_slice(&block_align.to_le_bytes());
-        buf.extend_from_slice(&bits_per_sample.to_le_bytes());
-        buf.extend_from_slice(b"data");
-        buf.extend_from_slice(&data_len.to_le_bytes());
-
-        for i in 0..num_samples {
-            let t = i as f32 / sample_rate as f32;
-            let sample = (t * 440.0 * 2.0 * std::f32::consts::PI).sin() * 0.1;
-            let sample_i16 = (sample * 32767.0) as i16;
-            buf.extend_from_slice(&sample_i16.to_le_bytes());
-        }
-        buf
-    }
-
-    fn generate_voice_fallback(text: &str, temp_dir: &Path, req_id: &str) -> Vec<u8> {
-        #[cfg(windows)]
-        {
-            let fallback_wav = temp_dir.join(format!("voice_fallback_{}.wav", req_id));
-            // System.Speech has no existing native binding here. Keep a fixed script
-            // and pass all request/path values as JSON data, never PowerShell source.
-            const SCRIPT: &str = r#"$ErrorActionPreference='Stop'; [Console]::InputEncoding=[System.Text.Encoding]::UTF8; $data=[Console]::In.ReadToEnd() | ConvertFrom-Json; Add-Type -AssemblyName System.Speech; $synth=New-Object System.Speech.Synthesis.SpeechSynthesizer; try { $synth.SetOutputToWaveFile($data.path); $synth.Speak($data.text) } finally { $synth.Dispose() }"#;
-            let payload = serde_json::json!({"text": text, "path": fallback_wav}).to_string();
-            let output = run_fixed_speech_script(SCRIPT, payload.as_bytes());
-            if let Ok(out) = output {
-                if out.status.success() && fallback_wav.exists() {
-                    if let Ok(bytes) = std::fs::read(&fallback_wav) {
-                        let _ = std::fs::remove_file(&fallback_wav);
-                        if bytes.len() > 44 {
-                            return bytes;
-                        }
-                    }
-                }
-            }
-        }
-        let _ = (text, temp_dir, req_id);
-        Self::generate_sine_wav_fallback(1.5, 16000)
     }
 }
 
@@ -1005,61 +926,23 @@ impl InferenceEngine for AudioEngine {
                     backend_flag
                 );
 
-                if !self.allow_synthetic_fallback {
-                    let result = match cmd.output() {
-                        Ok(output) if output.status.success() => {
-                            std::fs::read(&output_wav_path).map_err(|e| e.to_string())
-                        }
-                        Ok(output) => Err(audio_failure("TTS", &output)),
-                        Err(error) => Err(format!("audio.cpp could not start: {error}")),
-                    };
-                    let _ = std::fs::remove_dir_all(&temp_dir);
-                    return result
-                        .map(|bytes| InferenceOutput {
-                            response: InferenceTaskResponse::Audio(bytes),
-                            usage: Usage::default(),
-                        })
-                        .map_err(Into::into);
-                }
-
-                let audio_data = match cmd.output() {
-                    Ok(out) if out.status.success() && output_wav_path.exists() => {
-                        std::fs::read(&output_wav_path).unwrap_or_else(|_| {
-                            Self::generate_voice_fallback(input, &temp_dir, &req_id)
-                        })
+                let result = match cmd.output() {
+                    Ok(output) if output.status.success() => {
+                        std::fs::read(&output_wav_path).map_err(|e| e.to_string())
                     }
-                    Ok(out) => {
-                        let err_str = String::from_utf8_lossy(&out.stderr);
-                        tracing::warn!(
-                            "[AudioEngine] audiocpp_cli TTS returned code {:?}: {}",
-                            out.status.code(),
-                            err_str.trim()
-                        );
-                        Self::generate_voice_fallback(input, &temp_dir, &req_id)
-                    }
-                    Err(e) => {
-                        tracing::warn!("[AudioEngine] Failed to spawn audiocpp_cli TTS: {}", e);
-                        Self::generate_voice_fallback(input, &temp_dir, &req_id)
-                    }
+                    Ok(output) => Err(audio_failure("TTS", &output)),
+                    Err(error) => Err(format!("audio.cpp could not start: {error}")),
                 };
-
                 let _ = std::fs::remove_dir_all(&temp_dir);
-
-                let prompt_tokens = (input.len() / 4).max(1) as u32;
-                let completion_tokens = (audio_data.len() / 3200).max(1) as u32;
-                Ok(InferenceOutput {
-                    response: InferenceTaskResponse::Audio(audio_data),
-                    usage: Usage::new(prompt_tokens, completion_tokens),
-                })
+                result
+                    .map(|bytes| InferenceOutput {
+                        response: InferenceTaskResponse::Audio(bytes),
+                        usage: Usage::default(),
+                    })
+                    .map_err(Into::into)
             }
-            InferenceTaskRequest::SpeechToSpeech { audio_bytes, .. } => {
-                let audio_data = Self::generate_sine_wav_fallback(2.0, 16000);
-                let prompt_tokens = (audio_bytes.len() / 3200).max(1) as u32;
-                let completion_tokens = (audio_data.len() / 3200).max(1) as u32;
-                Ok(InferenceOutput {
-                    response: InferenceTaskResponse::Audio(audio_data),
-                    usage: Usage::new(prompt_tokens, completion_tokens),
-                })
+            InferenceTaskRequest::SpeechToSpeech { .. } => {
+                Err("audio.cpp speech-to-speech inference is not implemented".into())
             }
             _ => Err("AudioEngine only supports Audio tasks".into()),
         }
@@ -1069,23 +952,6 @@ impl InferenceEngine for AudioEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg(windows)]
-    #[test]
-    fn speech_payload_remains_data_including_shell_syntax_and_unicode() {
-        let data = serde_json::json!({"text":"\"); Write-Output RUNE_AUDIT_MARKER; # $env:USERNAME ` \n नमस्ते", "path":"D:/O'Brien/voice.wav"});
-        const ECHO: &str = r#"$ErrorActionPreference='Stop'; [Console]::InputEncoding=[Text.Encoding]::UTF8; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); $data=[Console]::In.ReadToEnd() | ConvertFrom-Json; [Console]::Write(($data | ConvertTo-Json -Compress))"#;
-        let output = run_fixed_speech_script(ECHO, data.to_string().as_bytes()).unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
-            data
-        );
-    }
 
     #[test]
     fn windows_cuda_build_installs_its_matching_runtime_first() {
@@ -1167,14 +1033,6 @@ mod tests {
     }
 
     #[test]
-    fn test_audio_speech_fallback_synthesis() {
-        let wav = AudioEngine::generate_sine_wav_fallback(0.5, 16000);
-        assert!(wav.len() > 44);
-        assert_eq!(&wav[0..4], b"RIFF");
-        assert_eq!(&wav[8..12], b"WAVE");
-    }
-
-    #[test]
     fn test_audio_transcription_mock_fallback() {
         let raw = r#"{
             "id": "audio8-asr-infinite",
@@ -1193,8 +1051,7 @@ mod tests {
         }"#;
         let entry: crate::schema::ModelEntry = serde_json::from_str(raw).expect("valid json");
         let model = ModelConfig::try_from(entry).expect("valid model config");
-        let engine =
-            AudioEngine::new(&model).expect("audio engine should initialize with Cargo.toml mock");
+        let engine = AudioEngine::new_with_fallback(&model, true).expect("explicit test double");
         let task = InferenceTaskRequest::AudioTranscription {
             audio_bytes: b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00".to_vec(),
             filename: "test.wav".to_string(),
@@ -1219,25 +1076,35 @@ mod strict_setup_tests {
     use super::*;
 
     #[test]
-    fn strict_tts_check_never_substitutes_synthetic_audio() {
-        let engine = AudioEngine {
-            id: "rune-setup-check".into(),
-            bin_path: std::env::temp_dir().join(format!(
-                "absent-engine-{}",
-                crate::setup::generate_api_key()
-            )),
-            model_path: PathBuf::from("fixture.gguf"),
-            allow_synthetic_fallback: false,
-            family: None,
-            use_gpu: false,
-        };
-        let task = InferenceTaskRequest::AudioSpeech {
-            input: "Hello".into(),
-            voice: None,
-            response_format: Some("wav".into()),
-            speed: None,
-        };
-        let error = engine.execute(&task, None).unwrap_err().to_string();
-        assert!(error.contains("could not start"));
+    fn audio_generation_never_substitutes_synthetic_audio() {
+        for allow_synthetic_fallback in [false, true] {
+            let engine = AudioEngine {
+                id: "rune-setup-check".into(),
+                bin_path: std::env::temp_dir().join(format!(
+                    "absent-engine-{}",
+                    crate::setup::generate_api_key()
+                )),
+                model_path: PathBuf::from("fixture.gguf"),
+                allow_synthetic_fallback,
+                family: None,
+                use_gpu: false,
+            };
+            let task = InferenceTaskRequest::AudioSpeech {
+                input: "Hello".into(),
+                voice: None,
+                response_format: Some("wav".into()),
+                speed: None,
+            };
+            let error = engine.execute(&task, None).unwrap_err().to_string();
+            assert!(error.contains("could not start"));
+            let task = InferenceTaskRequest::SpeechToSpeech {
+                audio_bytes: vec![0; 44],
+                target_language: "en".into(),
+                source_language: None,
+                response_format: Some("wav".into()),
+            };
+            let error = engine.execute(&task, None).unwrap_err().to_string();
+            assert!(error.contains("not implemented"));
+        }
     }
 }

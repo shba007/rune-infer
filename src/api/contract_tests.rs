@@ -27,6 +27,254 @@ async fn unverified_models_are_refused_before_execution() {
     assert_eq!(value["error"]["code"], "model_tasks_unverified");
 }
 
+#[tokio::test]
+async fn task_combinations_are_checked_before_loading_or_proxying() {
+    let image = serde_json::json!({"type":"image_url","image_url":{"url":"invalid-image"}});
+    let audio = serde_json::json!({"type":"input_audio","input_audio":{"data":"invalid-audio","format":"wav"}});
+    for (uri, tasks, body, code) in [
+        (
+            "/v1/chat/completions",
+            vec!["text-to-text"],
+            serde_json::json!({"messages":[{"role":"user","content":"hello"}],"modalities":["text","audio"]}),
+            "unsupported_output_modality",
+        ),
+        (
+            "/v1/chat/completions",
+            vec![],
+            serde_json::json!({"messages":[{"role":"user","content":"hello"}]}),
+            "model_tasks_unverified",
+        ),
+        (
+            "/v1/chat/completions",
+            vec!["text-to-embedding"],
+            serde_json::json!({"messages":[{"role":"user","content":"hello"}]}),
+            "model_task_unsupported",
+        ),
+        (
+            "/v1/chat/completions",
+            vec!["text-image-to-text", "audio-to-text"],
+            serde_json::json!({"messages":[{"role":"user","content":[image.clone(),audio.clone()]}]}),
+            "model_task_unsupported",
+        ),
+        (
+            "/v1/inference?engine=fixture",
+            vec!["text-to-text"],
+            serde_json::json!({"type":"embedding","input":["hello"]}),
+            "model_task_unsupported",
+        ),
+        (
+            "/v1/inference?engine=fixture",
+            vec!["text-image-to-text", "audio-to-text"],
+            serde_json::json!({"type":"tool_call","prompt":"hello","schema":[],"images":[[1]],"audios":[[2]]}),
+            "model_task_unsupported",
+        ),
+        (
+            "/v1/inference?engine=fixture",
+            vec!["text-to-image"],
+            serde_json::json!({"type":"image_generation","prompt":"square"}),
+            "engine_task_unsupported",
+        ),
+    ] {
+        for cloud in [false, true] {
+            if cloud && code == "engine_task_unsupported" {
+                continue;
+            }
+            let (router, state) = app(None);
+            let mut body = body.clone();
+            body["model"] = "fixture".into();
+            {
+                let mut config = state.config.write().unwrap();
+                let model = &mut config.models[0];
+                model.tasks = tasks.iter().map(|task| (*task).to_string()).collect();
+                if cloud {
+                    model.provider = crate::config::ProviderType::Google;
+                    model.engine = None;
+                }
+            }
+            let response = router
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                if code == "model_tasks_unverified" {
+                    StatusCode::SERVICE_UNAVAILABLE
+                } else {
+                    StatusCode::BAD_REQUEST
+                },
+                "{uri}, cloud={cloud}"
+            );
+            let value: serde_json::Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap())
+                    .unwrap();
+            assert_eq!(value["error"]["code"], code, "{uri}, cloud={cloud}");
+            let registry = state.inference.registry.lock().unwrap();
+            assert!(registry.loaded_models().is_empty() && registry.loading_models().is_empty());
+        }
+    }
+}
+
+#[test]
+fn task_subsets_require_one_matching_claim_and_implemented_engine() {
+    let (_, state) = app(None);
+    let mut model = state.config().models[0].clone();
+    model.tasks = vec!["text-image-to-text".into()];
+    for (inputs, output, engine, expected) in [
+        (vec!["text"], "text", None, true),
+        (vec!["image"], "text", None, true),
+        (vec!["text", "image"], "text", None, true),
+        (vec!["text", "audio"], "text", None, false),
+        (vec!["text"], "embedding", None, false),
+        (
+            vec!["image"],
+            "text",
+            Some(crate::config::EngineKind::Needle),
+            false,
+        ),
+        (
+            vec!["text"],
+            "text",
+            Some(crate::config::EngineKind::SdServer),
+            false,
+        ),
+        (
+            vec!["image"],
+            "text",
+            Some(crate::config::EngineKind::LlamaServer),
+            false,
+        ),
+    ] {
+        assert_eq!(
+            super::task::Requirements::new(&inputs, output, "chat")
+                .validate(&model, engine)
+                .is_ok(),
+            expected
+        );
+    }
+    model.tasks = vec!["image-to-text".into()];
+    let request = serde_json::from_value(serde_json::json!({"model":"fixture","messages":[
+        {"role":"user","content":[{"type":"image_url","image_url":{"url":"image"}}]}
+    ]}))
+    .unwrap();
+    assert!(
+        super::task::Requirements::chat(&request)
+            .validate(&model, None)
+            .is_ok()
+    );
+
+    let root = std::env::temp_dir().join(format!(
+        "rune-task-projector-{}",
+        crate::setup::generate_api_key()
+    ));
+    let projector = root.join("projector.gguf");
+    model.mmproj_path = Some(projector.to_string_lossy().into_owned());
+    model.tasks = vec!["text-image-audio-to-text".into()];
+    for (vision, audio, inputs, expected) in [
+        (true, false, vec!["image"], true),
+        (true, false, vec!["audio"], false),
+        (false, true, vec!["image"], false),
+        (true, true, vec!["image", "audio"], true),
+    ] {
+        crate::detect::testing::Gguf::new("clip")
+            .bool_kv("clip.has_vision_encoder", vision)
+            .bool_kv("clip.has_audio_encoder", audio)
+            .write(&projector);
+        assert_eq!(
+            super::task::Requirements::new(&inputs, "text", "chat")
+                .validate(&model, Some(crate::config::EngineKind::LlamaServer))
+                .is_ok(),
+            expected
+        );
+    }
+    std::fs::remove_file(projector).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires the configured MiniCPM weights, projector and installed llama-server; runs real GPU inference"]
+async fn live_minicpm_task_combinations() {
+    let catalog: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string("config/catalog.json").unwrap()).unwrap();
+    let entry: crate::schema::ModelEntry = serde_json::from_value(
+        catalog["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == "minicpm-o-4-5-q8-0")
+            .unwrap()
+            .clone(),
+    )
+    .unwrap();
+    let mut model = crate::config::ModelConfig::try_from(entry).unwrap();
+    model.runtime.as_mut().unwrap().context_length = 4096;
+    let mut config = ModelRegistry::default();
+    config.models.push(model);
+    let inference = Arc::new(crate::inference::AppState::new(&config));
+    let state = AppState::new(
+        inference.clone(),
+        Arc::new(ProxyService::new(&config)),
+        config,
+    );
+    let router = create_router(state);
+    let image = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD
+            .encode(include_bytes!("../../tests/fixtures/studio/off-center.png"))
+    );
+    for (task, content, expected) in [
+        (
+            "text-to-text",
+            serde_json::json!("Reply with READY only."),
+            vec!["ready"],
+        ),
+        (
+            "text-image-to-text",
+            serde_json::json!([
+                {"type":"text","text":"Describe the colored shape and its position in one sentence."},
+                {"type":"image_url","image_url":{"url":image}}
+            ]),
+            vec!["red", "square"],
+        ),
+    ] {
+        let body = serde_json::json!({"model":"minicpm-o-4-5-q8-0","messages":[{"role":"user","content":content}],"thinking":false,"reasoning_effort":"none","temperature":0,"max_tokens":64});
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(240),
+            router.clone().oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(status, StatusCode::OK, "{task}: {value}");
+        let answer = value["choices"][0]["message"]["content"].as_str().unwrap();
+        assert!(
+            expected
+                .iter()
+                .all(|word| answer.to_ascii_lowercase().contains(word)),
+            "{task}: {answer}"
+        );
+        println!("{task}: {answer}");
+    }
+    drop(router);
+    drop(inference);
+}
+
 #[test]
 fn primitive_catalog_roundtrip_keeps_tasks_and_engine_order() {
     let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
@@ -209,7 +457,9 @@ fn app(engine: Option<Arc<dyn InferenceEngine>>) -> (Router, Arc<AppState>) {
     let model: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
         "id": "fixture", "name": "Fixture", "modality": "VisionText",
         "engine": {"supported": ["encoder"]},
-        "tasks": ["text-image-to-text"],
+        "tasks": ["text-image-to-text", "text-to-image", "image-to-image", "audio-to-text",
+            "text-to-audio", "audio-to-audio", "audio-to-diarization", "text-to-embedding",
+            "image-to-embedding", "text-to-moderation", "text-image-to-detection", "text-image-to-decision"],
         "local": {"path": "Cargo.toml"}, "extra": {}
     }))
     .unwrap();

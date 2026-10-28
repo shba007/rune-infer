@@ -66,15 +66,15 @@ pub async fn embeddings_handler(
         Err(resp) => return resp,
     };
 
-    let engine = match gate.load_engine(&state).await {
-        Ok(engine) => engine,
-        Err(resp) => return resp,
-    };
-
     let task = InferenceTaskRequest::Embedding {
         model: Some(gate.model_config.id.clone()),
         input: inputs,
         dimensions: request.dimensions,
+    };
+
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
     };
 
     let output = match gate.execute_task(&state, engine, task).await {
