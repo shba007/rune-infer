@@ -11,6 +11,7 @@ use std::{
 type UpdateResult<T> = Result<T, String>;
 pub(crate) enum UpdateEvent {
     Progress(String),
+    Download(download::DownloadProgress),
     Finished(Result<String, String>),
 }
 
@@ -28,7 +29,7 @@ pub(crate) fn install_engine(
         EngineKind::Crispasr => "crispasr",
         EngineKind::NemoSpeech => "nemo-speech",
         EngineKind::WhisperCpp => "whisper-cpp",
-        EngineKind::Needle => return Err("Needle has a pinned, checksum-verified revision but no confirmed stable release; automatic installation is unavailable".into()),
+        EngineKind::Needle => "needle",
         EngineKind::Encoder => return Err("Encoder is built in and uses synthetic output".into()),
     };
     if !cfg!(any(
@@ -97,7 +98,14 @@ fn stage_engine_install(
     let stage = bin.join(format!(".engine-install-{}-{id}", std::process::id()));
     std::fs::create_dir(&stage).map_err(|e| e.to_string())?;
     let result = (|| {
-        emit("Checking verified stable release".into());
+        emit(
+            if kind == EngineKind::Needle {
+                "Checking approved Needle distribution and SHA-256"
+            } else {
+                "Checking release · stable preferred"
+            }
+            .into(),
+        );
         let tx = events.clone();
         let path = download::with_progress(
             move |progress| {
@@ -118,6 +126,7 @@ fn stage_engine_install(
                     )
                 };
                 let _ = tx.send(UpdateEvent::Progress(status));
+                let _ = tx.send(UpdateEvent::Download(progress));
             },
             || installer(stage.clone()),
         )?;
@@ -229,18 +238,21 @@ fn publish_new_engine(source: &Path, destination: &Path) -> std::io::Result<()> 
 }
 
 fn validate_install_binary(kind: EngineKind, path: &Path) -> UpdateResult<()> {
+    if kind == EngineKind::Needle {
+        let output = candidate_output(path, "--help")?;
+        if !output.contains("--model")
+            || !output.contains("--tools")
+            || !output.contains("--prompt")
+        {
+            return Err("Needle startup check returned an unexpected CLI interface".into());
+        }
+        return Ok(());
+    }
     if kind == EngineKind::SdServer {
         return Ok(());
     }
     let version =
         candidate_version(path).map_err(|e| format!("Cannot verify engine startup: {e}"))?;
-    let lower = version.to_ascii_lowercase();
-    if lower.contains("nightly") || lower.contains("-dev") {
-        return Err(
-            "The verified archive contains a development build; a production build is required"
-                .into(),
-        );
-    }
     if kind == EngineKind::WhisperCpp && !version.contains("whisper.cpp version:") {
         return Err("Cannot verify whisper.cpp version".into());
     }
@@ -292,28 +304,14 @@ pub(crate) fn update_audio(
     }
     emit("Checking release assets".into());
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let mut request = client
-        .get("https://api.github.com/repos/0xShug0/audio.cpp/releases?per_page=5")
-        .header("Accept", "application/vnd.github+json");
-    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-        request = request.bearer_auth(token.trim());
+    let release = download::resolve_release(
+        &client,
+        "https://api.github.com/repos/0xShug0/audio.cpp/releases",
+    )
+    .map_err(|e| e.to_string())?;
+    if release["tag_name"].as_str() != Some(expected_tag.as_str()) {
+        return Err("The selected release has changed; check versions again".into());
     }
-    let releases: serde_json::Value = request
-        .send()
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .map_err(|e| e.to_string())?;
-    let release = releases
-        .as_array()
-        .and_then(|items| {
-            items.iter().find(|r| {
-                r["tag_name"].as_str() == Some(expected_tag.as_str())
-                    && download::is_stable_release(r)
-            })
-        })
-        .ok_or("The selected release is no longer available; check versions again")?;
     let assets = release["assets"]
         .as_array()
         .ok_or("Release has no assets")?;
@@ -374,6 +372,7 @@ pub(crate) fn update_audio(
                             .total
                             .is_some_and(|total| progress.downloaded == total);
                     let _ = tx.send(UpdateEvent::Progress(status));
+                    let _ = tx.send(UpdateEvent::Download(progress));
                     if completed {
                         let _ = tx.send(UpdateEvent::Progress("Verifying checksum".into()));
                     }
@@ -503,21 +502,13 @@ pub(crate) fn update_whisper(
     }
     emit("Checking release assets".into());
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let mut request = client
-        .get("https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=100")
-        .header("Accept", "application/vnd.github+json");
-    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-        request = request.bearer_auth(token.trim());
-    }
-    let releases: serde_json::Value = request
-        .send()
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .map_err(|e| e.to_string())?;
-    let (tag, asset) = super::whisper::stable_asset(&releases)
-        .ok_or("No verified stable whisper.cpp release is available")?;
+    let releases = download::fetch_releases(
+        &client,
+        "https://api.github.com/repos/ggml-org/whisper.cpp/releases",
+    )
+    .map_err(|e| e.to_string())?;
+    let (tag, asset) = super::whisper::preferred_asset(&releases)
+        .ok_or("No verified compatible whisper.cpp release is available")?;
     if tag != expected_tag {
         return Err("The selected release has changed; check versions again".into());
     }
@@ -559,6 +550,7 @@ pub(crate) fn update_whisper(
                         .total
                         .is_some_and(|total| progress.downloaded == total);
                 let _ = tx.send(UpdateEvent::Progress(status));
+                let _ = tx.send(UpdateEvent::Download(progress));
                 if complete {
                     let _ = tx.send(UpdateEvent::Progress("Verifying checksum".into()));
                 }
@@ -677,20 +669,11 @@ pub(crate) fn update_crispasr(
     emit(format!("Selected hardware build: {asset_name}"));
     emit("Checking release assets".into());
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let mut request = client
-        .get("https://api.github.com/repos/CrispStrobe/CrispASR/releases?per_page=5")
-        .header("Accept", "application/vnd.github+json");
-    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-        request = request.bearer_auth(token.trim());
-    }
-    let releases: serde_json::Value = request
-        .send()
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .map_err(|e| e.to_string())?;
-    let release = download::stable_release(&releases).map_err(|e| e.to_string())?;
+    let release = download::resolve_release(
+        &client,
+        "https://api.github.com/repos/CrispStrobe/CrispASR/releases",
+    )
+    .map_err(|e| e.to_string())?;
     if release["tag_name"].as_str() != Some(expected_tag.as_str()) {
         return Err("The selected release has changed; check versions again".into());
     }
@@ -702,7 +685,7 @@ pub(crate) fn update_crispasr(
                 .find(|asset| asset["name"].as_str() == Some(asset_name))
         })
         .ok_or(
-            "The stable release has no verified asset matching the installed CrispASR backend",
+            "The selected release has no verified asset matching the installed CrispASR backend",
         )?;
     let (name, url) = download::extract_release_asset_info(asset).map_err(|e| e.to_string())?;
     let digest =
@@ -742,6 +725,7 @@ pub(crate) fn update_crispasr(
                         .total
                         .is_some_and(|total| progress.downloaded == total);
                 let _ = tx.send(UpdateEvent::Progress(status));
+                let _ = tx.send(UpdateEvent::Download(progress));
                 if complete {
                     let _ = tx.send(UpdateEvent::Progress("Verifying checksum".into()));
                 }
@@ -1087,11 +1071,15 @@ fn cleanup_backup_for(backup: &Path, current: &Path, kind: BackupKind) -> Update
 }
 
 fn candidate_version(path: &Path) -> UpdateResult<String> {
+    candidate_output(path, "--version")
+}
+
+fn candidate_output(path: &Path, argument: &str) -> UpdateResult<String> {
     use std::io::Read;
     use std::process::{Command, Stdio};
     let mut command = Command::new(path);
     command
-        .arg("--version")
+        .arg(argument)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

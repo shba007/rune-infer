@@ -25,7 +25,7 @@ pub struct SdServerEngine {
 
 impl SdServerEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
-        let bin_path = Self::ensure_binary_installed()?;
+        let bin_path = Self::resolve_binary(false)?;
         let port = Self::find_free_port()?;
 
         tracing::info!(
@@ -133,6 +133,10 @@ impl SdServerEngine {
     }
 
     pub(crate) fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
+        Self::resolve_binary(true)
+    }
+
+    fn resolve_binary(install: bool) -> Result<PathBuf, Box<dyn Error>> {
         let exe_name = if cfg!(windows) {
             "sd-server.exe"
         } else {
@@ -170,62 +174,27 @@ impl SdServerEngine {
             }
         }
 
+        if !install {
+            return Err(download::engine_unavailable("sd-server").into());
+        }
+
         tracing::info!("[SdServerEngine] Resolving sd-server runtime from GitHub...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
-        let release_url =
-            "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases?per_page=5";
-        let mut req = client
-            .get(release_url)
-            .header("Accept", "application/vnd.github+json");
+        let release_url = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases";
+        let release_val = download::resolve_release(&client, release_url)?;
 
-        if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-            req = req.header("Authorization", format!("Bearer {}", token.trim()));
-        }
-
-        let release_val: serde_json::Value = match req.send().and_then(|r| r.error_for_status()) {
-            Ok(resp) => resp.json()?,
-            Err(err) => {
-                tracing::info!(
-                    "[SdServerEngine] Direct GitHub API request failed ({err}). Falling back to release redirect..."
-                );
-                let html_url = "https://github.com/leejet/stable-diffusion.cpp/releases";
-                let resp = client.get(html_url).send().map_err(|e| {
-                    format!(
-                        "Could not resolve release assets from GitHub: {e}.\n\
-                        Please download 'sd-server' manually and place it at '{}' or set SD_SERVER_PATH in .env.",
-                        exe_path.display()
-                    )
-                })?;
-                let final_url = resp.url().as_str();
-                let tag = final_url
-                    .split("/tag/")
-                    .nth(1)
-                    .ok_or_else(|| format!("Could not determine tag from URL: {final_url}"))?;
-                tracing::info!("[SdServerEngine] Resolved latest tag: {tag}");
-                let api_fallback = format!(
-                    "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/tags/{tag}"
-                );
-                client
-                    .get(&api_fallback)
-                    .header("Accept", "application/vnd.github+json")
-                    .send()?
-                    .error_for_status()?
-                    .json()?
-            }
-        };
-
-        let assets = download::stable_release(&release_val)?["assets"]
+        let assets = download::preferred_release(&release_val)?["assets"]
             .as_array()
-            .ok_or("Stable release has no engine assets")?;
+            .ok_or("Selected release has no engine assets")?;
 
         let host_cuda = download::detect_host_cuda_version();
         let mut download_urls = Vec::new();
 
         if cfg!(target_os = "windows") {
             let wants_cuda = host_cuda.is_some_and(|(major, _)| major >= 12);
-            let cuda_asset = if wants_cuda || host_cuda.is_none() {
+            let cuda_asset = if wants_cuda {
                 assets.iter().find(|a| {
                     let n = a["name"].as_str().unwrap_or("").to_lowercase();
                     n.contains("bin-win-cuda") && !n.starts_with("cudart")

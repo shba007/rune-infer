@@ -20,7 +20,7 @@ impl NeedleEngine {
             return Err(format!("Model path does not exist: {}", model_path.display()).into());
         }
 
-        let bin_path = Self::ensure_binary_installed()?;
+        let bin_path = Self::resolve_binary(false)?;
 
         Ok(Self {
             id,
@@ -30,6 +30,10 @@ impl NeedleEngine {
     }
 
     pub(crate) fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
+        Self::resolve_binary(true)
+    }
+
+    fn resolve_binary(install: bool) -> Result<PathBuf, Box<dyn Error>> {
         let base_dir = download::engine_bin().join("needle");
         let exe_name = if cfg!(windows) {
             "needle.exe"
@@ -42,20 +46,14 @@ impl NeedleEngine {
             return Ok(exe_path);
         }
 
+        if !install {
+            return Err(download::engine_unavailable("needle").into());
+        }
+
         tracing::info!("[NeedleEngine] Needle 3 binary not found. Resolving from Hugging Face...");
         std::fs::create_dir_all(&base_dir)?;
 
-        let platform = match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("windows", "x86_64") => "windows-x86_64",
-            ("windows", "aarch64") => "windows-arm64",
-            ("linux", "x86_64") => "linux-x86_64",
-            ("linux", "aarch64") => "linux-arm64",
-            ("linux", "arm") => "linux-armv7",
-            ("linux", "riscv64") => "linux-riscv64",
-            ("macos", "aarch64") => "macos-arm64",
-            ("macos", "x86_64") => "macos-arm64",
-            _ => "linux-x86_64",
-        };
+        let platform = platform_directory(std::env::consts::OS, std::env::consts::ARCH)?;
 
         let client = download::create_download_client()?;
         let metadata: serde_json::Value = client
@@ -63,24 +61,19 @@ impl NeedleEngine {
             .send()?
             .error_for_status()?
             .json()?;
-        let revision = metadata["sha"]
-            .as_str()
-            .filter(|sha| sha.len() == 40 && sha.bytes().all(|c| c.is_ascii_hexdigit()))
-            .ok_or("Needle metadata has no immutable revision; installation refused.")?;
         let file = format!("{platform}/{exe_name}");
-        let sha256 = metadata["siblings"]
-            .as_array()
-            .and_then(|entries| {
-                entries
-                    .iter()
-                    .find(|e| e["rfilename"].as_str() == Some(&file))
-            })
-            .and_then(|entry| entry["lfs"]["sha256"].as_str())
-            .ok_or("Needle metadata has no SHA-256 for this platform; installation refused.")?;
+        let (revision, sha256) = verified_binary_metadata(&metadata, &file)?;
         let download_url =
             format!("https://huggingface.co/Cactus-Compute/needle3/resolve/{revision}/{file}");
         download::download_verified(&client, &download_url, &exe_path, "[NeedleEngine]", sha256)?;
         download::make_executable(&exe_path)?;
+        let receipt = serde_json::json!({"revision":revision, "sha256":sha256, "file":file});
+        let mut receipt_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(base_dir.join(".needle-install.json"))?;
+        use std::io::Write;
+        receipt_file.write_all(&serde_json::to_vec(&receipt)?)?;
 
         tracing::info!(
             "[NeedleEngine] ✓ Needle 3 installed at {}",
@@ -88,6 +81,56 @@ impl NeedleEngine {
         );
         Ok(exe_path)
     }
+}
+
+pub(crate) fn platform_directory(os: &str, arch: &str) -> Result<&'static str, Box<dyn Error>> {
+    match (os, arch) {
+        ("windows", "x86_64") => Ok("windows-x86_64"),
+        ("windows", "aarch64") => Ok("windows-arm64"),
+        ("linux", "x86_64") => Ok("linux-x86_64"),
+        ("linux", "aarch64") => Ok("linux-arm64"),
+        ("linux", "riscv64") => Ok("linux-riscv64"),
+        ("android", "aarch64") => Ok("android-arm64"),
+        ("android", "riscv64") => Ok("android-riscv64"),
+        ("macos", "aarch64") => Ok("macos-arm64"),
+        _ => Err(format!("No verified Needle binary is available for {os}/{arch}").into()),
+    }
+}
+
+fn verified_binary_metadata<'a>(
+    metadata: &'a serde_json::Value,
+    file: &str,
+) -> Result<(&'a str, &'a str), Box<dyn Error>> {
+    let revision = metadata["sha"]
+        .as_str()
+        .filter(|v| v.len() == 40 && v.bytes().all(|c| c.is_ascii_hexdigit()))
+        .ok_or("Needle metadata has no immutable revision; installation refused")?;
+    let digest = metadata["siblings"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["rfilename"].as_str() == Some(file))
+        })
+        .and_then(|item| item["lfs"]["sha256"].as_str())
+        .filter(|v| v.len() == 64 && v.bytes().all(|c| c.is_ascii_hexdigit()))
+        .ok_or("Needle metadata has no valid SHA-256 for this platform; installation refused")?;
+    Ok((revision, digest))
+}
+
+#[cfg(any(feature = "tui", test))]
+pub(crate) fn installed_revision(binary: &Path) -> Option<String> {
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(binary.parent()?.join(".needle-install.json")).ok()?)
+            .ok()?;
+    let revision = receipt["revision"]
+        .as_str()
+        .filter(|v| v.len() == 40 && v.bytes().all(|c| c.is_ascii_hexdigit()))?;
+    let digest = receipt["sha256"].as_str()?;
+    (download::file_sha256(binary)
+        .ok()?
+        .eq_ignore_ascii_case(digest))
+    .then(|| format!("revision {revision}"))
 }
 
 impl InferenceEngine for NeedleEngine {
@@ -159,5 +202,75 @@ impl InferenceEngine for NeedleEngine {
             }
             _ => Err("NeedleEngine only supports ToolCall tasks".into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod install_tests {
+    use super::*;
+    #[test]
+    fn missing_engine_returns_an_actionable_error_without_creating_installation() {
+        let root = std::env::temp_dir().join(format!("rune-needle-missing-{}", std::process::id()));
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&root).unwrap();
+        let error = download::with_install_bin(bin.clone(), || {
+            NeedleEngine::new("test".into(), &root)
+                .err()
+                .unwrap()
+                .to_string()
+        });
+        assert!(error.contains("Engine 'needle' is not available"));
+        assert!(error.contains("dashboard"));
+        assert!(!bin.exists());
+        std::fs::remove_dir(root).unwrap();
+    }
+    #[test]
+    fn platform_mapping_refuses_unavailable_binaries() {
+        assert_eq!(
+            platform_directory("windows", "x86_64").unwrap(),
+            "windows-x86_64"
+        );
+        assert_eq!(
+            platform_directory("macos", "aarch64").unwrap(),
+            "macos-arm64"
+        );
+        assert!(platform_directory("macos", "x86_64").is_err());
+        assert!(platform_directory("unknown", "unknown").is_err());
+    }
+    #[test]
+    fn metadata_requires_matching_platform_immutable_revision_and_sha256() {
+        let file = "windows-x86_64/needle.exe";
+        let mut metadata = serde_json::json!({"sha":"a".repeat(40), "siblings":[{"rfilename":file,"lfs":{"sha256":"b".repeat(64)}}]});
+        assert!(verified_binary_metadata(&metadata, file).is_ok());
+        assert!(verified_binary_metadata(&metadata, "macos-x86_64/needle").is_err());
+        metadata["sha"] = serde_json::json!("main");
+        assert!(verified_binary_metadata(&metadata, file).is_err());
+        metadata["sha"] = serde_json::json!("a".repeat(40));
+        metadata["siblings"][0]["lfs"]["sha256"] = serde_json::json!("invalid");
+        assert!(verified_binary_metadata(&metadata, file).is_err());
+    }
+    #[test]
+    fn installed_revision_is_reported_only_when_binary_matches_receipt() {
+        let root = std::env::temp_dir().join(format!(
+            "rune-needle-receipt-{}",
+            crate::setup::generate_api_key()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let binary = root.join("needle.exe");
+        std::fs::write(&binary, "fixture").unwrap();
+        let digest = download::file_sha256(&binary).unwrap();
+        std::fs::write(
+            root.join(".needle-install.json"),
+            serde_json::to_vec(&serde_json::json!({"revision":"a".repeat(40),"sha256":digest}))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            installed_revision(&binary),
+            Some(format!("revision {}", "a".repeat(40)))
+        );
+        std::fs::write(&binary, "changed").unwrap();
+        assert_eq!(installed_revision(&binary), None);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

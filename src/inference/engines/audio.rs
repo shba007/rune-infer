@@ -132,13 +132,14 @@ fn repair_managed_runtime(executable: &Path) -> Result<(), Box<dyn Error>> {
             return Err(audio_failure("startup check", &output).into());
         }
         let client = download::create_download_client()?;
-        let releases: serde_json::Value = client
-            .get("https://api.github.com/repos/0xShug0/audio.cpp/releases?per_page=5")
-            .header("Accept", "application/vnd.github+json")
-            .send()?
-            .error_for_status()?
-            .json()?;
-        let asset = releases.as_array().into_iter().flatten().filter(|release| download::is_stable_release(release)).flat_map(|release| release["assets"].as_array().into_iter().flatten())
+        let releases = download::fetch_releases(
+            &client,
+            "https://api.github.com/repos/0xShug0/audio.cpp/releases",
+        )?;
+        let has_stable = releases
+            .as_array()
+            .is_some_and(|items| items.iter().any(download::is_stable_release));
+        let asset = releases.as_array().into_iter().flatten().filter(|release| download::is_published_release(release) && (!has_stable || download::is_stable_release(release))).flat_map(|release| release["assets"].as_array().into_iter().flatten())
             .find(|asset| {
                 let name = asset["name"].as_str().unwrap_or("");
                 name.contains("-cudart-windows-") && name.contains(versions[0].1) && download::matches_arch(name)
@@ -205,7 +206,7 @@ impl AudioEngine {
             || model.id.contains("mock")
             || model.id.contains("test");
 
-        let bin_path = match Self::ensure_binary_installed() {
+        let bin_path = match Self::resolve_binary(false) {
             Ok(p) => p,
             Err(e) if is_mock && allow_synthetic_fallback => {
                 tracing::warn!("[AudioEngine] Using fallback binary path for mock test model: {e}");
@@ -268,6 +269,10 @@ impl AudioEngine {
     }
 
     pub(crate) fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
+        Self::resolve_binary(true)
+    }
+
+    fn resolve_binary(install: bool) -> Result<PathBuf, Box<dyn Error>> {
         let exe_name = if cfg!(windows) {
             "audiocpp_cli.exe"
         } else {
@@ -285,12 +290,16 @@ impl AudioEngine {
         let base_dir = download::engine_bin().join("audiocpp");
         let exe_path = base_dir.join(exe_name);
         if exe_path.exists() {
-            repair_managed_runtime(&exe_path)?;
+            if install {
+                repair_managed_runtime(&exe_path)?;
+            }
             return Ok(exe_path);
         }
 
         if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
-            repair_managed_runtime(&nested)?;
+            if install {
+                repair_managed_runtime(&nested)?;
+            }
             return Ok(nested);
         }
 
@@ -308,23 +317,20 @@ impl AudioEngine {
             }
         }
 
+        if !install {
+            return Err(download::engine_unavailable("audio-cpp").into());
+        }
+
         tracing::info!("[AudioEngine] Resolving audio.cpp runtime from GitHub releases...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
-        let release_url = "https://api.github.com/repos/0xShug0/audio.cpp/releases?per_page=5";
-        let mut req = client
-            .get(release_url)
-            .header("Accept", "application/vnd.github+json");
+        let release_url = "https://api.github.com/repos/0xShug0/audio.cpp/releases";
+        let release_val = download::resolve_release(&client, release_url)?;
 
-        if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-            req = req.header("Authorization", format!("Bearer {}", token.trim()));
-        }
-
-        let release_val: serde_json::Value = req.send()?.error_for_status()?.json()?;
-        let assets = download::stable_release(&release_val)?["assets"]
+        let assets = download::preferred_release(&release_val)?["assets"]
             .as_array()
-            .ok_or("Stable release has no engine assets")?;
+            .ok_or("Selected release has no engine assets")?;
 
         let host_cuda = download::detect_host_cuda_version();
         let mut download_urls = Vec::new();

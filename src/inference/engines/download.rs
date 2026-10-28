@@ -18,6 +18,12 @@ thread_local! {
     static INSTALL_BIN: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 
+pub(crate) fn engine_unavailable(name: &str) -> String {
+    format!(
+        "Engine '{name}' is not available. Install it from the dashboard engine list (e, then u) or run setup."
+    )
+}
+
 pub(crate) fn engine_bin() -> PathBuf {
     INSTALL_BIN.with(|root| {
         root.borrow()
@@ -44,7 +50,7 @@ thread_local! {
     static PROGRESS: std::cell::RefCell<Option<ProgressCallback>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Scope download reporting to this setup worker; runtime downloads remain independent.
+/// Scope download reporting to an explicit installation worker.
 pub fn with_progress<T>(
     callback: impl FnMut(DownloadProgress) + 'static,
     work: impl FnOnce() -> T,
@@ -83,7 +89,7 @@ pub fn create_download_client() -> Result<reqwest::blocking::Client, Box<dyn Err
     Ok(builder.build()?)
 }
 
-/// Only stable semantic-versioned GitHub releases are eligible for automatic installation.
+/// Recognize stable semantic-versioned releases for preference over rolling builds.
 pub fn is_stable_release(release: &serde_json::Value) -> bool {
     if release["draft"].as_bool() != Some(false) || release["prerelease"].as_bool() != Some(false) {
         return false;
@@ -99,15 +105,124 @@ pub fn is_stable_release(release: &serde_json::Value) -> bool {
             .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
 }
 
-pub fn stable_release(value: &serde_json::Value) -> Result<&serde_json::Value, Box<dyn Error>> {
+pub fn is_published_release(release: &serde_json::Value) -> bool {
+    release["draft"].as_bool() == Some(false)
+        && release["tag_name"]
+            .as_str()
+            .is_some_and(|tag| !tag.is_empty())
+}
+
+pub fn preferred_release(value: &serde_json::Value) -> Result<&serde_json::Value, Box<dyn Error>> {
     let release = if let Some(releases) = value.as_array() {
-        releases.iter().find(|r| is_stable_release(r))
-    } else if is_stable_release(value) {
+        releases
+            .iter()
+            .find(|r| is_stable_release(r))
+            .or_else(|| releases.iter().find(|r| is_published_release(r)))
+    } else if is_published_release(value) {
         Some(value)
     } else {
         None
     };
-    release.ok_or_else(|| "No verified stable production release was found; install a verified stable engine manually or retry later.".into())
+    release.ok_or_else(|| {
+        "No published engine release was found; retry later or configure an engine manually".into()
+    })
+}
+
+fn github_metadata(
+    client: &reqwest::blocking::Client,
+    url: &str,
+) -> Result<reqwest::blocking::Response, Box<dyn Error>> {
+    if !url.starts_with("https://api.github.com/repos/") {
+        return Err("Invalid GitHub release metadata source".into());
+    }
+    let mut request = client
+        .get(url)
+        .header("Accept", "application/vnd.github+json");
+    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
+        request = request.bearer_auth(token.trim());
+    }
+    Ok(request.send()?)
+}
+
+/// GitHub's latest endpoint finds a stable release even behind hundreds of nightly builds.
+pub(crate) fn fetch_releases(
+    client: &reqwest::blocking::Client,
+    url: &str,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let base = url.split('?').next().ok_or("Invalid release URL")?;
+    let latest_response = github_metadata(client, &format!("{base}/latest"))?;
+    let latest: Option<serde_json::Value> =
+        if latest_response.status() == reqwest::StatusCode::NOT_FOUND {
+            None
+        } else {
+            Some(latest_response.error_for_status()?.json()?)
+        };
+    let list: serde_json::Value = github_metadata(client, &format!("{base}?per_page=100"))?
+        .error_for_status()?
+        .json()?;
+    let mut releases = list.as_array().ok_or("Invalid release list")?.clone();
+    if let Some(latest) = latest.filter(is_stable_release) {
+        releases.retain(|release| release["tag_name"] != latest["tag_name"]);
+        releases.insert(0, latest);
+    }
+    Ok(serde_json::Value::Array(releases))
+}
+
+pub(crate) fn resolve_release(
+    client: &reqwest::blocking::Client,
+    url: &str,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let releases = fetch_releases(client, url)?;
+    let mut selected = preferred_release(&releases)?.clone();
+    selected["rune_channel"] = serde_json::json!(if is_stable_release(&selected) {
+        "stable"
+    } else {
+        "latest build"
+    });
+    if url.starts_with("https://api.github.com/repos/ggml-org/llama.cpp/releases")
+        && is_stable_release(&selected)
+    {
+        if let Some(pointer) = selected["assets"].as_array().and_then(|assets| {
+            assets
+                .iter()
+                .find(|asset| asset["name"].as_str() == Some("nightly-tag.txt"))
+        }) {
+            let digest = asset_sha256(std::slice::from_ref(pointer), "nightly-tag.txt")?;
+            let pointer_url = pointer["browser_download_url"]
+                .as_str()
+                .ok_or("Release build pointer has no URL")?;
+            let mut text = String::new();
+            client
+                .get(pointer_url)
+                .send()?
+                .error_for_status()?
+                .take(129)
+                .read_to_string(&mut text)?;
+            if text.len() > 128
+                || !hex::encode(Sha256::digest(text.as_bytes())).eq_ignore_ascii_case(&digest)
+            {
+                return Err("Stable release build pointer failed SHA-256 verification".into());
+            }
+            let tag = text.trim();
+            if tag
+                .strip_prefix('b')
+                .is_none_or(|v| v.is_empty() || !v.bytes().all(|c| c.is_ascii_digit()))
+            {
+                return Err("Invalid stable release build pointer".into());
+            }
+            let base = url.split('?').next().ok_or("Invalid release URL")?;
+            let build: serde_json::Value = github_metadata(client, &format!("{base}/tags/{tag}"))?
+                .error_for_status()?
+                .json()?;
+            if !is_published_release(&build) || build["tag_name"].as_str() != Some(tag) {
+                return Err("Stable release build could not be verified".into());
+            }
+            selected["assets"] = build["assets"].clone();
+            selected["rune_build_tag"] = serde_json::json!(tag);
+            selected["rune_build_published_at"] = build["published_at"].clone();
+        }
+    }
+    Ok(selected)
 }
 
 pub fn format_bytes(bytes: u64) -> String {
@@ -585,20 +700,23 @@ mod progress_tests {
     }
 
     #[test]
-    fn production_release_selection_rejects_nightly_development_and_unverified_tags() {
+    fn release_selection_prefers_stable_and_falls_back_to_latest_published() {
         let releases = serde_json::json!([
             {"tag_name":"b12345","draft":false,"prerelease":false},
             {"tag_name":"v1.0.0-nightly","draft":false,"prerelease":false},
             {"tag_name":"v1.2.3","draft":false,"prerelease":true},
             {"tag_name":"v1.0.0","draft":false,"prerelease":false}
         ]);
-        assert_eq!(stable_release(&releases).unwrap()["tag_name"], "v1.0.0");
-        assert!(
-            stable_release(
-                &serde_json::json!([{"tag_name":"b123","draft":false,"prerelease":false}])
-            )
-            .is_err()
+        assert_eq!(preferred_release(&releases).unwrap()["tag_name"], "v1.0.0");
+        assert_eq!(
+            preferred_release(&serde_json::json!([
+                {"tag_name":"draft", "draft":true, "prerelease":false},
+                {"tag_name":"b123", "draft":false, "prerelease":true}
+            ]))
+            .unwrap()["tag_name"],
+            "b123"
         );
+        assert!(preferred_release(&serde_json::json!([])).is_err());
         assert!(!is_stable_release(
             &serde_json::json!({"tag_name":"v1.0.0"})
         ));

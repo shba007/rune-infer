@@ -4,6 +4,13 @@ use std::error::Error;
 use std::path::PathBuf;
 
 pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn Error>> {
+    resolve_binary(flavor, true)
+}
+
+pub(super) fn resolve_binary(
+    flavor: RuntimeFlavor,
+    install: bool,
+) -> Result<PathBuf, Box<dyn Error>> {
     let exe_name = if cfg!(windows) {
         "llama-server.exe"
     } else {
@@ -47,6 +54,14 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
         }
     }
 
+    if !install {
+        let name = match flavor {
+            RuntimeFlavor::Upstream => "llama-server",
+            RuntimeFlavor::Prism => "llama-server-prism",
+        };
+        return Err(download::engine_unavailable(name).into());
+    }
+
     tracing::info!(
         "[LlamaServerEngine] Runtime '{:?}' resolving dependencies from official releases...",
         flavor
@@ -55,28 +70,13 @@ pub fn ensure_binary_installed(flavor: RuntimeFlavor) -> Result<PathBuf, Box<dyn
 
     let client = download::create_download_client()?;
     let release_url = match flavor {
-        RuntimeFlavor::Upstream => {
-            "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5"
-        }
-        RuntimeFlavor::Prism => {
-            "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases?per_page=5"
-        }
+        RuntimeFlavor::Upstream => "https://api.github.com/repos/ggml-org/llama.cpp/releases",
+        RuntimeFlavor::Prism => "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases",
     };
 
-    let mut req = client
-        .get(release_url)
-        .header("Accept", "application/vnd.github+json");
+    let release_data = download::resolve_release(&client, release_url)?;
 
-    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-        req = req.header("Authorization", format!("Bearer {}", token.trim()));
-    }
-
-    let release_data: serde_json::Value = match req.send().and_then(|r| r.error_for_status()) {
-        Ok(resp) => resp.json()?,
-        Err(error) => return Err(format!("Cannot obtain verified release metadata: {error}. Retry or explicitly configure your own engine binary.").into()),
-    };
-
-    let target_release = download::stable_release(&release_data)?;
+    let target_release = download::preferred_release(&release_data)?;
 
     let assets = target_release["assets"]
         .as_array()

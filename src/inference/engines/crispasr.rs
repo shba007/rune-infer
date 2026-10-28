@@ -23,7 +23,7 @@ pub struct CrispAsrEngine {
 
 impl CrispAsrEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
-        let bin_path = Self::ensure_binary_installed()?;
+        let bin_path = Self::resolve_binary(false)?;
         let port = Self::find_free_port()?;
         let bin_dir = bin_path
             .parent()
@@ -123,6 +123,10 @@ impl CrispAsrEngine {
     }
 
     pub(crate) fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
+        Self::resolve_binary(true)
+    }
+
+    fn resolve_binary(install: bool) -> Result<PathBuf, Box<dyn Error>> {
         let exe_name = if cfg!(windows) {
             "crispasr.exe"
         } else {
@@ -160,54 +164,20 @@ impl CrispAsrEngine {
             }
         }
 
+        if !install {
+            return Err(download::engine_unavailable("crispasr").into());
+        }
+
         tracing::info!("[CrispAsrEngine] Resolving CrispASR runtime from GitHub releases...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
-        let release_url = "https://api.github.com/repos/CrispStrobe/CrispASR/releases?per_page=5";
-        let mut req = client
-            .get(release_url)
-            .header("Accept", "application/vnd.github+json");
+        let release_url = "https://api.github.com/repos/CrispStrobe/CrispASR/releases";
+        let release_val = download::resolve_release(&client, release_url)?;
 
-        if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-            req = req.header("Authorization", format!("Bearer {}", token.trim()));
-        }
-
-        let release_val: serde_json::Value = match req.send().and_then(|r| r.error_for_status()) {
-            Ok(resp) => resp.json()?,
-            Err(err) => {
-                tracing::info!(
-                    "[CrispAsrEngine] Direct GitHub API request failed ({err}). Falling back to release tag redirect..."
-                );
-                let html_url = "https://github.com/CrispStrobe/CrispASR/releases";
-                let resp = client.get(html_url).send().map_err(|e| {
-                    format!(
-                        "Could not resolve CrispASR assets: {e}.\n\
-                        Please download crispasr manually and place it at '{}' or set CRISPASR_PATH in .env.",
-                        exe_path.display()
-                    )
-                })?;
-                let final_url = resp.url().as_str();
-                let tag = final_url
-                    .split("/tag/")
-                    .nth(1)
-                    .ok_or_else(|| format!("Could not determine tag from URL: {final_url}"))?;
-                tracing::info!("[CrispAsrEngine] Resolved latest tag: {tag}");
-                let api_fallback = format!(
-                    "https://api.github.com/repos/CrispStrobe/CrispASR/releases/tags/{tag}"
-                );
-                client
-                    .get(&api_fallback)
-                    .header("Accept", "application/vnd.github+json")
-                    .send()?
-                    .error_for_status()?
-                    .json()?
-            }
-        };
-
-        let assets = download::stable_release(&release_val)?["assets"]
+        let assets = download::preferred_release(&release_val)?["assets"]
             .as_array()
-            .ok_or("Stable release has no engine assets")?;
+            .ok_or("Selected release has no engine assets")?;
 
         let host_cuda = download::detect_host_cuda_version();
         let mut download_urls: Vec<(String, String)> = Vec::new();

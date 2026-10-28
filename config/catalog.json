@@ -1083,34 +1083,6 @@
       "extra": {}
     },
     {
-      "id": "laya-tts",
-      "name": "Laya TTS GGUF",
-      "description": "Compact on-device GGUF speech synthesis engine",
-      "modality": "TextToSpeech",
-      "capabilities": [
-        "Text-to-Speech",
-        "Compact TTS",
-        "Edge Inference"
-      ],
-      "engine": {
-        "supported": [
-          "crispasr"
-        ],
-        "preferred": "crispasr"
-      },
-      "max_context_length": null,
-      "sampling": {},
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--mys--laya-GGUF/snapshots/main/laya-q8_0.gguf",
-        "params": 450000000,
-        "bits_per_weight": 8.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "extra": {}
-    },
-    {
       "id": "nemotron-3-diarization",
       "name": "NVIDIA Nemotron-3 Diarization",
       "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",

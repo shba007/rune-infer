@@ -60,7 +60,7 @@ impl LlamaServerEngine {
         extra_args: Option<String>,
         flavor: RuntimeFlavor,
     ) -> Result<Self, Box<dyn Error>> {
-        let bin_path = install::ensure_binary_installed(flavor)?;
+        let bin_path = install::resolve_binary(flavor, false)?;
         let port = Self::find_free_port()?;
 
         tracing::info!(

@@ -21,13 +21,17 @@ impl WhisperCppEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             id: model.id.clone(),
-            binary: std::fs::canonicalize(Self::ensure_binary_installed()?)?,
+            binary: std::fs::canonicalize(Self::resolve_binary(false)?)?,
             model: std::fs::canonicalize(&model.model_path)?,
             no_gpu: model.runtime.as_ref().is_some_and(|r| r.gpu_layers == 0),
         })
     }
 
     pub(crate) fn ensure_binary_installed() -> Result<PathBuf, Box<dyn Error>> {
+        Self::resolve_binary(true)
+    }
+
+    fn resolve_binary(install: bool) -> Result<PathBuf, Box<dyn Error>> {
         if let Ok(path) = std::env::var("WHISPER_CPP_PATH") {
             let path = PathBuf::from(path);
             if path.is_file() {
@@ -54,16 +58,17 @@ impl WhisperCppEngine {
         }) {
             return Ok(path);
         }
-        let client = download::create_download_client()?;
-        let mut request = client
-            .get("https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=100")
-            .header("Accept", "application/vnd.github+json");
-        if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-            request = request.bearer_auth(token.trim());
+        if !install {
+            return Err(download::engine_unavailable("whisper-cpp").into());
         }
-        let data: serde_json::Value = request.send()?.error_for_status()?.json()?;
-        let (_, asset) = stable_asset(&data)
-            .ok_or("No verified stable whisper-cli release asset is available for this platform")?;
+
+        let client = download::create_download_client()?;
+        let data = download::fetch_releases(
+            &client,
+            "https://api.github.com/repos/ggml-org/whisper.cpp/releases",
+        )?;
+        let (_, asset) = preferred_asset(&data)
+            .ok_or("No verified whisper-cli release asset is available for this platform")?;
         let (archive, url) = download::extract_release_asset_info(asset)?;
         let digest = download::asset_sha256(std::slice::from_ref(asset), &archive)?;
         std::fs::create_dir_all(&base)?;
@@ -73,21 +78,25 @@ impl WhisperCppEngine {
             direct
         } else {
             download::find_executable_recursive(&base, executable)
-                .ok_or("Stable archive does not contain whisper-cli")?
+                .ok_or("Verified archive does not contain whisper-cli")?
         };
         download::make_executable(&binary)?;
         Ok(binary)
     }
 }
-pub(crate) fn stable_asset(data: &serde_json::Value) -> Option<(&str, &serde_json::Value)> {
+pub(crate) fn preferred_asset(data: &serde_json::Value) -> Option<(&str, &serde_json::Value)> {
     let name = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => "whisper-bin-x64.zip",
         ("linux", "x86_64") => "whisper-bin-ubuntu-x64.tar.gz",
         ("linux", "aarch64") => "whisper-bin-ubuntu-arm64.tar.gz",
         _ => return None,
     };
-    for release in data.as_array()? {
-        if !download::is_stable_release(release) {
+    let releases = data.as_array()?;
+    let has_stable = releases.iter().any(download::is_stable_release);
+    for release in releases {
+        if !download::is_published_release(release)
+            || (has_stable && !download::is_stable_release(release))
+        {
             continue;
         }
         let Some(assets) = release["assets"].as_array() else {
@@ -284,7 +293,7 @@ mod tests {
             {"tag_name":"v1.9.0-rc1", "draft":false, "prerelease":true, "assets":[{"name":asset,"digest":format!("sha256:{}", "a".repeat(64))}]},
             {"tag_name":"v1.8.0", "draft":false, "prerelease":false, "assets":[{"name":asset,"digest":format!("sha256:{}", "b".repeat(64))}]}
         ]);
-        assert_eq!(stable_asset(&releases).unwrap().0, "v1.8.0");
+        assert_eq!(preferred_asset(&releases).unwrap().0, "v1.8.0");
     }
 
     #[test]
