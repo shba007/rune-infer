@@ -7,6 +7,245 @@ use base64::Engine;
 use tower::ServiceExt;
 
 #[tokio::test]
+async fn local_execution_contract_refuses_proxy_and_unsupported_routes() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let received = Arc::new(AtomicUsize::new(0));
+    let counter = received.clone();
+    let upstream = Router::new().fallback(axum::routing::any(move || {
+        let counter = counter.clone();
+        async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "mock cloud received request",
+            )
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let (_, state) = app(None);
+    let mut config = state.config().clone();
+    let discovered_local = config.models[0].clone();
+    let model = &mut config.models[0];
+    model.provider = crate::config::ProviderType::OpenAi;
+    model.engine = None;
+    model.base_url = Some(url);
+    model.rate_limit = Some(crate::config::RateLimitConfig {
+        max_retries: 0,
+        ..Default::default()
+    });
+    state.reload_catalog(config.clone());
+    // Simulate a reload after discovery/resolution but before engine acquisition.
+    assert!(
+        state
+            .inference
+            .get_local_engine(&discovered_local, false)
+            .is_err()
+    );
+    assert_eq!(received.load(Ordering::SeqCst), 0);
+    let router = create_router(AppState::new(
+        state.inference.clone(),
+        Arc::new(ProxyService::new(&config)),
+        config,
+    ));
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/capabilities")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let capabilities: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(capabilities["local_execution"]["version"], 1);
+    assert_eq!(
+        capabilities["local_execution"]["endpoints"],
+        serde_json::json!([{"method":"POST","path":"/v1/chat/completions"}])
+    );
+    for (uri, id, value, duplicate, code) in [
+        (
+            "/v1/chat/completions",
+            "fixture",
+            "1",
+            false,
+            "local_execution_required",
+        ),
+        (
+            "/v1/chat/completions",
+            "missing",
+            "1",
+            false,
+            "model_not_found",
+        ),
+        (
+            "/v1/chat/completions",
+            "fixture",
+            "true",
+            false,
+            "invalid_local_execution_constraint",
+        ),
+        (
+            "/v1/chat/completions",
+            "fixture",
+            "1",
+            true,
+            "invalid_local_execution_constraint",
+        ),
+        (
+            "/v1/embeddings",
+            "fixture",
+            "1",
+            false,
+            "local_execution_unsupported",
+        ),
+        (
+            "/v1/responses",
+            "fixture",
+            "1",
+            false,
+            "local_execution_unsupported",
+        ),
+    ] {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json")
+            .header("x-rune-local-only", value);
+        if duplicate {
+            request = request.header("x-rune-local-only", "1");
+        }
+        let response = router
+            .clone()
+            .oneshot(
+                request
+                    .body(Body::from(
+                        serde_json::json!({
+                            "model":id,"messages":[{"role":"user","content":"LOCAL_ONLY_SENTINEL"}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response.status().is_client_error(), "{uri}");
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+        assert_eq!(body["error"]["code"], code, "{uri}");
+        assert_eq!(received.load(Ordering::SeqCst), 0);
+    }
+    // Positive control: the same cloud route is reachable without the constraint.
+    let control = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"model":"fixture","messages":[{"role":"user","content":"control"}]}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let control_body = to_bytes(control.into_body(), 4096).await.unwrap();
+    assert_eq!(
+        received.load(Ordering::SeqCst),
+        1,
+        "{}",
+        String::from_utf8_lossy(&control_body)
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn local_execution_pins_configuration_and_preserves_residency_policy() {
+    let (router, state) = app(Some(Arc::new(StructuredEngine("READY"))));
+    let mut config = state.config().clone();
+    config.models[0].engine = Some(crate::config::EngineConfig {
+        supported: vec![crate::config::EngineKind::LlamaServer],
+        preferred: None,
+    });
+    state.reload_catalog(config);
+    let expected = state.config().models[0].clone();
+    state
+        .inference
+        .registry
+        .lock()
+        .unwrap()
+        .engine_configs
+        .insert(expected.id.clone(), expected.clone());
+    let request = |id: &str, no_swap: bool| {
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .header("x-rune-local-only", "1");
+        if no_swap {
+            builder = builder.header("x-no-swap", "1");
+        }
+        builder
+            .body(Body::from(
+                serde_json::json!({"model":id,
+            "messages":[{"role":"user","content":"LOCAL_ONLY_SENTINEL"}]})
+                .to_string(),
+            ))
+            .unwrap()
+    };
+    let response = router
+        .clone()
+        .oneshot(request("fixture", false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["x-rune-local-only"], "1");
+    let pinned = state.inference.get_local_engine(&expected, false).unwrap();
+    let mut changed = state.config().clone();
+    changed.models[0].model_path = "different.gguf".into();
+    state.reload_catalog(changed.clone());
+    assert!(state.inference.get_local_engine(&expected, false).is_err());
+    // A resident engine from an older snapshot is also refused for a new snapshot.
+    assert!(
+        state
+            .inference
+            .get_local_engine(&changed.models[0], false)
+            .is_err()
+    );
+    let response = router
+        .clone()
+        .oneshot(request("fixture", false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    changed.models[0].provider = crate::config::ProviderType::OpenAi;
+    state.reload_catalog(changed);
+    assert!(state.inference.get_local_engine(&expected, false).is_err());
+    // An acquired local engine remains pinned even after a local-to-cloud reload.
+    assert!(Arc::ptr_eq(
+        &pinned,
+        &state.inference.registry.lock().unwrap().engines["fixture"]
+    ));
+    let mut restored = state.config().clone();
+    restored.models[0] = expected.clone();
+    restored.models[0].aliases.push("alias".into());
+    state.reload_catalog(restored);
+    let response = router
+        .clone()
+        .oneshot(request("alias", false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    state.inference.registry.lock().unwrap().engines.clear();
+    let response = router.oneshot(request("fixture", true)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
 async fn unverified_models_are_refused_before_execution() {
     let (router, state) = app(Some(Arc::new(FailingEngine)));
     state.config.write().unwrap().models[0].tasks.clear();
@@ -250,6 +489,7 @@ async fn live_minicpm_task_combinations() {
                 Request::builder()
                     .method("POST")
                     .uri("/v1/chat/completions")
+                    .header("x-rune-local-only", "1")
                     .header("content-type", "application/json")
                     .body(Body::from(body.to_string()))
                     .unwrap(),
@@ -259,6 +499,16 @@ async fn live_minicpm_task_combinations() {
         .unwrap()
         .unwrap();
         let status = response.status();
+        assert_eq!(response.headers()["x-rune-local-only"], "1");
+        assert_eq!(response.headers()["x-model-locality"], "local");
+        assert_eq!(
+            response.headers()["x-model-resident"],
+            if task == "text-to-text" {
+                "false"
+            } else {
+                "true"
+            }
+        );
         let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(status, StatusCode::OK, "{task}: {value}");

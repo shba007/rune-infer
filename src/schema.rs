@@ -63,37 +63,77 @@ pub struct RegistryFile {
     pub aliases: std::collections::HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelEntry {
     pub id: String,
     pub name: String,
     #[serde(default)]
     pub description: String,
-    #[serde(default = "legacy_modality", skip_serializing)]
+    #[serde(default = "legacy_modality")]
     pub modality: Modality,
     #[serde(default)]
     pub capabilities: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub tasks: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub aliases: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub roles: Vec<String>,
     /// Required for local models, forbidden for cloud models.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub engine: Option<EngineConfig>,
     #[serde(default)]
     pub max_context_length: Option<u32>,
-    #[serde(default, skip_serializing_if = "sampling_is_default")]
+    #[serde(default)]
     pub sampling: SamplingConfig,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub local: Option<LocalBlock>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub remote: Option<RemoteBlock>,
     /// Engine-specific settings; see [`allowed_extra_keys`].
-    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    #[serde(default)]
     pub extra: Map<String, Value>,
+}
+
+impl Serialize for ModelEntry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("description", &self.description)?;
+        map.serialize_entry("capabilities", &self.capabilities)?;
+        map.serialize_entry("max_context_length", &self.max_context_length)?;
+        if self.tasks.is_empty() {
+            // Preserve legacy routing facts without inventing verified tasks.
+            map.serialize_entry("modality", &self.modality)?;
+        } else {
+            map.serialize_entry("tasks", &self.tasks)?;
+        }
+        if !self.aliases.is_empty() {
+            map.serialize_entry("aliases", &self.aliases)?;
+        }
+        if !self.roles.is_empty() {
+            map.serialize_entry("roles", &self.roles)?;
+        }
+        if let Some(engine) = &self.engine {
+            map.serialize_entry("engine", engine)?;
+        }
+        if !sampling_is_default(&self.sampling) {
+            map.serialize_entry("sampling", &self.sampling)?;
+        }
+        if let Some(local) = &self.local {
+            map.serialize_entry("local", local)?;
+        }
+        if let Some(remote) = &self.remote {
+            map.serialize_entry("remote", remote)?;
+        }
+        if !self.extra.is_empty() {
+            map.serialize_entry("extra", &self.extra)?;
+        }
+        map.end()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -23,15 +23,58 @@ impl AppState {
     }
 
     pub fn get_engine(&self, id: &str) -> Result<Arc<dyn InferenceEngine>, String> {
+        self.get_engine_inner(id, None, false)
+    }
+
+    /// Acquire only a local engine built from the checked model snapshot.
+    /// No proxy or cloud retry is reachable through this loader.
+    pub fn get_local_engine(
+        &self,
+        expected: &crate::config::ModelConfig,
+        resident_only: bool,
+    ) -> Result<Arc<dyn InferenceEngine>, String> {
+        self.get_engine_inner(&expected.id, Some(expected), resident_only)
+    }
+
+    fn get_engine_inner(
+        &self,
+        id: &str,
+        expected: Option<&crate::config::ModelConfig>,
+        resident_only: bool,
+    ) -> Result<Arc<dyn InferenceEngine>, String> {
         loop {
             let mut registry = self
                 .registry
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
 
+            if let Some(expected) = expected {
+                if !expected.is_local()
+                    || !registry
+                        .config
+                        .models
+                        .iter()
+                        .any(|model| model.id == id && model == expected)
+                {
+                    return Err(
+                        "Local model configuration changed before engine acquisition".into(),
+                    );
+                }
+                if registry.engines.contains_key(id)
+                    && registry.engine_configs.get(id) != Some(expected)
+                {
+                    return Err(
+                        "Resident engine does not match the checked local configuration".into(),
+                    );
+                }
+            }
+
             // 1. Fast path: model is already loaded and in VRAM/RAM
             if let Some(engine) = registry.get_loaded(id) {
                 return Ok(engine);
+            }
+            if resident_only {
+                return Err("Model is no longer resident".into());
             }
 
             // Do not start a model while any engine in its fallback plan is being replaced.
@@ -60,7 +103,13 @@ impl AppState {
                         .unwrap_or_else(|p| p.into_inner());
                 }
                 match &*state {
-                    registry::LoadState::Ready(res) => return res.clone(),
+                    registry::LoadState::Ready(res) => {
+                        if expected.is_none() || res.is_err() {
+                            return res.clone();
+                        }
+                        // Recheck provenance after a concurrent load completes.
+                        continue;
+                    }
                     registry::LoadState::Loading => unreachable!(),
                 }
             }
@@ -131,7 +180,7 @@ impl AppState {
             match load_res {
                 Ok((engine, engine_kind)) => {
                     registry.finish_load(
-                        &canonical_id,
+                        &model_config,
                         engine.clone(),
                         engine_kind,
                         load_started,

@@ -388,6 +388,26 @@ pub fn run(config: &Path, dry_run: bool) -> Result<()> {
     let catalog_path = cfg_dir.join("catalog.json");
 
     if server_path.exists() && catalog_path.exists() && !config.exists() {
+        let server: crate::schema::ServerFile =
+            serde_json::from_slice(&std::fs::read(&server_path)?)?;
+        let catalog: crate::schema::CatalogFile =
+            serde_json::from_slice(&std::fs::read(&catalog_path)?)?;
+        anyhow::ensure!(
+            server.schema_version == SCHEMA_VERSION && catalog.schema_version == SCHEMA_VERSION,
+            "Existing split configuration has an unsupported schema; it was left unchanged."
+        );
+        let registry = crate::config::ModelRegistry {
+            schema_version: SCHEMA_VERSION,
+            server: server.server,
+            models: catalog
+                .models
+                .into_iter()
+                .map(crate::config::ModelConfig::try_from)
+                .collect::<Result<Vec<_>>>()?,
+            roles: catalog.roles,
+            aliases: catalog.aliases,
+        };
+        registry.validate()?;
         println!(
             "{} and {} are already schema {SCHEMA_VERSION}; nothing to do.",
             server_path.display(),
@@ -395,6 +415,11 @@ pub fn run(config: &Path, dry_run: bool) -> Result<()> {
         );
         return Ok(());
     }
+
+    anyhow::ensure!(
+        !server_path.exists() && !catalog_path.exists(),
+        "Migration destination already contains server.json or catalog.json. Resolve the conflict or select a different config directory; existing files are unchanged."
+    );
 
     let raw = std::fs::read_to_string(config)
         .with_context(|| format!("Cannot read {}", config.display()))?;
@@ -490,11 +515,20 @@ pub fn run(config: &Path, dry_run: bool) -> Result<()> {
     }
 
     let backup = backup_path(config, version);
-    std::fs::copy(config, &backup)
+    let write_new = |path: &Path, bytes: &[u8]| -> Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+        file.write_all(bytes)?;
+        Ok(())
+    };
+    write_new(&backup, raw.as_bytes())
         .with_context(|| format!("Cannot write backup {}", backup.display()))?;
-    std::fs::write(&server_path, server_output)
+    write_new(&server_path, server_output.as_bytes())
         .with_context(|| format!("Cannot write {}", server_path.display()))?;
-    std::fs::write(&catalog_path, catalog_output)
+    write_new(&catalog_path, catalog_output.as_bytes())
         .with_context(|| format!("Cannot write {}", catalog_path.display()))?;
     let _ = std::fs::remove_file(config);
 
@@ -702,10 +736,30 @@ mod tests {
 
     #[test]
     fn run_writes_backup_and_upgrades_in_place() {
-        let dir = std::env::temp_dir().join(format!("rune-mig-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("rune-mig-{}", crate::setup::generate_api_key()));
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = dir.join("models.json");
         std::fs::write(&cfg, V1).unwrap();
+
+        for destination in ["server.json", "catalog.json"] {
+            let path = dir.join(destination);
+            std::fs::write(&path, "existing owner configuration").unwrap();
+            for dry_run in [true, false] {
+                assert!(
+                    run(&cfg, dry_run)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("conflict")
+                );
+                assert_eq!(
+                    std::fs::read_to_string(&path).unwrap(),
+                    "existing owner configuration"
+                );
+                assert_eq!(std::fs::read_to_string(&cfg).unwrap(), V1);
+            }
+            std::fs::remove_file(path).unwrap();
+        }
 
         run(&cfg, true).unwrap();
         assert_eq!(
@@ -718,6 +772,18 @@ mod tests {
         assert!(dir.join("models.json.v1.bak").exists());
         let server_cfg = std::fs::read_to_string(dir.join("server.json")).unwrap();
         let catalog_cfg = std::fs::read_to_string(dir.join("catalog.json")).unwrap();
+        let restored: crate::schema::CatalogFile = serde_json::from_str(&catalog_cfg).unwrap();
+        for (restored, original) in restored
+            .models
+            .iter()
+            .zip(migrate_json(V1).unwrap().file.models)
+        {
+            assert_eq!(restored.modality, original.modality);
+            assert!(
+                restored.tasks.is_empty(),
+                "migration must not invent verified support"
+            );
+        }
         assert!(server_cfg.contains("\"schema_version\": 3"));
         assert!(catalog_cfg.contains("\"schema_version\": 3"));
         run(&cfg, false).unwrap(); // second run is a no-op

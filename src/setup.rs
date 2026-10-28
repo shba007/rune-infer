@@ -449,6 +449,41 @@ pub fn write_setup(
     catalog_path: &Path,
     env_path: &Path,
 ) -> Result<usize> {
+    write_setup_inner(plan, None, server_path, catalog_path, env_path)
+}
+
+/// Save verified local task metadata; cloud entries remain unverified.
+pub fn write_verified_setup(
+    plan: &SetupPlan,
+    prepared: Option<&PreparedLocal>,
+    server_path: &Path,
+    catalog_path: &Path,
+    env_path: &Path,
+) -> Result<usize> {
+    anyhow::ensure!(
+        plan.local.is_empty() || prepared.is_some(),
+        "Local models require successful inference checks before saving."
+    );
+    write_setup_inner(plan, prepared, server_path, catalog_path, env_path)
+}
+
+fn write_setup_inner(
+    plan: &SetupPlan,
+    prepared: Option<&PreparedLocal>,
+    server_path: &Path,
+    catalog_path: &Path,
+    env_path: &Path,
+) -> Result<usize> {
+    let local_entries = match prepared {
+        Some(proof) => proof
+            .entries(&plan.local, plan.gpu_available)
+            .map_err(anyhow::Error::msg)?,
+        None => plan
+            .local
+            .iter()
+            .map(|model| local_entry(model, plan.gpu_available))
+            .collect(),
+    };
     for choice in &plan.cloud {
         let reviewed = registered_model(choice.preset.provider, &choice.model.id)
             .map_err(anyhow::Error::msg)?
@@ -522,10 +557,8 @@ pub fn write_setup(
     };
 
     let mut added = 0;
-    let new_entries = plan
-        .local
-        .iter()
-        .map(|c| local_entry(c, plan.gpu_available))
+    let new_entries = local_entries
+        .into_iter()
         .chain(plan.cloud.iter().map(cloud_entry));
     for mut entry in new_entries {
         // Re-running setup must not duplicate a model it already added, but two
@@ -537,7 +570,27 @@ pub fn write_setup(
                     _ => m.remote.is_some() == entry.remote.is_some(),
                 }
         };
-        if catalog_file.models.iter().any(same_source) {
+        if let Some(existing) = catalog_file
+            .models
+            .iter_mut()
+            .find(|model| same_source(model))
+        {
+            if existing.tasks.is_empty() && !entry.tasks.is_empty() {
+                let execution = |model: &ModelEntry| -> Result<Value> {
+                    let value = serde_json::to_value(model)?;
+                    Ok(
+                        serde_json::json!({"engine":value["engine"], "local":value["local"],
+                        "sampling":value["sampling"], "extra":value["extra"], "max_context_length":value["max_context_length"]}),
+                    )
+                };
+                anyhow::ensure!(
+                    execution(existing)? == execution(&entry)?,
+                    "Model '{}' has settings that differ from the checked setup selection. Existing configuration is unchanged; review the conflict before replacing it.",
+                    existing.id
+                );
+                existing.tasks = entry.tasks;
+                added += 1;
+            }
             continue;
         }
         let base = entry.id.clone();
@@ -548,6 +601,32 @@ pub fn write_setup(
         }
         catalog_file.models.push(entry);
         added += 1;
+    }
+
+    let mut secrets: Vec<(String, String)> = plan
+        .cloud
+        .iter()
+        .map(|c| (c.preset.env_var.to_string(), c.api_key.clone()))
+        .collect();
+    if let Some(key) = &plan.server_api_key {
+        secrets.push(("RUNE_API_KEY".into(), key.clone()));
+    }
+    let combined = serde_json::json!({"schema_version": SCHEMA_VERSION, "server": server_file.server,
+        "models": catalog_file.models, "roles": catalog_file.roles, "aliases": catalog_file.aliases});
+    let interpolated = crate::config::interpolate_with(&combined.to_string(), &|name| {
+        secrets
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.clone())
+            .or_else(|| std::env::var(name).ok())
+    })?;
+    ModelRegistry::from_json(&interpolated, None)?
+        .validate()
+        .context("generated config failed validation; existing files are unchanged")?;
+    if let Some(proof) = prepared {
+        proof
+            .validate(&plan.local, plan.gpu_available)
+            .map_err(anyhow::Error::msg)?;
     }
 
     if let Some(dir) = server_path.parent() {
@@ -566,14 +645,6 @@ pub fn write_setup(
         serde_json::to_string_pretty(&catalog_file)? + "\n",
     )?;
 
-    let mut secrets: Vec<(String, String)> = plan
-        .cloud
-        .iter()
-        .map(|c| (c.preset.env_var.to_string(), c.api_key.clone()))
-        .collect();
-    if let Some(k) = &plan.server_api_key {
-        secrets.push(("RUNE_API_KEY".into(), k.clone()));
-    }
     merge_env_file(env_path, &secrets)?;
 
     // Fail now (not at next start-up) if what we wrote doesn't load.
@@ -723,7 +794,7 @@ mod tests {
         let chat = get("chat-q6-k");
         assert_eq!(
             (chat.modality.clone(), chat.engine_plan()),
-            (Modality::Text, vec![EngineKind::LlamaServer])
+            (Modality::VisionText, vec![EngineKind::LlamaServer])
         );
         assert!(
             chat.mmproj_path
@@ -735,7 +806,7 @@ mod tests {
         let voice = get("voxcpm2-q8-0");
         assert_eq!(
             (voice.modality.clone(), voice.engine_plan()),
-            (Modality::Text, vec![EngineKind::AudioCpp])
+            (Modality::TextToSpeech, vec![EngineKind::AudioCpp])
         );
         assert!(
             voice.sampling.is_none(),
@@ -744,7 +815,7 @@ mod tests {
         let img = get("z-image-q8-0");
         assert_eq!(
             (img.modality.clone(), img.engine_plan()),
-            (Modality::Text, vec![EngineKind::SdServer])
+            (Modality::ImageGeneration, vec![EngineKind::SdServer])
         );
         assert!(
             img.description.contains("extra.vae_path"),

@@ -50,7 +50,7 @@ impl ProviderType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RateLimitConfig {
     #[serde(default = "default_rpm")]
@@ -728,7 +728,7 @@ impl SamplingConfig {
 }
 
 /// Engine process settings for a local model (the file's `local` block).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeConfig {
     /// Context window in tokens; `-1` = automatic.
     pub context_length: i64,
@@ -753,7 +753,7 @@ fn default_lora_scale() -> f32 {
 
 /// A model as the rest of the server sees it, flattened from the file's
 /// [`ModelEntry`](crate::schema::ModelEntry).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModelConfig {
     pub id: String,
     pub name: String,

@@ -5,6 +5,7 @@ pub mod decisions;
 pub mod embeddings;
 pub mod gate;
 pub mod images;
+mod local_execution;
 pub mod moderation;
 pub mod nlu;
 pub mod ocr;
@@ -147,6 +148,7 @@ pub fn create_router(state: AppState) -> Router {
         // Text & NLU & OCR
         .route("/inference", post(inference_handler))
         .route("/models", get(models_handler))
+        .route("/capabilities", get(local_execution::capabilities))
         .route("/models/{model}", get(retrieve_model_handler))
         .route("/embeddings", post(embeddings::embeddings_handler))
         .route("/moderations", post(moderation::moderations_handler))
@@ -171,6 +173,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health_handler))
         .route("/livez", get(livez_handler))
         .route("/readyz", get(readyz_handler))
+        .layer(axum::middleware::from_fn(local_execution::enforce))
         .layer(axum::middleware::from_fn(
             crate::telemetry::payload::middleware,
         ))

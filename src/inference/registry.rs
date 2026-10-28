@@ -33,6 +33,7 @@ impl Default for LoadBarrier {
 pub struct ModelRegistry {
     pub(crate) config: ConfigRegistry,
     pub(crate) engines: HashMap<String, Arc<dyn InferenceEngine>>,
+    pub(crate) engine_configs: HashMap<String, ModelConfig>,
     pub(crate) lru_keys: Vec<String>,
     pub(crate) last_used: HashMap<String, Instant>,
     pub(crate) loading: HashMap<String, Arc<LoadBarrier>>,
@@ -55,6 +56,7 @@ impl ModelRegistry {
         Self {
             config,
             engines: HashMap::new(),
+            engine_configs: HashMap::new(),
             lru_keys: Vec::new(),
             last_used: HashMap::new(),
             loading: HashMap::new(),
@@ -87,6 +89,7 @@ impl ModelRegistry {
         }
         for id in &victims {
             self.engines.remove(id);
+            self.engine_configs.remove(id);
             self.last_used.remove(id);
             self.lru_keys.retain(|k| k != id);
             crate::telemetry::model_evicted(id, &format!("idle for {}s", idle.as_secs()));
@@ -177,17 +180,14 @@ impl ModelRegistry {
     /// Record successful load into the registry and telemetry, clearing the loading entry.
     pub fn finish_load(
         &mut self,
-        id: &str,
+        model: &ModelConfig,
         engine: Arc<dyn InferenceEngine>,
         engine_kind: EngineKind,
         load_started: Instant,
         vram_before: Option<u64>,
     ) {
-        let canonical_id = self
-            .config
-            .find(id)
-            .map(|m| m.id.clone())
-            .unwrap_or_else(|| id.to_string());
+        // The catalog may have reloaded while the engine was starting.
+        let canonical_id = model.id.clone();
 
         let vram_detail = match (vram_before, Self::detect_used_gpu_vram()) {
             (Some(before), Some(after)) => format!(
@@ -205,6 +205,8 @@ impl ModelRegistry {
         self.engine_leases
             .push((engine_kind, Arc::downgrade(&engine)));
         self.engines.insert(canonical_id.clone(), engine);
+        self.engine_configs
+            .insert(canonical_id.clone(), model.clone());
         self.touch_lru(&canonical_id);
         self.last_used.insert(canonical_id.clone(), Instant::now());
         self.loading.remove(&canonical_id);
@@ -249,7 +251,7 @@ impl ModelRegistry {
         match Self::create_engine(&model_config, &server_config, vram_before) {
             Ok((engine, engine_kind)) => {
                 self.finish_load(
-                    &canonical_id,
+                    &model_config,
                     engine.clone(),
                     engine_kind,
                     load_started,
@@ -298,6 +300,7 @@ impl ModelRegistry {
         let victim_id = self.lru_keys.remove(victim_idx);
         self.last_used.remove(&victim_id);
         if let Some(_removed) = self.engines.remove(&victim_id) {
+            self.engine_configs.remove(&victim_id);
             self.last_evicted = Some(victim_id.clone());
             crate::telemetry::model_evicted(&victim_id, "least recently used");
             tracing::info!(

@@ -943,8 +943,13 @@ impl<'a> Wizard<'a> {
                         }
                     }
                 }
-                match setup::write_setup(
+                let prepared = match &self.engine {
+                    EnginePhase::Done(Ok(proof)) if !plan.local.is_empty() => Some(proof),
+                    _ => None,
+                };
+                match setup::write_verified_setup(
                     &plan,
+                    prepared,
                     &self.ws.server_path,
                     &self.ws.catalog_path,
                     &self.ws.env_file(),

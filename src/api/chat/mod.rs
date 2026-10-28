@@ -206,6 +206,7 @@ pub async fn chat_completions_handler(
             .into_response();
     }
 
+    let local_only = headers.contains_key(super::local_execution::HEADER);
     let model_config = match state.config().find(&request.model) {
         Some(c) => c.clone(),
         None => {
@@ -220,6 +221,14 @@ pub async fn chat_completions_handler(
                 .into_response();
         }
     };
+
+    if local_only && (!model_config.is_local() || model_config.id != request.model) {
+        return super::local_execution::error(
+            StatusCode::BAD_REQUEST,
+            "local_execution_required",
+            "Protected requests require an exact local model ID.",
+        );
+    }
 
     let requirements = crate::api::task::Requirements::chat(&request);
     if let Err(response) = requirements.check(&state, &model_config, None) {
@@ -337,8 +346,11 @@ pub async fn chat_completions_handler(
     }
     let inference = state.inference.clone();
     let model_target = request.model.clone();
+    let pinned_model = model_config.clone();
     let engine = match tokio::task::spawn_blocking(move || {
-        if no_swap || is_background {
+        if local_only {
+            inference.get_local_engine(&pinned_model, no_swap || is_background)
+        } else if no_swap || is_background {
             inference
                 .registry
                 .lock()
@@ -353,6 +365,13 @@ pub async fn chat_completions_handler(
     {
         Ok(Ok(e)) => e,
         Ok(Err(err)) => {
+            if local_only {
+                return super::local_execution::error(
+                    StatusCode::CONFLICT,
+                    "local_execution_unavailable",
+                    &err,
+                );
+            }
             if no_swap || is_background {
                 let (status, kind, code) = if no_swap {
                     (StatusCode::CONFLICT, "swap_refused", "swap_refused")
@@ -420,6 +439,12 @@ pub async fn chat_completions_handler(
 
     let attach_attribution_headers = |mut resp: Response| -> Response {
         let hdrs = resp.headers_mut();
+        if local_only {
+            hdrs.insert(
+                super::local_execution::HEADER,
+                axum::http::HeaderValue::from_static("1"),
+            );
+        }
         if let Ok(val) = axum::http::HeaderValue::from_str(&model_config.id) {
             hdrs.insert("x-model-served", val);
         }
