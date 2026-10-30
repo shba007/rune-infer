@@ -39,7 +39,7 @@ pub struct ModelRegistry {
     pub(crate) loading: HashMap<String, Arc<LoadBarrier>>,
     pub(crate) load_durations: HashMap<String, u64>,
     pub(crate) last_evicted: Option<String>,
-    load_evictions: HashMap<String, Option<String>>,
+    pub(crate) load_evictions: HashMap<String, Option<String>>,
     pub(crate) engine_leases: Vec<(EngineKind, std::sync::Weak<dyn InferenceEngine>)>,
     pub(crate) updating_engines: std::collections::HashSet<EngineKind>,
 }

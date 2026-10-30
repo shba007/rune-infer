@@ -26,6 +26,66 @@ impl AppState {
         self.get_engine_inner(id, None, false)
     }
 
+    /// Load an exact local model without sending an inference prompt.
+    pub fn load_model(&self, id: &str) -> Result<(), String> {
+        let model = {
+            let registry = self.registry.lock().map_err(|err| err.to_string())?;
+            registry
+                .config
+                .models
+                .iter()
+                .find(|model| model.id == id)
+                .filter(|model| model.is_local())
+                .cloned()
+                .ok_or_else(|| format!("Select an exact local model ID: '{id}'"))?
+        };
+        self.get_local_engine(&model, false).map(drop)
+    }
+
+    /// Remove only an idle resident engine. Drop it outside the registry lock
+    /// because stopping its subprocess can take time.
+    pub fn unload_model(&self, id: &str) -> Result<bool, String> {
+        let engine = {
+            let mut registry = self.registry.lock().map_err(|err| err.to_string())?;
+            if !registry
+                .config
+                .models
+                .iter()
+                .any(|model| model.id == id && model.is_local())
+            {
+                return Err(format!("Select an exact local model ID: '{id}'"));
+            }
+            if registry.loading.contains_key(id) {
+                return Err(format!(
+                    "Model '{id}' is still loading; retry when loading finishes"
+                ));
+            }
+            if registry
+                .engines
+                .get(id)
+                .is_some_and(|engine| Arc::strong_count(engine) > 1)
+            {
+                return Err(format!(
+                    "Model '{id}' is in use; retry after its requests finish"
+                ));
+            }
+            let engine = registry.engines.remove(id);
+            registry.engine_configs.remove(id);
+            registry.lru_keys.retain(|key| key != id);
+            registry.last_used.remove(id);
+            registry.load_durations.remove(id);
+            registry.load_evictions.remove(id);
+            engine
+        };
+        let unloaded = engine.is_some();
+        drop(engine);
+        if unloaded {
+            crate::telemetry::model_evicted(id, "manually unloaded");
+            self.load_slot_condvar.notify_all();
+        }
+        Ok(unloaded)
+    }
+
     /// Acquire only a local engine built from the checked model snapshot.
     /// No proxy or cloud retry is reachable through this loader.
     pub fn get_local_engine(
@@ -297,6 +357,112 @@ mod tests {
         ) -> Result<types::InferenceOutput, Box<dyn std::error::Error>> {
             Err("not used in mock".into())
         }
+    }
+
+    #[test]
+    fn manual_model_controls_require_local_ids_and_refuse_busy_unloads() {
+        use crate::config::{EngineKind, ModelConfig, ModelRegistry, ProviderType};
+        let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+            "id":"manual-fixture", "name":"fixture", "tasks":["text-to-text"],
+            "aliases":["alias"], "engine":["llama-server"],
+            "local":{"path":"missing-manual-model.gguf"}
+        }))
+        .unwrap();
+        let mut local = ModelConfig::try_from(entry).unwrap();
+        local.model_path = std::env::temp_dir()
+            .join(format!("missing-{}.gguf", crate::setup::generate_api_key()))
+            .to_string_lossy()
+            .into_owned();
+        let mut cloud = local.clone();
+        cloud.id = "cloud".into();
+        cloud.provider = ProviderType::OpenAi;
+        let config = ModelRegistry {
+            models: vec![local.clone(), cloud],
+            ..Default::default()
+        };
+        let state = Arc::new(AppState::new(&config));
+        for id in ["alias", "cloud", "unknown"] {
+            assert!(state.load_model(id).is_err());
+            assert!(state.unload_model(id).is_err());
+        }
+        assert!(!state.unload_model(&local.id).unwrap());
+        assert!(
+            state
+                .load_model(&local.id)
+                .unwrap_err()
+                .contains("file not found")
+        );
+        assert!(state.registry.lock().unwrap().loading.is_empty());
+
+        struct DropProbe {
+            state: std::sync::Weak<AppState>,
+            dropped_outside_lock: Arc<std::sync::atomic::AtomicBool>,
+        }
+        impl InferenceEngine for DropProbe {
+            fn id(&self) -> &str {
+                "manual-fixture"
+            }
+            fn execute(
+                &self,
+                _: &InferenceTaskRequest,
+                _: Option<&mut dyn FnMut(&str) -> bool>,
+            ) -> Result<types::InferenceOutput, Box<dyn std::error::Error>> {
+                panic!("manual load must not run inference")
+            }
+        }
+        impl Drop for DropProbe {
+            fn drop(&mut self) {
+                self.dropped_outside_lock.store(
+                    self.state.upgrade().unwrap().registry.try_lock().is_ok(),
+                    std::sync::atomic::Ordering::SeqCst,
+                );
+            }
+        }
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let engine: Arc<dyn InferenceEngine> = Arc::new(DropProbe {
+            state: Arc::downgrade(&state),
+            dropped_outside_lock: dropped.clone(),
+        });
+        state.registry.lock().unwrap().finish_load(
+            &local,
+            engine.clone(),
+            EngineKind::LlamaServer,
+            std::time::Instant::now(),
+            None,
+        );
+        state.load_model(&local.id).unwrap();
+        assert!(
+            state
+                .unload_model(&local.id)
+                .unwrap_err()
+                .contains("in use")
+        );
+        drop(engine);
+        state
+            .registry
+            .lock()
+            .unwrap()
+            .loading
+            .insert(local.id.clone(), Arc::new(registry::LoadBarrier::new()));
+        assert!(
+            state
+                .unload_model(&local.id)
+                .unwrap_err()
+                .contains("still loading")
+        );
+        state.registry.lock().unwrap().loading.clear();
+        assert!(state.unload_model(&local.id).unwrap());
+        assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!state.unload_model(&local.id).unwrap());
+        let registry = state.registry.lock().unwrap();
+        assert!(
+            registry.engines.is_empty()
+                && registry.engine_configs.is_empty()
+                && registry.lru_keys.is_empty()
+                && registry.last_used.is_empty()
+                && registry.load_durations.is_empty()
+                && registry.load_evictions.is_empty()
+        );
     }
 
     #[test]

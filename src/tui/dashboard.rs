@@ -75,6 +75,10 @@ const HISTORY: usize = 80;
 struct App {
     info: DashboardInfo,
     models: Vec<ModelState>,
+    model_selected: usize,
+    model_action: Option<ModelAction>,
+    model_action_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    model_action_status: Option<String>,
     engines: Vec<EngineRow>,
     engine_selected: usize,
     refresh_engines: bool,
@@ -103,6 +107,12 @@ struct App {
     quit: bool,
 }
 
+#[derive(Clone, Copy)]
+enum ModelAction {
+    Load,
+    Unload,
+}
+
 impl App {
     fn new(info: DashboardInfo, vram: Arc<Mutex<Option<(u64, u64)>>>) -> Self {
         let models: Vec<ModelState> = info
@@ -127,6 +137,10 @@ impl App {
         Self {
             info,
             models,
+            model_selected: 0,
+            model_action: None,
+            model_action_rx: None,
+            model_action_status: None,
             engines: Vec::new(),
             engine_selected: 0,
             refresh_engines: false,
@@ -158,6 +172,79 @@ impl App {
     fn model_mut(&mut self, id: &str) -> Option<&mut ModelState> {
         let i = *self.index.get(id)?;
         self.models.get_mut(i)
+    }
+
+    fn selected_model_action(&self) -> Option<ModelAction> {
+        if self.model_action_rx.is_some() {
+            return None;
+        }
+        match &self.models.get(self.model_selected)?.status {
+            Status::Loaded { .. } => Some(ModelAction::Unload),
+            Status::Loading(_) => None,
+            Status::Idle | Status::Failed(_) => Some(ModelAction::Load),
+        }
+    }
+
+    fn process_model_action(&mut self, state: Option<&Arc<crate::inference::AppState>>) {
+        if let Some(action) = self.model_action.take() {
+            if self.model_action_rx.is_none() {
+                match (self.models.get(self.model_selected), state) {
+                    (Some(model), Some(state)) if model.row.provider.is_none() => {
+                        let id = model.row.id.clone();
+                        self.model_action_status = Some(format!(
+                            "{}: {id}…",
+                            match action {
+                                ModelAction::Load => "Loading",
+                                ModelAction::Unload => "Unloading",
+                            }
+                        ));
+                        let state = state.clone();
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            let result = match action {
+                                ModelAction::Load => {
+                                    state.load_model(&id).map(|()| format!("Loaded: {id}"))
+                                }
+                                ModelAction::Unload => state.unload_model(&id).map(|unloaded| {
+                                    format!(
+                                        "{}: {id}",
+                                        if unloaded {
+                                            "Unloaded"
+                                        } else {
+                                            "Already unloaded"
+                                        }
+                                    )
+                                }),
+                            };
+                            let _ = tx.send(result);
+                        });
+                        self.model_action_rx = Some(rx);
+                    }
+                    (Some(model), _) if model.row.provider.is_some() => {
+                        self.model_action_status =
+                            Some("Cloud models cannot be loaded or unloaded here".into());
+                    }
+                    _ => {
+                        self.model_action_status =
+                            Some("Select a local model; server state is required".into())
+                    }
+                }
+            }
+        }
+        if let Some(rx) = &self.model_action_rx {
+            match rx.try_recv() {
+                Ok(result) => {
+                    self.model_action_status =
+                        Some(result.unwrap_or_else(|error| format!("Failed: {error}")));
+                    self.model_action_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.model_action_status = Some("Model worker stopped unexpectedly".into());
+                    self.model_action_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
     }
 
     fn on_event(&mut self, ev: UiEvent) {
@@ -277,6 +364,16 @@ impl App {
                 }
             }
             KeyCode::Char('r') if self.tab == Tab::Engines => self.refresh_engines = true,
+            KeyCode::Enter if self.tab == Tab::Models && self.model_action_rx.is_none() => {
+                self.model_action = self.selected_model_action();
+            }
+            KeyCode::Up if self.tab == Tab::Models => {
+                self.model_selected = self.model_selected.saturating_sub(1);
+            }
+            KeyCode::Down if self.tab == Tab::Models => {
+                self.model_selected =
+                    (self.model_selected + 1).min(self.models.len().saturating_sub(1));
+            }
             KeyCode::Char('u') if self.tab == Tab::Engines => self.update_requested = true,
             KeyCode::Up if self.tab == Tab::Engines => {
                 self.engine_selected = self.engine_selected.saturating_sub(1)
@@ -347,6 +444,7 @@ fn run_dashboard_inner(
     let mut app = App::new(info, vram);
     app.engine_rx = Some(start_engine_inventory());
     while !app.quit {
+        app.process_model_action(state.as_ref());
         if app.refresh_engines && app.engine_rx.is_none() {
             app.engine_rx = Some(start_engine_inventory());
             app.refresh_engines = false;
@@ -643,6 +741,14 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
             "update"
         };
         spans.extend(key_hint("u", action));
+    }
+    if app.tab == Tab::Models {
+        spans.extend(key_hint("↑↓", "select"));
+        match app.selected_model_action() {
+            Some(ModelAction::Load) => spans.extend(key_hint("Enter", "load")),
+            Some(ModelAction::Unload) => spans.extend(key_hint("Enter", "unload")),
+            None => spans.push(Span::styled(" model busy ", Style::new().fg(DIM))),
+        }
     }
     if app.tab == Tab::Logs {
         spans.extend(key_hint("↑↓ PgUp/Dn", "scroll"));
@@ -1636,6 +1742,8 @@ fn draw_stats(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
+    let [table_area, details] =
+        Layout::vertical([Constraint::Min(4), Constraint::Length(6)]).areas(area);
     let block = panel(format!(
         " Models Catalog · {} configured ",
         app.models.len()
@@ -1651,59 +1759,72 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
     ])
     .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD));
 
-    let rows = app.models.iter().map(|m| {
-        let (icon, color, status_text) = match &m.status {
-            Status::Idle => ("·", DIM, "IDLE"),
-            Status::Loading(_) => (spinner(app.tick), ACCENT, "LOADING"),
-            Status::Loaded { .. } => ("●", OK, "LOADED"),
-            Status::Failed(_) => ("×", ERR, "FAILED"),
-        };
+    let visible = table_area.height.saturating_sub(3) as usize;
+    let start = app.model_selected.saturating_add(1).saturating_sub(visible);
+    let rows = app
+        .models
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible)
+        .map(|(index, m)| {
+            let (icon, color, status_text) = match &m.status {
+                Status::Idle => ("·", DIM, "IDLE"),
+                Status::Loading(_) => (spinner(app.tick), ACCENT, "LOADING"),
+                Status::Loaded { .. } => ("●", OK, "LOADED"),
+                Status::Failed(_) => ("×", ERR, "FAILED"),
+            };
 
-        let has_cap = |prefix: &str| {
-            m.row
-                .capabilities
-                .iter()
-                .any(|c| c.to_lowercase().contains(prefix))
-        };
-        let chat_dot = if has_cap("chat") || has_cap("text") {
-            "●"
-        } else {
-            "○"
-        };
-        let vision_dot = if has_cap("vision") { "●" } else { "○" };
-        let tools_dot = if has_cap("tool") { "●" } else { "○" };
-        let audio_dot = if has_cap("audio") || has_cap("speech") {
-            "●"
-        } else {
-            "○"
-        };
-        let image_dot = if has_cap("image") { "●" } else { "○" };
-        let cap_str =
-            format!("C:{chat_dot} V:{vision_dot} T:{tools_dot} A:{audio_dot} I:{image_dot}");
-
-        let locality_style = if m.row.locality == "LOCAL" {
-            Style::new().fg(OK)
-        } else {
-            Style::new().fg(ACCENT)
-        };
-
-        Row::new([
-            Cell::from(icon).style(Style::new().fg(color)),
-            Cell::from(format!("{} ({})", m.row.id, m.row.name)),
-            Cell::from(m.row.locality.clone()).style(locality_style),
-            Cell::from(cap_str).style(Style::new().fg(DIM)),
-            Cell::from(
+            let has_cap = |prefix: &str| {
                 m.row
-                    .provider
-                    .clone()
-                    .or_else(|| m.row.engine.clone())
-                    .unwrap_or_else(|| "local".into()),
-            )
-            .style(Style::new().fg(DIM)),
-            Cell::from(m.requests.to_string()),
-            Cell::from(status_text).style(Style::new().fg(color)),
-        ])
-    });
+                    .capabilities
+                    .iter()
+                    .any(|c| c.to_lowercase().contains(prefix))
+            };
+            let chat_dot = if has_cap("chat") || has_cap("text") {
+                "●"
+            } else {
+                "○"
+            };
+            let vision_dot = if has_cap("vision") { "●" } else { "○" };
+            let tools_dot = if has_cap("tool") { "●" } else { "○" };
+            let audio_dot = if has_cap("audio") || has_cap("speech") {
+                "●"
+            } else {
+                "○"
+            };
+            let image_dot = if has_cap("image") { "●" } else { "○" };
+            let cap_str =
+                format!("C:{chat_dot} V:{vision_dot} T:{tools_dot} A:{audio_dot} I:{image_dot}");
+
+            let locality_style = if m.row.locality == "LOCAL" {
+                Style::new().fg(OK)
+            } else {
+                Style::new().fg(ACCENT)
+            };
+
+            Row::new([
+                Cell::from(if index == app.model_selected {
+                    ">"
+                } else {
+                    icon
+                })
+                .style(Style::new().fg(color)),
+                Cell::from(format!("{} ({})", m.row.id, m.row.name)),
+                Cell::from(m.row.locality.clone()).style(locality_style),
+                Cell::from(cap_str).style(Style::new().fg(DIM)),
+                Cell::from(
+                    m.row
+                        .provider
+                        .clone()
+                        .or_else(|| m.row.engine.clone())
+                        .unwrap_or_else(|| "local".into()),
+                )
+                .style(Style::new().fg(DIM)),
+                Cell::from(m.requests.to_string()),
+                Cell::from(status_text).style(Style::new().fg(color)),
+            ])
+        });
 
     let table = Table::new(
         rows,
@@ -1719,7 +1840,31 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
     )
     .header(header)
     .block(block);
-    f.render_widget(table, area);
+    f.render_widget(table, table_area);
+    let selected = app.models.get(app.model_selected);
+    let detail = selected
+        .map(|model| {
+            let status = match &model.status {
+                Status::Failed(error) => error.clone(),
+                Status::Loaded { detail, .. } => detail.clone(),
+                _ => String::new(),
+            };
+            format!(
+                "{}\n{}\n{}\nManual loads still follow idle timeout and memory eviction.",
+                model.row.id,
+                app.model_action_status
+                    .as_deref()
+                    .unwrap_or("Enter: toggle load/unload · in-use models cannot be unloaded"),
+                status
+            )
+        })
+        .unwrap_or_else(|| "No models configured".into());
+    f.render_widget(
+        Paragraph::new(detail)
+            .wrap(Wrap { trim: false })
+            .block(panel(" Model controls ")),
+        details,
+    );
 }
 
 fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
@@ -1898,12 +2043,14 @@ fn draw_logs(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn draw_help(f: &mut Frame) {
-    let area = centered(f.area(), 60, 19);
+    let area = centered(f.area(), 60, 21);
     f.render_widget(Clear, area);
     let text = vec![
         Line::from(""),
         Line::from("  l               toggle logs"),
         Line::from("  m               toggle models"),
+        Line::from("  ↑ ↓             select a model in Models"),
+        Line::from("  Enter           toggle selected model load/unload"),
         Line::from("  e               toggle engines"),
         Line::from("  ↑ ↓             select an engine"),
         Line::from("  r               check engine releases"),
@@ -2044,6 +2191,88 @@ mod tests {
 
     fn ts() -> String {
         "00:00:00".into()
+    }
+
+    #[test]
+    fn model_controls_select_scroll_and_report_results_without_blocking() {
+        let mut app = app();
+        app.on_key(KeyCode::Char('m'), KeyModifiers::NONE);
+        app.on_key(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.model_selected, 0);
+        app.on_key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.model_action, Some(ModelAction::Load)));
+        app.process_model_action(None);
+        assert!(
+            app.model_action_status
+                .as_ref()
+                .unwrap()
+                .contains("server state")
+        );
+        app.models[0].status = Status::Loaded {
+            load_ms: 0,
+            detail: String::new(),
+        };
+        app.on_key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(app.model_action.take(), Some(ModelAction::Unload)));
+        app.models[0].status = Status::Loading(Instant::now());
+        app.on_key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.model_action.is_none());
+        app.models[0].status = Status::Idle;
+        for _ in 0..3 {
+            app.on_key(KeyCode::Down, KeyModifiers::NONE);
+        }
+        assert_eq!(app.model_selected, 1);
+        app.on_key(KeyCode::Enter, KeyModifiers::NONE);
+        let state = Arc::new(crate::inference::AppState::new(
+            &crate::config::ModelRegistry::default(),
+        ));
+        app.process_model_action(Some(&state));
+        assert!(
+            app.model_action_status
+                .as_ref()
+                .unwrap()
+                .contains("Cloud models")
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.model_action_rx = Some(rx);
+        app.on_key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.model_action.is_none());
+        tx.send(Err("in use".into())).unwrap();
+        app.process_model_action(Some(&state));
+        assert_eq!(app.model_action_status.as_deref(), Some("Failed: in use"));
+        assert!(app.model_action_rx.is_none());
+        for index in 2..30 {
+            let mut model = app.models[0].clone();
+            model.row.id = format!("model-{index}");
+            app.models.push(model);
+        }
+        app.model_selected = 29;
+        let mut terminal = Terminal::new(TestBackend::new(140, 25)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        for text in [">", "model-29", "Model controls", "load", "Failed: in use"] {
+            assert!(screen.contains(text), "{text}");
+        }
+        app.models[29].status = Status::Loaded {
+            load_ms: 0,
+            detail: String::new(),
+        };
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(screen.contains("unload"));
+        draw_all(&mut app);
     }
 
     fn draw_all(app: &mut App) {

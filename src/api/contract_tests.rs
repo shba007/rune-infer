@@ -483,17 +483,19 @@ async fn live_minicpm_task_combinations() {
         ),
     ] {
         let body = serde_json::json!({"model":"minicpm-o-4-5-q8-0","messages":[{"role":"user","content":content}],"thinking":false,"reasoning_effort":"none","temperature":0,"max_tokens":64});
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("x-rune-local-only", "1")
+            .header("content-type", "application/json");
+        if task == "text-image-to-text" {
+            request = request.header("x-no-swap", "1");
+        }
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(240),
-            router.clone().oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v1/chat/completions")
-                    .header("x-rune-local-only", "1")
-                    .header("content-type", "application/json")
-                    .body(Body::from(body.to_string()))
-                    .unwrap(),
-            ),
+            router
+                .clone()
+                .oneshot(request.body(Body::from(body.to_string())).unwrap()),
         )
         .await
         .unwrap()
@@ -520,7 +522,23 @@ async fn live_minicpm_task_combinations() {
             "{task}: {answer}"
         );
         println!("{task}: {answer}");
+        if task == "text-to-text" {
+            let state = inference.clone();
+            tokio::task::spawn_blocking(move || {
+                assert!(state.unload_model("minicpm-o-4-5-q8-0").unwrap());
+                assert!(state.loaded_models().is_empty());
+                state.load_model("minicpm-o-4-5-q8-0").unwrap();
+                state.load_model("minicpm-o-4-5-q8-0").unwrap();
+                println!("Manual unload and prompt-free reload succeeded");
+            })
+            .await
+            .unwrap();
+        }
     }
+    let state = inference.clone();
+    tokio::task::spawn_blocking(move || assert!(state.unload_model("minicpm-o-4-5-q8-0").unwrap()))
+        .await
+        .unwrap();
     drop(router);
     drop(inference);
 }
