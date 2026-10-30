@@ -37,7 +37,7 @@ fn test_embeddinggemma2_catalog_configuration() {
         .as_ref()
         .expect("Local model must have engine config");
     assert_eq!(engine.supported, vec![EngineKind::LlamaServer]);
-    assert_eq!(engine.preferred, Some(EngineKind::LlamaServer));
+    assert_eq!(model.engine_plan(), vec![EngineKind::LlamaServer]);
     assert_eq!(model.max_context_length, Some(8192));
     assert!(model.model_path.contains("embeddinggemma-2"));
     assert!(

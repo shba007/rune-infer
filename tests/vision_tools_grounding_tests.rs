@@ -1,12 +1,9 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use base64::Engine;
-use rune_infer::api::{AppState, create_router};
+mod common;
 use rune_infer::config::{ModelConfig, ModelRegistry, ServerConfig};
-use rune_infer::inference::AppState as InferenceAppState;
-use rune_infer::proxy::ProxyService;
 use rune_infer::schema::ModelEntry;
-use std::sync::Arc;
 use tower::ServiceExt;
 
 fn sample_qwen_vision_config() -> ModelConfig {
@@ -14,6 +11,7 @@ fn sample_qwen_vision_config() -> ModelConfig {
         "id": "qwen3.8-27b",
         "name": "Qwen3.8 27B",
         "modality": "VisionText",
+        "tasks": ["text-image-to-text", "text-image-to-detection"],
         "capabilities": ["Chat", "Vision", "Tool Call", "Reasoning"],
         "engine": { "supported": ["encoder"], "preferred": "encoder" },
         "max_context_length": 262144,
@@ -46,10 +44,7 @@ fn create_test_app() -> axum::Router {
     };
     catalog.models.push(sample_qwen_vision_config());
 
-    let inference = Arc::new(InferenceAppState::new(&catalog));
-    let proxy = Arc::new(ProxyService::new(&catalog));
-    let state = AppState::new(inference, proxy, catalog);
-    create_router(state)
+    common::create_mock_app(catalog)
 }
 
 fn sample_png_base64() -> String {

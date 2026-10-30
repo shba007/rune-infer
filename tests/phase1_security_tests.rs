@@ -1,12 +1,9 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
-use rune_infer::api::{AppState, create_router};
+mod common;
 use rune_infer::config::{ModelConfig, ModelRegistry, ServerConfig};
-use rune_infer::inference::AppState as InferenceAppState;
 use rune_infer::media::{decode_media, validate_url_for_ssrf};
-use rune_infer::proxy::ProxyService;
 use rune_infer::schema::ModelEntry;
-use std::sync::Arc;
 use tower::ServiceExt;
 
 #[test]
@@ -72,6 +69,7 @@ async fn test_audio_upload_filename_path_traversal_sanitized() {
         "id": "audio8-asr-infinite",
         "name": "Edge0 Audio8 ASR Infinite",
         "modality": "SpeechToText",
+        "tasks": ["audio-to-text"],
         "capabilities": ["Speech-to-Text"],
         "engine": { "supported": ["audio-cpp"], "preferred": "audio-cpp" },
         "sampling": {},
@@ -88,10 +86,7 @@ async fn test_audio_upload_filename_path_traversal_sanitized() {
         .models
         .push(ModelConfig::try_from(entry).expect("valid model config"));
 
-    let inference = Arc::new(InferenceAppState::new(&catalog));
-    let proxy = Arc::new(ProxyService::new(&catalog));
-    let state = AppState::new(inference, proxy, catalog);
-    let app = create_router(state);
+    let app = common::create_mock_app(catalog);
 
     let boundary = "------------------------boundaryTraversal123";
     let wav_bytes = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00";
@@ -117,7 +112,7 @@ async fn test_audio_upload_filename_path_traversal_sanitized() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(json.get("text").is_some());
+    assert_eq!(json["text"], "malicious.wav");
 }
 
 #[test]

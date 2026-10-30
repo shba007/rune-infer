@@ -15,6 +15,7 @@ fn sample_qwen_model_config() -> ModelConfig {
         "name": "Qwen 3.8 27B",
         "description": "Multimodal reasoning model",
         "modality": "VisionText",
+        "tasks": ["text-image-to-text"],
         "capabilities": ["Chat", "Vision", "Tool Call"],
         "roles": ["chat", "vision"],
         "aliases": ["qwen-chat", "default-chat"],
@@ -41,6 +42,7 @@ fn sample_cloud_model_config() -> ModelConfig {
         "name": "Gemini 2.5 Flash",
         "description": "Cloud fast multimodal",
         "modality": "VisionText",
+        "tasks": ["text-image-to-text"],
         "capabilities": ["Chat", "Vision"],
         "roles": ["fast"],
         "aliases": ["flash"],
@@ -357,6 +359,10 @@ async fn test_if1_background_preemption_when_foreground_arrives() {
     use rune_infer::inference::types::InferenceTaskRequest;
 
     let (_, state) = create_studio_test_app();
+    // This test exercises cancellation with an injected embedding engine.
+    state.config.write().unwrap().models[0]
+        .tasks
+        .push("text-to-embedding".into());
     let mut bg_headers = HeaderMap::new();
     bg_headers.insert("x-rune-priority", "background".parse().unwrap());
 

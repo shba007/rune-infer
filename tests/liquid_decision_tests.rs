@@ -1,17 +1,14 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use base64::Engine;
-use rune_infer::api::{AppState, create_router};
+mod common;
 use rune_infer::config::{EngineKind, Modality, ModelConfig, ModelRegistry, ServerConfig};
-use rune_infer::inference::AppState as InferenceAppState;
 use rune_infer::inference::engines::encoder::EncoderEngine;
 use rune_infer::inference::traits::InferenceEngine;
 use rune_infer::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
-use rune_infer::proxy::ProxyService;
 use rune_infer::schema::ModelEntry;
 use rune_infer::types::{DecisionAnswer, DecisionQuestion, DecisionResponse};
 use std::path::Path;
-use std::sync::Arc;
 use tower::ServiceExt;
 
 fn sample_liquid_d1_config() -> ModelConfig {
@@ -20,6 +17,7 @@ fn sample_liquid_d1_config() -> ModelConfig {
         "name": "Liquid AI d1-3B",
         "description": "Multimodal System 1 decision model",
         "modality": "Decision",
+        "tasks": ["text-image-to-decision"],
         "capabilities": ["Decision", "System1", "Classification", "Scoring", "Vision"],
         "engine": { "supported": ["encoder"], "preferred": "encoder" },
         "max_context_length": 32768,
@@ -52,10 +50,7 @@ fn create_test_app() -> axum::Router {
     };
     catalog.models.push(sample_liquid_d1_config());
 
-    let inference = Arc::new(InferenceAppState::new(&catalog));
-    let proxy = Arc::new(ProxyService::new(&catalog));
-    let state = AppState::new(inference, proxy, catalog);
-    create_router(state)
+    common::create_mock_app(catalog)
 }
 
 fn sample_png_base64() -> String {
@@ -93,11 +88,12 @@ fn test_liquid_d1_catalog_configuration() {
     assert_eq!(model.name, "Liquid AI d1-3B");
     assert_eq!(model.modality, Modality::Decision);
     assert!(model.is_decision());
-    assert!(model.is_vision());
+    assert!(!model.is_vision());
+    assert_eq!(model.tasks, ["text-to-decision"]);
 
     let engine = model.engine.as_ref().expect("Local model must have engine");
     assert!(engine.supported.contains(&EngineKind::LlamaServer));
-    assert_eq!(engine.preferred, Some(EngineKind::LlamaServer));
+    assert_eq!(model.engine_plan().first(), Some(&EngineKind::LlamaServer));
     assert_eq!(model.max_context_length, Some(32768));
 
     // Case-insensitive and short-name lookup tests

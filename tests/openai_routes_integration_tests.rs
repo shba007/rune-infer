@@ -8,12 +8,14 @@ use rune_infer::proxy::ProxyService;
 use rune_infer::schema::ModelEntry;
 use std::sync::Arc;
 use tower::ServiceExt;
+mod common;
 
 fn sample_model_config() -> ModelConfig {
     let raw = r#"{
         "id": "qwen3.8-27b",
         "name": "Qwen3.8 27B",
         "modality": "VisionText",
+        "tasks": ["text-image-to-text"],
         "capabilities": ["Chat", "Vision"],
         "engine": { "supported": ["llama-server"] },
         "max_context_length": 262144,
@@ -231,7 +233,7 @@ async fn test_anthropic_routes_are_disabled() {
 }
 
 #[tokio::test]
-async fn test_audio_speech_route() {
+async fn test_audio_speech_route_refuses_unverified_model() {
     let mut catalog = ModelRegistry {
         server: ServerConfig {
             host: "127.0.0.1".to_string(),
@@ -279,17 +281,14 @@ async fn test_audio_speech_route() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(resp.headers().get("content-type").unwrap(), "audio/wav");
-
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    assert!(body.len() > 44);
-    assert_eq!(&body[0..4], b"RIFF");
-    assert_eq!(&body[8..12], b"WAVE");
+    let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(error["error"]["code"], "model_tasks_unverified");
 }
 
 #[tokio::test]
-async fn test_audio_transcription_route() {
+async fn test_audio_transcription_route_refuses_unverified_model() {
     let mut catalog = ModelRegistry {
         server: ServerConfig {
             host: "127.0.0.1".to_string(),
@@ -346,11 +345,11 @@ async fn test_audio_transcription_route() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(json.get("text").is_some());
+    assert_eq!(json["error"]["code"], "model_tasks_unverified");
 }
 
 fn sample_multimodal_encoder_config() -> ModelConfig {
@@ -358,6 +357,7 @@ fn sample_multimodal_encoder_config() -> ModelConfig {
         "id": "qwen3.8-encoder",
         "name": "Qwen3.8 Multimodal Encoder",
         "modality": "VisionText",
+        "tasks": ["text-image-audio-to-text"],
         "capabilities": ["Chat", "Vision", "Audio", "Tool Call"],
         "engine": { "supported": ["encoder"], "preferred": "encoder" },
         "max_context_length": 262144,
@@ -381,6 +381,7 @@ fn sample_gemma4_omni_encoder_config() -> ModelConfig {
         "id": "gemma-4-12b-it",
         "name": "Gemma 4 12B IT",
         "modality": "Omni",
+        "tasks": ["text-image-audio-video-to-text"],
         "capabilities": ["Chat", "Vision", "Audio", "Video", "Omni", "Tool Call"],
         "engine": { "supported": ["encoder"], "preferred": "encoder" },
         "max_context_length": 262144,
@@ -405,6 +406,7 @@ fn sample_vision_only_config() -> ModelConfig {
         "id": "vision-only",
         "name": "Vision Only",
         "modality": "VisionText",
+        "tasks": ["text-image-to-text"],
         "capabilities": ["Chat", "Vision", "Tool Call"],
         "engine": { "supported": ["encoder"], "preferred": "encoder" },
         "max_context_length": 8192,
@@ -438,11 +440,7 @@ fn create_multimodal_test_app() -> axum::Router {
     catalog.models.push(sample_multimodal_encoder_config());
     catalog.models.push(sample_gemma4_omni_encoder_config());
     catalog.models.push(sample_vision_only_config());
-
-    let inference = Arc::new(InferenceAppState::new(&catalog));
-    let proxy = Arc::new(ProxyService::new(&catalog));
-    let state = AppState::new(inference, proxy, catalog);
-    create_router(state)
+    common::create_mock_app(catalog)
 }
 
 fn sample_png_base64() -> String {
@@ -488,7 +486,7 @@ async fn test_vision_only_model_rejects_audio_input_with_a_clear_error() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["error"]["code"], "model_audio_unsupported");
+    assert_eq!(json["error"]["code"], "model_task_unsupported");
     assert!(
         json["error"]["message"]
             .as_str()
@@ -669,11 +667,15 @@ async fn test_gemma4_omni_model_catalog_resolution() {
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["id"], "gemma-4-12b-it");
-    let caps = json["capabilities"].as_array().expect("capabilities array");
-    let caps_str: Vec<&str> = caps.iter().filter_map(|c| c.as_str()).collect();
-    assert!(caps_str.contains(&"Omni"));
-    assert!(caps_str.contains(&"Audio"));
-    assert!(caps_str.contains(&"Vision"));
+    assert_eq!(
+        json["tasks"],
+        serde_json::json!(["text-image-audio-video-to-text"])
+    );
+    assert_eq!(
+        json["modalities_in"],
+        serde_json::json!(["text", "image", "audio", "video"])
+    );
+    assert_eq!(json["modalities_out"], serde_json::json!(["text"]));
 
     // 2. Chat completion with full Hugging Face repository/GGUF slug resolves and succeeds
     let req = Request::builder()

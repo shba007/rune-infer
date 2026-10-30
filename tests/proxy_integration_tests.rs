@@ -44,6 +44,7 @@ fn test_openrouter_apodex_configuration_parsing() {
                 "id": "apodex-1.1-mini",
                 "name": "Apodex 1.1 Mini (Free)",
                 "modality": "Text",
+                "tasks": ["text-to-text"],
                 "max_context_length": 262144,
                 "remote": {
                     "provider": "openrouter",
@@ -93,6 +94,7 @@ fn test_openrouter_dots3_note_configuration_parsing() {
                 "id": "dots-3-note-preview",
                 "name": "Dots3-Note Preview (Free)",
                 "modality": "VisionText",
+                "tasks": ["text-image-to-text"],
                 "max_context_length": 512000,
                 "remote": {
                     "provider": "openrouter",
