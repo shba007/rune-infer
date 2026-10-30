@@ -3,6 +3,13 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.17.0](https://github.com/shba007/rune-infer/compare/v0.16.0..v0.17.0) - 2026-10-30
+
+#### 🚀 Features
+- implement model load/unload controls in dashboard with user feedback - ([5899fae](https://github.com/shba007/rune-infer/commit/5899fae43d98540605ba434292c2925a5ba6640f)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.16.0](https://github.com/shba007/rune-infer/compare/v0.15.0..v0.16.0) - 2026-10-30
 
 #### 🚀 Features
