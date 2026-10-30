@@ -3,6 +3,24 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.16.0](https://github.com/shba007/rune-infer/compare/v0.15.0..v0.16.0) - 2026-10-30
+
+#### 🚀 Features
+- add whispercpp engine support and enhance engine management in tui - ([2b45b2b](https://github.com/shba007/rune-infer/commit/2b45b2b251873c9f6706a14cb13ae43d81054f78)) - Shirsendu Bairagi
+- add support for CrispASR engine updates in the dashboard and update logic - ([a32a166](https://github.com/shba007/rune-infer/commit/a32a166c2d2fc7e12587022ba07b67e3e63ea572)) - Shirsendu Bairagi
+- refactor engine binary paths to use download::engine_bin() and add installation functionality in the dashboard - ([434a02a](https://github.com/shba007/rune-infer/commit/434a02ad814afcdde337b2449319079b5b02d57b)) - Shirsendu Bairagi
+- updated health check examples and model retrieval endpoints - ([bc65206](https://github.com/shba007/rune-infer/commit/bc65206c62453aaa6c1ec87dd8172ca1209acb1c)) - Shirsendu Bairagi
+- implement model task verification and update modality handling - ([58f356c](https://github.com/shba007/rune-infer/commit/58f356c9d6d2b5b3a4026294532c27c4c3cf08a6)) - Shirsendu Bairagi
+- refuse synthetic encoder output and add related tests - ([6b72e7a](https://github.com/shba007/rune-infer/commit/6b72e7ad3d2ccb5a163899bdea72c0babca3990d)) - Shirsendu Bairagi
+- enhance setup process with verified local task metadata and conflict resolution - ([9b0e4bf](https://github.com/shba007/rune-infer/commit/9b0e4bfd6ca0fb61d935fc6c065e435cb680b3b8)) - Shirsendu Bairagi
+- add transport doubles and mock app creation for testing - ([58355f6](https://github.com/shba007/rune-infer/commit/58355f60a4f70d66807a4c1a7e3f857228a7fa3b)) - Shirsendu Bairagi
+
+#### 🚜 Refactoring
+- engine binary resolution and update handling - ([941d5eb](https://github.com/shba007/rune-infer/commit/941d5eb5984b3a62d4b4de1ce46c5ef351a737db)) - Shirsendu Bairagi
+- inference engine loading and task validation - ([2ff01d4](https://github.com/shba007/rune-infer/commit/2ff01d4396c69463ec7d6f066cb85f00feb9299e)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.15.0](https://github.com/shba007/rune-infer/compare/v0.14.0..v0.15.0) - 2026-10-26
 
 #### 🚀 Features
