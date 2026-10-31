@@ -3260,7 +3260,12 @@ mod tests {
         assert!(text.contains("needle"));
         assert!(text.contains("Not checked"));
         assert!(text.contains("bin/needle/needle"));
-        assert!(text.contains("Check versions before installing or updating"));
+        let expected_action = if cfg!(all(windows, target_arch = "x86_64")) {
+            "Check versions before installing or updating"
+        } else {
+            "Automatic update is unavailable on this platform"
+        };
+        assert!(text.contains(expected_action));
         assert!(!text.contains("u update"));
         app.on_key(KeyCode::Down, KeyModifiers::NONE);
         assert_eq!(app.engine_selected, 1);

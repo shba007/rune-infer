@@ -2026,7 +2026,8 @@ mod tests {
                     .starts_with(".whisper-cpp-incomplete-")
             })
             .unwrap();
-        assert!(result.contains(&backup.display().to_string()));
+        let canonical_backup = std::fs::canonicalize(&backup).unwrap();
+        assert!(result.contains(&canonical_backup.display().to_string()));
         assert_eq!(
             std::fs::read_to_string(backup.join("nested/custom.txt")).unwrap(),
             "keep"
@@ -2198,7 +2199,8 @@ mod tests {
                                 .starts_with(&format!(".{directory}-backup-"))
                         })
                         .unwrap();
-                    assert!(message.contains(&backup.display().to_string()));
+                    let canonical_backup = std::fs::canonicalize(&backup).unwrap();
+                    assert!(message.contains(&canonical_backup.display().to_string()));
                     assert_eq!(
                         std::fs::read_to_string(current.join(executable)).unwrap(),
                         "new engine"
