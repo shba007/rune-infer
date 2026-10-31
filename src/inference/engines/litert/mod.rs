@@ -1,5 +1,6 @@
-//! CPU-only Depth Anything V2 Small adapter; native code runs in a child process.
+//! CPU-only reviewed Depth Anything V2 adapters; native code runs in a child process.
 pub mod native;
+mod resize;
 use crate::{
     config::ModelConfig,
     inference::{
@@ -22,28 +23,51 @@ pub const PIXELS: usize = WIDTH as usize * HEIGHT as usize;
 const RUNTIME_SHA: &str = "6fe42cfa518879dd7bae4500244cf371d949bf0c8559cb60be207d81112da16d";
 const RUNTIME_URL: &str =
     "https://storage.googleapis.com/litert/binaries/2.3.0/windows_x86_64/libLiteRt.dll";
-const MODEL_SHAS: [&str; 1] = ["651415f1774e02d06de946eccf2e6dbbc5f499a9e932d9de7ada3d59637d2e8e"];
+pub(crate) struct ModelProfile {
+    pub sha256: &'static str,
+    pub architecture: &'static str,
+    pub name: &'static str,
+    pub source: &'static str,
+    reference_resize: bool,
+}
+const MODEL_PROFILES: [ModelProfile; 2] = [
+    ModelProfile {
+        sha256: "651415f1774e02d06de946eccf2e6dbbc5f499a9e932d9de7ada3d59637d2e8e",
+        architecture: "depth-anything-v2-small",
+        name: "Depth Anything V2 Small FP32",
+        source: "https://huggingface.co/litert-community/depth-anything-v2-small/tree/178427e448dbf4da93b1e7b1b2abc103ad329bd6/tflite",
+        reference_resize: false,
+    },
+    ModelProfile {
+        sha256: "6f03564f13abfae18185581a809cb5c0ee5c0a425dc5f85102194b2b321eba3d",
+        architecture: "depth-anything-v2-large",
+        name: "Depth Anything V2 Large FP32",
+        source: "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/tree/7581137eff8d4e94f6e796d3baea0e9fa79b22d2 (local export using tools/model-converter; CC-BY-NC-4.0)",
+        reference_resize: true,
+    },
+];
 
 pub fn verify_artifacts(runtime: &Path, model: &Path) -> anyhow::Result<()> {
+    checked_profile(runtime, model).map(|_| ())
+}
+
+fn checked_profile(runtime: &Path, model: &Path) -> anyhow::Result<&'static ModelProfile> {
     anyhow::ensure!(
         cfg!(all(windows, target_arch = "x86_64")),
         "LiteRT depth currently requires Windows x64 CPU"
     );
     validate_runtime(runtime).map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    verify_model(model)
+    reviewed_model(model)
 }
 
 /// Identify the reviewed export by content, independently of its filename.
-pub(crate) fn verify_model(model: &Path) -> anyhow::Result<()> {
+pub(crate) fn reviewed_model(model: &Path) -> anyhow::Result<&'static ModelProfile> {
     let mut header = [0; 8];
     std::fs::File::open(model)?.read_exact(&mut header)?;
     anyhow::ensure!(&header[4..] == b"TFL3", "not a TFLite model");
     let hash = super::download::file_sha256(model).map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    anyhow::ensure!(
-        MODEL_SHAS.contains(&hash.as_str()),
-        "Unreviewed LiteRT model artifact; this cycle supports only the pinned Depth Anything V2 Small exports"
-    );
-    Ok(())
+    MODEL_PROFILES.iter().find(|profile| profile.sha256 == hash).ok_or_else(||
+        anyhow::anyhow!("Unreviewed LiteRT model artifact; only checksum-pinned Depth Anything V2 FP32 exports are supported"))
 }
 
 pub fn runtime_path() -> anyhow::Result<PathBuf> {
@@ -129,12 +153,13 @@ pub struct LiteRtEngine {
     model: PathBuf,
     helper: PathBuf,
     serial: Mutex<()>,
+    profile: &'static ModelProfile,
 }
 impl LiteRtEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
         let runtime = runtime_path()?;
         let path = std::fs::canonicalize(&model.model_path)?;
-        verify_artifacts(&runtime, &path)?;
+        let profile = checked_profile(&runtime, &path)?;
         let helper = helper_path()?;
         Ok(Self {
             id: model.id.clone(),
@@ -142,6 +167,7 @@ impl LiteRtEngine {
             model: path,
             helper: std::fs::canonicalize(helper)?,
             serial: Mutex::new(()),
+            profile,
         })
     }
     fn infer(&self, input: Vec<u8>) -> Result<Vec<f32>, Box<dyn Error>> {
@@ -237,7 +263,7 @@ fn decode_depth(bytes: &[u8]) -> Result<Vec<f32>, Box<dyn Error>> {
     Ok(values)
 }
 
-fn preprocess(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
+fn preprocess(bytes: &[u8], profile: &ModelProfile) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
     let mut limits = image::Limits::default();
     limits.max_alloc = Some(64 * 1024 * 1024);
@@ -246,12 +272,16 @@ fn preprocess(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), Box<dyn Error>> {
     reader.limits(limits);
     let image = reader.decode()?;
     let (width, height) = (image.width(), image.height());
-    let rgb = image::imageops::resize(
-        &image.to_rgb8(),
-        WIDTH,
-        HEIGHT,
-        image::imageops::FilterType::CatmullRom,
-    );
+    let rgb = if profile.reference_resize {
+        resize::reference_bicubic(&image.to_rgb8(), WIDTH, HEIGHT)
+    } else {
+        image::imageops::resize(
+            &image.to_rgb8(),
+            WIDTH,
+            HEIGHT,
+            image::imageops::FilterType::CatmullRom,
+        )
+    };
     let mut input = Vec::with_capacity(PIXELS * 3 * 4);
     for channel in 0..3 {
         for pixel in rgb.pixels() {
@@ -284,7 +314,7 @@ impl InferenceEngine for LiteRtEngine {
             .serial
             .lock()
             .map_err(|_| "LiteRT inference lock poisoned")?;
-        let (input, source_width, source_height) = preprocess(image_bytes)?;
+        let (input, source_width, source_height) = preprocess(image_bytes, self.profile)?;
         let values = self.infer(input)?;
         let min = values.iter().copied().fold(f32::INFINITY, f32::min);
         let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -333,11 +363,41 @@ impl InferenceEngine for LiteRtEngine {
 mod tests {
     use super::*;
     #[test]
+    #[ignore = "requires a real image and its converter-generated input tensor"]
+    fn live_preprocessing_matches_reference_input() {
+        let image = std::fs::read(std::env::var("LITERT_TEST_IMAGE").unwrap()).unwrap();
+        let expected =
+            std::fs::read(std::env::var("LITERT_TEST_REFERENCE_INPUT").unwrap()).unwrap();
+        let (actual, _, _) = preprocess(&image, &MODEL_PROFILES[1]).unwrap();
+        assert_eq!(actual.len(), expected.len());
+        let mut maximum = 0_f32;
+        let mut sum = 0_f64;
+        for (actual, expected) in actual
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(expected.as_chunks::<4>().0)
+        {
+            let error = (f32::from_le_bytes(*actual) - f32::from_le_bytes(*expected)).abs();
+            maximum = maximum.max(error);
+            sum += f64::from(error);
+        }
+        println!(
+            "Preprocessing maximum error={maximum}, mean error={}",
+            sum / (PIXELS * 3) as f64
+        );
+        assert!(
+            maximum <= 0.00001,
+            "Preprocessing differs from the reference input"
+        );
+    }
+
+    #[test]
     fn preprocessing_is_rgb_nchw_float32_and_depth_output_is_bounded_and_finite() {
         let image = image::RgbImage::from_pixel(2, 3, image::Rgb([255, 0, 128]));
         let mut png = std::io::Cursor::new(Vec::new());
         image.write_to(&mut png, image::ImageFormat::Png).unwrap();
-        let (input, width, height) = preprocess(png.get_ref()).unwrap();
+        let (input, width, height) = preprocess(png.get_ref(), &MODEL_PROFILES[0]).unwrap();
         assert_eq!((width, height), (2, 3));
         assert_eq!(input.len(), PIXELS * 3 * 4);
         for (channel, expected) in [
@@ -352,7 +412,7 @@ mod tests {
             );
             assert!((actual - expected).abs() < 1e-5);
         }
-        assert!(preprocess(b"not an image").is_err());
+        assert!(preprocess(b"not an image", &MODEL_PROFILES[0]).is_err());
         assert!(decode_depth(&[0; 4]).is_err());
         let mut output = vec![0u8; PIXELS * 4];
         assert!(decode_depth(&output).is_ok());

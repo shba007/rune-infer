@@ -1233,6 +1233,27 @@
         "gpu_layers": 99,
         "args": ""
       }
+    },
+    {
+      "id": "depth-anything-v2-large",
+      "name": "Depth Anything V2 Large FP32",
+      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-large architecture)",
+      "capabilities": [],
+      "max_context_length": null,
+      "tasks": [
+        "image-to-depth"
+      ],
+      "engine": [
+        "litert"
+      ],
+      "local": {
+        "path": "D:\\Models\\litert\\depth_anything_v2_large.tflite",
+        "params": null,
+        "bits_per_weight": 32.0,
+        "context_length": -1,
+        "gpu_layers": 0,
+        "args": ""
+      }
     }
   ]
 }

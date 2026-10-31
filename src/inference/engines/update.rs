@@ -1032,9 +1032,6 @@ pub(crate) fn update_whisper(
             "Cannot determine installed whisper.cpp version; use a supported managed build".into(),
         );
     }
-    if version_matches(&installed, &expected_tag) {
-        return Ok("Already up to date; no download needed".into());
-    }
     if let (Some(installed), Some(available)) = (
         semantic_version(&installed),
         semantic_version(&expected_tag),
@@ -1056,6 +1053,10 @@ pub(crate) fn update_whisper(
     let (name, url) = download::extract_release_asset_info(asset).map_err(|e| e.to_string())?;
     let digest =
         download::asset_sha256(std::slice::from_ref(asset), &name).map_err(|e| e.to_string())?;
+    let package = super::whisper::PackageIdentity::from_asset(asset).map_err(|e| e.to_string())?;
+    if whisper_package_is_current(&installed, &expected_tag, &current, &package) {
+        return Ok("Already up to date; no download needed".into());
+    }
     let id = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -1118,6 +1119,7 @@ pub(crate) fn update_whisper(
                 "Replacement version does not match release {expected_tag}"
             ));
         }
+        super::whisper::record_installation(&stage, &package).map_err(|e| e.to_string())?;
         preserve_extras(&current, &stage)?;
         if stop.load(Ordering::Relaxed) {
             return Err("Update cancelled".into());
@@ -1325,6 +1327,16 @@ pub(crate) fn update_crispasr(
         }
     }
     result
+}
+
+fn whisper_package_is_current(
+    installed: &str,
+    tag: &str,
+    directory: &Path,
+    package: &super::whisper::PackageIdentity,
+) -> bool {
+    version_matches(installed, tag)
+        && (!package.is_gpu() || super::whisper::installation_matches(directory, package))
 }
 
 fn crispasr_version(output: &str) -> Option<&str> {
@@ -1591,7 +1603,9 @@ fn cleanup_backup_for(backup: &Path, current: &Path, kind: BackupKind) -> Update
                 } else {
                     false
                 };
-                if known_executable || known_dll || duplicate {
+                let managed_receipt =
+                    backup_kind == BackupKind::Whisper && name == super::whisper::INSTALL_RECEIPT;
+                if known_executable || known_dll || duplicate || managed_receipt {
                     std::fs::remove_file(&checked).map_err(|e| e.to_string())?;
                 }
             }
@@ -1728,6 +1742,69 @@ fn publish(current: &Path, staged: &Path, backup: &Path) -> UpdateResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[ignore = "downloads the official GPU package into target, runs --version and verifies its receipt; active engines are unchanged"]
+    fn live_whisper_gpu_package_refresh_receipt() {
+        let client = download::create_download_client().unwrap();
+        let release = super::super::whisper::resolve_release(&client).unwrap();
+        let asset = super::super::whisper::platform_asset(&release).unwrap();
+        let package = super::super::whisper::PackageIdentity::from_asset(asset).unwrap();
+        assert!(
+            package.is_gpu(),
+            "Requires a compatible NVIDIA driver and published GPU package"
+        );
+        let tag = release["tag_name"].as_str().unwrap();
+        let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target");
+        let root = target.join(format!(
+            "whisper-gpu-live-{}",
+            crate::setup::generate_api_key()
+        ));
+        let bin = root.join("bin");
+        let installed = format!("whisper.cpp version: {}", tag.trim_start_matches('v'));
+        assert!(!whisper_package_is_current(
+            &installed,
+            tag,
+            &bin.join("whisper-cpp"),
+            &package
+        ));
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let stop = AtomicBool::new(false);
+        stage_engine_install(
+            bin.clone(),
+            "whisper-cpp",
+            EngineKind::WhisperCpp,
+            &stop,
+            &tx,
+            |stage| {
+                super::super::whisper::WhisperCppEngine::install_release(
+                    &client,
+                    &release,
+                    stage.join("whisper-cpp"),
+                )
+                .map_err(|e| e.to_string())
+            },
+            |binary| validate_install_binary(EngineKind::WhisperCpp, binary),
+        )
+        .unwrap();
+        let current = bin.join("whisper-cpp");
+        let binary = download::find_executable_recursive(&current, "whisper-cli.exe").unwrap();
+        let version = candidate_version(&binary).unwrap();
+        assert!(whisper_package_is_current(
+            &version, tag, &current, &package
+        ));
+        assert!(super::super::whisper::installation_matches(
+            &current, &package
+        ));
+        println!(
+            "Verified GPU package {} · {} · staged install {}",
+            package.archive,
+            package.sha256,
+            current.display()
+        );
+        // Retain the isolated package for review/reuse, not in the active bin directory.
+    }
+
     fn root() -> PathBuf {
         let root = std::env::temp_dir().join(format!(
             "rune-engine-update-{}",
@@ -2320,8 +2397,18 @@ mod tests {
         std::fs::write(current.join("whisper.dll"), "old library").unwrap();
         std::fs::write(current.join("user.txt"), "custom").unwrap();
         std::fs::write(current.join("custom.dll"), "custom library").unwrap();
+        std::fs::write(
+            current.join(super::super::whisper::INSTALL_RECEIPT),
+            "old package receipt",
+        )
+        .unwrap();
         std::fs::write(stage.join("whisper-cli.exe"), "new").unwrap();
         std::fs::write(stage.join("whisper.dll"), "new library").unwrap();
+        std::fs::write(
+            stage.join(super::super::whisper::INSTALL_RECEIPT),
+            "new package receipt",
+        )
+        .unwrap();
         preserve_extras(&current, &stage).unwrap();
         publish(&current, &stage, &backup).unwrap();
         assert!(!cleanup_backup_for(&backup, &current, BackupKind::Whisper).unwrap());
@@ -2335,6 +2422,11 @@ mod tests {
         );
         assert!(!backup.join("whisper-cli.exe").exists());
         assert!(!backup.join("whisper.dll").exists());
+        assert!(!backup.join(super::super::whisper::INSTALL_RECEIPT).exists());
+        assert_eq!(
+            std::fs::read_to_string(current.join(super::super::whisper::INSTALL_RECEIPT)).unwrap(),
+            "new package receipt"
+        );
         assert!(backup.join("custom.dll").exists());
         std::fs::remove_dir_all(root).unwrap();
     }

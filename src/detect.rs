@@ -768,12 +768,12 @@ fn litert_candidate(path: &Path) -> Result<LocalCandidate> {
         cfg!(all(windows, target_arch = "x86_64")),
         "LiteRT depth currently requires Windows x64 CPU"
     );
-    crate::inference::engines::litert::verify_model(path)?;
+    let profile = crate::inference::engines::litert::reviewed_model(path)?;
     Ok(LocalCandidate {
         path: path.to_path_buf(),
         size_bytes: std::fs::metadata(path)?.len(),
-        architecture: "depth-anything-v2-small".into(),
-        display_name: "Depth Anything V2 Small FP32".into(),
+        architecture: profile.architecture.into(),
+        display_name: profile.name.into(),
         context_length: None,
         modality: Modality::DepthEstimation,
         engines: vec![EngineKind::Litert],
@@ -783,7 +783,7 @@ fn litert_candidate(path: &Path) -> Result<LocalCandidate> {
         needs: Vec::new(),
         notes: vec![
             "Reviewed FP32 TFLite export; LiteRT 2.3.0 Windows x64 CPU only. Relative depth, not meters. Task support is saved only after the live setup check passes.".into(),
-            "Source: https://huggingface.co/litert-community/depth-anything-v2-small/tree/178427e448dbf4da93b1e7b1b2abc103ad329bd6/tflite".into(),
+            format!("Source: {}", profile.source),
         ],
         class: Class::Other,
         embedding_length: None,

@@ -849,6 +849,7 @@ struct EngineRow {
     latest: String,
     build_tag: Option<String>,
     published_at: Option<String>,
+    gpu_upgrade: bool,
     check_detail: Option<String>,
 }
 
@@ -962,6 +963,7 @@ fn discover_engines() -> Vec<EngineRow> {
                 },
                 build_tag: None,
                 published_at: None,
+                gpu_upgrade: false,
                 check_detail: (name == "litert").then(|| "Official Windows x64 CPU runtime · pinned SHA-256 · model weights configured separately".into()),
             }
         })
@@ -975,6 +977,7 @@ fn discover_engines() -> Vec<EngineRow> {
         latest: "Built in".into(),
         build_tag: None,
         published_at: None,
+        gpu_upgrade: false,
         check_detail: Some("Built-in encoder uses synthetic outputs".into()),
     });
     rows
@@ -999,7 +1002,46 @@ fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
                     rows[index].latest = release.tag;
                     rows[index].build_tag = release.build_tag;
                     rows[index].published_at = release.published_at;
-                    rows[index].check_detail = Some(release.detail);
+                    let mut whisper_verified = false;
+                    if rows[index].name == "whisper-cpp"
+                        && rows[index].installed
+                        && rows[index].managed
+                    {
+                        if let Some(package) = &release.whisper_gpu {
+                            let base = PathBuf::from("bin/whisper-cpp");
+                            let in_managed_folder = rows[index]
+                                .path
+                                .canonicalize()
+                                .ok()
+                                .zip(base.canonicalize().ok())
+                                .is_some_and(|(path, root)| path.starts_with(root));
+                            whisper_verified = in_managed_folder
+                                && crate::inference::engines::whisper::installation_matches(
+                                    &base, package,
+                                );
+                            rows[index].gpu_upgrade = in_managed_folder
+                                && !whisper_verified
+                                && release_status(&rows[index]) == "Up to date";
+                        }
+                    }
+                    rows[index].check_detail = Some(if let Some(package) = release.whisper_gpu {
+                        format!(
+                            "{} · GPU package: {} · {}",
+                            release.detail,
+                            package.archive,
+                            if whisper_verified {
+                                "installed package verified"
+                            } else if !rows[index].installed {
+                                "not installed"
+                            } else if rows[index].gpu_upgrade {
+                                "installed package unverified; verified GPU refresh available"
+                            } else {
+                                "installed package unverified; version rules apply"
+                            }
+                        )
+                    } else {
+                        release.detail
+                    });
                 }
                 Err(error) => {
                     rows[index].latest = if error.contains("GitHub rate limited until") {
@@ -1161,6 +1203,7 @@ struct AvailableRelease {
     build_tag: Option<String>,
     published_at: Option<String>,
     detail: String,
+    whisper_gpu: Option<crate::inference::engines::whisper::PackageIdentity>,
 }
 
 fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
@@ -1194,6 +1237,7 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
             detail:
                 "Approved Needle distribution · revision and SHA-256 verified during installation"
                     .into(),
+            whisper_gpu: None,
         });
     }
     let value = if name == "whisper-cpp" {
@@ -1230,6 +1274,15 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
         build_tag: value["rune_build_tag"].as_str().map(str::to_owned),
         published_at,
         detail,
+        whisper_gpu: if name == "whisper-cpp" {
+            crate::inference::engines::whisper::platform_asset(&value)
+                .and_then(|asset| {
+                    crate::inference::engines::whisper::PackageIdentity::from_asset(asset).ok()
+                })
+                .filter(|package| package.is_gpu())
+        } else {
+            None
+        },
     })
 }
 
@@ -1401,6 +1454,9 @@ fn release_status(engine: &EngineRow) -> &'static str {
         installed.zip(parse(&engine.latest)).map(|(a, b)| a.cmp(&b))
     };
     match compare {
+        Some(std::cmp::Ordering::Equal) if engine.name == "whisper-cpp" && engine.gpu_upgrade => {
+            "GPU build available"
+        }
         Some(std::cmp::Ordering::Equal) => "Up to date",
         Some(std::cmp::Ordering::Less) => "New release",
         Some(std::cmp::Ordering::Greater) => "Ahead",
@@ -2538,6 +2594,7 @@ mod tests {
             latest: "Not checked".into(),
             build_tag: None,
             published_at: None,
+            gpu_upgrade: false,
             check_detail: None,
         });
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
@@ -2574,6 +2631,7 @@ mod tests {
                 latest: "Not checked".into(),
                 build_tag: None,
                 published_at: None,
+                gpu_upgrade: false,
                 check_detail: None,
             },
             EngineRow {
@@ -2585,6 +2643,7 @@ mod tests {
                 latest: "Not checked".into(),
                 build_tag: None,
                 published_at: None,
+                gpu_upgrade: false,
                 check_detail: None,
             },
         ];
@@ -2635,6 +2694,7 @@ mod tests {
             latest: "v0.9.3".into(),
             build_tag: None,
             published_at: None,
+            gpu_upgrade: false,
             check_detail: None,
         };
         assert_eq!(release_status(&row), "New release");
@@ -2764,6 +2824,7 @@ mod tests {
             latest: "v1.9.2".into(),
             build_tag: None,
             published_at: None,
+            gpu_upgrade: false,
             check_detail: None,
         });
         app.update_engine = Some("whisper-cpp".into());
@@ -2818,6 +2879,7 @@ mod tests {
             latest: "v1.9.2".into(),
             build_tag: None,
             published_at: None,
+            gpu_upgrade: false,
             check_detail: None,
         };
         assert_eq!(release_status(&row), "Not installed");
@@ -2928,6 +2990,7 @@ mod tests {
             latest: "2.3.0 · pinned".into(),
             build_tag: None,
             published_at: None,
+            gpu_upgrade: false,
             check_detail: None,
         };
         assert_eq!(
@@ -3000,6 +3063,7 @@ mod tests {
             latest: "v0.9.3".into(),
             build_tag: None,
             published_at: None,
+            gpu_upgrade: false,
             check_detail: None,
         };
         for (name, os, arch, allowed) in [
@@ -3101,6 +3165,47 @@ mod tests {
     }
 
     #[test]
+    fn whisper_same_version_gpu_refresh_is_actionable_without_allowing_downgrades_or_external_updates()
+     {
+        let mut row = EngineRow {
+            name: "whisper-cpp",
+            path: "bin/whisper-cpp/Release/whisper-cli.exe".into(),
+            managed: true,
+            installed: true,
+            version: "whisper.cpp version: 1.9.5".into(),
+            latest: "v1.9.5".into(),
+            build_tag: Some("b5454".into()),
+            published_at: None,
+            gpu_upgrade: true,
+            check_detail: None,
+        };
+        assert_eq!(release_status(&row), "GPU build available");
+        assert_eq!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Update
+        );
+        row.gpu_upgrade = false;
+        assert_eq!(release_status(&row), "Up to date");
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        row.gpu_upgrade = true;
+        row.version = "whisper.cpp version: 1.9.6".into();
+        assert_eq!(release_status(&row), "Ahead");
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        row.version = "whisper.cpp version: 1.9.5".into();
+        row.managed = false;
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+    }
+
+    #[test]
     fn engine_inventory_renders_selection_and_unknown_update_status() {
         let mut app = app();
         app.engines = vec![
@@ -3113,6 +3218,7 @@ mod tests {
                 latest: "Not checked".into(),
                 build_tag: None,
                 published_at: None,
+                gpu_upgrade: false,
                 check_detail: None,
             },
             EngineRow {
@@ -3124,6 +3230,7 @@ mod tests {
                 latest: "Not checked".into(),
                 build_tag: None,
                 published_at: None,
+                gpu_upgrade: false,
                 check_detail: None,
             },
         ];

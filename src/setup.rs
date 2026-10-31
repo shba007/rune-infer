@@ -390,9 +390,13 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
                     None
                 }
             },
-            bits_per_weight: None,
+            bits_per_weight: (c.engine() == EngineKind::Litert).then_some(32.0),
             context_length: -1,
-            gpu_layers: if gpu { 99 } else { 0 },
+            gpu_layers: if gpu && c.engine() != EngineKind::Litert {
+                99
+            } else {
+                0
+            },
             // Enable flash attention and quantized KV cache for performance and VRAM safety
             args: if c.engine() == EngineKind::SdServer {
                 "--diffusion-fa".to_string()

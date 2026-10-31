@@ -1,13 +1,15 @@
 $kind: http-request
 name: Estimate Depth
 description: |-
-  Estimate relative depth with the configured LiteRT Depth Anything V2 Small FP32 model.
+  Estimate relative depth with a reviewed LiteRT Depth Anything V2 Small or Large FP32 model.
   Set depth_model to its exact catalog model ID from GET /v1/models. In Params,
   keep engine enabled with value {{depth_model}}; an empty or disabled parameter
   produces "Missing required query parameter: 'engine'".
   Install LiteRT from Engines, or configure Infer's LITERT_LIBRARY_PATH.
   The model must have verified image-to-depth task metadata. This example ID is not
   automatically added to your catalog.
+  For the reviewed Large export saved as depth_anything_v2_large.tflite, setup
+  generates depth-anything-v2-large; use the actual ID returned by your server.
 
   image_bytes contains the complete encoded PNG/JPEG file as a JSON byte array,
   not raw RGB pixels. The included 2x2 PNG is a smoke-test fixture; replace it with
