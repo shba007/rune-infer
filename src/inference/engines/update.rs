@@ -31,6 +31,9 @@ pub(crate) fn install_engine(
         EngineKind::WhisperCpp => "whisper-cpp",
         EngineKind::Needle => "needle",
         EngineKind::Encoder => return Err("Encoder is built in and uses synthetic output".into()),
+        EngineKind::Litert => {
+            return Err("LiteRT currently requires an explicitly configured native runtime".into());
+        }
     };
     if !cfg!(any(
         windows,
@@ -199,6 +202,9 @@ fn incomplete_installation(destination: &Path, kind: EngineKind) -> UpdateResult
         EngineKind::WhisperCpp => "whisper-cli",
         EngineKind::Needle => "needle",
         EngineKind::Encoder => return Err("Encoder is built in".into()),
+        EngineKind::Litert => {
+            return Err("LiteRT requires an explicitly configured native runtime".into());
+        }
     };
     if [executable.to_string(), format!("{executable}.exe")]
         .iter()

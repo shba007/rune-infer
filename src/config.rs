@@ -119,6 +119,7 @@ impl Default for RateLimitConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum Modality {
+    DepthEstimation,
     Text,
     VisionText,
     #[serde(
@@ -171,6 +172,7 @@ pub enum Modality {
 impl Modality {
     pub fn as_str(&self) -> &'static str {
         match self {
+            Modality::DepthEstimation => "depth-estimation",
             Modality::Text => "text",
             Modality::VisionText => "vision-text",
             Modality::Omni => "omni",
@@ -546,6 +548,8 @@ pub fn interpolate_with(raw: &str, lookup: &dyn Fn(&str) -> Option<String>) -> R
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EngineKind {
+    /// LiteRT CompiledModel CPU adapter for reviewed .tflite artifacts.
+    Litert,
     /// llama.cpp `llama-server` (upstream build): GGUF text and vision models.
     LlamaServer,
     /// llama.cpp `llama-server` (Prism build): ternary Bonsai models.
@@ -569,6 +573,7 @@ pub enum EngineKind {
 impl EngineKind {
     pub fn as_str(self) -> &'static str {
         match self {
+            EngineKind::Litert => "litert",
             EngineKind::LlamaServer => "llama-server",
             EngineKind::LlamaServerPrism => "llama-server-prism",
             EngineKind::SdServer => "sd-server",

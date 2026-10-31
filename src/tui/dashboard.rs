@@ -863,11 +863,16 @@ fn discover_engines() -> Vec<EngineRow> {
         ("nemo-speech", "nemo-speech", "nemo-speech", true),
         ("needle", "needle", "needle", false),
         ("whisper-cpp", "whisper-cpp", "whisper-cli", true),
+        ("litert", "litert", "libLiteRt", false),
     ];
     let mut rows: Vec<EngineRow> = definitions
         .into_iter()
         .map(|(name, directory, executable, version_supported)| {
-            let filename = format!("{executable}{suffix}");
+            let filename = if name == "litert" {
+                "libLiteRt.dll".into()
+            } else {
+                format!("{executable}{suffix}")
+            };
             let custom_vars: &[&str] = match name {
                 "llama-server" | "llama-server-prism" => &["LLAMA_SERVER_PATH"],
                 "audio-cpp" => &["AUDIOCPP_PATH", "AUDIO8_PATH"],
@@ -875,6 +880,7 @@ fn discover_engines() -> Vec<EngineRow> {
                 "crispasr" => &["CRISPASR_PATH"],
                 "nemo-speech" => &["NEMO_SPEECH_PATH"],
                 "whisper-cpp" => &["WHISPER_CPP_PATH"],
+                "litert" => &["LITERT_LIBRARY_PATH"],
                 _ => &[],
             };
             let custom = custom_vars
@@ -916,7 +922,9 @@ fn discover_engines() -> Vec<EngineRow> {
                 Some((path, managed)) => (path, managed, true),
                 None => (base.join(&filename), false, false),
             };
-            let version = if name == "needle" && installed && managed {
+            let version = if name == "litert" && installed {
+                crate::inference::engines::litert::runtime_version(&path)
+            } else if name == "needle" && installed && managed {
                 crate::inference::engines::needle::installed_revision(&path)
             } else if version_supported && managed {
                 probe_engine_version(&path).and_then(|version| {
@@ -942,7 +950,9 @@ fn discover_engines() -> Vec<EngineRow> {
                 managed,
                 installed,
                 version,
-                latest: if managed || !installed {
+                latest: if name == "litert" {
+                    "Manual runtime".into()
+                } else if managed || !installed {
                     "Checking…".into()
                 } else {
                     "External".into()
@@ -975,6 +985,9 @@ fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
             return;
         }
         for index in 0..rows.len() {
+            if rows[index].name == "litert" {
+                continue;
+            }
             if rows[index].installed && !rows[index].managed {
                 continue;
             }
@@ -1021,6 +1034,11 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
     let unavailable = |reason: &str| EngineAction::Unavailable(reason.into());
     if engine.name == "encoder" {
         return unavailable("Built in; no installation or update required");
+    }
+    if engine.name == "litert" {
+        return unavailable(
+            "LiteRT: configure the pinned DLL with LITERT_LIBRARY_PATH; automatic install/update is unavailable",
+        );
     }
     if engine.installed && !engine.managed {
         return unavailable("Externally managed; update using its original installation method");
@@ -1277,6 +1295,13 @@ fn release_status(engine: &EngineRow) -> &'static str {
     }
     if !engine.installed {
         return "Not installed";
+    }
+    if engine.name == "litert" {
+        return if engine.version == "LiteRT 2.3.0 CPU" {
+            "Ready · CPU"
+        } else {
+            "Unverified runtime"
+        };
     }
     if engine.name == "needle" {
         if engine.version.starts_with("revision ") && engine.latest.starts_with("revision ") {
@@ -2913,6 +2938,7 @@ mod tests {
             ("needle", "windows", "aarch64", false),
             ("needle", "linux", "x86_64", false),
             ("encoder", "windows", "x86_64", false),
+            ("litert", "windows", "x86_64", false),
         ] {
             row.name = name;
             row.version = if matches!(name, "llama-server" | "llama-server-prism") {

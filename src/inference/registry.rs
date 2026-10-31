@@ -423,6 +423,11 @@ impl ModelRegistry {
         };
 
         let capabilities_str = model.resolved_capabilities().join(", ");
+        if kind == EngineKind::Litert {
+            return Ok(Arc::new(
+                crate::inference::engines::litert::LiteRtEngine::new(model)?,
+            ));
+        }
 
         if kind == EngineKind::SdServer {
             let engine = crate::inference::engines::sd_server::SdServerEngine::new(model)?;

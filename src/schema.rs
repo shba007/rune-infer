@@ -199,6 +199,7 @@ pub fn allowed_extra_keys(kind: EngineKind) -> &'static [&'static str] {
         | EngineKind::Crispasr
         | EngineKind::WhisperCpp
         | EngineKind::Encoder
+        | EngineKind::Litert
         | EngineKind::Needle => &[],
     }
 }
@@ -266,6 +267,7 @@ pub(crate) fn valid_task(task: &str) -> bool {
                     | "diarization"
                     | "detection"
                     | "moderation"
+                    | "depth"
             ) && seen.insert(kind)
         })
     })
@@ -288,7 +290,9 @@ fn derived_modality(tasks: &[String]) -> Modality {
                 .is_some_and(|(input, _)| input.split('-').any(|v| v == kind))
         })
     };
-    if outputs("decision") {
+    if outputs("depth") {
+        Modality::DepthEstimation
+    } else if outputs("decision") {
         Modality::Decision
     } else if outputs("embedding") {
         if inputs("image") {

@@ -387,6 +387,22 @@ pub struct ImageGenerationResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageDepthResponse {
+    pub width: u32,
+    pub height: u32,
+    pub source_width: u32,
+    pub source_height: u32,
+    pub units: String,
+    pub dtype: String,
+    pub layout: String,
+    pub values: Vec<f32>,
+    pub min: f32,
+    pub max: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_png_base64: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub b64_json: Option<String>,

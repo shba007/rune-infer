@@ -108,6 +108,11 @@ pub fn validate_local_files(model: &LocalCandidate) -> Result<(), String> {
 }
 fn model_files(model: &LocalCandidate) -> Vec<PathBuf> {
     let mut files = vec![model.path.clone()];
+    if model.engines.contains(&EngineKind::Litert) {
+        if let Ok(helper) = crate::inference::engines::litert::helper_path() {
+            files.push(helper);
+        }
+    }
     for (key, value) in &model.extra {
         if key.ends_with("_path") {
             if let Some(path) = value.as_str() {
@@ -246,6 +251,7 @@ fn checked_tasks(modality: &Modality) -> Result<Vec<String>, String> {
         Modality::SpeechToText => vec!["audio-to-text"],
         Modality::TextToSpeech => vec!["text-to-audio"],
         Modality::Decision => vec!["text-to-decision"],
+        Modality::DepthEstimation => vec!["image-to-depth"],
         _ => {
             return Err(format!(
                 "No task verification is available for {}",
@@ -289,6 +295,16 @@ fn validate_needle_smoke(response: &InferenceTaskResponse) -> Result<(), String>
 fn smoke_task(modality: &Modality) -> Result<InferenceTaskRequest, String> {
     use serde_json::json;
     let value = match modality {
+        Modality::DepthEstimation => {
+            let image = image::RgbImage::from_fn(64, 64, |x, y| {
+                image::Rgb([(x * 4) as u8, (y * 4) as u8, 120])
+            });
+            let mut bytes = std::io::Cursor::new(Vec::new());
+            image
+                .write_to(&mut bytes, image::ImageFormat::Png)
+                .map_err(|e| e.to_string())?;
+            json!({"type":"image_depth", "image_bytes":bytes.into_inner(), "preview":true})
+        }
         Modality::Text | Modality::VisionText | Modality::Omni => {
             let mut images = Vec::new();
             if matches!(modality, Modality::VisionText | Modality::Omni) {
@@ -346,6 +362,19 @@ fn validate_smoke_output(
     response: &InferenceTaskResponse,
 ) -> Result<(), String> {
     let valid = match (modality, response) {
+        (Modality::DepthEstimation, InferenceTaskResponse::Depth(result)) => {
+            result.width == crate::inference::engines::litert::WIDTH
+                && result.height == crate::inference::engines::litert::HEIGHT
+                && result.values.len() == (result.width * result.height) as usize
+                && result.values.iter().all(|value| value.is_finite())
+                && result.max > result.min
+                && result.units == "relative"
+                && result
+                    .preview_png_base64
+                    .as_ref()
+                    .and_then(|value| base64::engine::general_purpose::STANDARD.decode(value).ok())
+                    .is_some_and(|value| image::load_from_memory(&value).is_ok())
+        }
         (
             Modality::Text | Modality::VisionText | Modality::Omni,
             InferenceTaskResponse::Text(text),

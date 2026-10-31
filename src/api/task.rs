@@ -88,6 +88,7 @@ impl Requirements {
     pub(super) fn task(task: &InferenceTaskRequest) -> Self {
         use InferenceTaskRequest::*;
         match task {
+            ImageDepth { .. } => Self::new(&["image"], "depth", "depth"),
             ToolCall {
                 prompt,
                 images,
@@ -216,6 +217,7 @@ impl Requirements {
                     self.operation == "chat" && self.inputs.iter().all(|input| *input == "text")
                 }
                 Encoder => false,
+                Litert => self.operation == "depth",
             };
             if !implemented {
                 return refuse(
