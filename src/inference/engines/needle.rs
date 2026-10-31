@@ -53,19 +53,31 @@ impl NeedleEngine {
         tracing::info!("[NeedleEngine] Needle 3 binary not found. Resolving from Hugging Face...");
         std::fs::create_dir_all(&base_dir)?;
 
-        let platform = platform_directory(std::env::consts::OS, std::env::consts::ARCH)?;
+        platform_directory(std::env::consts::OS, std::env::consts::ARCH)?;
 
         let client = download::create_download_client()?;
-        let metadata: serde_json::Value = client
-            .get("https://huggingface.co/api/models/Cactus-Compute/needle3?blobs=true")
-            .send()?
-            .error_for_status()?
-            .json()?;
+        let metadata = latest_metadata(&client)?;
+        Self::install_release(&client, &metadata, base_dir)
+    }
+
+    pub(crate) fn install_release(
+        client: &reqwest::blocking::Client,
+        metadata: &serde_json::Value,
+        base_dir: PathBuf,
+    ) -> Result<PathBuf, Box<dyn Error>> {
+        std::fs::create_dir_all(&base_dir)?;
+        let platform = platform_directory(std::env::consts::OS, std::env::consts::ARCH)?;
+        let exe_name = if cfg!(windows) {
+            "needle.exe"
+        } else {
+            "needle"
+        };
+        let exe_path = base_dir.join(exe_name);
         let file = format!("{platform}/{exe_name}");
-        let (revision, sha256) = verified_binary_metadata(&metadata, &file)?;
+        let (revision, sha256) = verified_binary_metadata(metadata, &file)?;
         let download_url =
             format!("https://huggingface.co/Cactus-Compute/needle3/resolve/{revision}/{file}");
-        download::download_verified(&client, &download_url, &exe_path, "[NeedleEngine]", sha256)?;
+        download::download_verified(client, &download_url, &exe_path, "[NeedleEngine]", sha256)?;
         download::make_executable(&exe_path)?;
         let receipt = serde_json::json!({"revision":revision, "sha256":sha256, "file":file});
         let mut receipt_file = std::fs::OpenOptions::new()
@@ -81,6 +93,72 @@ impl NeedleEngine {
         );
         Ok(exe_path)
     }
+}
+
+pub(crate) fn latest_metadata(
+    client: &reqwest::blocking::Client,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    Ok(client
+        .get("https://huggingface.co/api/models/Cactus-Compute/needle3?blobs=true")
+        .send()?
+        .error_for_status()?
+        .json()?)
+}
+
+#[cfg(feature = "tui")]
+pub(crate) fn verify_forward_update(
+    client: &reqwest::blocking::Client,
+    installed: &str,
+    selected: &str,
+) -> Result<(), Box<dyn Error>> {
+    if !valid_revision(installed) || !valid_revision(selected) {
+        return Err("Invalid Needle revision; update refused".into());
+    }
+    let history: serde_json::Value = client
+        .get(format!(
+            "https://huggingface.co/api/models/Cactus-Compute/needle3/commits/{selected}"
+        ))
+        .send()?
+        .error_for_status()?
+        .json()?;
+    verify_revision_history(&history, installed, selected)
+}
+
+#[cfg(any(feature = "tui", test))]
+fn verify_revision_history(
+    history: &serde_json::Value,
+    installed: &str,
+    selected: &str,
+) -> Result<(), Box<dyn Error>> {
+    let entries = history
+        .as_array()
+        .ok_or("Invalid Needle revision history")?;
+    let has_revision = |revision: &str| {
+        entries.iter().any(|entry| {
+            entry["id"]
+                .as_str()
+                .is_some_and(|id| id.eq_ignore_ascii_case(revision))
+        })
+    };
+    if !valid_revision(installed)
+        || !valid_revision(selected)
+        || installed.eq_ignore_ascii_case(selected)
+        || !entries
+            .iter()
+            .all(|entry| entry["id"].as_str().is_some_and(valid_revision))
+        || !has_revision(selected)
+        || !has_revision(installed)
+    {
+        return Err(
+            "Available Needle revision history cannot prove a forward update; update refused"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+fn valid_revision(value: &str) -> bool {
+    value.len() == 40 && value.bytes().all(|c| c.is_ascii_hexdigit())
 }
 
 pub(crate) fn platform_directory(os: &str, arch: &str) -> Result<&'static str, Box<dyn Error>> {
@@ -103,7 +181,7 @@ fn verified_binary_metadata<'a>(
 ) -> Result<(&'a str, &'a str), Box<dyn Error>> {
     let revision = metadata["sha"]
         .as_str()
-        .filter(|v| v.len() == 40 && v.bytes().all(|c| c.is_ascii_hexdigit()))
+        .filter(|v| valid_revision(v))
         .ok_or("Needle metadata has no immutable revision; installation refused")?;
     let digest = metadata["siblings"]
         .as_array()
@@ -123,9 +201,7 @@ pub(crate) fn installed_revision(binary: &Path) -> Option<String> {
     let receipt: serde_json::Value =
         serde_json::from_slice(&std::fs::read(binary.parent()?.join(".needle-install.json")).ok()?)
             .ok()?;
-    let revision = receipt["revision"]
-        .as_str()
-        .filter(|v| v.len() == 40 && v.bytes().all(|c| c.is_ascii_hexdigit()))?;
+    let revision = receipt["revision"].as_str().filter(|v| valid_revision(v))?;
     let digest = receipt["sha256"].as_str()?;
     (download::file_sha256(binary)
         .ok()?
@@ -208,6 +284,34 @@ impl InferenceEngine for NeedleEngine {
 #[cfg(test)]
 mod install_tests {
     use super::*;
+    #[test]
+    fn needle_history_requires_selected_revision_and_verified_ancestor() {
+        let installed = "a".repeat(40);
+        let selected = "b".repeat(40);
+        let history = serde_json::json!([{"id":selected},{"id":installed}]);
+        assert!(verify_revision_history(&history, &installed, &selected).is_ok());
+        // Date ordering is not used to infer ancestry: this is a revision-scoped history.
+        assert!(
+            verify_revision_history(
+                &serde_json::json!([{"id":installed},{"id":selected}]),
+                &installed,
+                &selected
+            )
+            .is_ok()
+        );
+        for invalid in [
+            serde_json::json!([]),
+            serde_json::json!({}),
+            serde_json::json!([{"id":selected}]),
+            serde_json::json!([{"id":installed}]),
+            serde_json::json!([{"id":selected},{"id":"main"},{"id":installed}]),
+        ] {
+            assert!(verify_revision_history(&invalid, &installed, &selected).is_err());
+        }
+        assert!(verify_revision_history(&history, &installed, &installed).is_err());
+        assert!(verify_revision_history(&history, "main", &selected).is_err());
+    }
+
     #[test]
     fn missing_engine_returns_an_actionable_error_without_creating_installation() {
         let root = std::env::temp_dir().join(format!("rune-needle-missing-{}", std::process::id()));

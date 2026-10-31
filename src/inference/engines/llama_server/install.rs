@@ -76,7 +76,24 @@ pub(super) fn resolve_binary(
 
     let release_data = download::resolve_release(&client, release_url)?;
 
-    let target_release = download::preferred_release(&release_data)?;
+    install_release(&client, &release_data, base_dir)
+}
+
+// Install only the supplied release into an isolated directory. Unlike discovery,
+// updates must never resolve an environment override, PATH, or an existing binary.
+pub(crate) fn install_release(
+    client: &reqwest::blocking::Client,
+    release_data: &serde_json::Value,
+    base_dir: PathBuf,
+) -> Result<PathBuf, Box<dyn Error>> {
+    std::fs::create_dir_all(&base_dir)?;
+    let exe_name = if cfg!(windows) {
+        "llama-server.exe"
+    } else {
+        "llama-server"
+    };
+    let exe_path = base_dir.join(exe_name);
+    let target_release = download::preferred_release(release_data)?;
 
     let assets = target_release["assets"]
         .as_array()
@@ -181,7 +198,7 @@ pub(super) fn resolve_binary(
 
     for (name, url) in download_urls {
         download::download_and_extract(
-            &client,
+            client,
             &url,
             &base_dir,
             &name,

@@ -11,6 +11,99 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+const RELEASES_URL: &str = "https://api.github.com/repos/ggml-org/whisper.cpp/releases";
+
+pub(crate) fn resolve_release(
+    client: &reqwest::blocking::Client,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    super::release_cache::resolved_release(
+        &format!(
+            "whisper:{}/{}:{RELEASES_URL}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ),
+        || {
+            let releases = download::fetch_releases(client, RELEASES_URL)?;
+            resolve_release_with(&releases, |tag| {
+                download::fetch_release_tag(client, RELEASES_URL, tag)
+            })
+        },
+    )
+}
+
+fn stable_build_tag(release: &serde_json::Value) -> Result<Option<String>, Box<dyn Error>> {
+    let mut tag = None;
+    for line in release["body"].as_str().unwrap_or("").lines() {
+        let Some(link) = line
+            .trim()
+            .strip_prefix("**Nightly build:**")
+            .or_else(|| line.trim().strip_prefix("Nightly build:"))
+        else {
+            continue;
+        };
+        let (label, url) = link
+            .trim()
+            .strip_prefix('[')
+            .and_then(|link| link.split_once("]("))
+            .ok_or("Invalid Whisper stable release build link")?;
+        let url = url
+            .strip_suffix(')')
+            .ok_or("Invalid Whisper stable release build link")?;
+        if tag.is_some()
+            || label.strip_prefix('b').is_none_or(|number| {
+                number.is_empty()
+                    || number.len() > 20
+                    || !number.bytes().all(|byte| byte.is_ascii_digit())
+            })
+            || url != format!("https://github.com/ggml-org/whisper.cpp/releases/tag/{label}")
+        {
+            return Err("Invalid or conflicting Whisper stable release build link".into());
+        }
+        tag = Some(label.to_owned());
+    }
+    Ok(tag)
+}
+
+fn resolve_release_with(
+    releases: &serde_json::Value,
+    mut fetch_build: impl FnMut(&str) -> Result<serde_json::Value, Box<dyn Error>>,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let releases = releases.as_array().ok_or("Invalid Whisper release list")?;
+    let has_stable = releases.iter().any(download::is_stable_release);
+    for release in releases {
+        if !download::is_published_release(release)
+            || (has_stable && !download::is_stable_release(release))
+        {
+            continue;
+        }
+        let mut selected = release.clone();
+        if platform_asset(&selected).is_none() && download::is_stable_release(&selected) {
+            if let Some(tag) = stable_build_tag(&selected)? {
+                let build = fetch_build(&tag)?;
+                let commit = selected["target_commitish"].as_str().filter(|value| {
+                    value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+                });
+                if commit.is_none()
+                    || build["target_commitish"].as_str() != commit
+                    || !download::is_published_release(&build)
+                    || build["tag_name"].as_str() != Some(&tag)
+                {
+                    return Err(
+                        "Whisper binary build does not match the stable release commit".into(),
+                    );
+                }
+                selected["assets"] = build["assets"].clone();
+                selected["rune_build_tag"] = tag.into();
+                selected["rune_build_published_at"] = build["published_at"].clone();
+            }
+        }
+        if platform_asset(&selected).is_some() {
+            return Ok(selected);
+        }
+    }
+    Err("No verified whisper-cli release asset is available for this platform".into())
+}
+
 pub struct WhisperCppEngine {
     id: String,
     binary: PathBuf,
@@ -63,11 +156,8 @@ impl WhisperCppEngine {
         }
 
         let client = download::create_download_client()?;
-        let data = download::fetch_releases(
-            &client,
-            "https://api.github.com/repos/ggml-org/whisper.cpp/releases",
-        )?;
-        let (_, asset) = preferred_asset(&data)
+        let release = resolve_release(&client)?;
+        let asset = platform_asset(&release)
             .ok_or("No verified whisper-cli release asset is available for this platform")?;
         let (archive, url) = download::extract_release_asset_info(asset)?;
         let digest = download::asset_sha256(std::slice::from_ref(asset), &archive)?;
@@ -84,32 +174,17 @@ impl WhisperCppEngine {
         Ok(binary)
     }
 }
-pub(crate) fn preferred_asset(data: &serde_json::Value) -> Option<(&str, &serde_json::Value)> {
+pub(crate) fn platform_asset(release: &serde_json::Value) -> Option<&serde_json::Value> {
     let name = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => "whisper-bin-x64.zip",
         ("linux", "x86_64") => "whisper-bin-ubuntu-x64.tar.gz",
         ("linux", "aarch64") => "whisper-bin-ubuntu-arm64.tar.gz",
         _ => return None,
     };
-    let releases = data.as_array()?;
-    let has_stable = releases.iter().any(download::is_stable_release);
-    for release in releases {
-        if !download::is_published_release(release)
-            || (has_stable && !download::is_stable_release(release))
-        {
-            continue;
-        }
-        let Some(assets) = release["assets"].as_array() else {
-            continue;
-        };
-        if let Some(asset) = assets.iter().find(|a| {
-            a["name"].as_str() == Some(name)
-                && download::asset_sha256(std::slice::from_ref(a), name).is_ok()
-        }) {
-            return Some((release["tag_name"].as_str()?, asset));
-        }
-    }
-    None
+    release["assets"].as_array()?.iter().find(|a| {
+        a["name"].as_str() == Some(name)
+            && download::asset_sha256(std::slice::from_ref(a), name).is_ok()
+    })
 }
 impl InferenceEngine for WhisperCppEngine {
     fn id(&self) -> &str {
@@ -281,7 +356,7 @@ impl Drop for RequestDirectory {
 mod tests {
     use super::*;
     #[test]
-    fn skips_newer_releases_without_verified_platform_binaries() {
+    fn resolves_verified_stable_builds_and_legacy_packages() {
         let asset = match (std::env::consts::OS, std::env::consts::ARCH) {
             ("windows", "x86_64") => "whisper-bin-x64.zip",
             ("linux", "x86_64") => "whisper-bin-ubuntu-x64.tar.gz",
@@ -293,7 +368,77 @@ mod tests {
             {"tag_name":"v1.9.0-rc1", "draft":false, "prerelease":true, "assets":[{"name":asset,"digest":format!("sha256:{}", "a".repeat(64))}]},
             {"tag_name":"v1.8.0", "draft":false, "prerelease":false, "assets":[{"name":asset,"digest":format!("sha256:{}", "b".repeat(64))}]}
         ]);
-        assert_eq!(preferred_asset(&releases).unwrap().0, "v1.8.0");
+        assert_eq!(
+            resolve_release_with(&releases, |_| panic!("legacy releases need no build fetch"))
+                .unwrap()["tag_name"],
+            "v1.8.0"
+        );
+        let commit = "a".repeat(40);
+        let stable = serde_json::json!({"tag_name":"v1.9.5","draft":false,"prerelease":false,
+            "target_commitish":commit,"assets":[],
+            "body":"**Nightly build:** [b5454](https://github.com/ggml-org/whisper.cpp/releases/tag/b5454)"});
+        let build = serde_json::json!({"tag_name":"b5454","draft":false,"prerelease":true,
+            "target_commitish":commit,"published_at":"2026-10-06T17:00:00Z",
+            "assets":[{"name":asset,"digest":format!("sha256:{}", "b".repeat(64))}]});
+        let selected = resolve_release_with(&serde_json::json!([stable.clone()]), |tag| {
+            assert_eq!(tag, "b5454");
+            Ok(build.clone())
+        })
+        .unwrap();
+        assert_eq!(selected["tag_name"], "v1.9.5");
+        assert_eq!(selected["rune_build_tag"], "b5454");
+        assert_eq!(platform_asset(&selected).unwrap()["name"], asset);
+        for (field, value) in [
+            ("target_commitish", serde_json::json!("b".repeat(40))),
+            ("tag_name", serde_json::json!("b9999")),
+            ("draft", serde_json::json!(true)),
+        ] {
+            let mut invalid = build.clone();
+            invalid[field] = value;
+            assert!(
+                resolve_release_with(
+                    &serde_json::json!([stable.clone()]),
+                    |_| Ok(invalid.clone())
+                )
+                .is_err(),
+                "{field}"
+            );
+        }
+        for body in [
+            "**Nightly build:** [b5454](https://example.com/releases/tag/b5454)",
+            "**Nightly build:** [b5454](https://github.com/ggml-org/llama.cpp/releases/tag/b5454)",
+            "**Nightly build:** [b5454/other](https://github.com/ggml-org/whisper.cpp/releases/tag/b5454/other)",
+            "**Nightly build:** [b5454](https://github.com/ggml-org/whisper.cpp/releases/tag/b9999)",
+            "**Nightly build:** invalid",
+            "**Nightly build:** [b5454](https://github.com/ggml-org/whisper.cpp/releases/tag/b5454)\n**Nightly build:** [b5454](https://github.com/ggml-org/whisper.cpp/releases/tag/b5454)",
+        ] {
+            let mut invalid = stable.clone();
+            invalid["body"] = body.into();
+            assert!(
+                resolve_release_with(&serde_json::json!([invalid]), |_| panic!(
+                    "invalid links must not be fetched"
+                ))
+                .is_err(),
+                "{body}"
+            );
+        }
+        let mut unsigned = selected.clone();
+        unsigned["assets"][0]["digest"] = serde_json::Value::Null;
+        assert!(platform_asset(&unsigned).is_none());
+    }
+
+    #[test]
+    #[ignore = "reads official GitHub release metadata; does not download or install engine packages"]
+    fn live_stable_release_metadata() {
+        let release = resolve_release(&download::create_download_client().unwrap()).unwrap();
+        assert!(download::is_stable_release(&release));
+        let asset = platform_asset(&release).unwrap();
+        let (name, _) = download::extract_release_asset_info(asset).unwrap();
+        let digest = download::asset_sha256(std::slice::from_ref(asset), &name).unwrap();
+        println!(
+            "Whisper stable {} · binary build {} · asset {name} · SHA-256 {digest}",
+            release["tag_name"], release["rune_build_tag"]
+        );
     }
 
     #[test]

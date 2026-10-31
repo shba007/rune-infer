@@ -16,6 +16,38 @@ pub struct DownloadProgress {
 
 thread_local! {
     static INSTALL_BIN: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+    static CANCEL: std::cell::RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(any(feature = "tui", test))]
+pub(crate) fn with_cancellation<T>(
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    work: impl FnOnce() -> T,
+) -> T {
+    struct Restore(Option<std::sync::Arc<std::sync::atomic::AtomicBool>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CANCEL.with(|slot| {
+                slot.replace(self.0.take());
+            });
+        }
+    }
+    let _restore = Restore(CANCEL.with(|slot| slot.replace(Some(cancel))));
+    work()
+}
+
+fn check_cancelled() -> std::io::Result<()> {
+    if CANCEL.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|cancel| cancel.load(std::sync::atomic::Ordering::Relaxed))
+    }) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "Engine operation cancelled",
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn engine_unavailable(name: &str) -> String {
@@ -131,17 +163,8 @@ pub fn preferred_release(value: &serde_json::Value) -> Result<&serde_json::Value
 fn github_metadata(
     client: &reqwest::blocking::Client,
     url: &str,
-) -> Result<reqwest::blocking::Response, Box<dyn Error>> {
-    if !url.starts_with("https://api.github.com/repos/") {
-        return Err("Invalid GitHub release metadata source".into());
-    }
-    let mut request = client
-        .get(url)
-        .header("Accept", "application/vnd.github+json");
-    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
-        request = request.bearer_auth(token.trim());
-    }
-    Ok(request.send()?)
+) -> Result<Option<serde_json::Value>, Box<dyn Error>> {
+    super::release_cache::github_metadata(client, url)
 }
 
 /// GitHub's latest endpoint finds a stable release even behind hundreds of nightly builds.
@@ -150,16 +173,9 @@ pub(crate) fn fetch_releases(
     url: &str,
 ) -> Result<serde_json::Value, Box<dyn Error>> {
     let base = url.split('?').next().ok_or("Invalid release URL")?;
-    let latest_response = github_metadata(client, &format!("{base}/latest"))?;
-    let latest: Option<serde_json::Value> =
-        if latest_response.status() == reqwest::StatusCode::NOT_FOUND {
-            None
-        } else {
-            Some(latest_response.error_for_status()?.json()?)
-        };
+    let latest = github_metadata(client, &format!("{base}/latest"))?;
     let list: serde_json::Value = github_metadata(client, &format!("{base}?per_page=100"))?
-        .error_for_status()?
-        .json()?;
+        .ok_or("GitHub release list not found")?;
     let mut releases = list.as_array().ok_or("Invalid release list")?.clone();
     if let Some(latest) = latest.filter(is_stable_release) {
         releases.retain(|release| release["tag_name"] != latest["tag_name"]);
@@ -168,7 +184,47 @@ pub(crate) fn fetch_releases(
     Ok(serde_json::Value::Array(releases))
 }
 
+pub(crate) fn fetch_release_tag(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    tag: &str,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    if tag.strip_prefix('b').is_none_or(|value| {
+        value.is_empty() || value.len() > 20 || !value.bytes().all(|c| c.is_ascii_digit())
+    }) {
+        return Err("Invalid engine binary build tag".into());
+    }
+    github_metadata(client, &format!("{url}/tags/{tag}"))?
+        .ok_or_else(|| "Engine binary build not found".into())
+}
+
+pub(crate) fn compare_sd_commits(
+    client: &reqwest::blocking::Client,
+    installed: &str,
+    selected: &str,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    for commit in [installed, selected] {
+        if !(7..=40).contains(&commit.len()) || !commit.bytes().all(|c| c.is_ascii_hexdigit()) {
+            return Err("Invalid SD-server commit identity".into());
+        }
+    }
+    // Fixed official repository, immutable commit references, existing cache and
+    // rate-limit policy. Only ancestry metadata is needed, not the commit list.
+    github_metadata(client, &format!(
+        "https://api.github.com/repos/leejet/stable-diffusion.cpp/compare/{installed}...{selected}?per_page=1"
+    ))?.ok_or_else(|| "Cannot establish SD-server release ancestry".into())
+}
+
 pub(crate) fn resolve_release(
+    client: &reqwest::blocking::Client,
+    url: &str,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    super::release_cache::resolved_release(&format!("github:{url}"), || {
+        resolve_release_uncached(client, url)
+    })
+}
+
+fn resolve_release_uncached(
     client: &reqwest::blocking::Client,
     url: &str,
 ) -> Result<serde_json::Value, Box<dyn Error>> {
@@ -212,8 +268,7 @@ pub(crate) fn resolve_release(
             }
             let base = url.split('?').next().ok_or("Invalid release URL")?;
             let build: serde_json::Value = github_metadata(client, &format!("{base}/tags/{tag}"))?
-                .error_for_status()?
-                .json()?;
+                .ok_or("Stable release binary build not found")?;
             if !is_published_release(&build) || build["tag_name"].as_str() != Some(tag) {
                 return Err("Stable release build could not be verified".into());
             }
@@ -247,6 +302,7 @@ fn download_to_file(
     dest_path: &Path,
     prefix: &str,
 ) -> Result<(), Box<dyn Error>> {
+    check_cancelled()?;
     let filename = dest_path
         .file_name()
         .and_then(|f| f.to_str())
@@ -284,7 +340,9 @@ fn download_to_file(
         };
         update(0);
         loop {
+            check_cancelled()?;
             let n = resp.read(&mut buffer)?;
+            check_cancelled()?;
             if n == 0 {
                 break;
             }
@@ -318,6 +376,7 @@ pub fn extract_archive(
     dest_dir: &Path,
     prefix: &str,
 ) -> Result<(), Box<dyn Error>> {
+    check_cancelled()?;
     let filename = archive_file
         .file_name()
         .and_then(|f| f.to_str())
@@ -331,6 +390,7 @@ pub fn extract_archive(
     });
     tracing::info!("{} Extracting {}...", prefix, filename);
     validate_archive(archive_file)?;
+    check_cancelled()?;
     let stage = dest_dir.join(format!(
         ".extract-{}-{}",
         std::process::id(),
@@ -350,6 +410,7 @@ pub fn extract_archive(
         if !output.status.success() {
             return Err("Engine archive extraction failed.".into());
         }
+        check_cancelled()?;
         publish_extracted(&stage, dest_dir)?;
         Ok(())
     })();
@@ -514,7 +575,9 @@ pub fn download_verified(
     ));
     let result = (|| -> Result<(), Box<dyn Error>> {
         download_to_file(client, url, &part, prefix)?;
+        check_cancelled()?;
         verify_sha256(&part, expected)?;
+        check_cancelled()?;
         if dest.exists() {
             return Err(format!(
                 "Download destination {} already exists; refusing to overwrite.",
@@ -835,6 +898,57 @@ mod progress_tests {
             assert!(!root.join("link").exists() && !root.join("hardlink").exists());
         }
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cancelling_transfer_cleans_partial_files_and_does_not_leak_to_next_operation() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let root = std::env::temp_dir().join(format!(
+            "rune-download-cancel-{}",
+            crate::setup::generate_api_key()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let dest = root.join("engine.zip");
+        let cancel = Arc::new(AtomicBool::new(false));
+        let signal = cancel.clone();
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap();
+        let (url, worker) =
+            serve(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ntest");
+        let result = with_cancellation(cancel.clone(), || {
+            with_progress(
+                move |_| signal.store(true, Ordering::Relaxed),
+                || download_to_file(&client, &url, &dest, "fixture"),
+            )
+        });
+        worker.join().unwrap();
+        assert!(result.unwrap_err().to_string().contains("cancelled"));
+        assert!(!dest.exists());
+        assert!(check_cancelled().is_ok());
+        // An already-cancelled operation cannot start a request or publish a file.
+        let result = with_cancellation(cancel.clone(), || {
+            download_verified(
+                &client,
+                "https://example.invalid/engine",
+                &dest,
+                "fixture",
+                &"a".repeat(64),
+            )
+        });
+        assert!(result.unwrap_err().to_string().contains("cancelled"));
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        let fresh = Arc::new(AtomicBool::new(false));
+        with_cancellation(fresh, || {
+            assert!(check_cancelled().is_ok());
+            with_cancellation(cancel, || assert!(check_cancelled().is_err()));
+            assert!(check_cancelled().is_ok());
+        });
+        std::fs::remove_dir(root).unwrap();
     }
 
     #[test]

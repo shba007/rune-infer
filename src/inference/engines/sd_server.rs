@@ -14,6 +14,141 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+fn valid_commit(value: &str) -> bool {
+    (7..=40).contains(&value.len()) && value.bytes().all(|c| c.is_ascii_hexdigit())
+}
+
+// Some upstream binaries embed "version unknown" but still report their commit.
+// Use that executable evidence rather than a filename or installed folder name.
+pub(crate) fn reported_version(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let (version, commit) = line
+            .trim()
+            .strip_prefix("stable-diffusion.cpp version ")?
+            .split_once(", commit ")?;
+        let commit = commit.trim();
+        (!version.trim().is_empty() && valid_commit(commit))
+            .then(|| format!("commit {}", commit.to_ascii_lowercase()))
+    })
+}
+
+pub(crate) fn release_commit(release: &str) -> Option<&str> {
+    let (build, commit) = release.strip_prefix("master-")?.split_once('-')?;
+    if build.is_empty() || !build.bytes().all(|c| c.is_ascii_digit()) || !valid_commit(commit) {
+        return None;
+    }
+    Some(commit)
+}
+
+pub(crate) fn revision_matches(installed: &str, release: &str) -> Option<bool> {
+    let installed = installed.strip_prefix("commit ")?;
+    if !valid_commit(installed) {
+        return None;
+    }
+    let commit = release_commit(release)?;
+    let installed = installed.to_ascii_lowercase();
+    let commit = commit.to_ascii_lowercase();
+    Some(installed.starts_with(&commit) || commit.starts_with(&installed))
+}
+
+fn release_assets<'a>(
+    assets: &'a [serde_json::Value],
+    os: &str,
+    arch: &str,
+    host_cuda: Option<(u32, u32)>,
+) -> Result<Vec<&'a serde_json::Value>, Box<dyn Error>> {
+    let matching_arch = |part: &str| match arch {
+        "x86_64" => matches!(part, "x64" | "x86_64" | "amd64"),
+        "aarch64" => matches!(part, "arm64" | "aarch64"),
+        _ => false,
+    };
+    let platform = |asset: &'a serde_json::Value| -> Option<String> {
+        let name = asset["name"].as_str()?.to_ascii_lowercase();
+        let stem = name
+            .strip_suffix(".zip")
+            .or_else(|| name.strip_suffix(".tar.gz"))?;
+        let platform = stem.strip_prefix("sd-")?.split_once("-bin-")?.1;
+        let parts: Vec<_> = platform.split('-').collect();
+        let arches: Vec<_> = parts
+            .iter()
+            .filter(|part| matches!(**part, "x64" | "x86_64" | "amd64" | "arm64" | "aarch64"))
+            .collect();
+        if arches.len() != 1 || !matching_arch(arches[0]) {
+            return None;
+        }
+        let compatible = match os {
+            "windows" => {
+                parts.len() == 3 && matches!(parts[0], "win" | "windows") && matching_arch(parts[2])
+            }
+            "macos" => {
+                (parts.len() == 4
+                    && parts[0] == "darwin"
+                    && parts[1] == "macos"
+                    && matching_arch(parts[3]))
+                    || (parts.len() == 2 && parts[0] == "macos" && matching_arch(parts[1]))
+            }
+            "linux" => {
+                let base = if parts.first() == Some(&"linux") && parts.get(1) == Some(&"ubuntu") {
+                    // Published Ubuntu archives include the distribution version.
+                    parts.get(3..)?
+                } else if parts.first() == Some(&"linux") {
+                    parts.get(1..)?
+                } else {
+                    return None;
+                };
+                (base.len() == 1 && matching_arch(base[0]))
+                    || (base.len() == 2
+                        && matching_arch(base[0])
+                        && matches!(base[1], "cpu" | "vulkan"))
+            }
+            _ => false,
+        };
+        compatible.then(|| platform.to_string())
+    };
+    if os == "windows" {
+        if let Some(host) = host_cuda {
+            let mut cuda: Vec<_> = assets
+                .iter()
+                .filter_map(|asset| {
+                    let platform = platform(asset)?;
+                    platform.split('-').nth(1)?.strip_prefix("cuda")?;
+                    let required = download::extract_cuda_version(&platform)?;
+                    (required <= host).then_some((required, platform, asset))
+                })
+                .collect();
+            cuda.sort_by_key(|entry| std::cmp::Reverse(entry.0));
+            for (_, platform, binary) in cuda {
+                let runtime = format!("cudart-sd-bin-{}.zip", platform.replacen("cuda", "cu", 1));
+                if let Some(companion) = assets.iter().find(|asset| {
+                    asset["name"]
+                        .as_str()
+                        .is_some_and(|name| name.eq_ignore_ascii_case(&runtime))
+                }) {
+                    // Dependencies first; an interrupted install cannot leave a bare executable.
+                    return Ok(vec![companion, binary]);
+                }
+            }
+        }
+    }
+    assets
+        .iter()
+        .find(|asset| {
+            platform(asset).is_some_and(|platform| {
+                os != "windows"
+                    || platform
+                        .split('-')
+                        .nth(1)
+                        .is_some_and(|backend| matches!(backend, "cpu" | "vulkan"))
+            })
+        })
+        .map(|asset| vec![asset])
+        .ok_or_else(|| {
+            format!(
+        "No compatible SD-server archive with verified platform and runtime pairing for {os}/{arch}"
+    ).into()
+        })
+}
+
 pub struct SdServerEngine {
     id: String,
     port: u16,
@@ -185,76 +320,35 @@ impl SdServerEngine {
         let release_url = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases";
         let release_val = download::resolve_release(&client, release_url)?;
 
-        let assets = download::preferred_release(&release_val)?["assets"]
+        Self::install_release(&client, &release_val, base_dir)
+    }
+
+    pub(crate) fn install_release(
+        client: &reqwest::blocking::Client,
+        release: &serde_json::Value,
+        base_dir: PathBuf,
+    ) -> Result<PathBuf, Box<dyn Error>> {
+        std::fs::create_dir_all(&base_dir)?;
+        let exe_name = if cfg!(windows) {
+            "sd-server.exe"
+        } else {
+            "sd-server"
+        };
+        let exe_path = base_dir.join(exe_name);
+        let assets = download::preferred_release(release)?["assets"]
             .as_array()
             .ok_or("Selected release has no engine assets")?;
 
-        let host_cuda = download::detect_host_cuda_version();
-        let mut download_urls = Vec::new();
-
-        if cfg!(target_os = "windows") {
-            let wants_cuda = host_cuda.is_some_and(|(major, _)| major >= 12);
-            let cuda_asset = if wants_cuda {
-                assets.iter().find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    n.contains("bin-win-cuda") && !n.starts_with("cudart")
-                })
-            } else {
-                None
-            };
-
-            let cudart_asset = if cuda_asset.is_some() {
-                assets.iter().find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    n.starts_with("cudart-sd-bin-win")
-                })
-            } else {
-                None
-            };
-
-            if let (Some(ca), Some(cda)) = (cuda_asset, cudart_asset) {
-                if let Some(cuda) = host_cuda {
-                    tracing::info!(
-                        "[SdServerEngine] Host supports CUDA {}.{}. Selected CUDA 12 build (backward-compatible)",
-                        cuda.0,
-                        cuda.1
-                    );
-                } else {
-                    tracing::info!(
-                        "[SdServerEngine] Selected Windows CUDA 12 build with cudart dependencies"
-                    );
-                }
-                download_urls.push(download::extract_release_asset_info(ca)?);
-                download_urls.push(download::extract_release_asset_info(cda)?);
-            } else {
-                let fallback = assets
-                    .iter()
-                    .find(|a| {
-                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                        n.contains("bin-win-vulkan") || n.contains("bin-win-cpu")
-                    })
-                    .ok_or("No matching Windows binary asset found")?;
-                download_urls.push(download::extract_release_asset_info(fallback)?);
-            }
-        } else if cfg!(target_os = "macos") {
-            let asset = assets
-                .iter()
-                .find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    n.contains("bin-darwin-macos") || n.contains("bin-macos")
-                })
-                .ok_or("No matching macOS asset found")?;
-            download_urls.push(download::extract_release_asset_info(asset)?);
-        } else {
-            let asset = assets
-                .iter()
-                .find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    n.contains("bin-linux-ubuntu") && (n.contains("vulkan") || !n.contains("rocm"))
-                })
-                .ok_or("No matching Linux asset found")?;
-            download_urls.push(download::extract_release_asset_info(asset)?);
-        }
+        let selected = release_assets(
+            assets,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            download::detect_host_cuda_version(),
+        )?;
+        let download_urls = selected
+            .into_iter()
+            .map(download::extract_release_asset_info)
+            .collect::<Result<Vec<_>, _>>()?;
 
         for (name, _) in &download_urls {
             download::asset_sha256(assets, name)?;
@@ -262,7 +356,7 @@ impl SdServerEngine {
 
         for (archive_name, download_url) in download_urls {
             download::download_and_extract(
-                &client,
+                client,
                 &download_url,
                 &base_dir,
                 &archive_name,
@@ -470,6 +564,119 @@ impl InferenceEngine for SdServerEngine {
                 })
             }
             _ => Err("SdServerEngine only supports ImageGeneration tasks".into()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sd_packages_match_platform_and_pair_cuda_dependencies_exactly() {
+        let names = [
+            "sd-master-37bc88b-bin-win-cuda13-x64.zip.sha256",
+            "sd-master-37bc88b-bin-win-cuda12-arm64.zip",
+            "cudart-sd-bin-win-cu13-x64.zip",
+            "sd-master-37bc88b-bin-win-cuda13-x64.zip",
+            "cudart-sd-bin-win-cu12-x64.zip",
+            "sd-master-37bc88b-bin-win-cuda12-x64.zip",
+            "sd-master-37bc88b-bin-win-cpu-x64.zip",
+            "sd-master-37bc88b-bin-Linux-Ubuntu-24.04-x86_64-rocm-10.1.0.zip",
+            "sd-master-37bc88b-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+            "sd-master-37bc88b-bin-Linux-Ubuntu-24.04-x86_64.zip",
+            "sd-master-37bc88b-bin-Darwin-macOS-26.6.2-arm64.zip",
+        ];
+        let assets: Vec<_> = names
+            .iter()
+            .map(|name| serde_json::json!({"name":name}))
+            .collect();
+        for (os, arch, cuda, expected) in [
+            ("windows", "x86_64", Some((13, 0)), vec![2, 3]),
+            ("windows", "x86_64", Some((12, 8)), vec![4, 5]),
+            ("windows", "x86_64", Some((11, 8)), vec![6]),
+            ("windows", "x86_64", None, vec![6]),
+            ("windows", "aarch64", Some((12, 8)), vec![]),
+            ("linux", "x86_64", None, vec![8]),
+            ("linux", "x86_64", Some((13, 0)), vec![8]),
+            ("linux", "aarch64", None, vec![]),
+            ("macos", "aarch64", None, vec![10]),
+            ("macos", "x86_64", None, vec![]),
+            ("windows", "riscv64", None, vec![]),
+            ("android", "x86_64", None, vec![]),
+        ] {
+            let result = release_assets(&assets, os, arch, cuda);
+            if expected.is_empty() {
+                assert!(result.is_err(), "{os}/{arch}/{cuda:?}");
+            } else {
+                let selected: Vec<_> = result
+                    .unwrap()
+                    .iter()
+                    .map(|asset| asset["name"].as_str().unwrap())
+                    .collect();
+                assert_eq!(
+                    selected,
+                    expected
+                        .iter()
+                        .map(|index| names[*index])
+                        .collect::<Vec<_>>(),
+                    "{os}/{arch}/{cuda:?}"
+                );
+            }
+        }
+        // No cross-version/architecture pairing; use a safe fallback or refuse.
+        let missing_runtime: Vec<_> = assets
+            .iter()
+            .filter(|asset| asset["name"] != names[4])
+            .cloned()
+            .collect();
+        assert_eq!(
+            release_assets(&missing_runtime, "windows", "x86_64", Some((12, 8))).unwrap()[0]["name"],
+            names[6]
+        );
+        assert!(release_assets(&assets[5..6], "windows", "x86_64", Some((12, 8))).is_err());
+        let malformed = serde_json::json!({"name":"sd-master-37bc88b-bin-win-cpu-arm64-x64.zip"});
+        assert!(release_assets(&[malformed], "windows", "x86_64", None).is_err());
+    }
+
+    #[test]
+    fn sd_identity_uses_reported_commits_and_never_infers_release_order() {
+        for (output, expected) in [
+            (
+                "stable-diffusion.cpp version unknown, commit be48649\r\n",
+                Some("commit be48649"),
+            ),
+            (
+                "stable-diffusion.cpp version 1.0.0, commit BE48649ABC\n",
+                Some("commit be48649abc"),
+            ),
+            ("stable-diffusion.cpp version unknown, commit unknown", None),
+            (
+                "stable-diffusion.cpp version unknown, commit be48649-dirty",
+                None,
+            ),
+            ("stable-diffusion.cpp version unknown, commit bad", None),
+            ("other-engine version unknown, commit be48649", None),
+            ("Usage: sd-server --version", None),
+        ] {
+            assert_eq!(reported_version(output).as_deref(), expected, "{output}");
+        }
+        for (installed, release, expected) in [
+            ("commit be48649", "master-1017-be48649", Some(true)),
+            ("commit be48649abc", "master-1017-BE48649", Some(true)),
+            ("commit be48649", "master-1017-be48649abc", Some(true)),
+            ("commit be48649", "master-1028-37bc88b", Some(false)),
+            ("commit 37bc88b", "master-1017-be48649", Some(false)),
+            ("Unknown", "master-1028-37bc88b", None),
+            ("commit be48649", "master-bad-be48649", None),
+            ("commit be48649", "master-1017-unknown", None),
+            ("commit be48649", "v1.0.0", None),
+        ] {
+            assert_eq!(
+                revision_matches(installed, release),
+                expected,
+                "{installed}/{release}"
+            );
         }
     }
 }

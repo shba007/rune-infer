@@ -14,6 +14,70 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+fn release_asset<'a>(
+    assets: &'a [serde_json::Value],
+    os: &str,
+    arch: &str,
+    host_cuda: Option<(u32, u32)>,
+) -> Option<&'a serde_json::Value> {
+    let compatible = |asset: &&serde_json::Value, cuda: bool| {
+        let Some(name) = asset["name"].as_str() else {
+            return false;
+        };
+        let name = name.to_ascii_lowercase();
+        let suffix = if os == "windows" { ".zip" } else { ".tar.gz" };
+        let Some(stem) = name.strip_suffix(suffix) else {
+            return false;
+        };
+        if !stem.starts_with("nemo-speech-") {
+            return false;
+        }
+        let parts: Vec<_> = stem.split('-').collect();
+        let platform_matches = match os {
+            "windows" => parts.contains(&"windows") || parts.contains(&"win"),
+            "linux" => parts.contains(&"linux") || parts.contains(&"ubuntu"),
+            "macos" => parts.contains(&"macos") || parts.contains(&"darwin"),
+            _ => false,
+        };
+        let arch_matches = match arch {
+            "x86_64" => {
+                parts
+                    .iter()
+                    .any(|part| matches!(*part, "x86_64" | "x64" | "amd64"))
+                    && !parts
+                        .iter()
+                        .any(|part| matches!(*part, "aarch64" | "arm64"))
+            }
+            "aarch64" => {
+                parts
+                    .iter()
+                    .any(|part| matches!(*part, "aarch64" | "arm64"))
+                    && !parts
+                        .iter()
+                        .any(|part| matches!(*part, "x86_64" | "x64" | "amd64"))
+            }
+            _ => false,
+        };
+        let backend_matches = if cuda {
+            host_cuda.is_some_and(|host| {
+                parts
+                    .last()
+                    .is_some_and(|backend| backend.starts_with("cuda"))
+                    && download::extract_cuda_version(stem).is_none_or(|required| required <= host)
+            })
+        } else {
+            stem.ends_with("-cpu") || (os == "macos" && stem.ends_with("-metal"))
+        };
+        platform_matches && arch_matches && backend_matches
+    };
+    let cuda = if os != "macos" && host_cuda.is_some() {
+        assets.iter().find(|asset| compatible(asset, true))
+    } else {
+        None
+    };
+    cuda.or_else(|| assets.iter().find(|asset| compatible(asset, false)))
+}
+
 pub struct NemoSpeechEngine {
     id: String,
     port: u16,
@@ -213,85 +277,52 @@ impl NemoSpeechEngine {
         let release_url = "https://api.github.com/repos/NVIDIA/NeMo-Speech.cpp/releases";
         let release_val = download::resolve_release(&client, release_url)?;
 
-        let assets = download::preferred_release(&release_val)?["assets"]
+        Self::install_release(&client, &release_val, base_dir)
+    }
+
+    // Update staging bypasses environment overrides and existing installations.
+    pub(crate) fn install_release(
+        client: &reqwest::blocking::Client,
+        release: &serde_json::Value,
+        base_dir: PathBuf,
+    ) -> Result<PathBuf, Box<dyn Error>> {
+        std::fs::create_dir_all(&base_dir)?;
+        let exe_name = if cfg!(windows) {
+            "nemo-speech.exe"
+        } else {
+            "nemo-speech"
+        };
+        let exe_path = base_dir.join(exe_name);
+        let assets = download::preferred_release(release)?["assets"]
             .as_array()
             .ok_or("Selected release has no engine assets")?;
 
-        let host_cuda = download::detect_host_cuda_version();
-        let mut download_urls = Vec::new();
-
-        if cfg!(target_os = "windows") {
-            let cuda_asset = if host_cuda.is_some() {
-                assets.iter().find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    (n.contains("bin-win-cuda")
-                        || n.contains("win-cuda")
-                        || (n.contains("windows") && n.contains("cuda")))
-                        && !n.contains("cudart")
-                })
-            } else {
-                None
-            };
-
-            let fallback = assets.iter().find(|a| {
-                let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("win-cpu") || (n.contains("windows") && !n.contains("cuda"))
-            });
-
-            if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push(download::extract_release_asset_info(target)?);
-            }
-        } else if cfg!(target_os = "macos") {
-            if let Some(asset) = assets.iter().find(|a| {
-                let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("macos") || n.contains("darwin")
-            }) {
-                download_urls.push(download::extract_release_asset_info(asset)?);
-            }
-        } else {
-            let cuda_asset = if host_cuda.is_some() {
-                assets.iter().find(|a| {
-                    let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                    n.contains("linux-cuda") || n.contains("ubuntu-cuda")
-                })
-            } else {
-                None
-            };
-
-            let fallback = assets.iter().find(|a| {
-                let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("linux") || n.contains("ubuntu")
-            });
-
-            if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push(download::extract_release_asset_info(target)?);
-            }
-        }
-
-        if download_urls.is_empty() {
-            return Err(
-                "No compatible NeMo-Speech.cpp release asset found for this platform".into(),
-            );
-        }
-
-        for (name, _) in &download_urls {
-            download::asset_sha256(assets, name)?;
-        }
-
-        for (archive_name, download_url) in download_urls {
-            download::download_and_extract(
-                &client,
-                &download_url,
-                &base_dir,
-                &archive_name,
-                "[NemoSpeechEngine]",
-                &download::asset_sha256(assets, &archive_name)?,
-            )?;
-        }
+        let asset = release_asset(
+            assets,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            download::detect_host_cuda_version(),
+        )
+        .ok_or_else(|| {
+            format!(
+                "No compatible NeMo-Speech.cpp runtime archive for {}/{}",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            )
+        })?;
+        let (archive_name, download_url) = download::extract_release_asset_info(asset)?;
+        let sha256 = download::asset_sha256(std::slice::from_ref(asset), &archive_name)?;
+        download::download_and_extract(
+            client,
+            &download_url,
+            &base_dir,
+            &archive_name,
+            "[NemoSpeechEngine]",
+            &sha256,
+        )?;
 
         Self::flatten_all_dlls_recursive(&base_dir, &base_dir);
         download::flatten_dlls(&base_dir);
-        Self::repair_dependencies(&exe_path, &base_dir);
 
         if !exe_path.exists() {
             if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
@@ -299,6 +330,7 @@ impl NemoSpeechEngine {
             }
         }
 
+        Self::repair_dependencies(&exe_path, &base_dir);
         download::make_executable(&exe_path)?;
 
         if !exe_path.exists() {
@@ -657,6 +689,66 @@ impl InferenceEngine for NemoSpeechEngine {
             _ => Err(
                 "NemoSpeechEngine only supports Audio transcription and translation tasks".into(),
             ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod asset_tests {
+    use super::*;
+
+    #[test]
+    fn runtime_selection_matches_platform_architecture_and_available_backend() {
+        let names = [
+            "nemo-speech-0.3.0-windows-x86_64-cuda.zip.sha256",
+            "nemo-speech-0.3.0-windows-aarch64-cuda.zip",
+            "nemo-speech-0.3.0-windows-x86_64-cuda.zip",
+            "nemo-speech-0.3.0-windows-x86_64-vulkan.zip",
+            "nemo-speech-0.3.0-windows-x86_64-cpu.zip",
+            "nemo-speech-0.3.0-linux-aarch64-cuda13.tar.gz",
+            "nemo-speech-0.3.0-linux-aarch64-cuda12.tar.gz",
+            "nemo-speech-0.3.0-linux-aarch64-cpu.tar.gz",
+            "nemo-speech-0.3.0-linux-x86_64-cuda.tar.gz",
+            "nemo-speech-0.3.0-linux-x86_64-cpu.tar.gz",
+            "nemo-speech-0.3.0-macos-x86_64-cpu.tar.gz",
+            "nemo-speech-0.3.0-macos-aarch64-cpu.tar.gz",
+            "itn_configs.tar.bz2",
+        ];
+        let assets: Vec<_> = names
+            .iter()
+            .map(|name| serde_json::json!({"name":name}))
+            .collect();
+        for (os, arch, cuda, expected) in [
+            ("windows", "x86_64", Some((13, 0)), Some(2)),
+            ("windows", "x86_64", None, Some(4)),
+            ("windows", "aarch64", Some((13, 0)), Some(1)),
+            ("windows", "aarch64", None, None),
+            ("linux", "aarch64", Some((12, 4)), Some(6)),
+            ("linux", "aarch64", Some((13, 0)), Some(5)),
+            ("linux", "aarch64", None, Some(7)),
+            ("linux", "x86_64", Some((12, 4)), Some(8)),
+            ("linux", "x86_64", None, Some(9)),
+            ("macos", "x86_64", None, Some(10)),
+            ("macos", "aarch64", None, Some(11)),
+            ("windows", "riscv64", Some((13, 0)), None),
+            ("freebsd", "x86_64", None, None),
+        ] {
+            assert_eq!(
+                release_asset(&assets, os, arch, cuda).and_then(|asset| asset["name"].as_str()),
+                expected.map(|index| names[index]),
+                "{os}/{arch} {cuda:?}"
+            );
+        }
+        for invalid in [names[0], names[1], names[3], names[12]] {
+            assert!(
+                release_asset(
+                    &[serde_json::json!({"name":invalid})],
+                    "windows",
+                    "x86_64",
+                    None
+                )
+                .is_none()
+            );
         }
     }
 }

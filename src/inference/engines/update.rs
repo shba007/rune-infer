@@ -85,12 +85,7 @@ fn stage_engine_install(
     }
     let bin = std::fs::canonicalize(&bin).map_err(|e| e.to_string())?;
     let destination = bin.join(directory);
-    if std::fs::symlink_metadata(&destination).is_ok() {
-        return Err(format!(
-            "{} already exists; preserve its files and choose a different installation location",
-            destination.display()
-        ));
-    }
+    let incomplete = incomplete_installation(&destination, kind)?;
     let id = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -149,10 +144,27 @@ fn stage_engine_install(
             return Err("Installation cancelled".into());
         }
         emit("Installing verified engine".into());
-        publish_new_engine(&engine_dir, &destination).map_err(|e| {
-            format!("Cannot publish installation without overwriting existing files: {e}")
-        })?;
-        Ok(format!("Installed {kind}"))
+        if incomplete {
+            if !incomplete_installation(&destination, kind)? {
+                return Err(
+                    "Incomplete engine directory changed during installation; retry".into(),
+                );
+            }
+            let backup = bin.join(format!(
+                ".{directory}-incomplete-{}-{id}",
+                std::process::id()
+            ));
+            publish_repaired_engine(&engine_dir, &destination, &backup)?;
+            Ok(format!(
+                "Installed {kind}; previous files preserved at {}",
+                backup.display()
+            ))
+        } else {
+            publish_new_engine(&engine_dir, &destination).map_err(|e| {
+                format!("Cannot publish installation without overwriting existing files: {e}")
+            })?;
+            Ok(format!("Installed {kind}"))
+        }
     })();
     if stage.exists() {
         if let Ok(resolved) = std::fs::canonicalize(&stage) {
@@ -162,6 +174,56 @@ fn stage_engine_install(
         }
     }
     result
+}
+
+// Only a regular, link-free directory without an engine executable is eligible
+// for install recovery. Never turn installation into an implicit update.
+fn incomplete_installation(destination: &Path, kind: EngineKind) -> UpdateResult<bool> {
+    let meta = match std::fs::symlink_metadata(destination) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("Cannot inspect engine directory: {error}")),
+    };
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return Err(
+            "Existing engine location is not a regular directory; installation refused".into(),
+        );
+    }
+    ensure_no_links(destination)?;
+    let executable = match kind {
+        EngineKind::LlamaServer | EngineKind::LlamaServerPrism => "llama-server",
+        EngineKind::AudioCpp => "audiocpp_cli",
+        EngineKind::SdServer => "sd-server",
+        EngineKind::Crispasr => "crispasr",
+        EngineKind::NemoSpeech => "nemo-speech",
+        EngineKind::WhisperCpp => "whisper-cli",
+        EngineKind::Needle => "needle",
+        EngineKind::Encoder => return Err("Encoder is built in".into()),
+    };
+    if [executable.to_string(), format!("{executable}.exe")]
+        .iter()
+        .any(|name| download::find_executable_recursive(destination, name).is_some())
+    {
+        return Err("Engine executable already exists; use update instead of install".into());
+    }
+    Ok(true)
+}
+
+fn publish_repaired_engine(source: &Path, destination: &Path, backup: &Path) -> UpdateResult<()> {
+    publish_new_engine(destination, backup)
+        .map_err(|e| format!("Cannot preserve previous engine files: {e}"))?;
+    if let Err(error) = publish_new_engine(source, destination) {
+        return match publish_new_engine(backup, destination) {
+            Ok(()) => Err(format!(
+                "Cannot install engine; previous files restored: {error}"
+            )),
+            Err(restore) => Err(format!(
+                "Cannot install engine: {error}. Previous files preserved at {} (restore failed: {restore})",
+                backup.display()
+            )),
+        };
+    }
+    Ok(())
 }
 
 fn publish_new_engine(source: &Path, destination: &Path) -> std::io::Result<()> {
@@ -248,11 +310,11 @@ fn validate_install_binary(kind: EngineKind, path: &Path) -> UpdateResult<()> {
         }
         return Ok(());
     }
-    if kind == EngineKind::SdServer {
-        return Ok(());
-    }
     let version =
         candidate_version(path).map_err(|e| format!("Cannot verify engine startup: {e}"))?;
+    if kind == EngineKind::SdServer && super::sd_server::reported_version(&version).is_none() {
+        return Err("Cannot verify SD-server commit identity from its version output".into());
+    }
     if kind == EngineKind::WhisperCpp && !version.contains("whisper.cpp version:") {
         return Err("Cannot verify whisper.cpp version".into());
     }
@@ -260,6 +322,484 @@ fn validate_install_binary(kind: EngineKind, path: &Path) -> UpdateResult<()> {
         return Err("Cannot verify CrispASR version".into());
     }
     Ok(())
+}
+
+pub(crate) fn update_llama(
+    state: Arc<AppState>,
+    kind: EngineKind,
+    stop: Arc<AtomicBool>,
+    expected_tag: String,
+    expected_build: Option<String>,
+    events: std::sync::mpsc::Sender<UpdateEvent>,
+) -> UpdateResult<String> {
+    if !cfg!(all(windows, target_arch = "x86_64")) {
+        return Err("llama-server updates are currently supported on Windows x64 only".into());
+    }
+    let (directory, release_url) = match kind {
+        EngineKind::LlamaServer => (
+            "llama-upstream",
+            "https://api.github.com/repos/ggml-org/llama.cpp/releases",
+        ),
+        EngineKind::LlamaServerPrism => (
+            "llama-prism",
+            "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases",
+        ),
+        _ => return Err("Unsupported llama-server engine kind".into()),
+    };
+    let _ = events.send(UpdateEvent::Progress("Waiting for models to unload".into()));
+    let _reservation = loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        if let Some(guard) = state.try_reserve_engine_update(kind) {
+            break guard;
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    };
+    let client = download::create_download_client().map_err(|e| e.to_string())?;
+    let release = download::resolve_release(&client, release_url).map_err(|e| e.to_string())?;
+    let (build, commit) = if kind == EngineKind::LlamaServerPrism {
+        let (build, commit) =
+            checked_prism_build(&release, &expected_tag, expected_build.as_deref())?;
+        (build, Some(commit))
+    } else {
+        (
+            checked_llama_build(&release, &expected_tag, expected_build.as_deref())?,
+            None,
+        )
+    };
+    let current = PathBuf::from("bin").join(directory);
+    for directory in [Path::new("bin"), current.as_path()] {
+        let meta = std::fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("Managed engine location is not a regular directory".into());
+        }
+    }
+    ensure_no_links(&current)?;
+    let exe = download::find_executable_recursive(&current, "llama-server.exe")
+        .ok_or("Managed llama-server executable not found")?;
+    let installed_output = candidate_version(&exe)?;
+    let installed = llama_binary_build(&installed_output)
+        .ok_or("Cannot verify installed llama-server build")?;
+    if installed > build || llama_version_matches(&installed_output, build, commit.as_deref()) {
+        return Ok("Installed build is current or newer; no download needed".into());
+    }
+    stage_engine_update(
+        PathBuf::from("bin"),
+        directory,
+        &stop,
+        &events,
+        |stage| {
+            super::llama_server::install::install_release(&client, &release, stage)
+                .map_err(|e| e.to_string())
+        },
+        |path| {
+            let output = candidate_version(path)?;
+            if !llama_version_matches(&output, build, commit.as_deref()) {
+                return Err(format!(
+                    "Replacement does not match selected llama-server release {expected_tag} (build b{build})"
+                ));
+            }
+            Ok(())
+        },
+    )
+}
+
+fn checked_llama_build(
+    release: &serde_json::Value,
+    tag: &str,
+    build_tag: Option<&str>,
+) -> UpdateResult<u64> {
+    if release["tag_name"].as_str() != Some(tag) || release["rune_build_tag"].as_str() != build_tag
+    {
+        return Err(
+            "The selected release or binary build has changed; check versions again".into(),
+        );
+    }
+    let build = build_tag
+        .unwrap_or(tag)
+        .strip_prefix('b')
+        .filter(|value| !value.is_empty() && value.bytes().all(|c| c.is_ascii_digit()))
+        .and_then(|value| value.parse().ok())
+        .ok_or("Release has no verifiable llama-server build identity; update refused")?;
+    Ok(build)
+}
+
+fn checked_prism_build(
+    release: &serde_json::Value,
+    tag: &str,
+    build_tag: Option<&str>,
+) -> UpdateResult<(u64, String)> {
+    if release["tag_name"].as_str() != Some(tag) || release["rune_build_tag"].as_str() != build_tag
+    {
+        return Err("The selected Prism release has changed; check versions again".into());
+    }
+    let (build, commit) = tag
+        .strip_prefix("prism-b")
+        .and_then(|value| value.split_once('-'))
+        .ok_or("Prism release has no verifiable build and commit identity")?;
+    if build.is_empty()
+        || !build.bytes().all(|c| c.is_ascii_digit())
+        || !(7..=40).contains(&commit.len())
+        || !commit.bytes().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err("Prism release has an invalid build or commit identity".into());
+    }
+    Ok((
+        build.parse().map_err(|_| "Invalid Prism build number")?,
+        commit.to_ascii_lowercase(),
+    ))
+}
+
+fn llama_version_matches(output: &str, build: u64, commit: Option<&str>) -> bool {
+    if llama_binary_build(output) != Some(build) {
+        return false;
+    }
+    commit.is_none_or(|expected| {
+        let actual = output
+            .split_once("commit ")
+            .map(|(_, tail)| {
+                tail.split(|c: char| !c.is_ascii_hexdigit())
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase()
+            })
+            .unwrap_or_default();
+        actual.len() >= 7 && (actual.starts_with(expected) || expected.starts_with(&actual))
+    })
+}
+
+fn llama_binary_build(output: &str) -> Option<u64> {
+    let tail = output.split("build ").nth(1)?;
+    tail.split(|c: char| !c.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()
+}
+
+fn stage_engine_update(
+    bin: PathBuf,
+    directory: &str,
+    stop: &AtomicBool,
+    events: &std::sync::mpsc::Sender<UpdateEvent>,
+    installer: impl FnOnce(PathBuf) -> UpdateResult<PathBuf>,
+    validate: impl FnOnce(&Path) -> UpdateResult<()>,
+) -> UpdateResult<String> {
+    let meta = std::fs::symlink_metadata(&bin).map_err(|e| e.to_string())?;
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return Err("Engine directory is not a regular directory".into());
+    }
+    let bin = std::fs::canonicalize(bin).map_err(|e| e.to_string())?;
+    let current = bin.join(directory);
+    let meta = std::fs::symlink_metadata(&current).map_err(|e| e.to_string())?;
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return Err("Managed engine directory is not a regular directory".into());
+    }
+    ensure_no_links(&current)?;
+    let id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let stage = bin.join(format!(".{directory}-update-{}-{id}", std::process::id()));
+    let backup = bin.join(format!(".{directory}-backup-{}-{id}", std::process::id()));
+    std::fs::create_dir(&stage).map_err(|e| e.to_string())?;
+    let result = (|| {
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        let _ = events.send(UpdateEvent::Progress(
+            "Downloading verified release packages".into(),
+        ));
+        let tx = events.clone();
+        let path = download::with_progress(
+            move |progress| {
+                let _ = tx.send(UpdateEvent::Download(progress));
+            },
+            || installer(stage.clone()),
+        )?;
+        let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+        if !path.starts_with(&stage) || !path.is_file() {
+            return Err("Installer returned an external executable; update refused".into());
+        }
+        ensure_no_links(&stage)?;
+        let _ = events.send(UpdateEvent::Progress("Checking replacement engine".into()));
+        validate(&path)?;
+        preserve_extras(&current, &stage)?;
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        let _ = events.send(UpdateEvent::Progress("Installing verified engine".into()));
+        publish_repaired_engine(&stage, &current, &backup)?;
+        Ok(format!(
+            "Updated {directory}; previous files preserved at {}",
+            backup.display()
+        ))
+    })();
+    if let Ok(resolved) = std::fs::canonicalize(&stage) {
+        if resolved.parent() == Some(bin.as_path()) {
+            let _ = std::fs::remove_dir_all(resolved);
+        }
+    }
+    result
+}
+
+pub(crate) fn update_nemo(
+    state: Arc<AppState>,
+    stop: Arc<AtomicBool>,
+    expected_tag: String,
+    events: std::sync::mpsc::Sender<UpdateEvent>,
+) -> UpdateResult<String> {
+    if !cfg!(all(windows, target_arch = "x86_64")) {
+        return Err("NeMo Speech updates are currently supported on Windows x64 only".into());
+    }
+    let _ = events.send(UpdateEvent::Progress("Waiting for models to unload".into()));
+    let _reservation = loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        if let Some(guard) = state.try_reserve_engine_update(EngineKind::NemoSpeech) {
+            break guard;
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    };
+    let client = download::create_download_client().map_err(|e| e.to_string())?;
+    let release = download::resolve_release(
+        &client,
+        "https://api.github.com/repos/NVIDIA/NeMo-Speech.cpp/releases",
+    )
+    .map_err(|e| e.to_string())?;
+    let expected = checked_nemo_release(&release, &expected_tag)?;
+    let current = Path::new("bin/nemo-speech");
+    for directory in [Path::new("bin"), current] {
+        let meta = std::fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("Managed engine location is not a regular directory".into());
+        }
+    }
+    ensure_no_links(current)?;
+    let exe = download::find_executable_recursive(current, "nemo-speech.exe")
+        .ok_or("Managed NeMo Speech executable not found")?;
+    let installed = nemo_binary_version(&candidate_version(&exe)?)
+        .ok_or("Cannot verify installed NeMo Speech version")?;
+    if installed >= expected {
+        return Ok("Installed version is current or newer; no download needed".into());
+    }
+    stage_engine_update(
+        PathBuf::from("bin"),
+        "nemo-speech",
+        &stop,
+        &events,
+        |stage| {
+            super::nemo_speech::NemoSpeechEngine::install_release(&client, &release, stage)
+                .map_err(|e| e.to_string())
+        },
+        |path| {
+            if nemo_binary_version(&candidate_version(path)?) != Some(expected) {
+                return Err(format!(
+                    "Replacement does not match selected NeMo Speech release {expected_tag}"
+                ));
+            }
+            Ok(())
+        },
+    )
+}
+
+fn checked_nemo_release(release: &serde_json::Value, tag: &str) -> UpdateResult<(u64, u64, u64)> {
+    if release["tag_name"].as_str() != Some(tag) {
+        return Err("The selected NeMo Speech release has changed; check versions again".into());
+    }
+    if tag.split_whitespace().count() != 1 {
+        return Err("NeMo Speech release has no verifiable version".into());
+    }
+    semantic_version(tag).ok_or("NeMo Speech release has no verifiable version".into())
+}
+
+fn nemo_binary_version(output: &str) -> Option<(u64, u64, u64)> {
+    let version = output
+        .trim()
+        .strip_prefix("nemo-speech ")?
+        .split_whitespace()
+        .next()?;
+    semantic_version(version)
+}
+
+pub(crate) fn update_sd(
+    state: Arc<AppState>,
+    stop: Arc<AtomicBool>,
+    expected_tag: String,
+    events: std::sync::mpsc::Sender<UpdateEvent>,
+) -> UpdateResult<String> {
+    if !cfg!(all(windows, target_arch = "x86_64")) {
+        return Err("SD-server updates are currently supported on Windows x64 only".into());
+    }
+    let _ = events.send(UpdateEvent::Progress("Waiting for models to unload".into()));
+    let _reservation = loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        if let Some(guard) = state.try_reserve_engine_update(EngineKind::SdServer) {
+            break guard;
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    };
+    let client = download::create_download_client().map_err(|e| e.to_string())?;
+    let release = download::resolve_release(
+        &client,
+        "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases",
+    )
+    .map_err(|e| e.to_string())?;
+    if release["tag_name"].as_str() != Some(expected_tag.as_str()) {
+        return Err("The selected SD-server release has changed; check versions again".into());
+    }
+    let selected = super::sd_server::release_commit(&expected_tag)
+        .ok_or("Selected SD-server release has no verifiable commit identity")?;
+    let current = Path::new("bin/sd-server");
+    for directory in [Path::new("bin"), current] {
+        let meta = std::fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("Managed engine location is not a regular directory".into());
+        }
+    }
+    ensure_no_links(current)?;
+    let exe = download::find_executable_recursive(current, "sd-server.exe")
+        .ok_or("Managed SD-server executable not found")?;
+    let installed = super::sd_server::reported_version(&candidate_version(&exe)?)
+        .ok_or("Cannot verify installed SD-server commit")?;
+    if super::sd_server::revision_matches(&installed, &expected_tag) == Some(true) {
+        return Ok("Already up to date; no download needed".into());
+    }
+    let installed_commit = installed
+        .strip_prefix("commit ")
+        .ok_or("Missing installed commit")?;
+    let _ = events.send(UpdateEvent::Progress(
+        "Verifying selected release ancestry".into(),
+    ));
+    let comparison = download::compare_sd_commits(&client, installed_commit, selected)
+        .map_err(|e| format!("Cannot verify SD-server release order; update refused: {e}"))?;
+    if !sd_update_is_forward(installed_commit, &comparison)? {
+        return Ok("Already up to date; no download needed".into());
+    }
+    stage_engine_update(
+        PathBuf::from("bin"),
+        "sd-server",
+        &stop,
+        &events,
+        |stage| {
+            super::sd_server::SdServerEngine::install_release(&client, &release, stage)
+                .map_err(|e| e.to_string())
+        },
+        |path| {
+            let version = super::sd_server::reported_version(&candidate_version(path)?)
+                .ok_or("Cannot verify replacement SD-server commit")?;
+            if super::sd_server::revision_matches(&version, &expected_tag) != Some(true) {
+                return Err("Replacement SD-server commit does not match selected release".into());
+            }
+            Ok(())
+        },
+    )
+}
+
+fn sd_update_is_forward(installed: &str, comparison: &serde_json::Value) -> UpdateResult<bool> {
+    if !(7..=40).contains(&installed.len()) || !installed.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Invalid installed SD-server commit identity".into());
+    }
+    let base = comparison["base_commit"]["sha"].as_str().unwrap_or("");
+    if base.len() != 40
+        || !base.bytes().all(|c| c.is_ascii_hexdigit())
+        || !base
+            .to_ascii_lowercase()
+            .starts_with(&installed.to_ascii_lowercase())
+    {
+        return Err(
+            "SD-server comparison does not identify the installed commit; update refused".into(),
+        );
+    }
+    let merge = comparison["merge_base_commit"]["sha"]
+        .as_str()
+        .unwrap_or("");
+    match (
+        comparison["status"].as_str(),
+        comparison["ahead_by"].as_u64(),
+        comparison["behind_by"].as_u64(),
+    ) {
+        (Some("ahead"), Some(ahead), Some(0)) if ahead > 0 && merge.eq_ignore_ascii_case(base) => {
+            Ok(true)
+        }
+        (Some("identical"), Some(0), Some(0)) if merge.eq_ignore_ascii_case(base) => Ok(false),
+        (Some("behind"), _, _) => {
+            Err("Selected SD-server release is older than installed; downgrade refused".into())
+        }
+        _ => Err(
+            "Selected SD-server release is divergent or its ancestry is unknown; update refused"
+                .into(),
+        ),
+    }
+}
+
+pub(crate) fn update_needle(
+    state: Arc<AppState>,
+    stop: Arc<AtomicBool>,
+    expected: String,
+    events: std::sync::mpsc::Sender<UpdateEvent>,
+) -> UpdateResult<String> {
+    use super::needle;
+    if !cfg!(all(windows, target_arch = "x86_64")) {
+        return Err("Needle updates are currently supported on Windows x64 only".into());
+    }
+    let selected = expected
+        .strip_prefix("revision ")
+        .filter(|value| value.len() == 40 && value.bytes().all(|c| c.is_ascii_hexdigit()))
+        .ok_or("Selected Needle revision is invalid; check versions again")?;
+    let _ = events.send(UpdateEvent::Progress("Waiting for models to unload".into()));
+    let _reservation = loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err("Update cancelled".into());
+        }
+        if let Some(guard) = state.try_reserve_engine_update(EngineKind::Needle) {
+            break guard;
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    };
+    let current = Path::new("bin/needle");
+    for directory in [Path::new("bin"), current] {
+        let meta = std::fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err("Managed engine location is not a regular directory".into());
+        }
+    }
+    ensure_no_links(current)?;
+    let installed = needle::installed_revision(&current.join("needle.exe"))
+        .ok_or("Cannot verify installed Needle receipt and binary checksum; update refused")?;
+    if installed.eq_ignore_ascii_case(&expected) {
+        return Ok("Already up to date; no download needed".into());
+    }
+    let client = download::create_download_client().map_err(|e| e.to_string())?;
+    let metadata = needle::latest_metadata(&client).map_err(|e| e.to_string())?;
+    if metadata["sha"].as_str() != Some(selected) {
+        return Err("Selected Needle revision has changed; check versions again".into());
+    }
+    let _ = events.send(UpdateEvent::Progress(
+        "Verifying selected revision ancestry".into(),
+    ));
+    needle::verify_forward_update(&client, installed.trim_start_matches("revision "), selected)
+        .map_err(|e| e.to_string())?;
+    stage_engine_update(
+        PathBuf::from("bin"),
+        "needle",
+        &stop,
+        &events,
+        |stage| {
+            needle::NeedleEngine::install_release(&client, &metadata, stage)
+                .map_err(|e| e.to_string())
+        },
+        |path| {
+            validate_install_binary(EngineKind::Needle, path)?;
+            if needle::installed_revision(path).as_deref() != Some(expected.as_str()) {
+                return Err("Replacement Needle receipt or binary checksum does not match selected revision".into());
+            }
+            Ok(())
+        },
+    )
 }
 
 pub(crate) fn update_audio(
@@ -502,14 +1042,10 @@ pub(crate) fn update_whisper(
     }
     emit("Checking release assets".into());
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let releases = download::fetch_releases(
-        &client,
-        "https://api.github.com/repos/ggml-org/whisper.cpp/releases",
-    )
-    .map_err(|e| e.to_string())?;
-    let (tag, asset) = super::whisper::preferred_asset(&releases)
+    let release = super::whisper::resolve_release(&client).map_err(|e| e.to_string())?;
+    let asset = super::whisper::platform_asset(&release)
         .ok_or("No verified compatible whisper.cpp release is available")?;
-    if tag != expected_tag {
+    if release["tag_name"].as_str() != Some(expected_tag.as_str()) {
         return Err("The selected release has changed; check versions again".into());
     }
     let (name, url) = download::extract_release_asset_info(asset).map_err(|e| e.to_string())?;
@@ -1268,6 +1804,400 @@ mod tests {
             "fixture"
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn partial_install_retries_preserve_files_and_only_publish_validated_packages() {
+        let root = root();
+        let bin = root.join("bin");
+        let current = bin.join("whisper-cpp");
+        std::fs::create_dir_all(current.join("nested")).unwrap();
+        std::fs::write(current.join("nested/custom.txt"), "keep").unwrap();
+        std::fs::write(current.join("old.dll"), "incomplete runtime").unwrap();
+        let stop = AtomicBool::new(false);
+        let (tx, _) = std::sync::mpsc::channel();
+        let install = |stage: PathBuf| {
+            let dir = stage.join("whisper-cpp");
+            std::fs::create_dir(&dir).unwrap();
+            let path = dir.join("whisper-cli.exe");
+            std::fs::write(&path, "verified fixture").unwrap();
+            Ok(path)
+        };
+        for failure in ["download", "validation", "cancel"] {
+            stop.store(false, Ordering::Relaxed);
+            let result = stage_engine_install(
+                bin.clone(),
+                "whisper-cpp",
+                EngineKind::WhisperCpp,
+                &stop,
+                &tx,
+                |stage| {
+                    let path = install(stage)?;
+                    if failure == "download" {
+                        return Err("fixture download failure".into());
+                    }
+                    Ok(path)
+                },
+                |_| {
+                    if failure == "validation" {
+                        return Err("fixture validation failure".into());
+                    }
+                    if failure == "cancel" {
+                        stop.store(true, Ordering::Relaxed);
+                    }
+                    Ok(())
+                },
+            );
+            assert!(result.is_err(), "{failure}");
+            assert_eq!(
+                std::fs::read_to_string(current.join("nested/custom.txt")).unwrap(),
+                "keep"
+            );
+            assert_eq!(std::fs::read_dir(&bin).unwrap().count(), 1);
+        }
+        stop.store(false, Ordering::Relaxed);
+        let result = stage_engine_install(
+            bin.clone(),
+            "whisper-cpp",
+            EngineKind::WhisperCpp,
+            &stop,
+            &tx,
+            install,
+            |_| Ok(()),
+        )
+        .unwrap();
+        let backup = std::fs::read_dir(&bin)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(".whisper-cpp-incomplete-")
+            })
+            .unwrap();
+        assert!(result.contains(&backup.display().to_string()));
+        assert_eq!(
+            std::fs::read_to_string(backup.join("nested/custom.txt")).unwrap(),
+            "keep"
+        );
+        assert_eq!(
+            std::fs::read_to_string(backup.join("old.dll")).unwrap(),
+            "incomplete runtime"
+        );
+        assert!(!current.join("old.dll").exists());
+        assert!(current.join("whisper-cli.exe").exists());
+        // An empty folder is eligible, but a nested executable is an installed engine.
+        let empty = bin.join("empty");
+        std::fs::create_dir(&empty).unwrap();
+        assert!(incomplete_installation(&empty, EngineKind::WhisperCpp).unwrap());
+        std::fs::create_dir(empty.join("nested")).unwrap();
+        std::fs::write(empty.join("nested/whisper-cli"), "existing").unwrap();
+        assert!(incomplete_installation(&empty, EngineKind::WhisperCpp).is_err());
+        let file = bin.join("file");
+        std::fs::write(&file, "keep").unwrap();
+        assert!(incomplete_installation(&file, EngineKind::WhisperCpp).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn partial_install_publish_restores_original_and_never_overwrites_backup() {
+        let root = root();
+        let current = root.join("current");
+        let source = root.join("missing-stage");
+        let backup = root.join("backup");
+        std::fs::create_dir(&current).unwrap();
+        std::fs::write(current.join("custom.txt"), "keep").unwrap();
+        assert!(
+            publish_repaired_engine(&source, &current, &backup)
+                .unwrap_err()
+                .contains("restored")
+        );
+        assert!(current.join("custom.txt").exists());
+        assert!(!backup.exists());
+        std::fs::create_dir(&backup).unwrap();
+        std::fs::write(backup.join("other.txt"), "other").unwrap();
+        assert!(publish_repaired_engine(&source, &current, &backup).is_err());
+        assert!(current.join("custom.txt").exists());
+        assert!(backup.join("other.txt").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn llama_update_requires_the_selected_release_and_exact_binary_build() {
+        let stable = serde_json::json!({"tag_name":"v0.8.0", "rune_build_tag":"b12100"});
+        assert_eq!(
+            checked_llama_build(&stable, "v0.8.0", Some("b12100")).unwrap(),
+            12100
+        );
+        for (tag, build) in [
+            ("v0.7.0", Some("b12100")),
+            ("v0.8.0", Some("b12101")),
+            ("v0.8.0", None),
+        ] {
+            assert!(checked_llama_build(&stable, tag, build).is_err());
+        }
+        assert_eq!(
+            checked_llama_build(&serde_json::json!({"tag_name":"b12100"}), "b12100", None).unwrap(),
+            12100
+        );
+        assert!(
+            checked_llama_build(&serde_json::json!({"tag_name":"v0.8.0"}), "v0.8.0", None).is_err()
+        );
+        for (output, build) in [
+            (
+                "version: 0.7.0-dev (build 11669, commit 620d2225c)",
+                Some(11669),
+            ),
+            (
+                "version: 0.8.0-dev (build 12100, commit abcdef123)",
+                Some(12100),
+            ),
+            (
+                "version: 0.8.0-dev (build 121000, commit abcdef123)",
+                Some(121000),
+            ),
+            ("version: 0.8.0", None),
+            ("build invalid", None),
+        ] {
+            assert_eq!(llama_binary_build(output), build);
+        }
+    }
+
+    #[test]
+    fn managed_updates_validate_preserve_extras_and_leave_original_on_failure() {
+        for directory in [
+            "llama-upstream",
+            "llama-prism",
+            "nemo-speech",
+            "sd-server",
+            "needle",
+        ] {
+            let executable = match directory {
+                "nemo-speech" => "nemo-speech.exe",
+                "sd-server" => "sd-server.exe",
+                "needle" => "needle.exe",
+                _ => "llama-server.exe",
+            };
+            let root = root();
+            let bin = root.join("bin");
+            let current = bin.join(directory);
+            std::fs::create_dir_all(&current).unwrap();
+            std::fs::write(current.join(executable), "old engine").unwrap();
+            std::fs::write(current.join("ggml-old.dll"), "old runtime").unwrap();
+            std::fs::write(current.join("custom.json"), "custom configuration").unwrap();
+            let sibling = bin.join(if directory == "llama-prism" {
+                "llama-upstream"
+            } else {
+                "llama-prism"
+            });
+            std::fs::create_dir(&sibling).unwrap();
+            std::fs::write(sibling.join("llama-server.exe"), "untouched sibling").unwrap();
+            if directory == "needle" {
+                std::fs::write(current.join(".needle-install.json"), "old receipt").unwrap();
+            }
+            let (tx, _) = std::sync::mpsc::channel();
+            let stop = AtomicBool::new(false);
+            for failure in ["download", "validation", "external", "cancel", "none"] {
+                stop.store(false, Ordering::Relaxed);
+                let result = stage_engine_update(
+                    bin.clone(),
+                    directory,
+                    &stop,
+                    &tx,
+                    |stage| {
+                        if directory == "needle" {
+                            std::fs::write(stage.join(".needle-install.json"), "new receipt")
+                                .unwrap();
+                        }
+                        let path = stage.join(executable);
+                        std::fs::write(&path, "new engine").unwrap();
+                        std::fs::write(stage.join("ggml-new.dll"), "new runtime").unwrap();
+                        match failure {
+                            "download" => Err("fixture download failure".into()),
+                            "external" => Ok(current.join(executable)),
+                            _ => Ok(path),
+                        }
+                    },
+                    |_| {
+                        if failure == "validation" {
+                            return Err("wrong build".into());
+                        }
+                        if failure == "cancel" {
+                            stop.store(true, Ordering::Relaxed);
+                        }
+                        Ok(())
+                    },
+                );
+                if failure != "none" {
+                    assert!(result.is_err(), "{failure}");
+                    assert_eq!(
+                        std::fs::read_to_string(current.join(executable)).unwrap(),
+                        "old engine"
+                    );
+                    assert_eq!(std::fs::read_dir(&bin).unwrap().count(), 2);
+                } else {
+                    let message = result.unwrap();
+                    let backup = std::fs::read_dir(&bin)
+                        .unwrap()
+                        .map(|entry| entry.unwrap().path())
+                        .find(|path| {
+                            path.file_name()
+                                .unwrap()
+                                .to_string_lossy()
+                                .starts_with(&format!(".{directory}-backup-"))
+                        })
+                        .unwrap();
+                    assert!(message.contains(&backup.display().to_string()));
+                    assert_eq!(
+                        std::fs::read_to_string(current.join(executable)).unwrap(),
+                        "new engine"
+                    );
+                    assert_eq!(
+                        std::fs::read_to_string(current.join("custom.json")).unwrap(),
+                        "custom configuration"
+                    );
+                    assert!(current.join("ggml-new.dll").exists());
+                    assert!(!current.join("ggml-old.dll").exists());
+                    assert!(backup.join(executable).exists());
+                    if directory == "needle" {
+                        assert_eq!(
+                            std::fs::read_to_string(current.join(".needle-install.json")).unwrap(),
+                            "new receipt"
+                        );
+                        assert_eq!(
+                            std::fs::read_to_string(backup.join(".needle-install.json")).unwrap(),
+                            "old receipt"
+                        );
+                    }
+                    assert!(backup.join("ggml-old.dll").exists());
+                }
+            }
+            assert_eq!(
+                std::fs::read_to_string(sibling.join("llama-server.exe")).unwrap(),
+                "untouched sibling"
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn prism_updates_require_matching_release_build_and_commit() {
+        let tag = "prism-b12128-d7b2896";
+        let release = serde_json::json!({"tag_name":tag});
+        let (build, commit) = checked_prism_build(&release, tag, None).unwrap();
+        assert_eq!(build, 12128);
+        assert_eq!(commit, "d7b2896");
+        assert!(checked_prism_build(&release, "prism-b12129-d7b2896", None).is_err());
+        assert!(checked_prism_build(&release, tag, Some("b12128")).is_err());
+        for invalid in [
+            "b12128",
+            "prism-b12128",
+            "prism-b12128-bad",
+            "prism-b1-zzzzzzz",
+            "prism-b-abcdef1",
+            "prism-b1-abcdef1/extra",
+            "prism-b18446744073709551616-abcdef1",
+        ] {
+            assert!(
+                checked_prism_build(&serde_json::json!({"tag_name":invalid}), invalid, None)
+                    .is_err(),
+                "{invalid}"
+            );
+        }
+        for (output, matches) in [
+            ("0.2.0-dev (build 12128, commit d7b2896aa)", true),
+            ("0.2.0-dev (build 12128, commit D7B2896)", true),
+            ("0.2.0-dev (build 12129, commit d7b2896)", false),
+            ("0.2.0-dev (build 12128, commit c9c34bc9c)", false),
+            ("0.2.0-dev (build 12128)", false),
+            ("0.2.0-dev (build 12128, commit d7b)", false),
+        ] {
+            assert_eq!(
+                llama_version_matches(output, build, Some(&commit)),
+                matches,
+                "{output}"
+            );
+        }
+    }
+
+    #[test]
+    fn nemo_updates_check_release_identity_and_exact_engine_version() {
+        let release = serde_json::json!({"tag_name":"v0.3.0"});
+        assert_eq!(checked_nemo_release(&release, "v0.3.0").unwrap(), (0, 3, 0));
+        assert!(checked_nemo_release(&release, "v0.4.0").is_err());
+        for invalid in [
+            "",
+            "nightly",
+            "v0.3",
+            "v0.3.0-dev",
+            "v0.3.0.1",
+            "release v0.3.0",
+        ] {
+            assert!(
+                checked_nemo_release(&serde_json::json!({"tag_name":invalid}), invalid).is_err()
+            );
+        }
+        for (output, expected) in [
+            ("nemo-speech 0.3.0\n", Some((0, 3, 0))),
+            ("nemo-speech 0.2.0", Some((0, 2, 0))),
+            ("nemo-speech 0.3.1", Some((0, 3, 1))),
+            ("nemo-speech 0.3.00", Some((0, 3, 0))),
+            ("other-engine 0.3.0", None),
+            ("nemo-speech 0.3.0-dev", None),
+            ("nemo-speech 0.3.0.1", None),
+            ("nemo-speech unrelated 0.3.0", None),
+        ] {
+            assert_eq!(nemo_binary_version(output), expected, "{output}");
+        }
+    }
+
+    #[test]
+    fn sd_updates_require_verified_forward_ancestry() {
+        let base = "a".repeat(40);
+        let fixture = serde_json::json!({
+            "base_commit":{"sha":base}, "merge_base_commit":{"sha":base},
+            "status":"ahead", "ahead_by":2, "behind_by":0,
+        });
+        for (status, ahead, behind, expected) in [
+            ("ahead", 2, 0, Some(true)),
+            ("identical", 0, 0, Some(false)),
+            ("behind", 0, 2, None),
+            ("diverged", 2, 1, None),
+            ("ahead", 2, 1, None),
+            ("ahead", 0, 0, None),
+            ("identical", 1, 0, None),
+            ("unknown", 2, 0, None),
+        ] {
+            let mut value = fixture.clone();
+            value["status"] = serde_json::json!(status);
+            value["ahead_by"] = serde_json::json!(ahead);
+            value["behind_by"] = serde_json::json!(behind);
+            assert_eq!(
+                sd_update_is_forward("aaaaaaa", &value).ok(),
+                expected,
+                "{status}/{ahead}/{behind}"
+            );
+        }
+        for (field, value) in [
+            ("base_commit", serde_json::json!({"sha":"b".repeat(40)})),
+            (
+                "merge_base_commit",
+                serde_json::json!({"sha":"b".repeat(40)}),
+            ),
+            ("base_commit", serde_json::json!({"sha":"aaaaaaa"})),
+            ("ahead_by", serde_json::Value::Null),
+            ("behind_by", serde_json::Value::Null),
+        ] {
+            let mut response = fixture.clone();
+            response[field] = value;
+            assert!(
+                sd_update_is_forward("aaaaaaa", &response).is_err(),
+                "{field}"
+            );
+        }
+        assert!(sd_update_is_forward("", &fixture).is_err());
+        assert!(sd_update_is_forward("aaaaaaa", &serde_json::json!({})).is_err());
     }
 
     #[test]
