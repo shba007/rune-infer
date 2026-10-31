@@ -10,5 +10,5 @@ RUN uv venv --python 3.11 /opt/converter-venv
 RUN --mount=type=cache,target=/root/.cache/uv uv pip sync \
     --python /opt/converter-venv/bin/python --index-strategy unsafe-best-match requirements.lock
 RUN uv pip check --python /opt/converter-venv/bin/python
-COPY convert_depth.py reference_depth.py ./
+COPY convert_depth.py reference_depth.py gpu_rewrite.py ./
 ENTRYPOINT ["uv", "run", "--no-project", "--python", "/opt/converter-venv/bin/python", "/converter/convert_depth.py"]

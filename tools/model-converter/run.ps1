@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string[]] $Images
+    [string[]] $Images,
+    [switch] $GpuLinearConv,
+    [switch] $GpuNhwcBoundaries
 )
 $ErrorActionPreference = 'Stop'
 # The container installs the pinned environment with uv and executes via uv run.
@@ -15,6 +17,8 @@ $taskInputs = @($Images | ForEach-Object {
 $taskWork = Join-Path $taskRepository ('target/depth-large-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $taskWork | Out-Null
 $taskArguments = @('--output-dir', '/work/output')
+if ($GpuLinearConv) { $taskArguments += '--gpu-linear-conv' }
+if ($GpuNhwcBoundaries) { $taskArguments += '--gpu-nhwc-boundaries' }
 for ($taskIndex = 0; $taskIndex -lt $taskInputs.Count; $taskIndex++) {
     $taskName = 'image-' + $taskIndex + [IO.Path]::GetExtension($taskInputs[$taskIndex])
     Copy-Item -LiteralPath $taskInputs[$taskIndex] -Destination (Join-Path $taskWork $taskName)

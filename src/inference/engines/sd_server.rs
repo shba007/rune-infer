@@ -14,6 +14,20 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+// ModelLoader::parse_file in installed upstream 37bc88b supports indexed
+// safetensors directories and full Diffusers directories as well as files.
+pub(crate) fn companion_path_available(path: &Path) -> bool {
+    path.is_file()
+        || (path.is_dir()
+            && [
+                "model.safetensors.index.json",
+                "model_index.json",
+                "unet/diffusion_pytorch_model.safetensors",
+            ]
+            .iter()
+            .any(|marker| path.join(marker).is_file()))
+}
+
 fn valid_commit(value: &str) -> bool {
     (7..=40).contains(&value.len()) && value.bytes().all(|c| c.is_ascii_hexdigit())
 }
@@ -678,5 +692,36 @@ mod tests {
                 "{installed}/{release}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod companion_tests {
+    use super::*;
+
+    #[test]
+    fn companion_files_and_recognized_directories() {
+        let root = std::env::temp_dir().join(format!(
+            "rune-sd-companion-{}",
+            crate::setup::generate_api_key()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(!companion_path_available(&root.join("missing")));
+        assert!(!companion_path_available(&root));
+        let file = root.join("encoder.safetensors");
+        std::fs::write(&file, b"fixture").unwrap();
+        assert!(companion_path_available(&file));
+        for marker in [
+            "model.safetensors.index.json",
+            "model_index.json",
+            "unet/diffusion_pytorch_model.safetensors",
+        ] {
+            let path = root.join(marker);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"fixture").unwrap();
+            assert!(companion_path_available(&root), "{marker}");
+            std::fs::remove_file(path).unwrap();
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

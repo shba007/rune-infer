@@ -1,10 +1,8 @@
 $kind: http-request
-name: Generate Image
-url: '{{base_url}}/v1/images/generations'
+url: "{{base_url}}/v1/images/generations"
 method: POST
 headers:
-  - key: Content-Type
-    value: application/json
+  Content-Type: application/json
 body:
   type: json
   content: |-

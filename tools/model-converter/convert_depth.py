@@ -42,6 +42,10 @@ def main():
                         help="Real RGB image fixture; repeat for additional parity checks")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--offline", action="store_true", help="Use only the existing pinned Hugging Face cache")
+    parser.add_argument("--gpu-linear-conv", action="store_true",
+                        help="Experimental rank-4 convolution lowering; does not advertise GPU support")
+    parser.add_argument("--gpu-nhwc-boundaries", action="store_true",
+                        help="Experimental NHWC input and rank-4 single-channel output")
     args = parser.parse_args()
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         parser.error("The pinned converter requires Linux x86_64; the exported model targets CPU.")
@@ -100,19 +104,10 @@ def main():
                 return self.depth_model(pixel_values=pixels).predicted_depth
 
         wrapped = Depth(model).eval()
-        candidate = args.output_dir / "depth_anything_v2_large.candidate.tflite"
-        print("Converting full FP32 depth network", flush=True)
-        with torch.no_grad():
-            edge_model = litert_torch.convert(wrapped, (torch.zeros(1, 3, HEIGHT, WIDTH),))
-            edge_model.export(str(candidate))
-        report["candidate"] = {"file": candidate.name, "sha256": sha256(candidate),
-                               "size_bytes": candidate.stat().st_size}
-        compiled = CompiledModel.from_file(str(candidate), options=Options(
-            hardware_accelerators=HardwareAccelerator.CPU,
-            cpu_options=CpuOptions(num_threads=args.threads)))
-        inputs, outputs = compiled.create_input_buffers(0), compiled.create_output_buffers(0)
-        for index, path in enumerate(args.image):
-            print(f"Checking fixture {index}: {path.name}", flush=True)
+        fixtures = []
+        # References always come from the original checkpoint implementation,
+        # before an optional export rewrite can affect it.
+        for path in args.image:
             with Image.open(path) as image:
                 pixels = processor(images=image.convert("RGB"),
                                    size={"height": HEIGHT, "width": WIDTH},
@@ -121,7 +116,42 @@ def main():
             if pixels.shape != (1, 3, HEIGHT, WIDTH):
                 raise ValueError(f"Unexpected preprocessed shape: {pixels.shape}")
             with torch.no_grad():
-                reference = wrapped(torch.from_numpy(pixels)).numpy()
+                reference = wrapped(torch.from_numpy(pixels)).numpy().copy()
+            fixtures.append((path, pixels, reference))
+        if args.gpu_linear_conv:
+            from gpu_rewrite import replace_linear_with_conv
+            report["experimental_rewrite"] = {
+                "name": "linear_as_rank4_conv", "source_sha256": sha256(Path(__file__).with_name("gpu_rewrite.py")),
+                "replaced_modules": replace_linear_with_conv(wrapped)}
+        sample = torch.zeros(1, 3, HEIGHT, WIDTH)
+        if args.gpu_nhwc_boundaries:
+            class NhwcDepth(torch.nn.Module):
+                def __init__(self, original):
+                    super().__init__()
+                    self.original = original
+
+                def forward(self, pixels):
+                    return self.original(pixels.permute(0, 3, 1, 2)).unsqueeze(-1)
+
+            wrapped = NhwcDepth(wrapped).eval()
+            sample = torch.zeros(1, HEIGHT, WIDTH, 3)
+            report["input"].update(shape=[1, HEIGHT, WIDTH, 3], layout="NHWC")
+            report["output"].update(shape=[1, HEIGHT, WIDTH, 1], layout="NHWC")
+        candidate = args.output_dir / "depth_anything_v2_large.candidate.tflite"
+        print("Converting full FP32 depth network", flush=True)
+        with torch.no_grad():
+            edge_model = litert_torch.convert(wrapped, (sample,))
+            edge_model.export(str(candidate))
+        report["candidate"] = {"file": candidate.name, "sha256": sha256(candidate),
+                               "size_bytes": candidate.stat().st_size}
+        compiled = CompiledModel.from_file(str(candidate), options=Options(
+            hardware_accelerators=HardwareAccelerator.CPU,
+            cpu_options=CpuOptions(num_threads=args.threads)))
+        inputs, outputs = compiled.create_input_buffers(0), compiled.create_output_buffers(0)
+        for index, (path, pixels, reference) in enumerate(fixtures):
+            print(f"Checking fixture {index}: {path.name}", flush=True)
+            if args.gpu_nhwc_boundaries:
+                pixels = np.ascontiguousarray(pixels.transpose(0, 2, 3, 1))
             check_started = time.monotonic()
             inputs[0].write(pixels.ravel())
             compiled.run_by_index(0, inputs, outputs)

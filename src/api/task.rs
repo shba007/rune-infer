@@ -271,23 +271,66 @@ impl Requirements {
                     );
                 }
             }
-            if engine == SdServer
-                && [
-                    &model.vae_path,
-                    &model.text_encoder_path,
-                    &model.llm_vision_path,
-                ]
-                .into_iter()
-                .flatten()
-                .any(|path| !std::path::Path::new(path).is_file())
-            {
-                return refuse(
-                    StatusCode::BAD_REQUEST,
-                    "model_companion_missing",
-                    format!("Model '{}' has a missing configured companion", model.id),
-                );
+            if engine == SdServer {
+                for (field, path) in [
+                    ("extra.vae_path", &model.vae_path),
+                    ("extra.text_encoder_path", &model.text_encoder_path),
+                    ("extra.llm_vision_path", &model.llm_vision_path),
+                ] {
+                    if let Some(path) = path
+                        && !crate::inference::engines::sd_server::companion_path_available(
+                            std::path::Path::new(path),
+                        )
+                    {
+                        return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse {
+                            error: ApiError::new(format!("Model '{}' companion '{field}' is missing or is not a supported model file/directory: {path}", model.id))
+                                .with_type("invalid_request_error")
+                                .with_param(field)
+                                .with_code("model_companion_missing"),
+                        })).into_response());
+                    }
+                }
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod companion_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sd_companion_directory_and_actionable_error() {
+        let root = std::env::temp_dir().join(format!(
+            "rune-task-companion-{}",
+            crate::setup::generate_api_key()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+            "id":"image-fixture", "name":"Image fixture", "tasks":["text-to-image"],
+            "engine":["sd-server"], "local":{"path":"unused.gguf"},
+            "extra":{"text_encoder_path": root.to_str().unwrap()}
+        }))
+        .unwrap();
+        let model = ModelConfig::try_from(entry).unwrap();
+        let requirements = Requirements::new(&["text"], "image", "generation");
+        let response = requirements
+            .validate(&model, Some(EngineKind::SdServer))
+            .unwrap_err();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), 16384)
+            .await
+            .unwrap();
+        let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(error["error"]["code"], "model_companion_missing");
+        assert_eq!(error["error"]["param"], "extra.text_encoder_path");
+        std::fs::write(root.join("model.safetensors.index.json"), b"{}").unwrap();
+        assert!(
+            requirements
+                .validate(&model, Some(EngineKind::SdServer))
+                .is_ok()
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
