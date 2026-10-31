@@ -46,6 +46,8 @@ def main():
                         help="Experimental rank-4 convolution lowering; does not advertise GPU support")
     parser.add_argument("--gpu-nhwc-boundaries", action="store_true",
                         help="Experimental NHWC input and rank-4 single-channel output")
+    parser.add_argument("--gpu-fold-layer-scales", action="store_true",
+                        help="Experimental DINOv2 LayerScale folding; requires full GPU parity validation")
     args = parser.parse_args()
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         parser.error("The pinned converter requires Linux x86_64; the exported model targets CPU.")
@@ -118,6 +120,11 @@ def main():
             with torch.no_grad():
                 reference = wrapped(torch.from_numpy(pixels)).numpy().copy()
             fixtures.append((path, pixels, reference))
+        if args.gpu_fold_layer_scales:
+            from gpu_rewrite import fold_dinov2_layer_scales
+            report["layer_scale_folding"] = {
+                "source_sha256": sha256(Path(__file__).with_name("gpu_rewrite.py")),
+                "folded_modules": fold_dinov2_layer_scales(wrapped)}
         if args.gpu_linear_conv:
             from gpu_rewrite import replace_linear_with_conv
             report["experimental_rewrite"] = {

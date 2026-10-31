@@ -55,6 +55,35 @@ fn create_test_app(api_key: Option<String>) -> axum::Router {
 }
 
 #[tokio::test]
+async fn image_generation_validates_dimensions_before_model_dispatch() {
+    let app = create_test_app(None);
+    for (size, expected_code) in [
+        ("1080x1080", "model_task_unsupported"),
+        ("720x720", "model_task_unsupported"),
+        ("1280x720", "model_task_unsupported"),
+        ("0x720", "invalid_parameter_value"),
+        ("999999999x720", "invalid_parameter_value"),
+    ] {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1/images/generations")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "model":"qwen3.8-27b", "prompt":"A lighthouse", "size":size
+                })
+                .to_string(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), 16384).await.unwrap();
+        let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(error["error"]["code"], expected_code, "{size}: {error}");
+    }
+}
+
+#[tokio::test]
 async fn test_openai_auth_rejection_and_acceptance() {
     let app = create_test_app(Some("sk-rune-test-secret-key".to_string()));
 

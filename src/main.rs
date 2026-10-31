@@ -60,6 +60,13 @@ enum Command {
         #[arg(long)]
         model: std::path::PathBuf,
     },
+    #[command(hide = true)]
+    LitertGpuWorker {
+        #[arg(long)]
+        runtime: std::path::PathBuf,
+        #[arg(long)]
+        model: std::path::PathBuf,
+    },
     /// Update this executable from a verified release archive
     SelfUpdate {
         /// Check for an update without replacing the executable
@@ -86,6 +93,9 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     if let Some(Command::LitertWorker { runtime, model }) = &args.command {
         return rune_infer::inference::engines::litert::native::run(runtime, model);
+    }
+    if let Some(Command::LitertGpuWorker { runtime, model }) = &args.command {
+        return rune_infer::inference::engines::litert::native_gpu::run(runtime, model);
     }
     if args.command.is_none() {
         Args::command().print_help()?;

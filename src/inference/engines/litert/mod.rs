@@ -1,5 +1,7 @@
-//! CPU-only reviewed Depth Anything V2 adapters; native code runs in a child process.
+//! Reviewed depth adapters; native CPU/GPU code runs in isolated child processes.
+mod gpu_runtime;
 pub mod native;
+pub mod native_gpu;
 mod resize;
 use crate::{
     config::ModelConfig,
@@ -29,14 +31,16 @@ pub(crate) struct ModelProfile {
     pub name: &'static str,
     pub source: &'static str,
     reference_resize: bool,
+    gpu_verified: bool,
 }
-const MODEL_PROFILES: [ModelProfile; 2] = [
+const MODEL_PROFILES: [ModelProfile; 3] = [
     ModelProfile {
         sha256: "651415f1774e02d06de946eccf2e6dbbc5f499a9e932d9de7ada3d59637d2e8e",
         architecture: "depth-anything-v2-small",
         name: "Depth Anything V2 Small FP32",
         source: "https://huggingface.co/litert-community/depth-anything-v2-small/tree/178427e448dbf4da93b1e7b1b2abc103ad329bd6/tflite",
         reference_resize: false,
+        gpu_verified: false,
     },
     ModelProfile {
         sha256: "6f03564f13abfae18185581a809cb5c0ee5c0a425dc5f85102194b2b321eba3d",
@@ -44,8 +48,31 @@ const MODEL_PROFILES: [ModelProfile; 2] = [
         name: "Depth Anything V2 Large FP32",
         source: "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/tree/7581137eff8d4e94f6e796d3baea0e9fa79b22d2 (local export using tools/model-converter; CC-BY-NC-4.0)",
         reference_resize: true,
+        gpu_verified: false,
+    },
+    ModelProfile {
+        sha256: "1a4bf05de63bb60a450ad8b8de834a612d6de748df5095785976c58605a7d705",
+        architecture: "depth-anything-v2-large",
+        name: "Depth Anything V2 Large FP32",
+        source: "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/tree/7581137eff8d4e94f6e796d3baea0e9fa79b22d2 (local LayerScale-folded export; CC-BY-NC-4.0)",
+        reference_resize: true,
+        gpu_verified: true,
     },
 ];
+
+pub fn verify_gpu_artifacts(runtime: &Path, model: &Path) -> anyhow::Result<()> {
+    let profile = checked_profile(runtime, model)?;
+    anyhow::ensure!(
+        profile.gpu_verified,
+        "Model export has not passed GPU parity checks"
+    );
+    gpu_runtime::validate_bundle(
+        runtime
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Missing GPU runtime directory"))?,
+    )
+    .map_err(|error| anyhow::anyhow!(error.to_string()))
+}
 
 pub fn verify_artifacts(runtime: &Path, model: &Path) -> anyhow::Result<()> {
     checked_profile(runtime, model).map(|_| ())
@@ -54,7 +81,7 @@ pub fn verify_artifacts(runtime: &Path, model: &Path) -> anyhow::Result<()> {
 fn checked_profile(runtime: &Path, model: &Path) -> anyhow::Result<&'static ModelProfile> {
     anyhow::ensure!(
         cfg!(all(windows, target_arch = "x86_64")),
-        "LiteRT depth currently requires Windows x64 CPU"
+        "LiteRT depth currently requires Windows x64"
     );
     validate_runtime(runtime).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     reviewed_model(model)
@@ -103,24 +130,27 @@ pub(crate) fn validate_runtime(path: &Path) -> Result<(), Box<dyn Error>> {
 
 pub(crate) fn ensure_runtime_installed() -> Result<PathBuf, Box<dyn Error>> {
     if !cfg!(all(windows, target_arch = "x86_64")) {
-        return Err("LiteRT installation currently supports Windows x64 CPU only".into());
+        return Err("LiteRT installation currently supports Windows x64 only".into());
     }
     if let Some(path) = std::env::var_os("LITERT_LIBRARY_PATH") {
         let path = PathBuf::from(path);
         validate_runtime(&path).map_err(|e| format!(
             "LITERT_LIBRARY_PATH must point to the pinned runtime; fix or remove this override before installing: {e}"
         ))?;
+        gpu_runtime::ensure_installed(&path)?;
         return Ok(std::fs::canonicalize(path)?);
     }
     let path = managed_runtime_path();
     if path.exists() {
         validate_runtime(&path)?;
+        gpu_runtime::ensure_installed(&path)?;
         return Ok(std::fs::canonicalize(path)?);
     }
     std::fs::create_dir_all(path.parent().ok_or("Missing LiteRT directory")?)?;
     let client = super::download::create_download_client()?;
     super::download::download_verified(&client, RUNTIME_URL, &path, "[LiteRT]", RUNTIME_SHA)?;
     validate_runtime(&path)?;
+    gpu_runtime::ensure_installed(&path)?;
     Ok(std::fs::canonicalize(path)?)
 }
 
@@ -129,7 +159,13 @@ pub(crate) fn runtime_version(path: &Path) -> Option<String> {
     super::download::file_sha256(path)
         .ok()
         .filter(|hash| hash == RUNTIME_SHA)
-        .map(|_| "LiteRT 2.3.0 CPU".into())
+        .map(|_| {
+            if gpu_runtime::validate_bundle(&gpu_runtime::bundle_path()).is_ok() {
+                "LiteRT 2.3.0 GPU + CPU".into()
+            } else {
+                "LiteRT 2.3.0 CPU".into()
+            }
+        })
 }
 
 pub(crate) fn helper_path() -> Result<PathBuf, Box<dyn Error>> {
@@ -147,6 +183,22 @@ pub(crate) fn helper_path() -> Result<PathBuf, Box<dyn Error>> {
     Ok(std::fs::canonicalize(helper)?)
 }
 
+pub(crate) fn verification_files() -> Vec<PathBuf> {
+    let mut files = runtime_path().into_iter().collect::<Vec<_>>();
+    let bundle = gpu_runtime::bundle_path();
+    if gpu_runtime::validate_bundle(&bundle).is_ok() {
+        for name in [
+            "libLiteRt.dll",
+            "libLiteRtWebGpuAccelerator.dll",
+            "dxcompiler.dll",
+            "dxil.dll",
+        ] {
+            files.push(bundle.join(name));
+        }
+    }
+    files
+}
+
 pub struct LiteRtEngine {
     id: String,
     runtime: PathBuf,
@@ -154,6 +206,7 @@ pub struct LiteRtEngine {
     helper: PathBuf,
     serial: Mutex<()>,
     profile: &'static ModelProfile,
+    gpu_runtime: Option<PathBuf>,
 }
 impl LiteRtEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
@@ -161,6 +214,22 @@ impl LiteRtEngine {
         let path = std::fs::canonicalize(&model.model_path)?;
         let profile = checked_profile(&runtime, &path)?;
         let helper = helper_path()?;
+        let gpu_runtime = if profile.gpu_verified
+            && model
+                .runtime
+                .as_ref()
+                .is_none_or(|policy| policy.gpu_layers > 0)
+        {
+            match gpu_runtime::ensure_installed(&runtime) {
+                Ok(path) => Some(path),
+                Err(error) => {
+                    tracing::warn!("LiteRT GPU runtime unavailable; using CPU: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         Ok(Self {
             id: model.id.clone(),
             runtime,
@@ -168,15 +237,34 @@ impl LiteRtEngine {
             helper: std::fs::canonicalize(helper)?,
             serial: Mutex::new(()),
             profile,
+            gpu_runtime,
         })
     }
     fn infer(&self, input: Vec<u8>) -> Result<Vec<f32>, Box<dyn Error>> {
+        if let Some(runtime) = &self.gpu_runtime {
+            match self.infer_worker(input.clone(), runtime, true) {
+                Ok(values) => return Ok(values),
+                Err(error) => tracing::warn!("LiteRT GPU attempt failed; retrying on CPU: {error}"),
+            }
+        }
+        self.infer_worker(input, &self.runtime, false)
+    }
+    fn infer_worker(
+        &self,
+        input: Vec<u8>,
+        runtime: &Path,
+        gpu: bool,
+    ) -> Result<Vec<f32>, Box<dyn Error>> {
         let mut command = Command::new(&self.helper);
         super::super::process::configure_death_signal(&mut command);
         command
-            .arg("litert-worker")
+            .arg(if gpu {
+                "litert-gpu-worker"
+            } else {
+                "litert-worker"
+            })
             .arg("--runtime")
-            .arg(&self.runtime)
+            .arg(runtime)
             .arg("--model")
             .arg(&self.model)
             .stdin(Stdio::piped())
@@ -211,8 +299,8 @@ impl LiteRtEngine {
                 if n == 0 {
                     break;
                 }
-                if saved.len() < 8192 {
-                    saved.extend_from_slice(&buf[..n.min(8192 - saved.len())]);
+                if saved.len() < 65536 {
+                    saved.extend_from_slice(&buf[..n.min(65536 - saved.len())]);
                 }
             }
             saved
@@ -227,7 +315,7 @@ impl LiteRtEngine {
                 break status;
             }
             if started.elapsed() > Duration::from_secs(120) {
-                return Err("LiteRT CPU inference timed out; worker stopped".into());
+                return Err("LiteRT inference timed out; worker stopped".into());
             }
             std::thread::sleep(Duration::from_millis(20));
         };
@@ -243,6 +331,17 @@ impl LiteRtEngine {
         }
         writer.join().map_err(|_| "Worker input writer failed")??;
         let bytes = output.join().map_err(|_| "Worker output reader failed")??;
+        if gpu {
+            let diagnostic = String::from_utf8_lossy(&diagnostics);
+            if !diagnostic.contains("adapterType=Discrete GPU")
+                && !diagnostic.contains("adapterType=Integrated GPU")
+            {
+                return Err("LiteRT did not select a physical GPU".into());
+            }
+            tracing::info!("LiteRT depth completed on GPU (CPU operations permitted)");
+        } else {
+            tracing::info!("LiteRT depth completed on CPU");
+        }
         decode_depth(&bytes)
     }
 }
@@ -362,6 +461,46 @@ impl InferenceEngine for LiteRtEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "requires folded Large, pinned runtimes, real helper and converter fixture; checks GPU and forced CPU fallback"]
+    fn live_gpu_and_forced_cpu_fallback() {
+        gpu_runtime::ensure_installed(&runtime_path().unwrap())
+            .expect("Managed GPU installation must succeed");
+        let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+            "id":"depth-gpu-proof", "name":"Depth GPU proof", "engine":["litert"],
+            "tasks":["image-to-depth"], "local":{"path":std::env::var("LITERT_TEST_MODEL").unwrap(),"gpu_layers":99}
+        })).unwrap();
+        let config = ModelConfig::try_from(entry).unwrap();
+        let mut engine = LiteRtEngine::new(&config).unwrap();
+        let input = std::fs::read(std::env::var("LITERT_TEST_REFERENCE_INPUT").unwrap()).unwrap();
+        let reference =
+            std::fs::read(std::env::var("LITERT_TEST_REFERENCE_OUTPUT").unwrap()).unwrap();
+        let gpu = engine
+            .gpu_runtime
+            .as_ref()
+            .expect("Managed GPU bundle must be installed");
+        let accelerated = engine
+            .infer_worker(input.clone(), gpu, true)
+            .expect("Real GPU path must succeed before testing fallback");
+        // A missing GPU runtime forces the child to fail before dispatch. The
+        // gateway must then retry the same input through its verified CPU DLL.
+        engine.gpu_runtime = Some(gpu.with_file_name("missing-gpu-runtime.dll"));
+        let fallback = engine.infer(input).expect("CPU retry must succeed");
+        for values in [&accelerated, &fallback] {
+            assert_eq!(values.len() * 4, reference.len());
+            for (actual, expected) in values.iter().zip(reference.as_chunks::<4>().0) {
+                let expected = f32::from_le_bytes(*expected);
+                assert!((actual - expected).abs() <= 0.001 + 0.001 * expected.abs());
+            }
+        }
+    }
+
+    #[test]
+    fn only_folded_profile_is_gpu_verified() {
+        assert!(!MODEL_PROFILES[0].gpu_verified);
+        assert!(!MODEL_PROFILES[1].gpu_verified);
+        assert!(MODEL_PROFILES[2].gpu_verified);
+    }
     #[test]
     #[ignore = "requires a real image and its converter-generated input tensor"]
     fn live_preprocessing_matches_reference_input() {

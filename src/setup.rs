@@ -392,7 +392,7 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
             },
             bits_per_weight: (c.engine() == EngineKind::Litert).then_some(32.0),
             context_length: -1,
-            gpu_layers: if gpu && c.engine() != EngineKind::Litert {
+            gpu_layers: if gpu || c.engine() == EngineKind::Litert {
                 99
             } else {
                 0

@@ -964,7 +964,7 @@ fn discover_engines() -> Vec<EngineRow> {
                 build_tag: None,
                 published_at: None,
                 gpu_upgrade: false,
-                check_detail: (name == "litert").then(|| "Official Windows x64 CPU runtime · pinned SHA-256 · model weights configured separately".into()),
+                check_detail: (name == "litert").then(|| "Pinned Windows x64 CPU + WebGPU/DXC runtime · GPU requires a parity-verified model export".into()),
             }
         })
         .collect();
@@ -1082,7 +1082,7 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
     }
     if engine.name == "litert" {
         if os != "windows" || arch != "x86_64" {
-            return unavailable("LiteRT installation currently supports Windows x64 CPU only");
+            return unavailable("LiteRT installation currently supports Windows x64 only");
         }
         if !engine.managed {
             return unavailable(
@@ -1092,11 +1092,13 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
         if !engine.installed {
             return EngineAction::Install;
         }
-        return unavailable(if engine.version == "LiteRT 2.3.0 CPU" {
-            "Pinned LiteRT runtime is installed; no download needed"
+        return if engine.version == "LiteRT 2.3.0 CPU" {
+            EngineAction::Install
+        } else if engine.version == "LiteRT 2.3.0 GPU + CPU" {
+            unavailable("Pinned CPU and GPU runtime components are installed")
         } else {
-            "Existing LiteRT DLL is unverified; preserve it before reinstalling"
-        });
+            unavailable("Existing LiteRT DLL is unverified; preserve it before reinstalling")
+        };
     }
     if engine.installed && !engine.managed {
         return unavailable("Externally managed; update using its original installation method");
@@ -1367,7 +1369,9 @@ fn release_status(engine: &EngineRow) -> &'static str {
         return "Not installed";
     }
     if engine.name == "litert" {
-        return if engine.version == "LiteRT 2.3.0 CPU" {
+        return if engine.version == "LiteRT 2.3.0 GPU + CPU" {
+            "Ready · GPU + CPU"
+        } else if engine.version == "LiteRT 2.3.0 CPU" {
             "Ready · CPU"
         } else {
             "Unverified runtime"
@@ -3047,9 +3051,15 @@ mod tests {
         row.version = "LiteRT 2.3.0 CPU".into();
         assert!(matches!(
             engine_action_on(&row, "windows", "x86_64"),
-            EngineAction::Unavailable(_)
+            EngineAction::Install
         ));
         assert_eq!(release_status(&row), "Ready · CPU");
+        row.version = "LiteRT 2.3.0 GPU + CPU".into();
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        assert_eq!(release_status(&row), "Ready · GPU + CPU");
     }
 
     #[test]

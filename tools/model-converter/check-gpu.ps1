@@ -52,11 +52,16 @@ try {
     $taskSha = @($taskArtifacts | Where-Object { $_.target.name -eq 'sha2' } |
         ForEach-Object { $_.filenames } | Where-Object { $_.EndsWith('.rlib') })
     if ($taskAnyhow.Count -ne 1 -or $taskSha.Count -ne 1) { throw 'Ambiguous validation dependencies.' }
+    # Cargo may emit mixed Windows separators; use canonical filesystem paths
+    # so rustc resolves the extern crate and its transitive metadata consistently.
+    $taskAnyhowPath = (Resolve-Path -LiteralPath $taskAnyhow[0]).Path
+    $taskShaPath = (Resolve-Path -LiteralPath $taskSha[0]).Path
+    $taskDependencies = (Resolve-Path target/ci-check/debug/deps).Path
     $taskWorker = Join-Path $taskDirectory 'gpu-worker.exe'
     $taskChecker = Join-Path $taskDirectory 'native-check.exe'
     rustc --edition 2024 -D warnings "$PSScriptRoot/gpu_worker.rs" `
-        -L dependency=target/ci-check/debug/deps --extern "sha2=$($taskSha[0])" `
-        --extern "anyhow=$($taskAnyhow[0])" -o $taskWorker
+        -L "dependency=$taskDependencies" --extern "sha2=$taskShaPath" `
+        --extern "anyhow=$taskAnyhowPath" -o $taskWorker
     if ($LASTEXITCODE -ne 0) { throw 'GPU validation worker build failed.' }
     rustc --edition 2024 -D warnings "$PSScriptRoot/native_check.rs" -o $taskChecker
     if ($LASTEXITCODE -ne 0) { throw 'Native checker build failed.' }

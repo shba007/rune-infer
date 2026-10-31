@@ -84,6 +84,10 @@ async fn depth_requires_verified_tasks_and_refuses_incompatible_engines_before_l
 #[tokio::test]
 #[ignore = "Requires pinned LiteRT runtime/helper, reviewed model and image; checks setup saving and real loopback HTTP"]
 async fn live_native_cpu_depth_through_primitive_api() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("rune_infer::inference::engines::litert=info")
+        .with_test_writer()
+        .try_init();
     use base64::Engine;
     use std::path::{Path, PathBuf};
     let model_path = std::env::var("LITERT_TEST_MODEL").expect("LITERT_TEST_MODEL");
@@ -142,7 +146,7 @@ async fn live_native_cpu_depth_through_primitive_api() {
     assert_eq!(saved.models[0].id, id);
     assert_eq!(saved.models[0].tasks, ["image-to-depth"]);
     assert_eq!(saved.models[0].bits_per_weight, Some(32.0));
-    assert_eq!(saved.models[0].runtime.as_ref().unwrap().gpu_layers, 0);
+    assert_eq!(saved.models[0].runtime.as_ref().unwrap().gpu_layers, 99);
     let app = router(saved.models[0].clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -256,7 +260,7 @@ async fn live_native_cpu_depth_through_primitive_api() {
             assert!(depth.get("preview_png_base64").is_none());
         }
         eprintln!(
-            "Native CPU depth: {} values, range {}..{}, source {}x{}",
+            "Native depth: {} values, range {}..{}, source {}x{}",
             values.len(),
             depth["min"],
             depth["max"],

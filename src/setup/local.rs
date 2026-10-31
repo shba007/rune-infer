@@ -109,6 +109,7 @@ pub fn validate_local_files(model: &LocalCandidate) -> Result<(), String> {
 fn model_files(model: &LocalCandidate) -> Vec<PathBuf> {
     let mut files = vec![model.path.clone()];
     if model.engines.contains(&EngineKind::Litert) {
+        files.extend(crate::inference::engines::litert::verification_files());
         if let Ok(helper) = crate::inference::engines::litert::helper_path() {
             files.push(helper);
         }
@@ -173,6 +174,11 @@ pub(crate) fn prepare_local_models_with(
                 progress(format!("Installing or locating {engine}"));
                 let path = install(engine)?;
                 report.files.push(CheckedFile::read(&path)?);
+                if engine == EngineKind::Litert {
+                    for runtime_file in crate::inference::engines::litert::verification_files() {
+                        report.files.push(CheckedFile::read(&runtime_file)?);
+                    }
+                }
                 report.engines.push((engine, path));
             }
         }

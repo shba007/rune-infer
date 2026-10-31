@@ -1247,11 +1247,11 @@
         "litert"
       ],
       "local": {
-        "path": "D:\\Models\\litert\\depth_anything_v2_large.tflite",
+        "path": "D:\\Models\\litert\\depth_anything_v2_large_gpu_fp32.tflite",
         "params": null,
         "bits_per_weight": 32.0,
         "context_length": -1,
-        "gpu_layers": 0,
+        "gpu_layers": 99,
         "args": ""
       }
     }

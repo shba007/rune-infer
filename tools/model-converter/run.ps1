@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string[]] $Images,
     [switch] $GpuLinearConv,
-    [switch] $GpuNhwcBoundaries
+    [switch] $GpuNhwcBoundaries,
+    [switch] $GpuFoldLayerScales
 )
 $ErrorActionPreference = 'Stop'
 # The container installs the pinned environment with uv and executes via uv run.
@@ -19,6 +20,7 @@ New-Item -ItemType Directory -Path $taskWork | Out-Null
 $taskArguments = @('--output-dir', '/work/output')
 if ($GpuLinearConv) { $taskArguments += '--gpu-linear-conv' }
 if ($GpuNhwcBoundaries) { $taskArguments += '--gpu-nhwc-boundaries' }
+if ($GpuFoldLayerScales) { $taskArguments += '--gpu-fold-layer-scales' }
 for ($taskIndex = 0; $taskIndex -lt $taskInputs.Count; $taskIndex++) {
     $taskName = 'image-' + $taskIndex + [IO.Path]::GetExtension($taskInputs[$taskIndex])
     Copy-Item -LiteralPath $taskInputs[$taskIndex] -Destination (Join-Path $taskWork $taskName)

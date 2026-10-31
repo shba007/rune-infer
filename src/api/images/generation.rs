@@ -32,15 +32,11 @@ pub async fn image_generation_handler(
     }
 
     if let Some(ref s) = request.size {
-        let allowed = ["256x256", "512x512", "1024x1024"];
-        if !allowed.contains(&s.as_str()) {
+        if super::parse_generation_dimensions(s).is_none() {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
-                    error: ApiError::new(format!(
-                        "'{}' is not one of ['256x256', '512x512', '1024x1024'] - 'size'",
-                        s
-                    ))
+                    error: ApiError::new("'size' must be WIDTHxHEIGHT with integer dimensions from 64 to 4096 pixels")
                     .with_type("invalid_request_error")
                     .with_param("size")
                     .with_code("invalid_parameter_value"),

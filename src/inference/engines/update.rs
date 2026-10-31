@@ -56,6 +56,14 @@ pub(crate) fn install_engine(
         }
         std::thread::sleep(Duration::from_millis(300));
     };
+    if kind == EngineKind::Litert && std::env::var_os("LITERT_LIBRARY_PATH").is_none() {
+        let current = PathBuf::from("bin/litert/libLiteRt.dll");
+        if super::litert::validate_runtime(&current).is_ok() {
+            emit("Installing pinned LiteRT WebGPU and DXC sidecars".into());
+            crate::setup::install_engine(kind).map_err(|error| error.to_string())?;
+            return Ok("Installed verified LiteRT GPU + CPU runtime".into());
+        }
+    }
     stage_engine_install(
         PathBuf::from("bin"),
         directory,
@@ -97,7 +105,7 @@ fn stage_engine_install(
         emit(
             match kind {
                 EngineKind::Needle => "Checking approved Needle distribution and SHA-256",
-                EngineKind::Litert => "Checking pinned LiteRT 2.3.0 CPU runtime and SHA-256",
+                EngineKind::Litert => "Checking pinned LiteRT 2.3.0 CPU + GPU runtime and SHA-256",
                 _ => "Checking release · stable preferred",
             }
             .into(),
@@ -1858,7 +1866,7 @@ mod tests {
         let dll = bin.join("litert/libLiteRt.dll");
         assert_eq!(
             super::super::litert::runtime_version(&dll).as_deref(),
-            Some("LiteRT 2.3.0 CPU")
+            Some("LiteRT 2.3.0 GPU + CPU")
         );
         let reused = download::with_install_bin(bin.clone(), || {
             crate::setup::install_engine(EngineKind::Litert)
