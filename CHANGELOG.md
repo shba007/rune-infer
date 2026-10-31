@@ -3,6 +3,25 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.17.0](https://github.com/shba007/rune-infer/compare/v0.16.0..v0.17.0) - 2026-10-31
+
+#### 🚀 Features
+- implement model load/unload controls in dashboard with user feedback - ([5899fae](https://github.com/shba007/rune-infer/commit/5899fae43d98540605ba434292c2925a5ba6640f)) - Shirsendu Bairagi
+- enhance whisper engine release resolution and dashboard update handling - ([515f529](https://github.com/shba007/rune-infer/commit/515f5292a9d767e04d599526ce16d98aef363bd0)) - Shirsendu Bairagi
+- add LiteRT depth estimation engine support - ([a116389](https://github.com/shba007/rune-infer/commit/a116389ccebfa7c7a9ccc73114d349c6dde602a0)) - Shirsendu Bairagi
+- add depth estimation model and request for LiteRT - ([c927f10](https://github.com/shba007/rune-infer/commit/c927f109561e2cf9d8a66910485d4d2e5d9fe63a)) - Shirsendu Bairagi
+- (**model-converter**) implement depth model conversion and validation tools - ([5ae5ec5](https://github.com/shba007/rune-infer/commit/5ae5ec50e702387bcc1e8f6b4db13df9c2d9328d)) - Shirsendu Bairagi
+- add GPU support and validation tools for LiteRT model conversion - ([8ac97cc](https://github.com/shba007/rune-infer/commit/8ac97cc1a7c32e27d9111a697b874716d219fc97)) - Shirsendu Bairagi
+- (**litert**) add support for GPU execution with LiteRT WebGPU - ([60e5d60](https://github.com/shba007/rune-infer/commit/60e5d60257521a3374fa329356d190b31f8eb8a3)) - Shirsendu Bairagi
+- (**sd-server**) add native sampling arguments for compatibility with sd_cpp_extra_args - ([6eef1be](https://github.com/shba007/rune-infer/commit/6eef1bedd4c1ed0727efb22cd82f4f4f5e14f290)) - Shirsendu Bairagi
+- (**types**) enhance top_k handling with normalization and custom deserialization - ([390fa59](https://github.com/shba007/rune-infer/commit/390fa593a9e1fbf7551e928c3771850d5c533c89)) - Shirsendu Bairagi
+- (**litert**) update depth model profile to enable GPU verification and enhance test coverage - ([b33bc31](https://github.com/shba007/rune-infer/commit/b33bc31aa834997120ab98d913623ab4f3518c69)) - Shirsendu Bairagi
+
+#### 🧪 Testing
+- update assertions to use canonical paths and platform-specific messages - ([f5b9bc1](https://github.com/shba007/rune-infer/commit/f5b9bc1776ea04033043650016129473625ed6ea)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.16.0](https://github.com/shba007/rune-infer/compare/v0.15.0..v0.16.0) - 2026-10-30
 
 #### 🚀 Features
