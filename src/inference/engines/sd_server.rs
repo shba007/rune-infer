@@ -14,6 +14,19 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+// Native request schema at installed upstream 37bc88b. Compatibility endpoints
+// accept these fields inside the prompt's sd_cpp_extra_args block.
+fn native_sampling_args(steps: u32, cfg_scale: f32, method: Option<&str>) -> serde_json::Value {
+    let mut sampling = serde_json::json!({
+        "sample_steps": steps,
+        "guidance": {"txt_cfg": cfg_scale},
+    });
+    if let Some(method) = method.filter(|value| !value.trim().is_empty()) {
+        sampling["sample_method"] = serde_json::json!(method.trim());
+    }
+    sampling
+}
+
 // ModelLoader::parse_file in installed upstream 37bc88b supports indexed
 // safetensors directories and full Diffusers directories as well as files.
 pub(crate) fn companion_path_available(path: &Path) -> bool {
@@ -477,8 +490,10 @@ impl InferenceEngine for SdServerEngine {
 
                 // Build <sd_cpp_extra_args> snippet for standard stable-diffusion.cpp compatibility
                 let mut extra_map = serde_json::Map::new();
-                extra_map.insert("steps".to_string(), serde_json::json!(final_steps));
-                extra_map.insert("cfg_scale".to_string(), serde_json::json!(final_cfg));
+                extra_map.insert(
+                    "sample_params".to_string(),
+                    native_sampling_args(final_steps, final_cfg, sample_method.as_deref()),
+                );
 
                 if let Some(s) = seed {
                     if *s >= 0 {
@@ -491,13 +506,6 @@ impl InferenceEngine for SdServerEngine {
                             .insert("negative_prompt".to_string(), serde_json::json!(np.trim()));
                     }
                 }
-                if let Some(sm) = sample_method {
-                    if !sm.trim().is_empty() {
-                        extra_map
-                            .insert("sampling_method".to_string(), serde_json::json!(sm.trim()));
-                    }
-                }
-
                 let extra_json_str = serde_json::Value::Object(extra_map).to_string();
                 let final_prompt = if prompt.contains("<sd_cpp_extra_args>") {
                     prompt.clone()
@@ -514,8 +522,6 @@ impl InferenceEngine for SdServerEngine {
                     "size": size_str,
                     "width": width,
                     "height": height,
-                    "steps": final_steps,
-                    "cfg_scale": final_cfg,
                     "response_format": response_format.as_deref().unwrap_or("b64_json"),
                 });
 
@@ -527,11 +533,6 @@ impl InferenceEngine for SdServerEngine {
                 if let Some(np) = negative_prompt {
                     if !np.trim().is_empty() {
                         body["negative_prompt"] = serde_json::json!(np.trim());
-                    }
-                }
-                if let Some(sm) = sample_method {
-                    if !sm.trim().is_empty() {
-                        body["sampling_method"] = serde_json::json!(sm.trim());
                     }
                 }
 
@@ -698,6 +699,22 @@ mod tests {
 #[cfg(test)]
 mod companion_tests {
     use super::*;
+
+    #[test]
+    fn sampling_controls_match_native_request_schema() {
+        assert_eq!(
+            native_sampling_args(1, 2.75, Some(" heun ")),
+            serde_json::json!({
+                "sample_steps":1, "sample_method":"heun", "guidance":{"txt_cfg":2.75}
+            })
+        );
+        assert_eq!(
+            native_sampling_args(30, 6.0, None),
+            serde_json::json!({
+                "sample_steps":30, "guidance":{"txt_cfg":6.0}
+            })
+        );
+    }
 
     #[test]
     fn companion_files_and_recognized_directories() {

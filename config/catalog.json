@@ -466,14 +466,14 @@
         "bits_per_weight": 4.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--diffusion-fa --offload-to-cpu"
+        "args": "--diffusion-fa --params-backend disk"
       },
       "extra": {
         "default_cfg_scale": 4.0,
         "default_sample_method": "euler",
         "default_steps": 30,
         "max_resolution": "2048×2048 (Native DiT)",
-        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf",
+        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-FP8/snapshots/d67caebb412f98c968f9be41b3a8cea80b3e039a/Qwen-Image-2.1-text_encoder-FP8.safetensors",
         "vae_path": "D:/Models/huggingface/hub/models--Qwen--Qwen-Image-2.1/snapshots/790c92633540aa0cb11d9abf19eb46d861714758/vae/diffusion_pytorch_model.safetensors"
       }
     },
@@ -493,19 +493,19 @@
         "sd-server"
       ],
       "local": {
-        "path": "D:/Models/huggingface/hub/models--abenzerps--Qwen-Image-2.1-Uncensored-GGUF/snapshots/main/qwen-image-2.1-uncensored-Q4_K_M.gguf",
+        "path": "D:/Models/huggingface/hub/models--abenzerps--Qwen-Image-2.1-Uncensored-GGUF/snapshots/728891aa68ed51fb92624f4c2080cd0c63461edd/qwen-image-2.1-Q8_0.gguf",
         "params": 7000000000,
-        "bits_per_weight": 4.5,
+        "bits_per_weight": 8.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--diffusion-fa --offload-to-cpu"
+        "args": "--diffusion-fa --params-backend disk"
       },
       "extra": {
         "default_cfg_scale": 4.0,
         "default_sample_method": "euler",
         "default_steps": 30,
         "max_resolution": "2048×2048 (Native DiT)",
-        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-UD-Q4_K_XL.gguf",
+        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-FP8/snapshots/d67caebb412f98c968f9be41b3a8cea80b3e039a/Qwen-Image-2.1-text_encoder-FP8.safetensors",
         "vae_path": "D:/Models/huggingface/hub/models--Qwen--Qwen-Image-2.1/snapshots/790c92633540aa0cb11d9abf19eb46d861714758/vae/diffusion_pytorch_model.safetensors"
       }
     },
@@ -530,7 +530,7 @@
         "bits_per_weight": 4.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--diffusion-fa --offload-to-cpu"
+        "args": "--diffusion-fa --params-backend disk"
       },
       "extra": {
         "default_cfg_scale": 6.0,
