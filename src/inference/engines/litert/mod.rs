@@ -40,7 +40,7 @@ const MODEL_PROFILES: [ModelProfile; 3] = [
         name: "Depth Anything V2 Small FP32",
         source: "https://huggingface.co/litert-community/depth-anything-v2-small/tree/178427e448dbf4da93b1e7b1b2abc103ad329bd6/tflite",
         reference_resize: false,
-        gpu_verified: false,
+        gpu_verified: true,
     },
     ModelProfile {
         sha256: "6f03564f13abfae18185581a809cb5c0ee5c0a425dc5f85102194b2b321eba3d",
@@ -462,7 +462,49 @@ impl InferenceEngine for LiteRtEngine {
 mod tests {
     use super::*;
     #[test]
-    #[ignore = "requires folded Large, pinned runtimes, real helper and converter fixture; checks GPU and forced CPU fallback"]
+    #[ignore = "requires real model/helper and images; exports CPU references for GPU parity checks"]
+    fn live_export_cpu_parity_fixtures() {
+        let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+            "id":"depth-parity-reference", "name":"Depth parity reference", "engine":["litert"],
+            "tasks":["image-to-depth"], "local":{"path":std::env::var("LITERT_TEST_MODEL").unwrap(),"gpu_layers":0}
+        })).unwrap();
+        let engine = LiteRtEngine::new(&ModelConfig::try_from(entry).unwrap()).unwrap();
+        assert!(
+            engine.gpu_runtime.is_none(),
+            "Reference generation must explicitly use CPU"
+        );
+        let images: Vec<PathBuf> =
+            serde_json::from_str(&std::env::var("LITERT_TEST_IMAGES").unwrap()).unwrap();
+        assert!((1..=16).contains(&images.len()));
+        let root = PathBuf::from(std::env::var("LITERT_TEST_OUTPUT_DIR").unwrap());
+        std::fs::create_dir(&root).unwrap();
+        let mut fixtures = Vec::new();
+        for (index, image) in images.iter().enumerate() {
+            let (input, _, _) = preprocess(&std::fs::read(image).unwrap(), engine.profile).unwrap();
+            let values = engine.infer(input.clone()).unwrap();
+            let output: Vec<_> = values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect();
+            std::fs::write(root.join(format!("fixture-{index}.input.f32")), input).unwrap();
+            std::fs::write(root.join(format!("fixture-{index}.reference.f32")), output).unwrap();
+            fixtures.push(serde_json::json!({"image":image,"values":values.len()}));
+        }
+        std::fs::write(
+            root.join("cpu-reference-report.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "model_sha256":engine.profile.sha256,
+                "runtime_sha256":super::super::download::file_sha256(&engine.runtime).unwrap(),
+                "helper_sha256":super::super::download::file_sha256(&engine.helper).unwrap(),
+                "fixtures":fixtures
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires a GPU-reviewed model, pinned runtimes, real helper and CPU reference; checks GPU and forced CPU fallback"]
     fn live_gpu_and_forced_cpu_fallback() {
         gpu_runtime::ensure_installed(&runtime_path().unwrap())
             .expect("Managed GPU installation must succeed");
@@ -496,8 +538,8 @@ mod tests {
     }
 
     #[test]
-    fn only_folded_profile_is_gpu_verified() {
-        assert!(!MODEL_PROFILES[0].gpu_verified);
+    fn gpu_support_is_limited_to_parity_verified_profiles() {
+        assert!(MODEL_PROFILES[0].gpu_verified);
         assert!(!MODEL_PROFILES[1].gpu_verified);
         assert!(MODEL_PROFILES[2].gpu_verified);
     }
