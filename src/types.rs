@@ -15,8 +15,12 @@ pub struct ChatCompletionRequest {
     pub top_p: Option<f64>,
     #[serde(default, alias = "max_completion_tokens")]
     pub max_tokens: Option<usize>,
-    /// Non-OpenAI extension (llama.cpp / OpenRouter style).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Non-OpenAI extension. Unsloth's -1 sentinel normalizes to disabled (0).
+    #[serde(
+        default,
+        deserialize_with = "deserialize_chat_top_k",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub top_k: Option<u32>,
     /// Non-OpenAI extension (llama.cpp / OpenRouter style).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -39,6 +43,23 @@ pub struct ChatCompletionRequest {
     /// Options for streaming responses (e.g. `{"include_usage": true}`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<StreamOptions>,
+}
+
+fn deserialize_chat_top_k<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u32>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let normalized = match value {
+        None => return Ok(None),
+        Some(serde_json::Value::Number(number)) if number.as_i64() == Some(-1) => Some(0),
+        Some(serde_json::Value::Number(number)) => {
+            number.as_u64().and_then(|value| u32::try_from(value).ok())
+        }
+        _ => None,
+    };
+    normalized.map(Some).ok_or_else(|| {
+        serde::de::Error::custom("top_k must be -1 (disabled) or an integer from 0 to 4294967295")
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

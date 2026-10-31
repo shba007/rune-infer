@@ -54,6 +54,87 @@ fn create_test_app(api_key: Option<String>) -> axum::Router {
     create_router(state)
 }
 
+#[test]
+fn chat_top_k_normalizes_only_disabled_sentinel() {
+    use rune_infer::{config::SamplingConfig, types::ChatCompletionRequest};
+    let base = serde_json::json!({"model":"fixture", "messages":[]});
+    let defaults = SamplingConfig {
+        top_k: Some(40),
+        ..Default::default()
+    };
+    for (value, expected) in [
+        (serde_json::json!(-1), Some(0)),
+        (serde_json::json!(0), Some(0)),
+        (serde_json::json!(40), Some(40)),
+        (serde_json::json!(u32::MAX), Some(u32::MAX)),
+        (serde_json::Value::Null, None),
+    ] {
+        let mut body = base.clone();
+        body["top_k"] = value;
+        let request: ChatCompletionRequest = serde_json::from_value(body).unwrap();
+        assert_eq!(request.top_k, expected);
+        let layered = SamplingConfig {
+            top_k: request.top_k,
+            ..Default::default()
+        }
+        .over(&defaults);
+        assert_eq!(layered.top_k, expected.or(Some(40)));
+        let serialized = serde_json::to_value(request).unwrap();
+        assert_eq!(
+            serialized.get("top_k").cloned(),
+            expected.map(|value| serde_json::json!(value))
+        );
+    }
+    assert_eq!(
+        serde_json::from_value::<ChatCompletionRequest>(base.clone())
+            .unwrap()
+            .top_k,
+        None
+    );
+    for value in [
+        serde_json::json!(-2),
+        serde_json::json!(u64::MAX),
+        serde_json::json!(1.5),
+        serde_json::json!(1.0),
+        serde_json::json!("-1"),
+        serde_json::json!(true),
+    ] {
+        let mut body = base.clone();
+        body["top_k"] = value;
+        let error = serde_json::from_value::<ChatCompletionRequest>(body).unwrap_err();
+        assert!(error.to_string().contains("top_k"), "{error}");
+    }
+}
+
+#[tokio::test]
+async fn unsloth_top_k_sentinel_passes_chat_request_parsing() {
+    let app = create_test_app(None);
+    for stream in [false, true] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "model":"", "messages":[{"role":"user","content":"hello"}],
+                            "top_k":-1, "stream":stream
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), 16384).await.unwrap();
+        let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        // Parsing succeeds and reaches ordinary model validation, without
+        // loading any model or claiming an inference capability.
+        assert_eq!(error["error"]["code"], "model_missing", "{error}");
+    }
+}
+
 #[tokio::test]
 async fn image_generation_validates_dimensions_before_model_dispatch() {
     let app = create_test_app(None);
