@@ -31,9 +31,7 @@ pub(crate) fn install_engine(
         EngineKind::WhisperCpp => "whisper-cpp",
         EngineKind::Needle => "needle",
         EngineKind::Encoder => return Err("Encoder is built in and uses synthetic output".into()),
-        EngineKind::Litert => {
-            return Err("LiteRT currently requires an explicitly configured native runtime".into());
-        }
+        EngineKind::Litert => "litert",
     };
     if !cfg!(any(
         windows,
@@ -97,10 +95,10 @@ fn stage_engine_install(
     std::fs::create_dir(&stage).map_err(|e| e.to_string())?;
     let result = (|| {
         emit(
-            if kind == EngineKind::Needle {
-                "Checking approved Needle distribution and SHA-256"
-            } else {
-                "Checking release · stable preferred"
+            match kind {
+                EngineKind::Needle => "Checking approved Needle distribution and SHA-256",
+                EngineKind::Litert => "Checking pinned LiteRT 2.3.0 CPU runtime and SHA-256",
+                _ => "Checking release · stable preferred",
             }
             .into(),
         );
@@ -202,9 +200,7 @@ fn incomplete_installation(destination: &Path, kind: EngineKind) -> UpdateResult
         EngineKind::WhisperCpp => "whisper-cli",
         EngineKind::Needle => "needle",
         EngineKind::Encoder => return Err("Encoder is built in".into()),
-        EngineKind::Litert => {
-            return Err("LiteRT requires an explicitly configured native runtime".into());
-        }
+        EngineKind::Litert => "libLiteRt.dll",
     };
     if [executable.to_string(), format!("{executable}.exe")]
         .iter()
@@ -306,6 +302,9 @@ fn publish_new_engine(source: &Path, destination: &Path) -> std::io::Result<()> 
 }
 
 fn validate_install_binary(kind: EngineKind, path: &Path) -> UpdateResult<()> {
+    if kind == EngineKind::Litert {
+        return super::litert::validate_runtime(path).map_err(|e| e.to_string());
+    }
     if kind == EngineKind::Needle {
         let output = candidate_output(path, "--help")?;
         if !output.contains("--model")
@@ -1737,6 +1736,66 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         root
     }
+    #[test]
+    fn litert_install_requires_a_verified_dll_and_preserves_existing_runtime_files() {
+        let root = root();
+        let dll = root.join("libLiteRt.dll");
+        assert!(incomplete_installation(&root, EngineKind::Litert).unwrap());
+        std::fs::write(&dll, "unverified runtime").unwrap();
+        assert!(
+            validate_install_binary(EngineKind::Litert, &dll)
+                .unwrap_err()
+                .contains("checksum mismatch")
+        );
+        assert!(incomplete_installation(&root, EngineKind::Litert).is_err());
+        assert_eq!(std::fs::read_to_string(&dll).unwrap(), "unverified runtime");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[ignore = "Downloads the pinned official Windows x64 LiteRT runtime into a temporary fixture"]
+    fn live_litert_install_is_staged_verified_and_reusable() {
+        assert!(
+            std::env::var_os("LITERT_LIBRARY_PATH").is_none(),
+            "Run without a runtime override to check managed installation"
+        );
+        let root = root();
+        let bin = root.join("bin");
+        let (tx, _) = std::sync::mpsc::channel();
+        let result = stage_engine_install(
+            bin.clone(),
+            "litert",
+            EngineKind::Litert,
+            &AtomicBool::new(false),
+            &tx,
+            |stage| {
+                download::with_install_bin(stage, || {
+                    crate::setup::install_engine(EngineKind::Litert)
+                })
+            },
+            |path| validate_install_binary(EngineKind::Litert, path),
+        )
+        .unwrap();
+        assert!(result.contains("Installed litert"));
+        let dll = bin.join("litert/libLiteRt.dll");
+        assert_eq!(
+            super::super::litert::runtime_version(&dll).as_deref(),
+            Some("LiteRT 2.3.0 CPU")
+        );
+        let reused = download::with_install_bin(bin.clone(), || {
+            crate::setup::install_engine(EngineKind::Litert)
+        })
+        .unwrap();
+        assert_eq!(reused, std::fs::canonicalize(&dll).unwrap());
+        assert_eq!(
+            std::fs::read_dir(&bin).unwrap().count(),
+            1,
+            "No staging directory left behind"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn installation_publish_refuses_existing_empty_directory() {
         let root = root();

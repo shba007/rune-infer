@@ -18,6 +18,9 @@ values:
   - key: image_model
     value: z-image
     enabled: true
+  - key: depth_model
+    value: depth-anything-v2-small-fp32
+    enabled: true
   - key: asr_model
     value: parakeet-tdt-0.6b-v3
     enabled: true

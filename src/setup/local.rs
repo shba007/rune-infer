@@ -492,6 +492,56 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[ignore = "requires LITERT_TEST_MODEL, LITERT_LIBRARY_PATH and LITERT_HELPER_PATH; performs real CPU inference"]
+    fn live_litert_discovery_checks_and_saves_depth_task() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("litert-setup-{}", crate::setup::generate_api_key()));
+        std::fs::create_dir_all(root.join("models")).unwrap();
+        // A different filename must not change identification or model support.
+        let artifact = root.join("models/renamed.TFLITE");
+        std::fs::hard_link(std::env::var("LITERT_TEST_MODEL").unwrap(), &artifact).unwrap();
+        let found = crate::setup::discover_models(&root.join("models")).unwrap();
+        assert!(found.skipped.is_empty(), "{:?}", found.skipped);
+        assert_eq!(found.models.len(), 1);
+        let models = found.models;
+        assert_eq!(models[0].display_name, "Depth Anything V2 Small FP32");
+        assert_eq!(models[0].modality, Modality::DepthEstimation);
+        assert_eq!(models[0].engines, [EngineKind::Litert]);
+        assert!(
+            super::super::local_entry(&models[0], false)
+                .tasks
+                .is_empty()
+        );
+        let plan = crate::setup::SetupPlan {
+            exposure: crate::setup::Exposure::Local,
+            port: 8080,
+            server_api_key: None,
+            cloud: Vec::new(),
+            local: models,
+            gpu_available: false,
+        };
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let env = root.join(".env");
+        assert!(crate::setup::write_verified_setup(&plan, None, &server, &catalog, &env).is_err());
+        assert!(!catalog.exists());
+        let proof =
+            prepare_local_models(&plan.local, false, |message| println!("{message}")).unwrap();
+        crate::setup::write_verified_setup(&plan, Some(&proof), &server, &catalog, &env).unwrap();
+        let loaded = crate::config::ModelRegistry::from_files(&server, &catalog).unwrap();
+        assert_eq!(loaded.models.len(), 1);
+        assert_eq!(loaded.models[0].tasks, ["image-to-depth"]);
+        assert_eq!(loaded.models[0].modality, Modality::DepthEstimation);
+        assert_eq!(
+            loaded.models[0].engine.as_ref().unwrap().plan(),
+            [EngineKind::Litert]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn fixture() -> (PathBuf, Vec<LocalCandidate>, PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "rune-local-check-{}",

@@ -887,7 +887,7 @@ fn discover_engines() -> Vec<EngineRow> {
                 .iter()
                 .find_map(std::env::var_os)
                 .map(PathBuf::from)
-                .filter(|p| p.is_file());
+                .filter(|p| name == "litert" || p.is_file());
             let base = PathBuf::from("bin").join(directory);
             let direct = base.join(&filename);
             let managed = direct.is_file().then_some(direct).or_else(|| {
@@ -910,7 +910,7 @@ fn discover_engines() -> Vec<EngineRow> {
                     .or_else(|| on_path().map(|p| (p, false)))
             } else {
                 managed.map(|p| (p, true)).or_else(|| {
-                    if name == "needle" {
+                    if matches!(name, "needle" | "litert") {
                         None
                     } else {
                         root.map(|p| (p, false))
@@ -919,8 +919,11 @@ fn discover_engines() -> Vec<EngineRow> {
                 })
             };
             let (path, managed, installed) = match candidate {
-                Some((path, managed)) => (path, managed, true),
-                None => (base.join(&filename), false, false),
+                Some((path, managed)) => {
+                    let installed = path.is_file();
+                    (path, managed, installed)
+                }
+                None => (base.join(&filename), name == "litert", false),
             };
             let version = if name == "litert" && installed {
                 crate::inference::engines::litert::runtime_version(&path)
@@ -951,7 +954,7 @@ fn discover_engines() -> Vec<EngineRow> {
                 installed,
                 version,
                 latest: if name == "litert" {
-                    "Manual runtime".into()
+                    "2.3.0 · pinned".into()
                 } else if managed || !installed {
                     "Checking…".into()
                 } else {
@@ -959,7 +962,7 @@ fn discover_engines() -> Vec<EngineRow> {
                 },
                 build_tag: None,
                 published_at: None,
-                check_detail: None,
+                check_detail: (name == "litert").then(|| "Official Windows x64 CPU runtime · pinned SHA-256 · model weights configured separately".into()),
             }
         })
         .collect();
@@ -1036,9 +1039,22 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
         return unavailable("Built in; no installation or update required");
     }
     if engine.name == "litert" {
-        return unavailable(
-            "LiteRT: configure the pinned DLL with LITERT_LIBRARY_PATH; automatic install/update is unavailable",
-        );
+        if os != "windows" || arch != "x86_64" {
+            return unavailable("LiteRT installation currently supports Windows x64 CPU only");
+        }
+        if !engine.managed {
+            return unavailable(
+                "External LiteRT runtime: fix or remove LITERT_LIBRARY_PATH to use the managed installation",
+            );
+        }
+        if !engine.installed {
+            return EngineAction::Install;
+        }
+        return unavailable(if engine.version == "LiteRT 2.3.0 CPU" {
+            "Pinned LiteRT runtime is installed; no download needed"
+        } else {
+            "Existing LiteRT DLL is unverified; preserve it before reinstalling"
+        });
     }
     if engine.installed && !engine.managed {
         return unavailable("Externally managed; update using its original installation method");
@@ -1121,6 +1137,7 @@ fn install_engine_kind(name: &str) -> Option<crate::config::EngineKind> {
         "nemo-speech" => EngineKind::NemoSpeech,
         "needle" => EngineKind::Needle,
         "whisper-cpp" => EngineKind::WhisperCpp,
+        "litert" => EngineKind::Litert,
         _ => return None,
     })
 }
@@ -2898,6 +2915,78 @@ mod tests {
             next.load(Ordering::Relaxed),
             "quitting also cancels the active engine worker"
         );
+    }
+
+    #[test]
+    fn missing_litert_runtime_offers_install_on_windows_x64_and_preserves_external_files() {
+        let mut row = EngineRow {
+            name: "litert",
+            path: "bin/litert/libLiteRt.dll".into(),
+            managed: true,
+            installed: false,
+            version: "Not installed".into(),
+            latest: "2.3.0 · pinned".into(),
+            build_tag: None,
+            published_at: None,
+            check_detail: None,
+        };
+        assert_eq!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Install
+        );
+        assert_eq!(
+            install_engine_kind("litert"),
+            Some(crate::config::EngineKind::Litert)
+        );
+        for (os, arch) in [
+            ("linux", "x86_64"),
+            ("windows", "aarch64"),
+            ("macos", "aarch64"),
+        ] {
+            assert!(matches!(
+                engine_action_on(&row, os, arch),
+                EngineAction::Unavailable(_)
+            ));
+        }
+        row.managed = false;
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        row.managed = true;
+        let mut app = app();
+        app.tab = Tab::Engines;
+        app.engines = vec![row.clone()];
+        let mut terminal = Terminal::new(TestBackend::new(160, 3)).unwrap();
+        terminal
+            .draw(|frame| draw_footer(frame, frame.area(), &app))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert_eq!(
+            text.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .contains("u install"),
+            cfg!(all(windows, target_arch = "x86_64"))
+        );
+        row.installed = true;
+        row.version = "Unknown".into();
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        row.version = "LiteRT 2.3.0 CPU".into();
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        assert_eq!(release_status(&row), "Ready · CPU");
     }
 
     #[test]

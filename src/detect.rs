@@ -746,6 +746,7 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         } else if path.extension().is_some_and(|e| {
             e.eq_ignore_ascii_case("gguf")
                 || e.eq_ignore_ascii_case("cact")
+                || e.eq_ignore_ascii_case("tflite")
                 || (e.eq_ignore_ascii_case("bin") && has_ggml_magic(&path))
         }) {
             out.push(path);
@@ -760,6 +761,34 @@ fn has_ggml_magic(path: &Path) -> bool {
     };
     let mut magic = [0; 4];
     file.read_exact(&mut magic).is_ok() && &magic == b"lmgg"
+}
+
+fn litert_candidate(path: &Path) -> Result<LocalCandidate> {
+    anyhow::ensure!(
+        cfg!(all(windows, target_arch = "x86_64")),
+        "LiteRT depth currently requires Windows x64 CPU"
+    );
+    crate::inference::engines::litert::verify_model(path)?;
+    Ok(LocalCandidate {
+        path: path.to_path_buf(),
+        size_bytes: std::fs::metadata(path)?.len(),
+        architecture: "depth-anything-v2-small".into(),
+        display_name: "Depth Anything V2 Small FP32".into(),
+        context_length: None,
+        modality: Modality::DepthEstimation,
+        engines: vec![EngineKind::Litert],
+        kind_label: "relative depth estimation",
+        capabilities: Vec::new(),
+        extra: Map::new(),
+        needs: Vec::new(),
+        notes: vec![
+            "Reviewed FP32 TFLite export; LiteRT 2.3.0 Windows x64 CPU only. Relative depth, not meters. Task support is saved only after the live setup check passes.".into(),
+            "Source: https://huggingface.co/litert-community/depth-anything-v2-small/tree/178427e448dbf4da93b1e7b1b2abc103ad329bd6/tflite".into(),
+        ],
+        class: Class::Other,
+        embedding_length: None,
+        omni_family: false,
+    })
 }
 
 fn whisper_candidate(path: &Path) -> Result<LocalCandidate> {
@@ -1102,7 +1131,7 @@ fn cactus_candidate(path: &Path) -> Result<LocalCandidate> {
 }
 
 /// Scan `input` (a file, or a folder searched up to 9 levels) and classify
-/// every GGUF found.
+/// supported GGUF, GGML, Cactus and reviewed TFLite artifacts.
 pub fn discover(input: &Path) -> Result<Discovery> {
     if !input.exists() {
         anyhow::bail!("'{}' does not exist", input.display());
@@ -1121,8 +1150,22 @@ pub fn discover(input: &Path) -> Result<Discovery> {
     let mut found: Vec<(PathBuf, GgufInfo, Detected)> = Vec::new();
     let mut cactus = Vec::new();
     let mut whisper = Vec::new();
+    let mut litert = Vec::new();
 
     for path in files {
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("tflite"))
+        {
+            match litert_candidate(&path) {
+                Ok(model) => litert.push(model),
+                Err(error) => out.skipped.push(Skipped {
+                    path,
+                    reason: format!("not a supported LiteRT model ({error})"),
+                }),
+            }
+            continue;
+        }
         if path
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
@@ -1262,6 +1305,7 @@ pub fn discover(input: &Path) -> Result<Discovery> {
 
     candidates.extend(cactus);
     candidates.extend(whisper);
+    candidates.extend(litert);
     candidates.sort_by(|a, b| a.path.cmp(&b.path));
     out.models = candidates;
     Ok(out)
@@ -1381,6 +1425,40 @@ mod tests {
             Classified::Model(d) => d,
             other => panic!("expected a model, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn tflite_discovery_reports_unreviewed_or_malformed_artifacts() {
+        let root = tmp("tflite");
+        for (name, bytes) in [
+            ("depth_anything_v2_small.tflite", b"\0\0\0\0TFL3".as_slice()),
+            ("broken.TFLITE", b"not a flatbuffer".as_slice()),
+        ] {
+            std::fs::write(root.join(name), bytes).unwrap();
+            let result = discover(&root.join(name)).unwrap();
+            assert!(result.models.is_empty());
+            assert_eq!(result.skipped.len(), 1);
+            assert!(
+                result.skipped[0]
+                    .reason
+                    .contains("not a supported LiteRT model")
+            );
+            if cfg!(all(windows, target_arch = "x86_64")) {
+                assert!(
+                    result.skipped[0]
+                        .reason
+                        .contains(if name.starts_with("broken") {
+                            "not a TFLite model"
+                        } else {
+                            "Unreviewed LiteRT model artifact"
+                        })
+                );
+            }
+        }
+        let result = discover(&root).unwrap();
+        assert!(result.models.is_empty());
+        assert_eq!(result.skipped.len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

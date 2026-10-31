@@ -1,0 +1,63 @@
+$kind: http-request
+name: Estimate Depth
+description: |-
+  Estimate relative depth with the configured LiteRT Depth Anything V2 Small FP32 model.
+  Set depth_model to its exact catalog model ID from GET /v1/models. In Params,
+  keep engine enabled with value {{depth_model}}; an empty or disabled parameter
+  produces "Missing required query parameter: 'engine'".
+  Install LiteRT from Engines, or configure Infer's LITERT_LIBRARY_PATH.
+  The model must have verified image-to-depth task metadata. This example ID is not
+  automatically added to your catalog.
+
+  image_bytes contains the complete encoded PNG/JPEG file as a JSON byte array,
+  not raw RGB pixels. The included 2x2 PNG is a smoke-test fixture; replace it with
+  your image's file bytes for useful depth estimates.
+
+  The response contains raw float32 relative-depth values in row-major order at
+  response.width x response.height. Values are not distances in meters.
+  preview: true also returns a min/max-normalized 16-bit PNG as
+  response.preview_png_base64. Open Visualize to view it. Set preview to false
+  to request only the raw map; preview normalization does not alter the raw values.
+url: '{{base_url}}/v1/inference?engine={{depth_model}}'
+method: POST
+queryParams:
+  - key: engine
+    value: '{{depth_model}}'
+    disabled: false
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "type": "image_depth",
+      "image_bytes": [137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,2,0,0,0,2,8,2,0,0,0,253,212,154,115,0,0,0,20,73,68,65,84,120,156,99,248,207,192,192,0,194,12,255,255,255,255,15,0,31,238,5,251,176,184,151,201,0,0,0,0,73,69,78,68,174,66,96,130],
+      "preview": true
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Depth estimation succeeds", function () {
+        pm.response.to.have.status(200);
+      });
+      if (pm.response.code === 200) {
+        const depth = pm.response.json().response;
+        pm.test("Returns finite raw relative-depth values", function () {
+          pm.expect(depth.units).to.eql("relative");
+          pm.expect(depth.dtype).to.eql("float32");
+          pm.expect(depth.layout).to.eql("row-major");
+          pm.expect(depth.values.length).to.eql(depth.width * depth.height);
+          pm.expect(depth.values.every(Number.isFinite)).to.eql(true);
+        });
+        pm.visualizer.set(`
+          <p>Relative depth: {{width}} × {{height}} (not meters).</p>
+          {{#if preview}}
+          <img style="max-width:100%;height:auto" alt="Normalized relative-depth preview"
+               src="data:image/png;base64,{{preview}}" />
+          {{else}}<p>Preview disabled; raw values are available in the JSON response.</p>{{/if}}
+        `, { width: depth.width, height: depth.height, preview: depth.preview_png_base64 });
+      }
+order: 3410

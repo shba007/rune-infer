@@ -1,12 +1,12 @@
 $kind: http-request
-url: "{{base_url}}/v1/models?censorship=uncensored&modality=text-to-image"
+url: "{{base_url}}/v1/models"
 method: GET
 headers:
   Accept: application/json
 queryParams:
   - key: censorship
     value: uncensored
-    disabled: false
+    disabled: true
     description: censored or uncensored; models without an Uncensored capability count as censored.
     $type: |-
       {
@@ -14,13 +14,16 @@ queryParams:
         "properties": {
           "value": {
             "type": "string",
-            "enum": ["censored", "uncensored"]
+            "enum": [
+              "censored",
+              "uncensored"
+            ]
           }
         }
       }
   - key: modality
     value: text-to-image
-    disabled: false
+    disabled: true
     description: Match explicitly recorded model tasks; missing task metadata does not match.
     $type: |-
       {

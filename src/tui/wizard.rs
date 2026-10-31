@@ -1434,7 +1434,7 @@ impl<'a> Wizard<'a> {
                 f.render_widget(
                     Paragraph::new(vec![
                         Line::from(""),
-                        Line::from("  Point at a .gguf file or a folder of models (e.g. an LM Studio or Hugging Face cache)."),
+                        Line::from("  Point at a model file (.gguf, .bin, .cact, .tflite) or a model/cache folder."),
                         Line::styled("  Vision projectors (mmproj) next to a model are detected automatically.", Style::new().fg(DIM)),
                     ]),
                     intro,

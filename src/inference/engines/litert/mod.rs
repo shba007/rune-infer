@@ -20,6 +20,8 @@ pub const WIDTH: u32 = 686;
 pub const HEIGHT: u32 = 518;
 pub const PIXELS: usize = WIDTH as usize * HEIGHT as usize;
 const RUNTIME_SHA: &str = "6fe42cfa518879dd7bae4500244cf371d949bf0c8559cb60be207d81112da16d";
+const RUNTIME_URL: &str =
+    "https://storage.googleapis.com/litert/binaries/2.3.0/windows_x86_64/libLiteRt.dll";
 const MODEL_SHAS: [&str; 1] = ["651415f1774e02d06de946eccf2e6dbbc5f499a9e932d9de7ada3d59637d2e8e"];
 
 pub fn verify_artifacts(runtime: &Path, model: &Path) -> anyhow::Result<()> {
@@ -27,11 +29,15 @@ pub fn verify_artifacts(runtime: &Path, model: &Path) -> anyhow::Result<()> {
         cfg!(all(windows, target_arch = "x86_64")),
         "LiteRT depth currently requires Windows x64 CPU"
     );
-    anyhow::ensure!(
-        super::download::file_sha256(runtime).map_err(|e| anyhow::anyhow!(e.to_string()))?
-            == RUNTIME_SHA,
-        "LiteRT requires the pinned official Windows x64 2.3.0 runtime"
-    );
+    validate_runtime(runtime).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    verify_model(model)
+}
+
+/// Identify the reviewed export by content, independently of its filename.
+pub(crate) fn verify_model(model: &Path) -> anyhow::Result<()> {
+    let mut header = [0; 8];
+    std::fs::File::open(model)?.read_exact(&mut header)?;
+    anyhow::ensure!(&header[4..] == b"TFL3", "not a TFLite model");
     let hash = super::download::file_sha256(model).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     anyhow::ensure!(
         MODEL_SHAS.contains(&hash.as_str()),
@@ -43,11 +49,54 @@ pub fn verify_artifacts(runtime: &Path, model: &Path) -> anyhow::Result<()> {
 pub fn runtime_path() -> anyhow::Result<PathBuf> {
     let path = std::env::var_os("LITERT_LIBRARY_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|| super::download::engine_bin().join("litert/libLiteRt.dll"));
+        .unwrap_or_else(managed_runtime_path);
     anyhow::ensure!(
         path.is_file(),
-        "LiteRT runtime is missing; configure LITERT_LIBRARY_PATH with the reviewed Windows x64 2.3.0 libLiteRt.dll (automatic installation is unavailable)"
+        "LiteRT runtime is missing; install it from Engines (e, then u), or configure LITERT_LIBRARY_PATH with the reviewed Windows x64 2.3.0 libLiteRt.dll"
     );
+    Ok(std::fs::canonicalize(path)?)
+}
+
+fn managed_runtime_path() -> PathBuf {
+    let directory = super::download::engine_bin().join("litert");
+    let direct = directory.join("libLiteRt.dll");
+    if direct.is_file() {
+        direct
+    } else {
+        super::download::find_executable_recursive(&directory, "libLiteRt.dll").unwrap_or(direct)
+    }
+}
+
+pub(crate) fn validate_runtime(path: &Path) -> Result<(), Box<dyn Error>> {
+    if super::download::file_sha256(path)? != RUNTIME_SHA {
+        return Err(
+            "LiteRT requires the pinned official Windows x64 2.3.0 runtime; checksum mismatch"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_runtime_installed() -> Result<PathBuf, Box<dyn Error>> {
+    if !cfg!(all(windows, target_arch = "x86_64")) {
+        return Err("LiteRT installation currently supports Windows x64 CPU only".into());
+    }
+    if let Some(path) = std::env::var_os("LITERT_LIBRARY_PATH") {
+        let path = PathBuf::from(path);
+        validate_runtime(&path).map_err(|e| format!(
+            "LITERT_LIBRARY_PATH must point to the pinned runtime; fix or remove this override before installing: {e}"
+        ))?;
+        return Ok(std::fs::canonicalize(path)?);
+    }
+    let path = managed_runtime_path();
+    if path.exists() {
+        validate_runtime(&path)?;
+        return Ok(std::fs::canonicalize(path)?);
+    }
+    std::fs::create_dir_all(path.parent().ok_or("Missing LiteRT directory")?)?;
+    let client = super::download::create_download_client()?;
+    super::download::download_verified(&client, RUNTIME_URL, &path, "[LiteRT]", RUNTIME_SHA)?;
+    validate_runtime(&path)?;
     Ok(std::fs::canonicalize(path)?)
 }
 

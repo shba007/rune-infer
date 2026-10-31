@@ -12,6 +12,8 @@ values:
     value: qwen3.8-27b
   - key: image_model
     value: z-image
+  - key: depth_model
+    value: depth-anything-v2-small-fp32
   - key: asr_model
     value: parakeet-tdt-0.6b-v3
   - key: tts_model

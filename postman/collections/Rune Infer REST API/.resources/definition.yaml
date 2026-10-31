@@ -7,6 +7,7 @@ variables:
   omni_model: gemma-4-12b-it
   vision_model: qwen3.8-27b
   image_model: z-image
+  depth_model: depth-anything-v2-small
   asr_model: parakeet-tdt-0.6b-v3
   tts_model: audio8-tts-preview-0.6b
   embedding_model: granite-embedding-311m-multilingual-r2
