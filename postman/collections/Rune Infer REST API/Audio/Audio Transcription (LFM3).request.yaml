@@ -1,0 +1,42 @@
+$kind: http-request
+name: Audio Transcription (LFM3)
+description: |-
+  Transcribe a local audio file with the exact model ID lfm3-omni-2b.
+  Choose your audio file in Body. Leaving language disabled requests a
+  transcript in the original language; enable it to specify a language code.
+  json and text are supported. Subtitle and timestamp formats are rejected
+  because this engine does not provide transcription timestamps.
+url: '{{base_url}}/v1/audio/transcriptions'
+method: POST
+headers:
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: formdata
+  content:
+    - key: file
+      type: file
+      src: ''
+    - key: model
+      type: text
+      value: lfm3-omni-2b
+    - key: language
+      type: text
+      value: en
+      disabled: true
+    - key: response_format
+      type: text
+      value: json
+    - key: temperature
+      type: text
+      value: '0'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("LFM3 transcription succeeds", () => pm.response.to.have.status(200));
+      if (pm.response.code === 200) {
+        const mime = pm.response.headers.get("Content-Type") || "";
+        const text = mime.includes("application/json") ? pm.response.json().text : pm.response.text();
+        pm.test("Returns nonempty transcription text", () => pm.expect(text.trim()).not.to.eql(""));
+      }
+order: 4010

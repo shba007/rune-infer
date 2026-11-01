@@ -725,7 +725,7 @@ fn app(engine: Option<Arc<dyn InferenceEngine>>) -> (Router, Arc<AppState>) {
     let model: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
         "id": "fixture", "name": "Fixture", "modality": "VisionText",
         "engine": {"supported": ["encoder"]},
-        "tasks": ["text-image-to-text", "text-to-image", "image-to-image", "audio-to-text",
+        "tasks": ["text-image-to-text", "text-to-image", "text-image-to-image", "image-to-image", "audio-to-text",
             "text-to-audio", "audio-to-audio", "audio-to-diarization", "text-to-embedding",
             "image-to-embedding", "text-to-moderation", "text-image-to-detection", "text-image-to-decision"],
         "local": {"path": "Cargo.toml"}, "extra": {}
@@ -905,7 +905,12 @@ json_route_contract!(speech_contract, "/v1/audio/speech");
 json_route_contract!(inference_contract, "/v1/inference?engine=fixture");
 
 async fn multipart_contract(uri: &str, field: &str) {
-    let mut body = format!("--fixture-boundary\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nfixture\r\n--fixture-boundary\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nred rectangle\r\n--fixture-boundary\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"fixture.png\"\r\nContent-Type: application/octet-stream\r\n\r\n").into_bytes();
+    let prompt = if uri == "/v1/images/variations" {
+        ""
+    } else {
+        "--fixture-boundary\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nred rectangle\r\n"
+    };
+    let mut body = format!("--fixture-boundary\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nfixture\r\n{prompt}--fixture-boundary\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"fixture.png\"\r\nContent-Type: application/octet-stream\r\n\r\n").into_bytes();
     body.extend_from_slice(include_bytes!("../../tests/fixtures/studio/off-center.png"));
     body.extend_from_slice(b"\r\n--fixture-boundary--\r\n");
     verify_route(uri, "multipart/form-data; boundary=fixture-boundary", body).await;
@@ -927,6 +932,7 @@ multipart_route_contract!(
     "file"
 );
 multipart_route_contract!(image_edit_contract, "/v1/images/edits", "image");
+multipart_route_contract!(image_variation_contract, "/v1/images/variations", "image");
 
 #[tokio::test]
 async fn preemption_is_not_lost_before_background_registers_waiter() {

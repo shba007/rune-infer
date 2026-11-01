@@ -1,3 +1,4 @@
+pub(crate) mod audio;
 pub mod install;
 pub mod tools;
 
@@ -263,6 +264,10 @@ impl InferenceEngine for LlamaServerEngine {
         true
     }
 
+    fn supports_task_cancellation(&self, task: &InferenceTaskRequest) -> bool {
+        !matches!(task, InferenceTaskRequest::AudioSpeech { .. })
+    }
+
     fn id(&self) -> &str {
         &self.id
     }
@@ -284,6 +289,8 @@ impl InferenceEngine for LlamaServerEngine {
         mut on_token: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<InferenceOutput, Box<dyn Error>> {
         match task {
+            InferenceTaskRequest::AudioTranscription { .. }
+            | InferenceTaskRequest::AudioSpeech { .. } => self.execute_audio(task),
             InferenceTaskRequest::ToolCall {
                 prompt,
                 schema,

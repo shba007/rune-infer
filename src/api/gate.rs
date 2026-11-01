@@ -309,7 +309,7 @@ impl ModelExecutionGate {
             {
                 return Err(self.yielded_response(state));
             }
-            if !engine.supports_cancellation() {
+            if !engine.supports_task_cancellation(&task) {
                 return Err(self.attach_headers(
                     state,
                     (

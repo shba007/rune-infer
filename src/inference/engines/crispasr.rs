@@ -21,6 +21,21 @@ pub struct CrispAsrEngine {
     _process: Arc<Mutex<ProcessGuard>>,
 }
 
+fn raw_audio_text_output(
+    response: reqwest::blocking::Response,
+    audio_bytes: usize,
+) -> Result<InferenceOutput, Box<dyn Error>> {
+    let text = response.text()?;
+    let usage = Usage::new(
+        (audio_bytes / 3200).max(1) as u32,
+        (text.len() / 4).max(1) as u32,
+    );
+    Ok(InferenceOutput {
+        response: InferenceTaskResponse::Text(text),
+        usage,
+    })
+}
+
 impl CrispAsrEngine {
     pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
         let bin_path = Self::resolve_binary(false)?;
@@ -378,6 +393,9 @@ impl InferenceEngine for CrispAsrEngine {
                     let err = resp.text().unwrap_or_default();
                     return Err(format!("crispasr transcription failed: {err}").into());
                 }
+                if matches!(response_format.as_deref(), Some("text" | "srt" | "vtt")) {
+                    return raw_audio_text_output(resp, audio_bytes.len());
+                }
 
                 let parsed: serde_json::Value = resp.json()?;
                 let text = parsed
@@ -414,13 +432,15 @@ impl InferenceEngine for CrispAsrEngine {
                 temperature,
                 response_format,
             } => {
-                let endpoint = format!("http://127.0.0.1:{}/v1/audio/translations", self.port);
+                let endpoint = format!("http://127.0.0.1:{}/v1/audio/transcriptions", self.port);
 
-                let mut form = reqwest::blocking::multipart::Form::new().part(
-                    "file",
-                    reqwest::blocking::multipart::Part::bytes(audio_bytes.clone())
-                        .file_name(filename.clone()),
-                );
+                let mut form = reqwest::blocking::multipart::Form::new()
+                    .text("translate", "true")
+                    .part(
+                        "file",
+                        reqwest::blocking::multipart::Part::bytes(audio_bytes.clone())
+                            .file_name(filename.clone()),
+                    );
 
                 if let Some(p) = prompt {
                     form = form.text("prompt", p.clone());
@@ -436,6 +456,9 @@ impl InferenceEngine for CrispAsrEngine {
                 if !resp.status().is_success() {
                     let err = resp.text().unwrap_or_default();
                     return Err(format!("crispasr translation failed: {err}").into());
+                }
+                if matches!(response_format.as_deref(), Some("text" | "srt" | "vtt")) {
+                    return raw_audio_text_output(resp, audio_bytes.len());
                 }
 
                 let parsed: serde_json::Value = resp.json()?;
@@ -543,6 +566,168 @@ impl InferenceEngine for CrispAsrEngine {
                 })
             }
             _ => Err("CrispAsrEngine only supports Audio tasks".into()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod audio_transport_tests {
+    use super::*;
+    use std::io::{BufRead, Read, Write};
+
+    #[test]
+    fn audio_formats_preserve_native_translation_flag_and_errors() {
+        for (translate, reject, format) in [
+            (false, false, "json"),
+            (true, false, "json"),
+            (true, true, "json"),
+            (false, false, "text"),
+            (true, false, "text"),
+            (false, false, "srt"),
+            (true, false, "srt"),
+            (false, false, "vtt"),
+            (true, false, "vtt"),
+        ] {
+            let raw = match format {
+                "srt" => "1\r\n00:00:00,000 --> 00:00:01,600\r\nBonjour, Marie.\r\n",
+                "vtt" => "WEBVTT\r\n\r\n00:00:00.000 --> 00:00:01.600\r\nBonjour, Marie.\r\n",
+                _ => "Bonjour, café.\r\n",
+            };
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let audio = b"RIFF\0WAVE\xff".to_vec();
+            let expected_audio = audio.clone();
+            let server = std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let (mut socket, _) = loop {
+                    match listener.accept() {
+                        Ok(connection) => break connection,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && Instant::now() < deadline =>
+                        {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("Mock request was not received: {error}"),
+                    }
+                };
+                // Accepted sockets can inherit the listener's nonblocking mode
+                // on Windows; the fixture reader below uses blocking I/O.
+                socket.set_nonblocking(false).unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut reader = std::io::BufReader::new(socket.try_clone().unwrap());
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                assert_eq!(line, "POST /v1/audio/transcriptions HTTP/1.1\r\n");
+                let mut length = 0;
+                loop {
+                    line.clear();
+                    reader.read_line(&mut line).unwrap();
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap();
+                    }
+                }
+                let mut bytes = vec![0; length];
+                reader.read_exact(&mut bytes).unwrap();
+                assert!(
+                    bytes
+                        .windows(expected_audio.len())
+                        .any(|v| v == expected_audio)
+                );
+                let body = String::from_utf8_lossy(&bytes);
+                assert!(body.contains("filename=\"sample.wav\""));
+                assert_eq!(
+                    body.contains("name=\"translate\"\r\n\r\ntrue\r\n"),
+                    translate
+                );
+                for (field, value) in [
+                    ("prompt", "Marie"),
+                    ("temperature", "0.25"),
+                    ("response_format", format),
+                ] {
+                    assert!(body.contains(&format!("name=\"{field}\"\r\n\r\n{value}\r\n")));
+                }
+                let (status, response) = if reject {
+                    ("400 Bad Request", r#"{"error":"fixture rejected"}"#)
+                } else if format == "json" {
+                    ("200 OK", r#"{"text":"Hello, my name is Marie."}"#)
+                } else {
+                    ("200 OK", raw)
+                };
+                let mime = match format {
+                    "text" => "text/plain",
+                    "srt" => "application/x-subrip",
+                    "vtt" => "text/vtt",
+                    _ => "application/json",
+                };
+                write!(socket, "HTTP/1.1 {status}\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}", response.len()).unwrap();
+            });
+            let child = Command::new(std::env::current_exe().unwrap())
+                .arg("--list")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let engine = CrispAsrEngine {
+                id: "fixture".into(),
+                port,
+                client: SafeBlockingClient::new(
+                    reqwest::blocking::Client::builder()
+                        .no_proxy()
+                        .timeout(Duration::from_secs(5))
+                        .build()
+                        .unwrap(),
+                ),
+                _process: ProcessGuard::new(child, "crispasr-translation-test"),
+            };
+            let task = if translate {
+                InferenceTaskRequest::AudioTranslation {
+                    audio_bytes: audio,
+                    filename: "sample.wav".into(),
+                    prompt: Some("Marie".into()),
+                    temperature: Some(0.25),
+                    response_format: Some(format.into()),
+                }
+            } else {
+                InferenceTaskRequest::AudioTranscription {
+                    audio_bytes: audio,
+                    filename: "sample.wav".into(),
+                    prompt: Some("Marie".into()),
+                    language: Some("fr".into()),
+                    temperature: Some(0.25),
+                    response_format: Some(format.into()),
+                }
+            };
+            let result = engine.execute(&task, None);
+            server.join().unwrap();
+            if reject {
+                assert!(
+                    result
+                        .err()
+                        .unwrap()
+                        .to_string()
+                        .contains("fixture rejected")
+                );
+            } else {
+                match result.unwrap().response {
+                    InferenceTaskResponse::Text(value) if format != "json" => {
+                        assert_eq!(value, raw)
+                    }
+                    InferenceTaskResponse::Translation(value) if translate => {
+                        assert_eq!(value.text, "Hello, my name is Marie.")
+                    }
+                    InferenceTaskResponse::Transcription(value) if !translate => {
+                        assert_eq!(value.text, "Hello, my name is Marie.")
+                    }
+                    _ => panic!("Wrong response type"),
+                }
+            }
         }
     }
 }

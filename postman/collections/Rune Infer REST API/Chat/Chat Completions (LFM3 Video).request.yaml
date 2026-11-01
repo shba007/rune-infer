@@ -1,0 +1,65 @@
+$kind: http-request
+name: Chat Completions (LFM3 Video)
+description: |-
+  Ask about both the picture and soundtrack of a short video with the exact
+  local model ID lfm3-omni-2b. FFmpeg must be available to Infer.
+
+  Set lfm3_video_data_url in your Postman environment to the complete MP4 file
+  encoded as a data URI. In PowerShell:
+  'data:video/mp4;base64,' + [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\clip.mp4"))
+
+  Start with a short clip: this catalog entry uses a 4096-token runtime context.
+  Keep the system prompt asking the model to use both what it sees and hears.
+  Separate image-plus-audio messages remain unverified; this request sends one
+  video containing its soundtrack.
+url: '{{base_url}}/v1/chat/completions'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "lfm3-omni-2b",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Answer questions about the video using what you see and hear."
+        },
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "Describe the video and transcribe the spoken words." },
+            {
+              "type": "video_url",
+              "video_url": { "url": "{{lfm3_video_data_url}}" }
+            }
+          ]
+        }
+      ],
+      "temperature": 0,
+      "top_k": 1,
+      "max_tokens": 384,
+      "stream": false
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      const video = pm.variables.get("lfm3_video_data_url");
+      if (typeof video !== "string" || !/^data:video\/mp4;base64,[A-Za-z0-9+/]+={0,2}$/.test(video)) {
+        throw new Error("Set lfm3_video_data_url to a complete data:video/mp4;base64,... MP4 data URI.");
+      }
+  - type: afterResponse
+    code: |-
+      pm.test("LFM3 video chat succeeds", () => pm.response.to.have.status(200));
+      if (pm.response.code === 200) {
+        const choice = pm.response.json().choices[0];
+        pm.test("Returns a complete, nonempty text response", () => {
+          pm.expect(choice.message.content.trim()).not.to.eql("");
+          pm.expect(choice.finish_reason).to.eql("stop");
+        });
+      }
+order: 2460

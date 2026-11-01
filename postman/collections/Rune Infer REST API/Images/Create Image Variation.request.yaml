@@ -1,5 +1,12 @@
 $kind: http-request
 name: Create Image Variation
+description: |-
+  Generate a real variation with qwen-image-edit-2511, preserving the subject
+  and style while making subtle composition/detail changes. Select one PNG,
+  JPEG or WEBP file. This runs inference; it does not return the upload.
+  Use Create Image Edit for prompts, masks or multiple reference images.
+  Only n=1 and response_format=b64_json are currently supported.
+  Leave seed disabled for a fresh variation, or enable it for repeatable output.
 url: '{{base_url}}/v1/images/variations'
 method: POST
 body:
@@ -10,15 +17,33 @@ body:
       src: ''
     - key: model
       type: text
-      value: '{{image_model}}'
+      value: qwen-image-edit-2511
     - key: n
       type: text
       value: '1'
     - key: size
       type: text
-      value: '1024x1024'
+      value: '512x512'
     - key: response_format
       type: text
       value: 'b64_json'
+    - key: steps
+      type: text
+      value: '30'
+    - key: cfg_scale
+      type: text
+      value: '5'
+    - key: seed
+      type: text
+      value: '42'
+      disabled: true
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Variation succeeds", () => pm.response.to.have.status(200));
+      if (pm.response.code === 200) {
+        pm.test("Generated image returned", () => pm.expect(pm.response.json().data[0].b64_json).to.be.a("string").and.not.empty);
+        pm.test("Correct model", () => pm.expect(pm.response.headers.get("x-model-served")).to.eql("qwen-image-edit-2511"));
+      }
 examples: .resources/Create Image Variation.resources/examples
 order: 3200

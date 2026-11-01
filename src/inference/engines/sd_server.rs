@@ -1,4 +1,5 @@
 use super::download;
+pub(crate) mod edit;
 use crate::config::ModelConfig;
 use crate::inference::process::{
     ProcessGuard, SafeBlockingClient, configure_death_signal, http_probe_success,
@@ -453,6 +454,7 @@ impl InferenceEngine for SdServerEngine {
         _on_token: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<InferenceOutput, Box<dyn Error>> {
         match task {
+            InferenceTaskRequest::ImageEdit { .. } => self.execute_edit(task),
             InferenceTaskRequest::ImageGeneration {
                 prompt,
                 negative_prompt,

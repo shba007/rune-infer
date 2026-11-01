@@ -418,6 +418,39 @@
       }
     },
     {
+      "id": "lfm3-omni-2b",
+      "name": "LiquidAI LFM3 Omni 2B",
+      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
+      "capabilities": [],
+      "max_context_length": 128000,
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-audio-to-text",
+        "text-video-to-text",
+        "text-to-audio"
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "sampling": {
+        "temperature": 0.0,
+        "top_k": 1,
+        "max_tokens": 256
+      },
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/LFM3-Omni-2B-Q8_0.gguf",
+        "params": 1728801600,
+        "bits_per_weight": 8.54,
+        "context_length": 4096,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "extra": {
+        "mmproj_path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/mmproj-LFM3-Omni-2B-F16.gguf"
+      }
+    },
+    {
       "id": "liquid-d1-3b",
       "name": "Liquid AI d1-3B",
       "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",
@@ -542,33 +575,60 @@
     },
     {
       "id": "qwen-image-edit-2511",
-      "name": "Qwen Image Edit 2511 7B",
-      "description": "Qwen-Image-Edit 2511 targeted instruction-based image-to-image modification and localized inpainting",
-      "capabilities": [
-        "Image Editing",
-        "Inpainting",
-        "Photorealism"
-      ],
+      "name": "Qwen Image Edit 2511",
+      "description": "Qwen-Image-Edit 2511 with live-verified instruction edits, one or two reference images and alpha masks preserving protected pixels",
+      "capabilities": [],
       "max_context_length": null,
-      "modality": "Text",
+      "modality": "ImageGeneration",
+      "tasks": [
+        "text-image-to-image",
+        "image-to-image"
+      ],
       "engine": [
         "sd-server"
       ],
       "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511-GGUF/snapshots/main/qwen-image-edit-2511-Q4_K_M.gguf",
-        "params": 7000000000,
-        "bits_per_weight": 4.5,
+        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511-GGUF/snapshots/0d33d9692b4b26212297240d87b0d4719aa4fd06/qwen-image-edit-2511-Q3_K_L.gguf",
+        "params": 20430401088,
+        "bits_per_weight": 4.14,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--diffusion-fa --offload-to-cpu"
+        "args": "--diffusion-fa --params-backend disk --model-args qwen_image_zero_cond_t=true"
       },
       "extra": {
         "default_cfg_scale": 5.0,
         "default_sample_method": "euler",
         "default_steps": 30,
-        "llm_vision_path": "D:/Models/huggingface/hub/models--unsloth-Qwen2.5VL/mmproj-F16.gguf",
-        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth-Qwen2.5VL/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
-        "vae_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511/snapshots/main/vae/diffusion_pytorch_model.safetensors"
+        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511/snapshots/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder",
+        "vae_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511/snapshots/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/vae/diffusion_pytorch_model.safetensors"
+      }
+    },
+    {
+      "id": "moss-image-sft",
+      "name": "MOSS Image SFT",
+      "description": "OpenMOSS MOSS-Image-SFT text-to-image model using the local Qwen3.5 encoder, tokenizer and VAE",
+      "capabilities": [],
+      "max_context_length": null,
+      "tasks": [
+        "text-to-image"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-GGUF/snapshots/a013f7442e672e67b21f485b4b4f369df5500847/MOSS-Image-SFT-Q8_0.gguf",
+        "params": 5082308624,
+        "bits_per_weight": 8.63,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --params-backend disk --flow-shift 5 --tokenizer D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/tokenizer/tokenizer.json"
+      },
+      "extra": {
+        "default_cfg_scale": 3.0,
+        "default_sample_method": "euler",
+        "default_steps": 50,
+        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.5-9B-GGUF/snapshots/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf",
+        "vae_path": "D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/vae/diffusion_pytorch_model.safetensors"
       }
     },
     {
@@ -685,6 +745,27 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": "--backend voxtral4b"
+      }
+    },
+    {
+      "id": "whisper-large-v3-full",
+      "name": "Whisper Large v3 Full",
+      "description": "OpenAI Whisper Large v3 full model, converted locally to FP16 GGML for speech-to-text",
+      "capabilities": [],
+      "max_context_length": null,
+      "tasks": [
+        "audio-to-text"
+      ],
+      "engine": [
+        "crispasr"
+      ],
+      "local": {
+        "path": "D:/Models/litert/whisper-large-v3-full/ggml-large-v3-f16.bin",
+        "params": 1543490560,
+        "bits_per_weight": 16.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
       }
     },
     {
@@ -809,6 +890,38 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": "--tokenizer D:/Models/huggingface/hub/models--bosonai--higgs-audio-v2-tokenizer/snapshots/main"
+      }
+    },
+    {
+      "id": "fish-audio-s2-pro",
+      "name": "Fish Audio S2 Pro",
+      "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
+      "capabilities": [],
+      "tasks": ["text-to-audio"],
+      "engine": ["audio-cpp"],
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--audio-cpp--audio.cpp-gguf/snapshots/e36610ac69b5262e914a52635324050bee8f1ad2/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf",
+        "params": 4954823665,
+        "bits_per_weight": 16.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      }
+    },
+    {
+      "id": "voxcpm2-audiocpp",
+      "name": "VoxCPM2 (audio.cpp)",
+      "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
+      "capabilities": [],
+      "tasks": ["text-to-audio"],
+      "engine": ["audio-cpp"],
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--audio-cpp--audio.cpp-gguf/snapshots/e36610ac69b5262e914a52635324050bee8f1ad2/VoxCPM2-GGUF/voxcpm2-q8_0.gguf",
+        "params": 2384218498,
+        "bits_per_weight": 9.9023,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--seed 42"
       }
     },
     {

@@ -2,15 +2,12 @@ use axum::Json;
 use axum::extract::{Multipart, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use base64::Engine;
 use std::sync::Arc;
 
 use super::resolve_image_dimensions;
 use crate::api::AppState;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
-use crate::types::{
-    ApiError, ErrorResponse, ImageData, ImageGenerationRequest, ImageGenerationResponse,
-};
+use crate::types::{ApiError, ErrorResponse, ImageGenerationRequest};
 
 #[axum::debug_handler]
 pub async fn image_generation_handler(
@@ -132,102 +129,177 @@ pub async fn image_generation_handler(
     }
 }
 
+fn image_error(parameter: &str, message: impl Into<String>, variation: bool) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: ApiError::new(message)
+                .with_type("invalid_request_error")
+                .with_param(parameter)
+                .with_code(if variation {
+                    "invalid_image_variation"
+                } else {
+                    "invalid_image_edit"
+                }),
+        }),
+    )
+        .into_response()
+}
+
+#[allow(clippy::result_large_err)]
+fn edit_number<T: std::str::FromStr>(
+    value: Option<String>,
+    key: &str,
+    variation: bool,
+) -> Result<Option<T>, Response> {
+    value
+        .map(|text| {
+            text.trim().parse().map_err(|_| {
+                image_error(
+                    key,
+                    format!("'{key}' has an invalid numeric value"),
+                    variation,
+                )
+            })
+        })
+        .transpose()
+}
+
+#[allow(clippy::result_large_err)]
+async fn parse_image_request(
+    mut multipart: Multipart,
+    variation: bool,
+) -> Result<(String, InferenceTaskRequest), Response> {
+    let mut fields = std::collections::HashMap::new();
+    let mut images = Vec::new();
+    let mut mask = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| image_error("body", error.to_string(), variation))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "image" | "image[]" => images.push(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|error| image_error("image", error.to_string(), variation))?
+                    .to_vec(),
+            ),
+            "mask" => {
+                if variation {
+                    return Err(image_error(
+                        "mask",
+                        "Use image edits for masked changes",
+                        true,
+                    ));
+                }
+                if mask.is_some() {
+                    return Err(image_error("mask", "Duplicate mask upload", false));
+                }
+                mask = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|error| image_error("mask", error.to_string(), false))?
+                        .to_vec(),
+                );
+            }
+            "model" | "prompt" | "size" | "n" | "response_format" | "steps" | "cfg_scale"
+            | "seed" => {
+                if variation && name == "prompt" {
+                    return Err(image_error(
+                        "prompt",
+                        "Image variations use the source image; use image edits for a custom prompt",
+                        true,
+                    ));
+                }
+                let value = field
+                    .text()
+                    .await
+                    .map_err(|error| image_error(&name, error.to_string(), variation))?;
+                if fields.insert(name.clone(), value).is_some() {
+                    return Err(image_error(&name, "Duplicate image parameter", variation));
+                }
+            }
+            _ => {
+                return Err(image_error(
+                    &name,
+                    format!("Unsupported image parameter '{name}'"),
+                    variation,
+                ));
+            }
+        }
+    }
+    let model = fields
+        .remove("model")
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| image_error("model", "Select an exact model ID", variation))?;
+    if variation && images.len() != 1 {
+        return Err(image_error(
+            "image",
+            "Image variations require exactly one source image",
+            true,
+        ));
+    }
+    let size = fields
+        .remove("size")
+        .map(|size| {
+            super::parse_generation_dimensions(&size)
+                .map(|(w, h)| format!("{w}x{h}"))
+                .ok_or_else(|| {
+                    image_error(
+                        "size",
+                        "Size must be WIDTHxHEIGHT from 64 to 4096 pixels",
+                        variation,
+                    )
+                })
+        })
+        .transpose()?;
+    let task = InferenceTaskRequest::ImageEdit {
+        prompt: if variation {
+            "Create a subtle variation of this image. Preserve the same main subject, its defining colors and materials, and the original visual style. Make small changes to composition and fine details while keeping the subject recognizable.".into()
+        } else {
+            fields.remove("prompt").unwrap_or_default()
+        },
+        images,
+        mask,
+        size,
+        response_format: fields.remove("response_format"),
+        n: edit_number(fields.remove("n"), "n", variation)?,
+        steps: edit_number(fields.remove("steps"), "steps", variation)?,
+        cfg_scale: edit_number(fields.remove("cfg_scale"), "cfg_scale", variation)?,
+        seed: edit_number(fields.remove("seed"), "seed", variation)?,
+    };
+    crate::inference::engines::sd_server::edit::validate_task(&task)
+        .map_err(|message| image_error("image", message, variation))?;
+    Ok((model.trim().to_string(), task))
+}
+
 #[axum::debug_handler]
 pub async fn image_edit_handler(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Response {
-    let mut model: Option<String> = None;
-    let mut prompt: Option<String> = None;
-    let mut image_bytes: Vec<u8> = Vec::new();
-    let mut mask_bytes: Vec<u8> = Vec::new();
+    execute_image_request(state, headers, multipart, false).await
+}
 
-    while let Ok(Some(field)) = multipart.next_field().await {
-        let name = field.name().unwrap_or("").to_string();
-        match name.as_str() {
-            "model" => {
-                model = field.text().await.ok();
-            }
-            "prompt" => {
-                if let Ok(text) = field.text().await {
-                    prompt = Some(text);
-                }
-            }
-            "image" => {
-                if let Ok(bytes) = field.bytes().await {
-                    image_bytes = bytes.to_vec();
-                }
-            }
-            "mask" => {
-                if let Ok(bytes) = field.bytes().await {
-                    mask_bytes = bytes.to_vec();
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if prompt.as_ref().is_none_or(|p| p.trim().is_empty()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: ApiError::new("'prompt' is a required string field for image edits.")
-                    .with_type("invalid_request_error")
-                    .with_param("prompt")
-                    .with_code("missing_required_parameter"),
-            }),
-        )
-            .into_response();
-    }
-
-    let mask_mismatch = match (
-        image::load_from_memory(&image_bytes),
-        image::load_from_memory(&mask_bytes),
-    ) {
-        (Ok(img), Ok(mask)) => (img.width(), img.height()) != (mask.width(), mask.height()),
-        _ => false,
+async fn execute_image_request(
+    state: Arc<AppState>,
+    headers: axum::http::HeaderMap,
+    multipart: Multipart,
+    variation: bool,
+) -> Response {
+    let (model_id, task) = match parse_image_request(multipart, variation).await {
+        Ok(parsed) => parsed,
+        Err(response) => return response,
     };
-
-    if mask_mismatch {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: ApiError::new(
-                    "Uploaded mask dimensions must match the source image dimensions exactly.",
-                )
-                .with_type("invalid_request_error")
-                .with_param("mask")
-                .with_code("mask_dimension_mismatch"),
-            }),
-        )
-            .into_response();
-    }
-
-    let model_id = model.unwrap_or_else(|| {
-        state
-            .config()
-            .models
-            .iter()
-            .find(|m| m.modality == crate::config::Modality::ImageGeneration)
-            .map(|m| m.id.clone())
-            .unwrap_or_else(|| "z-image".to_string())
-    });
 
     let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
         Ok(gate) => gate,
         Err(resp) => return resp,
-    };
-
-    let task = InferenceTaskRequest::ImageGeneration {
-        prompt: prompt.unwrap_or_default(),
-        negative_prompt: None,
-        size: Some("1024x1024".to_string()),
-        response_format: Some("b64_json".to_string()),
-        steps: None,
-        cfg_scale: None,
-        seed: None,
-        sample_method: None,
     };
 
     let engine = match gate.load_task_engine(&state, &task).await {
@@ -250,43 +322,9 @@ pub async fn image_edit_handler(
 
 #[axum::debug_handler]
 pub async fn image_variation_handler(
-    State(_state): State<Arc<AppState>>,
-    mut multipart: Multipart,
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    multipart: Multipart,
 ) -> Response {
-    let mut image_bytes: Vec<u8> = Vec::new();
-
-    while let Ok(Some(field)) = multipart.next_field().await {
-        if field.name().unwrap_or("") == "image" {
-            if let Ok(bytes) = field.bytes().await {
-                image_bytes = bytes.to_vec();
-            }
-        }
-    }
-
-    if image_bytes.is_empty() || image_bytes.len() > 4 * 1024 * 1024 {
-        return (
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            Json(ErrorResponse {
-                error: ApiError::new("Uploaded image file must be a valid PNG, JPEG, or WEBP image format under 4 MB.")
-                    .with_type("invalid_request_error")
-                    .with_param("image")
-                    .with_code("invalid_image_type"),
-            }),
-        )
-            .into_response();
-    }
-
-    let created = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
-    Json(ImageGenerationResponse {
-        created,
-        data: vec![ImageData {
-            b64_json: Some(b64),
-            url: None,
-        }],
-    })
-    .into_response()
+    execute_image_request(state, headers, multipart, true).await
 }

@@ -16,4 +16,9 @@ pub trait InferenceEngine: Send + Sync {
     fn supports_cancellation(&self) -> bool {
         false
     }
+
+    /// Whether the cancellation hook can interrupt this specific task.
+    fn supports_task_cancellation(&self, _task: &InferenceTaskRequest) -> bool {
+        self.supports_cancellation()
+    }
 }

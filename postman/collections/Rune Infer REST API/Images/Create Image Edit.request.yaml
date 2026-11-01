@@ -1,26 +1,41 @@
 $kind: http-request
+description: |-
+  Edit with qwen-image-edit-2511 using one or two PNG, JPEG or WEBP references.
+  Select your first file in image[]. Enable the second image[] row to add
+  a reference; upload order matches image 1 and image 2 in the prompt.
+  Optional mask: 8-bit PNG with alpha, matching the first image (also 8-bit). Fully transparent
+  pixels are editable; all other pixels are preserved exactly. For masked
+  edits, omit size or match the first image; dimensions must be multiples
+  of 16, at least 64 and at most 4096. Start with 512x512 for unmasked edits.
+  Only n=1 and response_format=b64_json are supported. No manual Content-Type
+  header is needed: Postman supplies the multipart boundary.
 url: '{{base_url}}/v1/images/edits'
 method: POST
 body:
   type: formdata
   content:
     - type: file
-      key: image
+      key: image[]
       src:
-        - /D:/Projects/Public/rune/code-infer/static/artifacts/audios/visualization.png
+        - ''
       disabled: false
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
     - type: file
       key: mask
       src:
         - ''
-      disabled: false
+      disabled: true
     - type: text
       key: prompt
-      value: A sun shining warmly through the trees
+      value: Change the red mug to blue. Keep the same mug, lighting and background.
       disabled: false
     - type: text
       key: model
-      value: '{{image_model}}'
+      value: qwen-image-edit-2511
       disabled: false
     - type: text
       key: n
@@ -28,11 +43,23 @@ body:
       disabled: false
     - type: text
       key: size
-      value: 1024x1024
+      value: 512x512
       disabled: false
     - type: text
       key: response_format
       value: b64_json
+      disabled: false
+    - type: text
+      key: steps
+      value: '30'
+      disabled: false
+    - type: text
+      key: cfg_scale
+      value: '5'
+      disabled: false
+    - type: text
+      key: seed
+      value: '42'
       disabled: false
 examples: .resources/Create Image Edit.resources/examples
 order: 3100

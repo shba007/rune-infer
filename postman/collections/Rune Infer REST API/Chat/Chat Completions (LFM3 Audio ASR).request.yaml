@@ -1,0 +1,72 @@
+$kind: http-request
+name: Chat Completions (LFM3 Audio ASR)
+description: |-
+  Transcribe English speech with the exact local model ID lfm3-omni-2b.
+  This uses the chat API; the standalone audio transcription and speech-output
+  endpoints are separate integrations.
+
+  Set lfm3_audio_base64 in your Postman environment to the complete WAV file
+  encoded as base64, without a data: prefix. In PowerShell:
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\speech.wav"))
+
+  Keep the system prompt "Perform ASR in English." for English transcription.
+  A general conversation prompt can produce a partial answer instead of a full
+  transcript. Optionally set lfm3_expected_audio_text to a known transcript
+  to check the returned words, ignoring punctuation and case.
+url: '{{base_url}}/v1/chat/completions'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "lfm3-omni-2b",
+      "messages": [
+        { "role": "system", "content": "Perform ASR in English." },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_audio",
+              "input_audio": {
+                "data": "{{lfm3_audio_base64}}",
+                "format": "wav"
+              }
+            }
+          ]
+        }
+      ],
+      "temperature": 0,
+      "top_k": 1,
+      "max_tokens": 512,
+      "stream": false
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      const audio = pm.variables.get("lfm3_audio_base64");
+      if (typeof audio !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(audio)) {
+        throw new Error("Set lfm3_audio_base64 to the complete WAV file's base64, without a data: prefix.");
+      }
+  - type: afterResponse
+    code: |-
+      pm.test("LFM3 audio chat succeeds", () => pm.response.to.have.status(200));
+      if (pm.response.code === 200) {
+        const choice = pm.response.json().choices[0];
+        pm.test("Returns a complete, nonempty text response", () => {
+          pm.expect(choice.message.content.trim()).not.to.eql("");
+          pm.expect(choice.finish_reason).to.eql("stop");
+        });
+        const expected = pm.variables.get("lfm3_expected_audio_text");
+        if (typeof expected === "string" && expected.trim()) {
+          const normalize = value => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+          pm.test("Matches the expected transcript", () => {
+            pm.expect(normalize(choice.message.content)).to.eql(normalize(expected));
+          });
+        }
+      }
+order: 2450

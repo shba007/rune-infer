@@ -8,7 +8,7 @@ description: |-
   Install LiteRT from Engines, or configure Infer's LITERT_LIBRARY_PATH.
   The model must have verified image-to-depth task metadata. This example ID is not
   automatically added to your catalog.
-  For the reviewed Large export saved as depth_anything_v2_large.tflite, setup
+  For the reviewed Large export saved as depth_anything_v2_large_gpu_fp32.tflite, setup
   generates depth-anything-v2-large; use the actual ID returned by your server.
 
   image_bytes contains the complete encoded PNG/JPEG file as a JSON byte array,

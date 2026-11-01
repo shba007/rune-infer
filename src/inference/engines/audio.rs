@@ -151,6 +151,32 @@ fn audio_model_family(path: &Path) -> Option<String> {
     })
 }
 
+pub(crate) fn validate_task(task: &InferenceTaskRequest) -> Result<(), &'static str> {
+    if let InferenceTaskRequest::AudioSpeech {
+        input,
+        voice,
+        response_format,
+        speed,
+    } = task
+    {
+        if input.trim().is_empty() {
+            return Err("Speech input must not be empty");
+        }
+        if !matches!(voice.as_deref(), None | Some("default")) {
+            return Err(
+                "audio.cpp currently supports its native default voice only; omit voice or use default",
+            );
+        }
+        if !matches!(response_format.as_deref(), None | Some("wav")) {
+            return Err("audio.cpp speech currently supports WAV only");
+        }
+        if speed.is_some_and(|speed| speed != 1.0) {
+            return Err("audio.cpp speech currently supports normal speed (1.0) only");
+        }
+    }
+    Ok(())
+}
+
 pub struct AudioEngine {
     id: String,
     bin_path: PathBuf,
@@ -158,6 +184,7 @@ pub struct AudioEngine {
     allow_synthetic_fallback: bool,
     family: Option<String>,
     use_gpu: bool,
+    speech_args: Vec<String>,
 }
 
 impl AudioEngine {
@@ -229,6 +256,14 @@ impl AudioEngine {
                 .runtime
                 .as_ref()
                 .is_none_or(|runtime| runtime.gpu_layers > 0),
+            speech_args: model
+                .runtime
+                .as_ref()
+                .and_then(|runtime| runtime.extra_args.as_deref())
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect(),
         })
     }
 
@@ -872,6 +907,11 @@ impl InferenceEngine for AudioEngine {
                 })
             }
             InferenceTaskRequest::AudioSpeech { input, .. } => {
+                validate_task(task)?;
+                let family = self
+                    .family
+                    .as_deref()
+                    .ok_or("audio.cpp TTS requires model-family evidence in the GGUF metadata")?;
                 let req_id = generate_unique_audio_id();
                 let temp_dir = std::env::temp_dir().join(format!("rune_tts_{}", req_id));
                 let _ = std::fs::create_dir_all(&temp_dir);
@@ -894,18 +934,7 @@ impl InferenceEngine for AudioEngine {
                     "cpu"
                 };
 
-                let family = if let Some(family) = self.family.as_deref() {
-                    family
-                } else if self.id.contains("audio8") {
-                    "audio8_tts"
-                } else if self.id.contains("voxcpm") {
-                    "voxcpm2"
-                } else if self.id.contains("fish") {
-                    "fish_audio"
-                } else {
-                    "audio8_tts"
-                };
-
+                cmd.args(&self.speech_args);
                 cmd.arg("--task")
                     .arg("tts")
                     .arg("--family")
@@ -927,9 +956,18 @@ impl InferenceEngine for AudioEngine {
                 );
 
                 let result = match cmd.output() {
-                    Ok(output) if output.status.success() => {
-                        std::fs::read(&output_wav_path).map_err(|e| e.to_string())
-                    }
+                    Ok(output) if output.status.success() => std::fs::read(&output_wav_path)
+                        .map_err(|e| e.to_string())
+                        .and_then(|bytes| {
+                            if bytes.len() <= 44
+                                || !bytes.starts_with(b"RIFF")
+                                || &bytes[8..12] != b"WAVE"
+                            {
+                                Err("audio.cpp did not return nonempty WAV audio".into())
+                            } else {
+                                Ok(bytes)
+                            }
+                        }),
                     Ok(output) => Err(audio_failure("TTS", &output)),
                     Err(error) => Err(format!("audio.cpp could not start: {error}")),
                 };
@@ -952,6 +990,31 @@ impl InferenceEngine for AudioEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speech_controls_reject_unimplemented_options() {
+        for (options, accepted) in [
+            (serde_json::json!({}), true),
+            (
+                serde_json::json!({"voice":"default","response_format":"wav","speed":1.0}),
+                true,
+            ),
+            (serde_json::json!({"voice":"alloy"}), false),
+            (serde_json::json!({"voice":"female"}), false),
+            (serde_json::json!({"response_format":"mp3"}), false),
+            (serde_json::json!({"speed":1.5}), false),
+            (serde_json::json!({"input":" "}), false),
+        ] {
+            let mut task = serde_json::json!({"type":"audio_speech","input":"Hello"});
+            task.as_object_mut()
+                .unwrap()
+                .extend(options.as_object().unwrap().clone());
+            assert_eq!(
+                validate_task(&serde_json::from_value(task).unwrap()).is_ok(),
+                accepted
+            );
+        }
+    }
 
     #[test]
     fn windows_cuda_build_installs_its_matching_runtime_first() {
@@ -1086,8 +1149,9 @@ mod strict_setup_tests {
                 )),
                 model_path: PathBuf::from("fixture.gguf"),
                 allow_synthetic_fallback,
-                family: None,
+                family: Some("audio8_tts".into()),
                 use_gpu: false,
+                speech_args: vec![],
             };
             let task = InferenceTaskRequest::AudioSpeech {
                 input: "Hello".into(),

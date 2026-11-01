@@ -40,6 +40,7 @@ pub struct GgufInfo {
     /// `clip.has_vision_encoder` / `clip.has_audio_encoder` (projectors only).
     pub has_vision_encoder: Option<bool>,
     pub has_audio_encoder: Option<bool>,
+    pub has_gen_audio_encoder: Option<bool>,
     pub has_tokenizer: bool,
     /// Any `prism.*` key (Prism ternary quantisation needs the Prism llama.cpp build).
     pub has_prism_keys: bool,
@@ -161,6 +162,9 @@ pub fn parse_gguf(r: &mut impl Read) -> Result<GgufInfo> {
             }
             ("clip.has_vision_encoder", 7) => info.has_vision_encoder = Some(rd::<1>(r)?[0] != 0),
             ("clip.has_audio_encoder", 7) => info.has_audio_encoder = Some(rd::<1>(r)?[0] != 0),
+            ("clip.has_gen_audio_encoder", 7) => {
+                info.has_gen_audio_encoder = Some(rd::<1>(r)?[0] != 0)
+            }
             (k, _) => {
                 if k.starts_with("tokenizer.") {
                     info.has_tokenizer = true;

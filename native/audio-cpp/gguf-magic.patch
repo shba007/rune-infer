@@ -1,0 +1,50 @@
+diff --git a/external/ggml/src/CMakeLists.txt b/external/ggml/src/CMakeLists.txt
+index e4a850d..6c2fba9 100644
+--- a/external/ggml/src/CMakeLists.txt
++++ b/external/ggml/src/CMakeLists.txt
+@@ -251,7 +251,9 @@ function(ggml_add_backend_library backend)
+         # write the shared library to the output directory
+         set_target_properties(${backend} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+         target_compile_definitions(${backend} PRIVATE GGML_BACKEND_DL)
+-        add_dependencies(ggml ${backend})
++        if (NOT AUDIOCPP_PREBUILT_BACKENDS)
++            add_dependencies(ggml ${backend})
++        endif()
+         if (GGML_BACKEND_DIR)
+             install(TARGETS ${backend} LIBRARY DESTINATION ${GGML_BACKEND_DIR})
+         else()
+diff --git a/src/framework/assets/tensor_source.cpp b/src/framework/assets/tensor_source.cpp
+index 9524e41..1a554b2 100644
+--- a/src/framework/assets/tensor_source.cpp
++++ b/src/framework/assets/tensor_source.cpp
+@@ -1716,6 +1716,13 @@ std::shared_ptr<const TensorSource> open_tensor_source(
+             case TensorContainer::Gguf: return std::make_shared<GgufTensorSource>(path, options);
+         }
+     }
++    // Hugging Face snapshot symlinks resolve to extensionless content-addressed
++    // blobs. Identify standalone GGUF containers by their header in that case.
++    std::ifstream input(path, std::ios::binary);
++    char magic[4] = {};
++    if (input.read(magic, sizeof(magic)) && std::memcmp(magic, "GGUF", sizeof(magic)) == 0) {
++        return std::make_shared<GgufTensorSource>(path, options);
++    }
+     throw std::runtime_error("unsupported tensor source format: " + path.string());
+ }
+ 
+diff --git a/tests/unittests/test_gguf_tensor_source.cpp b/tests/unittests/test_gguf_tensor_source.cpp
+index 0e2e91f..6269279 100644
+--- a/tests/unittests/test_gguf_tensor_source.cpp
++++ b/tests/unittests/test_gguf_tensor_source.cpp
+@@ -77,6 +77,12 @@ void test_safetensors_to_gguf_roundtrip() {
+         gguf,
+         engine::assets::TensorStorageType::Q8_0);
+     const auto source = engine::assets::open_tensor_source(gguf);
++    const auto blob = root / "extensionless-hf-blob";
++    std::filesystem::copy_file(gguf, blob);
++    const auto blob_source = engine::assets::open_tensor_source(blob);
++    engine::test::require(blob_source->has_tensor("projection.weight"), "extensionless GGUF lost tensors");
++    engine::test::require_eq(blob_source->require_metadata("projection.weight").dtype,
++                            std::string("q8_0"), "extensionless GGUF dtype");
+     engine::test::require(source->has_tensor("projection.weight"), "GGUF is missing projection.weight");
+     engine::test::require(source->has_tensor(long_embedding_name), "GGUF lost the long logical tensor name");
+     engine::test::require_eq(source->require_metadata("projection.weight").dtype, std::string("q8_0"), "matrix dtype");

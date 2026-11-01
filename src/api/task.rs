@@ -12,6 +12,9 @@ pub(super) struct Requirements {
     inputs: Vec<&'static str>,
     output: &'static str,
     operation: &'static str,
+    llama_audio_error: Option<&'static str>,
+    audiocpp_error: Option<&'static str>,
+    sd_edit_error: Option<&'static str>,
 }
 
 impl Requirements {
@@ -76,6 +79,9 @@ impl Requirements {
             inputs: inputs.to_vec(),
             output,
             operation,
+            llama_audio_error: None,
+            audiocpp_error: None,
+            sd_edit_error: None,
         }
     }
 
@@ -87,7 +93,7 @@ impl Requirements {
 
     pub(super) fn task(task: &InferenceTaskRequest) -> Self {
         use InferenceTaskRequest::*;
-        match task {
+        let mut requirements = match task {
             ImageDepth { .. } => Self::new(&["image"], "depth", "depth"),
             ToolCall {
                 prompt,
@@ -110,6 +116,7 @@ impl Requirements {
                 result
             }
             ImageGeneration { .. } => Self::new(&["text"], "image", "generation"),
+            ImageEdit { .. } => Self::new(&["text", "image"], "image", "edit"),
             AudioTranscription { .. } => Self::new(&["audio"], "text", "transcription"),
             AudioTranslation { .. } => Self::new(&["audio"], "text", "translation"),
             AudioSpeech { .. } => Self::new(&["text"], "audio", "speech"),
@@ -149,7 +156,13 @@ impl Requirements {
                 "decision",
                 "decision",
             ),
-        }
+        };
+        requirements.llama_audio_error =
+            crate::inference::engines::llama_server::audio::validate_task(task).err();
+        requirements.audiocpp_error = crate::inference::engines::audio::validate_task(task).err();
+        requirements.sd_edit_error =
+            crate::inference::engines::sd_server::edit::validate_task(task).err();
+        requirements
     }
 
     #[allow(clippy::result_large_err)]
@@ -202,9 +215,15 @@ impl Requirements {
             let implemented = match engine {
                 LlamaServer | LlamaServerPrism => matches!(
                     self.operation,
-                    "chat" | "caption" | "embedding" | "grounding" | "decision"
+                    "chat"
+                        | "caption"
+                        | "embedding"
+                        | "grounding"
+                        | "decision"
+                        | "transcription"
+                        | "speech"
                 ),
-                SdServer => self.operation == "generation",
+                SdServer => matches!(self.operation, "generation" | "edit"),
                 AudioCpp => matches!(self.operation, "transcription" | "speech" | "diarization"),
                 NemoSpeech | WhisperCpp => {
                     matches!(self.operation, "transcription" | "translation")
@@ -226,11 +245,30 @@ impl Requirements {
                     format!("Engine '{engine}' does not implement {}", self.operation),
                 );
             }
+            if engine == AudioCpp
+                && let Some(message) = self.audiocpp_error
+            {
+                return refuse(
+                    StatusCode::BAD_REQUEST,
+                    "engine_audio_option_unsupported",
+                    message.into(),
+                );
+            }
+            if matches!(engine, LlamaServer | LlamaServerPrism) {
+                if let Some(message) = self.llama_audio_error {
+                    return refuse(
+                        StatusCode::BAD_REQUEST,
+                        "engine_audio_option_unsupported",
+                        message.into(),
+                    );
+                }
+            }
             if matches!(engine, LlamaServer | LlamaServerPrism)
-                && self
-                    .inputs
-                    .iter()
-                    .any(|input| matches!(*input, "image" | "audio" | "video"))
+                && (self.output == "audio"
+                    || self
+                        .inputs
+                        .iter()
+                        .any(|input| matches!(*input, "image" | "audio" | "video")))
                 && !model
                     .mmproj_path
                     .as_deref()
@@ -243,21 +281,23 @@ impl Requirements {
                 );
             }
             if matches!(engine, LlamaServer | LlamaServerPrism)
-                && self
-                    .inputs
-                    .iter()
-                    .any(|input| matches!(*input, "image" | "audio" | "video"))
+                && (self.output == "audio"
+                    || self
+                        .inputs
+                        .iter()
+                        .any(|input| matches!(*input, "image" | "audio" | "video")))
             {
                 let projector = model
                     .mmproj_path
                     .as_deref()
                     .and_then(|path| crate::detect::read_gguf(std::path::Path::new(path)).ok());
                 let supports = projector.is_some_and(|info| {
-                    (!self
-                        .inputs
-                        .iter()
-                        .any(|input| matches!(*input, "image" | "video"))
-                        || info.has_vision_encoder == Some(true))
+                    (self.output != "audio" || info.has_gen_audio_encoder == Some(true))
+                        && (!self
+                            .inputs
+                            .iter()
+                            .any(|input| matches!(*input, "image" | "video"))
+                            || info.has_vision_encoder == Some(true))
                         && (!self.inputs.contains(&"audio") || info.has_audio_encoder == Some(true))
                 });
                 if !supports {
@@ -265,13 +305,20 @@ impl Requirements {
                         StatusCode::BAD_REQUEST,
                         "model_projector_unsupported",
                         format!(
-                            "Model '{}' projector does not establish support for these inputs",
+                            "Model '{}' projector does not establish support for the requested inputs/output",
                             model.id
                         ),
                     );
                 }
             }
             if engine == SdServer {
+                if let Some(message) = self.sd_edit_error {
+                    return refuse(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_image_edit",
+                        message.into(),
+                    );
+                }
                 for (field, path) in [
                     ("extra.vae_path", &model.vae_path),
                     ("extra.text_encoder_path", &model.text_encoder_path),
@@ -299,6 +346,67 @@ impl Requirements {
 #[cfg(test)]
 mod companion_tests {
     use super::*;
+
+    #[test]
+    fn lfm_speech_requires_explicit_generator_metadata_and_valid_options() {
+        let root = std::env::temp_dir().join(format!(
+            "rune-speech-projector-{}",
+            crate::setup::generate_api_key()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("projector.gguf");
+        let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+            "id":"speech-fixture","name":"Speech fixture","tasks":["text-to-audio"],
+            "engine":["llama-server"],"local":{"path":"unused.gguf"},
+            "extra":{"mmproj_path":path.to_str().unwrap()}
+        }))
+        .unwrap();
+        let model = ModelConfig::try_from(entry).unwrap();
+        let task: InferenceTaskRequest =
+            serde_json::from_value(serde_json::json!({"type":"audio_speech","input":"Hello"}))
+                .unwrap();
+        let check = Requirements::task(&task);
+        assert!(
+            check
+                .validate(&model, Some(EngineKind::LlamaServer))
+                .is_err()
+        );
+        for generator in [false, true] {
+            let mut bytes = b"GGUF".to_vec();
+            bytes.extend(3u32.to_le_bytes());
+            bytes.extend(0u64.to_le_bytes());
+            bytes.extend(2u64.to_le_bytes());
+            for value in ["general.architecture", "clip"] {
+                bytes.extend((value.len() as u64).to_le_bytes());
+                bytes.extend(value.as_bytes());
+                if value == "general.architecture" {
+                    bytes.extend(8u32.to_le_bytes());
+                }
+            }
+            let key = "clip.has_gen_audio_encoder";
+            bytes.extend((key.len() as u64).to_le_bytes());
+            bytes.extend(key.as_bytes());
+            bytes.extend(7u32.to_le_bytes());
+            bytes.push(u8::from(generator));
+            std::fs::write(&path, bytes).unwrap();
+            assert_eq!(
+                check
+                    .validate(&model, Some(EngineKind::LlamaServer))
+                    .is_ok(),
+                generator
+            );
+        }
+        let bad: InferenceTaskRequest = serde_json::from_value(
+            serde_json::json!({"type":"audio_speech","input":"Hello","voice":"alloy"}),
+        )
+        .unwrap();
+        assert!(
+            Requirements::task(&bad)
+                .validate(&model, Some(EngineKind::LlamaServer))
+                .is_err()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[tokio::test]
     async fn sd_companion_directory_and_actionable_error() {

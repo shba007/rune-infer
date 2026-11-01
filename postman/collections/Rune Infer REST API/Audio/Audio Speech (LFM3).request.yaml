@@ -1,0 +1,36 @@
+$kind: http-request
+name: Audio Speech (LFM3)
+description: |-
+  Generate WAV speech with the exact model ID lfm3-omni-2b.
+  Start with a short English sentence. Choose female or male; normal speed
+  (1.0) and WAV are supported in this cycle. Other voices, formats and speeds
+  return an error instead of being silently ignored. Save the response as
+  a .wav file to listen. Background requests are refused because cancellation
+  of the native speech generator has not been verified.
+url: '{{base_url}}/v1/audio/speech'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "lfm3-omni-2b",
+      "input": "Hello. This is a speech test.",
+      "voice": "female",
+      "response_format": "wav",
+      "speed": 1.0
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("LFM3 speech succeeds", () => pm.response.to.have.status(200));
+      if (pm.response.code === 200) {
+        pm.test("Returns WAV audio", () => {
+          pm.expect(pm.response.headers.get("Content-Type")).to.include("audio/wav");
+        });
+      }
+order: 4110

@@ -309,7 +309,12 @@ fn derived_modality(tasks: &[String]) -> Modality {
     } else if outputs("image") {
         Modality::ImageGeneration
     } else if outputs("audio") {
-        if inputs("audio") {
+        if tasks.iter().any(|task| {
+            task.split_once("-to-").is_some_and(|(input, output)| {
+                input.split('-').any(|kind| kind == "audio")
+                    && output.split('-').any(|kind| kind == "audio")
+            })
+        }) {
             Modality::SpeechToSpeech
         } else {
             Modality::TextToSpeech
@@ -449,5 +454,30 @@ impl TryFrom<ModelEntry> for ModelConfig {
         };
         model.validate()?;
         Ok(model)
+    }
+}
+
+#[cfg(test)]
+mod audio_modality_tests {
+    use super::*;
+
+    #[test]
+    fn separate_asr_and_tts_tasks_do_not_claim_speech_to_speech() {
+        assert_eq!(
+            derived_modality(&["audio-to-text".into(), "text-to-audio".into()]),
+            Modality::TextToSpeech
+        );
+        assert_eq!(
+            derived_modality(&["audio-to-audio".into()]),
+            Modality::SpeechToSpeech
+        );
+        assert_eq!(
+            derived_modality(&["text-audio-to-audio".into()]),
+            Modality::SpeechToSpeech
+        );
+        assert_eq!(
+            derived_modality(&["audio-to-text-audio".into()]),
+            Modality::SpeechToSpeech
+        );
     }
 }

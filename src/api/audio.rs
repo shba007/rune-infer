@@ -10,6 +10,51 @@ use crate::types::{ApiError, AudioSpeechRequest, ErrorResponse};
 
 const MAX_AUDIO_UPLOAD_BYTES: usize = 25 * 1024 * 1024; // 25 MB
 
+fn audio_text_response(text: String, format: Option<&str>) -> Response {
+    let content_type = match format {
+        Some("text") => "text/plain; charset=utf-8",
+        Some("srt") => "application/x-subrip; charset=utf-8",
+        Some("vtt") => "text/vtt; charset=utf-8",
+        _ => return Json(serde_json::json!({ "text": text })).into_response(),
+    };
+    ([(axum::http::header::CONTENT_TYPE, content_type)], text).into_response()
+}
+
+#[cfg(test)]
+mod audio_format_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn audio_text_response_preserves_raw_bytes_and_json_defaults() {
+        let text = "1\r\n00:00:00,000 --> 00:00:01,600\r\nCafé.\r\n";
+        for (format, expected_type) in [
+            (None, "application/json"),
+            (Some("json"), "application/json"),
+            (Some("text"), "text/plain; charset=utf-8"),
+            (Some("srt"), "application/x-subrip; charset=utf-8"),
+            (Some("vtt"), "text/vtt; charset=utf-8"),
+        ] {
+            let response = audio_text_response(text.into(), format);
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response.headers()[axum::http::header::CONTENT_TYPE],
+                expected_type
+            );
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            if expected_type == "application/json" {
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["text"],
+                    text
+                );
+            } else {
+                assert_eq!(bytes.as_ref(), text.as_bytes());
+            }
+        }
+    }
+}
+
 async fn read_limited_field_bytes(
     field: &mut axum::extract::multipart::Field<'_>,
     limit: usize,
@@ -200,7 +245,7 @@ pub async fn audio_transcriptions_handler(
         prompt,
         language,
         temperature,
-        response_format,
+        response_format: response_format.clone(),
     };
 
     let engine = match gate.load_task_engine(&state, &task).await {
@@ -298,10 +343,9 @@ pub async fn audio_transcriptions_handler(
         InferenceTaskResponse::Transcription(transcription) => {
             gate.attach_headers(&state, Json(transcription).into_response())
         }
-        InferenceTaskResponse::Text(raw) => gate.attach_headers(
-            &state,
-            Json(serde_json::json!({ "text": raw })).into_response(),
-        ),
+        InferenceTaskResponse::Text(raw) => {
+            gate.attach_headers(&state, audio_text_response(raw, response_format.as_deref()))
+        }
         InferenceTaskResponse::Error(e) => gate.attach_headers(
             &state,
             (
@@ -436,7 +480,7 @@ pub async fn audio_translations_handler(
         filename,
         prompt,
         temperature,
-        response_format,
+        response_format: response_format.clone(),
     };
 
     let engine = match gate.load_task_engine(&state, &task).await {
@@ -453,10 +497,9 @@ pub async fn audio_translations_handler(
         InferenceTaskResponse::Translation(trans) => {
             gate.attach_headers(&state, Json(trans).into_response())
         }
-        InferenceTaskResponse::Text(raw) => gate.attach_headers(
-            &state,
-            Json(serde_json::json!({ "text": raw })).into_response(),
-        ),
+        InferenceTaskResponse::Text(raw) => {
+            gate.attach_headers(&state, audio_text_response(raw, response_format.as_deref()))
+        }
         InferenceTaskResponse::Error(e) => gate.attach_headers(
             &state,
             (

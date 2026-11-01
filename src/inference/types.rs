@@ -55,6 +55,17 @@ pub enum InferenceTaskRequest {
         seed: Option<i64>,
         sample_method: Option<String>,
     },
+    ImageEdit {
+        prompt: String,
+        images: Vec<Vec<u8>>,
+        mask: Option<Vec<u8>>,
+        size: Option<String>,
+        response_format: Option<String>,
+        n: Option<u32>,
+        steps: Option<u32>,
+        cfg_scale: Option<f32>,
+        seed: Option<i64>,
+    },
     AudioTranscription {
         audio_bytes: Vec<u8>,
         filename: String,
