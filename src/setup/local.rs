@@ -1,5 +1,6 @@
 //! Local setup installation and sequential, real-model inference checks.
 use super::LocalCandidate;
+use crate::audio_operations::{AudioOperation, AudioOperations, EngineVerification, SupportStatus};
 use crate::config::{EngineKind, Modality, ModelConfig, ServerConfig};
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
 use base64::Engine;
@@ -35,6 +36,7 @@ pub struct PreparedLocal {
     files: Vec<CheckedFile>,
     gpu: bool,
     tasks: Vec<Vec<String>>,
+    audio_operations: Vec<AudioOperations>,
 }
 impl PreparedLocal {
     pub(super) fn entries(
@@ -43,15 +45,17 @@ impl PreparedLocal {
         gpu: bool,
     ) -> Result<Vec<crate::schema::ModelEntry>, String> {
         self.validate(models, gpu)?;
-        if self.tasks.len() != models.len() {
+        if self.tasks.len() != models.len() || self.audio_operations.len() != models.len() {
             return Err("Incomplete local verification; run the checks again.".into());
         }
         Ok(models
             .iter()
             .zip(&self.tasks)
-            .map(|(model, tasks)| {
+            .zip(&self.audio_operations)
+            .map(|((model, tasks), operations)| {
                 let mut entry = super::local_entry(model, gpu);
                 entry.tasks = tasks.clone();
+                entry.audio_operations = operations.clone();
                 entry
             })
             .collect())
@@ -151,6 +155,7 @@ pub(crate) fn prepare_local_models_with(
         files: Vec::new(),
         gpu,
         tasks: Vec::new(),
+        audio_operations: Vec::new(),
     };
     // Validate the entire selection before installing anything.
     for model in models {
@@ -184,6 +189,7 @@ pub(crate) fn prepare_local_models_with(
         }
     }
     for (i, model) in models.iter().enumerate() {
+        let mut operations = AudioOperations::default();
         for &engine in &model.engines {
             progress(format!(
                 "Checking {}/{}: {} · {}",
@@ -195,8 +201,29 @@ pub(crate) fn prepare_local_models_with(
             let mut selected = model.clone();
             selected.engines = vec![engine];
             smoke(&selected).map_err(|e| format!("{} · {}: {e}", model.display_name, engine))?;
+            let operation = match model.modality {
+                Modality::SpeechToText => Some(AudioOperation::Transcription),
+                Modality::TextToSpeech => Some(AudioOperation::SpeechGeneration),
+                _ => None,
+            };
+            if let Some(operation) = operation {
+                let path = &report
+                    .engines
+                    .iter()
+                    .find(|(kind, _)| *kind == engine)
+                    .ok_or("Missing checked engine")?
+                    .1;
+                let version_text = crate::audio_operations::checked_engine_version(path)?;
+                let support = operations.get_mut(operation);
+                support.status = SupportStatus::Supported;
+                support.verified_with.push(EngineVerification {
+                    engine,
+                    version: version_text,
+                });
+            }
         }
         report.tasks.push(checked_tasks(&model.modality)?);
+        report.audio_operations.push(operations);
     }
     report.models = planned_models(models, gpu)?;
     report.validate(models, gpu)?;
@@ -330,7 +357,7 @@ fn smoke_task(modality: &Modality) -> Result<InferenceTaskRequest, String> {
             json!({"type":"image_generation","prompt":"A red square","size":"512x512","steps":1,"seed":0,"response_format":"b64_json"})
         }
         Modality::SpeechToText => {
-            json!({"type":"audio_transcription","audio_bytes":silence_wav(),"filename":"setup.wav","response_format":"json"})
+            json!({"type":"audio_transcription","audio_bytes":include_bytes!("../../tests/fixtures/audio/speech-test.wav").to_vec(),"filename":"setup.wav","response_format":"json"})
         }
         Modality::TextToSpeech => {
             json!({"type":"audio_speech","input":"Hello.","response_format":"wav"})
@@ -343,24 +370,6 @@ fn smoke_task(modality: &Modality) -> Result<InferenceTaskRequest, String> {
         }
     };
     serde_json::from_value(value).map_err(|e| format!("Cannot build setup check: {e}"))
-}
-
-fn silence_wav() -> Vec<u8> {
-    let size = 16000u32 * 2;
-    let mut wav = b"RIFF".to_vec();
-    wav.extend((36 + size).to_le_bytes());
-    wav.extend(b"WAVEfmt ");
-    wav.extend(16u32.to_le_bytes());
-    wav.extend(1u16.to_le_bytes());
-    wav.extend(1u16.to_le_bytes());
-    wav.extend(16000u32.to_le_bytes());
-    wav.extend(32000u32.to_le_bytes());
-    wav.extend(2u16.to_le_bytes());
-    wav.extend(16u16.to_le_bytes());
-    wav.extend(b"data");
-    wav.extend(size.to_le_bytes());
-    wav.resize(44 + size as usize, 0);
-    wav
 }
 
 fn validate_smoke_output(
@@ -399,7 +408,9 @@ fn validate_smoke_output(
             .data
             .iter()
             .any(|e| !e.embedding.is_empty() && e.embedding.iter().all(|n| n.is_finite())),
-        (Modality::SpeechToText, InferenceTaskResponse::Transcription(_)) => true, // silence legitimately has no transcript
+        (Modality::SpeechToText, InferenceTaskResponse::Transcription(result)) => {
+            !result.text.trim().is_empty()
+        }
         (Modality::Decision, InferenceTaskResponse::Decision(result)) => !result.answers.is_empty(),
         (Modality::TextToSpeech, InferenceTaskResponse::Audio(bytes)) => {
             bytes.len() > 44 && bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WAVE")
@@ -424,6 +435,66 @@ fn validate_smoke_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires existing Whisper Large v3 Full weights and CrispASR; performs real speech recognition and saves only a temporary catalog"]
+    fn live_audio_setup_saves_operation_evidence_and_preserves_conflicts() {
+        let catalog: crate::schema::CatalogFile =
+            serde_json::from_slice(&std::fs::read("config/catalog.json").unwrap()).unwrap();
+        let entry = catalog
+            .models
+            .iter()
+            .find(|entry| entry.id == "whisper-large-v3-full")
+            .unwrap();
+        let (root, mut models, _) = fixture();
+        models.truncate(1);
+        models[0].path = PathBuf::from(&entry.local.as_ref().unwrap().path);
+        models[0].size_bytes = models[0].path.metadata().unwrap().len();
+        models[0].modality = Modality::SpeechToText;
+        models[0].engines = vec![EngineKind::Crispasr];
+        models[0].extra.clear();
+        models[0].needs.clear();
+        let proof = prepare_local_models(&models, true, |message| println!("{message}")).unwrap();
+        let plan = crate::setup::SetupPlan {
+            exposure: crate::setup::Exposure::Local,
+            port: 8080,
+            server_api_key: None,
+            cloud: vec![],
+            local: models,
+            gpu_available: true,
+        };
+        let server = root.join("config/server.json");
+        let path = root.join("config/catalog.json");
+        let env = root.join(".env");
+        crate::setup::write_verified_setup(&plan, Some(&proof), &server, &path, &env).unwrap();
+        let mut saved: crate::schema::CatalogFile =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let support = &saved.models[0].audio_operations.transcription;
+        assert_eq!(support.status, SupportStatus::Supported);
+        assert!(support.verified_with[0].version.contains("0.8."));
+        assert_eq!(
+            saved.models[0].audio_operations.speech_translation.status,
+            SupportStatus::Unverified
+        );
+        // Existing task-only metadata can be backfilled after a successful check.
+        saved.models[0].audio_operations = AudioOperations::default();
+        std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        crate::setup::write_verified_setup(&plan, Some(&proof), &server, &path, &env).unwrap();
+        let loaded = crate::config::ModelRegistry::from_files(&server, &path).unwrap();
+        assert_eq!(
+            loaded.models[0].audio_operations.transcription.status,
+            SupportStatus::Supported
+        );
+        saved.models[0].audio_operations.transcription.status = SupportStatus::Unsupported;
+        saved.models[0].audio_operations.transcription.reason = Some("Owner policy".into());
+        let before = serde_json::to_vec(&saved).unwrap();
+        std::fs::write(&path, &before).unwrap();
+        assert!(
+            crate::setup::write_verified_setup(&plan, Some(&proof), &server, &path, &env).is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use crate::detect::testing::Gguf;
 
     #[test]
@@ -831,7 +902,12 @@ mod tests {
                     .is_err()
             );
         }
-        assert_eq!(silence_wav().len(), 32044);
+        let speech = include_bytes!("../../tests/fixtures/audio/speech-test.wav");
+        assert!(speech.len() > 32044 && speech.starts_with(b"RIFF"));
+        assert_eq!(
+            u32::from_le_bytes(speech[24..28].try_into().unwrap()),
+            16000
+        );
         assert!(
             validate_smoke_output(&Modality::Text, &InferenceTaskResponse::Text(String::new()))
                 .is_err()

@@ -379,6 +379,7 @@ fn model_config_to_info(
     loaded_models: &[String],
     loading_models: &[String],
     load_duration_ms: Option<u64>,
+    selected_engine: Option<crate::config::EngineKind>,
 ) -> ModelInfo {
     let heads = m.mtp_heads();
     let is_resident = loaded_models.iter().any(|id| id == &m.id);
@@ -400,14 +401,16 @@ fn model_config_to_info(
         4096
     };
 
-    let engine = m
-        .engine
-        .as_ref()
-        .and_then(|e| e.preferred)
-        .or_else(|| m.engine.as_ref().and_then(|e| e.supported.first().cloned()));
+    let engine = selected_engine.or_else(|| {
+        m.engine
+            .as_ref()
+            .and_then(|e| e.preferred)
+            .or_else(|| m.engine.as_ref().and_then(|e| e.supported.first().cloned()))
+    });
 
     let mut info = ModelInfo::new(&m.id);
     info.tasks = m.tasks.clone();
+    info.audio_operations = m.resolved_audio_operations(engine);
     info.with_mtp_heads(heads)
         .with_capabilities(m.resolved_capabilities())
         .with_locality(m.locality())
@@ -538,7 +541,13 @@ async fn models_handler(
                 .lock()
                 .ok()
                 .and_then(|r| r.get_load_duration_ms(&m.id));
-            model_config_to_info(m, &loaded_models, &loading_models, load_ms)
+            let selected_engine = state
+                .inference
+                .registry
+                .lock()
+                .ok()
+                .and_then(|r| r.selected_engine_kind(&m.id));
+            model_config_to_info(m, &loaded_models, &loading_models, load_ms, selected_engine)
         })
         .collect();
 
@@ -584,7 +593,14 @@ async fn retrieve_model_handler(
             .lock()
             .ok()
             .and_then(|r| r.get_load_duration_ms(&m.id));
-        let model_info = model_config_to_info(m, &loaded_models, &loading_models, load_ms);
+        let selected_engine = state
+            .inference
+            .registry
+            .lock()
+            .ok()
+            .and_then(|r| r.selected_engine_kind(&m.id));
+        let model_info =
+            model_config_to_info(m, &loaded_models, &loading_models, load_ms, selected_engine);
         Json(model_info).into_response()
     } else {
         (

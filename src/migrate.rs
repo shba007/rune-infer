@@ -206,6 +206,7 @@ fn convert(m: V1Model, notes: &mut Vec<String>) -> Result<ModelEntry> {
         modality: m.modality.clone(),
         capabilities: m.capabilities.clone().unwrap_or_default(),
         tasks: Vec::new(),
+        audio_operations: Default::default(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: None,

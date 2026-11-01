@@ -77,6 +77,8 @@ pub struct ModelEntry {
     #[serde(default)]
     pub tasks: Vec<String>,
     #[serde(default)]
+    pub audio_operations: crate::audio_operations::AudioOperations,
+    #[serde(default)]
     pub aliases: Vec<String>,
     #[serde(default)]
     pub roles: Vec<String>,
@@ -104,6 +106,9 @@ impl Serialize for ModelEntry {
         map.serialize_entry("name", &self.name)?;
         map.serialize_entry("description", &self.description)?;
         map.serialize_entry("capabilities", &self.capabilities)?;
+        if !self.audio_operations.is_empty() {
+            map.serialize_entry("audio_operations", &self.audio_operations)?;
+        }
         map.serialize_entry("max_context_length", &self.max_context_length)?;
         if self.tasks.is_empty() {
             // Preserve legacy routing facts without inventing verified tasks.
@@ -445,6 +450,7 @@ impl TryFrom<ModelEntry> for ModelConfig {
             mtp_heads: extra.mtp_heads,
             capabilities: (!e.capabilities.is_empty()).then_some(e.capabilities),
             tasks: e.tasks,
+            audio_operations: e.audio_operations,
             sampling: (sampling != SamplingConfig::default()).then_some(sampling),
             engine,
             lora: extra.lora,
@@ -453,6 +459,10 @@ impl TryFrom<ModelEntry> for ModelConfig {
             roles: e.roles,
         };
         model.validate()?;
+        model
+            .audio_operations
+            .validate(&model.engine_plan())
+            .map_err(|error| anyhow::anyhow!("Model '{}': {error}", model.id))?;
         Ok(model)
     }
 }

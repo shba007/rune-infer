@@ -1,4 +1,11 @@
 $kind: http-request
+description: |-
+  tasks describe primitive input/output combinations. Audio operations are
+  independently resolved in audio_operations.transcription, speech_translation
+  and speech_generation. Each contains status: supported, unsupported or
+  unverified; reason explains the resolved state. supported includes verified_with
+  engine/version evidence. Only supported permits the corresponding operation.
+  audio-to-text alone does not establish speech translation support.
 url: "{{base_url}}/v1/models"
 method: GET
 headers:

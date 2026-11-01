@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::collapsible_if)]
 
 pub mod api;
+pub mod audio_operations;
 pub mod config;
 pub mod detect;
 pub mod home;

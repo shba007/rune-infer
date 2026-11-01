@@ -182,6 +182,38 @@ impl Requirements {
             )
                 .into_response())
         };
+        let audio_operation = match self.operation {
+            "transcription" => Some(crate::audio_operations::AudioOperation::Transcription),
+            "translation" => Some(crate::audio_operations::AudioOperation::SpeechTranslation),
+            "speech" => Some(crate::audio_operations::AudioOperation::SpeechGeneration),
+            _ => None,
+        };
+        if let Some(operation) = audio_operation {
+            use crate::audio_operations::SupportStatus;
+            let support = model.resolved_audio_operation(operation, engine);
+            if support.status != SupportStatus::Supported {
+                let (status, code) = if support.status == SupportStatus::Unsupported {
+                    (StatusCode::BAD_REQUEST, "model_operation_unsupported")
+                } else {
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "model_operation_unverified",
+                    )
+                };
+                return refuse(
+                    status,
+                    code,
+                    format!(
+                        "Model '{}' cannot execute {}: {}",
+                        model.id,
+                        operation.as_str(),
+                        support
+                            .reason
+                            .unwrap_or_else(|| "Operation support is not established".into())
+                    ),
+                );
+            }
+        }
         if model.tasks.is_empty() {
             return refuse(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -357,7 +389,8 @@ mod companion_tests {
         let path = root.join("projector.gguf");
         let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
             "id":"speech-fixture","name":"Speech fixture","tasks":["text-to-audio"],
-            "engine":["llama-server"],"local":{"path":"unused.gguf"},
+            "engine":["llama-server"],"local":{"path":"Cargo.toml"},
+            "audio_operations":{"speech_generation":{"status":"supported","verified_with":[{"engine":"llama-server","version":"fixture"}]}},
             "extra":{"mmproj_path":path.to_str().unwrap()}
         }))
         .unwrap();

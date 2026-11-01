@@ -349,6 +349,7 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
         modality: c.modality.clone(),
         capabilities: c.capabilities.clone(),
         tasks: Vec::new(),
+        audio_operations: Default::default(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {
@@ -428,6 +429,7 @@ fn cloud_entry(c: &CloudChoice) -> ModelEntry {
         },
         capabilities: c.model.catalog_capabilities(),
         tasks: Vec::new(),
+        audio_operations: Default::default(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: None,
@@ -580,7 +582,9 @@ fn write_setup_inner(
             .iter_mut()
             .find(|model| same_source(model))
         {
-            if existing.tasks.is_empty() && !entry.tasks.is_empty() {
+            if (existing.tasks.is_empty() && !entry.tasks.is_empty())
+                || !entry.audio_operations.is_empty()
+            {
                 let execution = |model: &ModelEntry| -> Result<Value> {
                     let value = serde_json::to_value(model)?;
                     Ok(
@@ -593,8 +597,15 @@ fn write_setup_inner(
                     "Model '{}' has settings that differ from the checked setup selection. Existing configuration is unchanged; review the conflict before replacing it.",
                     existing.id
                 );
-                existing.tasks = entry.tasks;
-                added += 1;
+                let mut changed = existing.audio_operations.merge_verified(&entry.audio_operations)
+                    .map_err(|error| anyhow::anyhow!("Model '{}': {error}. Existing configuration is unchanged; review the conflict before replacing it.", existing.id))?;
+                if existing.tasks.is_empty() && !entry.tasks.is_empty() {
+                    existing.tasks = entry.tasks;
+                    changed = true;
+                }
+                if changed {
+                    added += 1;
+                }
             }
             continue;
         }

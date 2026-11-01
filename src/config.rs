@@ -785,6 +785,7 @@ pub struct ModelConfig {
     pub mtp_heads: Option<u32>,
     pub capabilities: Option<Vec<String>>,
     pub tasks: Vec<String>,
+    pub audio_operations: crate::audio_operations::AudioOperations,
     pub sampling: Option<SamplingConfig>,
     /// `Some` for local models, `None` for cloud models.
     pub engine: Option<EngineConfig>,

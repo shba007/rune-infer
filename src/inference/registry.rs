@@ -45,6 +45,16 @@ pub struct ModelRegistry {
 }
 
 impl ModelRegistry {
+    pub(crate) fn selected_engine_kind(&self, id: &str) -> Option<EngineKind> {
+        let selected = self.engines.get(id)?;
+        self.engine_leases.iter().find_map(|(kind, lease)| {
+            lease
+                .upgrade()
+                .filter(|engine| Arc::ptr_eq(engine, selected))
+                .map(|_| *kind)
+        })
+    }
+
     pub fn new(config: ConfigRegistry) -> Self {
         tracing::info!(
             "[ModelRegistry] Initialized model catalog with {} models configured.",

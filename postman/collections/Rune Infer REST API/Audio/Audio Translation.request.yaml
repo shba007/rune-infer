@@ -1,4 +1,11 @@
 $kind: http-request
+description: |-
+  Translate speech into English with a model whose GET /v1/models metadata has
+  audio_operations.speech_translation.status = supported. Select an audio file.
+  audio-to-text does not imply translation. Unsupported operations return 400
+  model_operation_unsupported; unverified operations return 503
+  model_operation_unverified before inference. Parakeet is unsupported in its
+  current ASR-only configuration. Whisper Large v3 Full is live-verified here.
 url: "{{base_url}}/v1/audio/translations"
 method: POST
 body:
@@ -7,11 +14,11 @@ body:
     - type: file
       key: file
       src:
-        - /D:/Projects/Public/rune/code-infer/static/artifacts/audios/output.mp3
+        - ''
       disabled: false
     - type: text
       key: model
-      value: "{{asr_model}}"
+      value: whisper-large-v3-full
       disabled: false
     - type: text
       key: response_format

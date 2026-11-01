@@ -580,6 +580,8 @@ pub struct ModelInfo {
     pub capabilities: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tasks: Vec<String>,
+    #[serde(default)]
+    pub audio_operations: crate::audio_operations::AudioOperations,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locality: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -645,6 +647,7 @@ impl ModelInfo {
             mtp_heads: None,
             capabilities: None,
             tasks: Vec::new(),
+            audio_operations: Default::default(),
             locality: None,
             modalities_in: None,
             modalities_out: None,

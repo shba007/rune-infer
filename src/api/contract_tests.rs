@@ -724,7 +724,12 @@ impl InferenceEngine for FailingEngine {
 fn app(engine: Option<Arc<dyn InferenceEngine>>) -> (Router, Arc<AppState>) {
     let model: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
         "id": "fixture", "name": "Fixture", "modality": "VisionText",
-        "engine": {"supported": ["encoder"]},
+        "engine": {"supported": ["crispasr"]},
+        "audio_operations": {
+            "transcription":{"status":"supported","verified_with":[{"engine":"crispasr","version":"fixture"}]},
+            "speech_translation":{"status":"supported","verified_with":[{"engine":"crispasr","version":"fixture"}]},
+            "speech_generation":{"status":"supported","verified_with":[{"engine":"crispasr","version":"fixture"}]}
+        },
         "tasks": ["text-image-to-text", "text-to-image", "text-image-to-image", "image-to-image", "audio-to-text",
             "text-to-audio", "audio-to-audio", "audio-to-diarization", "text-to-embedding",
             "image-to-embedding", "text-to-moderation", "text-image-to-detection", "text-image-to-decision"],
@@ -933,6 +938,123 @@ multipart_route_contract!(
 );
 multipart_route_contract!(image_edit_contract, "/v1/images/edits", "image");
 multipart_route_contract!(image_variation_contract, "/v1/images/variations", "image");
+
+#[tokio::test]
+async fn audio_operations_discovery_and_both_routes_fail_closed_before_loading() {
+    use crate::audio_operations::SupportStatus;
+    for (status, expected, code) in [
+        (
+            SupportStatus::Unsupported,
+            StatusCode::BAD_REQUEST,
+            "model_operation_unsupported",
+        ),
+        (
+            SupportStatus::Unverified,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "model_operation_unverified",
+        ),
+    ] {
+        let (_, state) = app(None);
+        let mut config = state.config().clone();
+        config.models[0].audio_operations.speech_translation =
+            crate::audio_operations::OperationSupport {
+                status,
+                reason: Some("Translation is not established for this configuration".into()),
+                verified_with: vec![],
+            };
+        state.reload_catalog(config);
+        let router = create_router((*state).clone());
+        for uri in ["/v1/models", "/v1/models/fixture"] {
+            let response = router
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let value: serde_json::Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap())
+                    .unwrap();
+            let model = if uri.ends_with("fixture") {
+                &value
+            } else {
+                &value["data"][0]
+            };
+            assert_eq!(
+                model["audio_operations"]["speech_translation"]["status"],
+                serde_json::to_value(status).unwrap()
+            );
+            assert_eq!(
+                model["audio_operations"]["transcription"]["status"],
+                "supported"
+            );
+        }
+        let mut multipart=b"--operation\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nfixture\r\n--operation\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n".to_vec();
+        multipart.extend_from_slice(include_bytes!("../../tests/fixtures/audio/speech-test.wav"));
+        multipart.extend_from_slice(b"\r\n--operation--\r\n");
+        for (uri, content_type, body) in [
+            ("/v1/audio/translations", "multipart/form-data; boundary=operation", multipart),
+            ("/v1/inference?engine=fixture", "application/json", serde_json::to_vec(&serde_json::json!({"type":"audio_translation","audio_bytes":[1],"filename":"speech.wav"})).unwrap()),
+        ] {
+            let response=router.clone().oneshot(Request::builder().method("POST").uri(uri).header("content-type",content_type).body(Body::from(body)).unwrap()).await.unwrap();
+            assert_eq!(response.status(),expected,"{uri}");
+            let value:serde_json::Value=serde_json::from_slice(&to_bytes(response.into_body(),16384).await.unwrap()).unwrap();
+            assert_eq!(value["error"]["code"],code,"{uri}");
+            assert!(value["error"]["message"].as_str().unwrap().contains("speech_translation"));
+        }
+        assert!(state.inference.registry.lock().unwrap().engines.is_empty());
+    }
+    // Discovery and execution use the actual resident fallback engine, not the
+    // preferred engine whose live check happened to pass.
+    let (_, state) = app(None);
+    let mut config = state.config().clone();
+    config.models[0]
+        .engine
+        .as_mut()
+        .unwrap()
+        .supported
+        .push(crate::config::EngineKind::AudioCpp);
+    state.reload_catalog(config);
+    let engine: Arc<dyn InferenceEngine> = Arc::new(FailingEngine);
+    {
+        let mut registry = state.inference.registry.lock().unwrap();
+        registry.engines.insert("fixture".into(), engine.clone());
+        registry
+            .engine_leases
+            .push((crate::config::EngineKind::AudioCpp, Arc::downgrade(&engine)));
+    }
+    let router = create_router((*state).clone());
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/models/fixture")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let info: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(info["engine"], "audio-cpp");
+    assert_eq!(
+        info["audio_operations"]["transcription"]["status"],
+        "unverified"
+    );
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/inference?engine=fixture")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"type":"audio_transcription","audio_bytes":[1],"filename":"speech.wav"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
 
 #[tokio::test]
 async fn preemption_is_not_lost_before_background_registers_waiter() {
