@@ -412,11 +412,11 @@ fn model_config_to_info(
     info.tasks = m.tasks.clone();
     info.audio_operations = m.resolved_audio_operations(engine);
     info.with_mtp_heads(heads)
-        .with_capabilities(m.resolved_capabilities())
+        .with_capabilities(m.resolved_capabilities_with_engine(engine))
         .with_locality(m.locality())
         .with_modalities_in(m.modalities_in())
         .with_modalities_out(m.modalities_out())
-        .with_tool_calls(m.supports_tool_calls())
+        .with_tool_calls(m.supports_tool_calls_with_engine(engine))
         .with_thinking_control(m.thinking_control())
         .with_max_image_edge_px(max_edge)
         .with_context_tokens(m.max_context_length.map(|l| l as usize).unwrap_or(4096))

@@ -116,6 +116,8 @@ async fn test_runtime_catalog_hot_reloading() {
         capabilities: vec!["Chat".to_string()],
         tasks: Vec::new(),
         audio_operations: Default::default(),
+        tool_call_support: None,
+        structured_output_support: None,
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {
@@ -157,6 +159,8 @@ async fn test_runtime_catalog_hot_reloading() {
         capabilities: vec!["Chat".to_string()],
         tasks: Vec::new(),
         audio_operations: Default::default(),
+        tool_call_support: None,
+        structured_output_support: None,
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {

@@ -424,6 +424,24 @@ pub async fn chat_completions_handler(
         return response;
     }
 
+    if structured_validator.is_some() && model_config.structured_output_support.is_some() {
+        let selected = state.inference.registry.lock().ok().and_then(|registry| {
+            registry.engine_leases.iter().find_map(|(kind, lease)| {
+                lease
+                    .upgrade()
+                    .filter(|actual| std::sync::Arc::ptr_eq(actual, &engine))
+                    .map(|_| *kind)
+            })
+        });
+        if !model_config.supports_structured_output_with_engine(selected) {
+            return structured::error(
+                StatusCode::BAD_REQUEST,
+                "unsupported_response_format",
+                "Structured output has not been verified for the selected engine.".into(),
+            );
+        }
+    }
+
     let load_duration_ms = state
         .inference
         .registry

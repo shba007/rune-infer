@@ -786,6 +786,8 @@ pub struct ModelConfig {
     pub capabilities: Option<Vec<String>>,
     pub tasks: Vec<String>,
     pub audio_operations: crate::audio_operations::AudioOperations,
+    pub tool_call_support: Option<crate::audio_operations::OperationSupport>,
+    pub structured_output_support: Option<crate::audio_operations::OperationSupport>,
     pub sampling: Option<SamplingConfig>,
     /// `Some` for local models, `None` for cloud models.
     pub engine: Option<EngineConfig>,
@@ -827,6 +829,20 @@ impl ModelConfig {
     }
 
     pub fn supports_tool_calls(&self) -> bool {
+        self.supports_tool_calls_with_engine(None)
+    }
+
+    pub fn supports_tool_calls_with_engine(&self, engine: Option<EngineKind>) -> bool {
+        if let Some(support) = &self.tool_call_support {
+            let engine = engine.or_else(|| self.engine_plan().first().copied());
+            return support.status == crate::audio_operations::SupportStatus::Supported
+                && self.is_local()
+                && std::path::Path::new(&self.model_path).is_file()
+                && self.tasks.iter().any(|task| task == "text-to-text")
+                && engine.is_some_and(|engine| {
+                    support.verified_with.iter().any(|v| v.engine == engine)
+                });
+        }
         self.capabilities
             .as_ref()
             .map(|caps| {
@@ -837,6 +853,58 @@ impl ModelConfig {
                 })
             })
             .unwrap_or(false)
+    }
+
+    pub fn validate_tool_call_support(&self) -> anyhow::Result<()> {
+        use crate::audio_operations::SupportStatus;
+        let Some(support) = &self.tool_call_support else {
+            return Ok(());
+        };
+        let legacy = self.capabilities.as_ref().is_some_and(|caps| {
+            caps.iter().any(|c| {
+                c.eq_ignore_ascii_case("tool call")
+                    || c.eq_ignore_ascii_case("tool_calls")
+                    || c.eq_ignore_ascii_case("tools")
+            })
+        });
+        anyhow::ensure!(
+            !(legacy && support.status != SupportStatus::Supported),
+            "Model '{}': tool call metadata conflicts with legacy capabilities",
+            self.id
+        );
+        anyhow::ensure!(
+            support.status != SupportStatus::Supported || !support.verified_with.is_empty(),
+            "Model '{}': tool calls need live engine verification",
+            self.id
+        );
+        anyhow::ensure!(
+            support.status == SupportStatus::Supported || support.verified_with.is_empty(),
+            "Model '{}': only supported tool calls may have successful checks",
+            self.id
+        );
+        anyhow::ensure!(
+            support.status != SupportStatus::Unsupported
+                || support
+                    .reason
+                    .as_deref()
+                    .is_some_and(|s| !s.trim().is_empty()),
+            "Model '{}': unsupported tool calls need a reason",
+            self.id
+        );
+        for check in &support.verified_with {
+            anyhow::ensure!(
+                self.is_local()
+                    && !check.version.trim().is_empty()
+                    && self.engine_plan().contains(&check.engine)
+                    && matches!(
+                        check.engine,
+                        EngineKind::LlamaServer | EngineKind::LlamaServerPrism
+                    ),
+                "Model '{}': invalid tool call engine verification",
+                self.id
+            );
+        }
+        Ok(())
     }
 
     pub fn thinking_control(&self) -> &'static str {
@@ -1045,6 +1113,21 @@ impl ModelConfig {
     }
 
     pub fn resolved_capabilities(&self) -> Vec<String> {
+        self.resolved_capabilities_with_engine(self.engine_plan().first().copied())
+    }
+
+    pub fn resolved_capabilities_with_engine(&self, engine: Option<EngineKind>) -> Vec<String> {
+        let mut caps = self.base_capabilities();
+        if self.structured_output_support.is_some() {
+            caps.retain(|c| !Self::is_structured_capability(c));
+            if self.supports_structured_output_with_engine(engine) {
+                caps.push("Structured Output".into());
+            }
+        }
+        caps
+    }
+
+    fn base_capabilities(&self) -> Vec<String> {
         if !self.tasks.is_empty() {
             let redundant = [
                 "chat",
@@ -1180,12 +1263,78 @@ impl ModelConfig {
     }
 
     pub fn supports_structured_output(&self) -> bool {
-        self.resolved_capabilities().iter().any(|c| {
-            c.eq_ignore_ascii_case("Structured Output")
-                || c.eq_ignore_ascii_case("Structured JSON")
-                || c.eq_ignore_ascii_case("Structured Output Mode")
-                || c.eq_ignore_ascii_case("Structured Extraction")
-        })
+        self.supports_structured_output_with_engine(self.engine_plan().first().copied())
+    }
+
+    fn is_structured_capability(c: &str) -> bool {
+        c.eq_ignore_ascii_case("Structured Output")
+            || c.eq_ignore_ascii_case("Structured JSON")
+            || c.eq_ignore_ascii_case("Structured Output Mode")
+            || c.eq_ignore_ascii_case("Structured Extraction")
+    }
+
+    pub fn supports_structured_output_with_engine(&self, engine: Option<EngineKind>) -> bool {
+        if let Some(support) = &self.structured_output_support {
+            return support.status == crate::audio_operations::SupportStatus::Supported
+                && self.is_local()
+                && std::path::Path::new(&self.model_path).is_file()
+                && self.tasks.iter().any(|task| task == "text-to-text")
+                && engine.is_some_and(|engine| {
+                    support.verified_with.iter().any(|v| v.engine == engine)
+                });
+        }
+        self.base_capabilities()
+            .iter()
+            .any(|c| Self::is_structured_capability(c))
+    }
+
+    pub fn validate_structured_output_support(&self) -> anyhow::Result<()> {
+        use crate::audio_operations::SupportStatus;
+        let Some(support) = &self.structured_output_support else {
+            return Ok(());
+        };
+        let legacy = self
+            .capabilities
+            .as_ref()
+            .is_some_and(|caps| caps.iter().any(|c| Self::is_structured_capability(c)));
+        anyhow::ensure!(
+            !(legacy && support.status != SupportStatus::Supported),
+            "Model '{}': structured output metadata conflicts with legacy capabilities",
+            self.id
+        );
+        anyhow::ensure!(
+            support.status != SupportStatus::Supported || !support.verified_with.is_empty(),
+            "Model '{}': structured output needs live engine verification",
+            self.id
+        );
+        anyhow::ensure!(
+            support.status == SupportStatus::Supported || support.verified_with.is_empty(),
+            "Model '{}': only supported structured output may have successful checks",
+            self.id
+        );
+        anyhow::ensure!(
+            support.status != SupportStatus::Unsupported
+                || support
+                    .reason
+                    .as_deref()
+                    .is_some_and(|s| !s.trim().is_empty()),
+            "Model '{}': unsupported structured output needs a reason",
+            self.id
+        );
+        for check in &support.verified_with {
+            anyhow::ensure!(
+                self.is_local()
+                    && !check.version.trim().is_empty()
+                    && self.engine_plan().contains(&check.engine)
+                    && matches!(
+                        check.engine,
+                        EngineKind::LlamaServer | EngineKind::LlamaServerPrism
+                    ),
+                "Model '{}': invalid structured output engine verification",
+                self.id
+            );
+        }
+        Ok(())
     }
 
     pub fn max_dimensions(&self) -> (u32, u32) {

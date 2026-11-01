@@ -565,6 +565,102 @@ fn primitive_catalog_roundtrip_keeps_tasks_and_engine_order() {
     assert!(!model.supports_tool_calls());
 }
 
+#[test]
+fn tool_call_evidence_roundtrips_and_respects_engine_and_conflicts() {
+    use crate::config::EngineKind;
+    let artifact = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let mut value = serde_json::json!({
+        "id": "fixture", "name": "Fixture", "tasks": ["text-to-text"],
+        "engine": ["llama-server", "llama-server-prism"],
+        "local": {"path": artifact.to_str().unwrap()},
+        "tool_call_support": {"status": "supported", "verified_with": [
+            {"engine": "llama-server", "version": "test version"}
+        ]}
+    });
+    let entry: crate::schema::ModelEntry = serde_json::from_value(value.clone()).unwrap();
+    let saved = serde_json::to_value(entry).unwrap();
+    assert_eq!(saved["tool_call_support"], value["tool_call_support"]);
+    let mut model = crate::config::ModelConfig::try_from(
+        serde_json::from_value::<crate::schema::ModelEntry>(saved).unwrap(),
+    )
+    .unwrap();
+    assert!(model.supports_tool_calls_with_engine(Some(EngineKind::LlamaServer)));
+    assert!(!model.supports_tool_calls_with_engine(Some(EngineKind::LlamaServerPrism)));
+    assert_eq!(
+        super::model_config_to_info(&model, &[], &[], None, None).tool_calls,
+        Some(true)
+    );
+    assert_eq!(
+        super::model_config_to_info(&model, &[], &[], None, Some(EngineKind::LlamaServerPrism))
+            .tool_calls,
+        Some(false)
+    );
+    model.model_path = artifact.join("missing").to_string_lossy().into_owned();
+    assert!(!model.supports_tool_calls());
+
+    value["tool_call_support"]["verified_with"] = serde_json::json!([]);
+    let entry = serde_json::from_value::<crate::schema::ModelEntry>(value.clone()).unwrap();
+    assert!(crate::config::ModelConfig::try_from(entry).is_err());
+    value["capabilities"] = serde_json::json!(["Tool Call"]);
+    value["tool_call_support"] = serde_json::json!({"status":"unsupported","reason":"policy"});
+    let entry = serde_json::from_value::<crate::schema::ModelEntry>(value).unwrap();
+    assert!(crate::config::ModelConfig::try_from(entry).is_err());
+}
+
+#[test]
+fn structured_output_evidence_controls_discovery_and_execution() {
+    use crate::config::EngineKind;
+    let artifact = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let mut value = serde_json::json!({
+        "id":"fixture", "name":"Fixture", "tasks":["text-to-text"],
+        "engine":["llama-server", "llama-server-prism"],
+        "local":{"path":artifact.to_str().unwrap()},
+        "structured_output_support":{"status":"supported", "verified_with":[{"engine":"llama-server", "version":"test version"}]}
+    });
+    let entry: crate::schema::ModelEntry = serde_json::from_value(value.clone()).unwrap();
+    let saved = serde_json::to_value(entry).unwrap();
+    assert_eq!(
+        saved["structured_output_support"],
+        value["structured_output_support"]
+    );
+    let mut model = crate::config::ModelConfig::try_from(
+        serde_json::from_value::<crate::schema::ModelEntry>(saved).unwrap(),
+    )
+    .unwrap();
+    assert!(model.supports_structured_output());
+    assert!(
+        super::model_config_to_info(&model, &[], &[], None, None)
+            .capabilities
+            .unwrap()
+            .contains(&"Structured Output".to_string())
+    );
+    assert!(!model.supports_structured_output_with_engine(Some(EngineKind::LlamaServerPrism)));
+    assert!(
+        !super::model_config_to_info(&model, &[], &[], None, Some(EngineKind::LlamaServerPrism))
+            .capabilities
+            .unwrap()
+            .contains(&"Structured Output".to_string())
+    );
+    model.model_path = artifact.join("missing").to_string_lossy().into_owned();
+    assert!(!model.supports_structured_output());
+    value["structured_output_support"]["verified_with"] = serde_json::json!([]);
+    assert!(
+        crate::config::ModelConfig::try_from(
+            serde_json::from_value::<crate::schema::ModelEntry>(value.clone()).unwrap()
+        )
+        .is_err()
+    );
+    value["capabilities"] = serde_json::json!(["Structured Output"]);
+    value["structured_output_support"] =
+        serde_json::json!({"status":"unsupported", "reason":"policy"});
+    assert!(
+        crate::config::ModelConfig::try_from(
+            serde_json::from_value::<crate::schema::ModelEntry>(value).unwrap()
+        )
+        .is_err()
+    );
+}
+
 #[tokio::test]
 async fn models_filter_matches_explicit_metadata_and_rejects_invalid_bounds() {
     let (router, state) = app(None);

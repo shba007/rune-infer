@@ -419,9 +419,43 @@
     },
     {
       "id": "lfm3-omni-2b",
+      "structured_output_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
+      },
+      "tool_call_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
+      },
       "audio_operations": {
-        "transcription": {"status": "supported", "verified_with": [{"engine": "llama-server", "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"}]},
-        "speech_generation": {"status": "supported", "verified_with": [{"engine": "llama-server", "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"}]}
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "llama-server",
+              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+            }
+          ]
+        },
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "llama-server",
+              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+            }
+          ]
+        }
       },
       "name": "LiquidAI LFM3 Omni 2B",
       "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
@@ -446,7 +480,7 @@
         "path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/LFM3-Omni-2B-Q8_0.gguf",
         "params": 1728801600,
         "bits_per_weight": 8.54,
-        "context_length": 4096,
+        "context_length": 32768,
         "gpu_layers": 99,
         "args": ""
       },
@@ -754,8 +788,24 @@
     {
       "id": "whisper-large-v3-full",
       "audio_operations": {
-        "transcription": {"status": "supported", "verified_with": [{"engine": "crispasr", "version": "version       : 0.8.49; git sha       : d9426437"}]},
-        "speech_translation": {"status": "supported", "verified_with": [{"engine": "crispasr", "version": "version       : 0.8.49; git sha       : d9426437"}]}
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "crispasr",
+              "version": "version       : 0.8.49; git sha       : d9426437"
+            }
+          ]
+        },
+        "speech_translation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "crispasr",
+              "version": "version       : 0.8.49; git sha       : d9426437"
+            }
+          ]
+        }
       },
       "name": "Whisper Large v3 Full",
       "description": "OpenAI Whisper Large v3 full model, converted locally to FP16 GGML for speech-to-text",
@@ -779,7 +829,15 @@
     {
       "id": "whisper-large-v3",
       "audio_operations": {
-        "transcription": {"status": "supported", "verified_with": [{"engine": "crispasr", "version": "version       : 0.8.49; git sha       : d9426437"}]}
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "crispasr",
+              "version": "version       : 0.8.49; git sha       : d9426437"
+            }
+          ]
+        }
       },
       "name": "Whisper Large v3",
       "description": "OpenAI Whisper Large v3 Turbo multilingual speech-to-text transcription with Silero VAD; speech translation remains unverified",
@@ -807,8 +865,19 @@
     {
       "id": "parakeet-tdt-0.6b-v3",
       "audio_operations": {
-        "transcription": {"status": "supported", "verified_with": [{"engine": "nemo-speech", "version": "nemo-speech 0.3.0"}]},
-        "speech_translation": {"status": "unsupported", "reason": "The configured Parakeet ASR model does not translate speech, and no NMT companion is configured."}
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "nemo-speech",
+              "version": "nemo-speech 0.3.0"
+            }
+          ]
+        },
+        "speech_translation": {
+          "status": "unsupported",
+          "reason": "The configured Parakeet ASR model does not translate speech, and no NMT companion is configured."
+        }
       },
       "name": "NVIDIA Parakeet TDT 0.6B v3",
       "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
@@ -837,7 +906,15 @@
     {
       "id": "bangla-asr",
       "audio_operations": {
-        "transcription": {"status": "supported", "verified_with": [{"engine": "crispasr", "version": "version       : 0.8.49; git sha       : d9426437"}]}
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "crispasr",
+              "version": "version       : 0.8.49; git sha       : d9426437"
+            }
+          ]
+        }
       },
       "name": "BanglaASR (Whisper Small Fine-tuned)",
       "description": "Fine-tuned Whisper Small ASR model achieving 4.58% WER on conversational Bengali speech",
@@ -865,7 +942,15 @@
     {
       "id": "indicwhisper-bengali",
       "audio_operations": {
-        "transcription": {"status": "supported", "verified_with": [{"engine": "crispasr", "version": "version       : 0.8.49; git sha       : d9426437"}]}
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "crispasr",
+              "version": "version       : 0.8.49; git sha       : d9426437"
+            }
+          ]
+        }
       },
       "name": "AI4Bharat IndicWhisper Bengali",
       "description": "Multilingual Whisper model fine-tuned for Indic speech-to-text transcription with Silero VAD",
@@ -915,13 +1000,25 @@
     {
       "id": "fish-audio-s2-pro",
       "audio_operations": {
-        "speech_generation": {"status": "supported", "verified_with": [{"engine": "audio-cpp", "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"}]}
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }
+          ]
+        }
       },
       "name": "Fish Audio S2 Pro",
       "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
       "capabilities": [],
-      "tasks": ["text-to-audio"],
-      "engine": ["audio-cpp"],
+      "tasks": [
+        "text-to-audio"
+      ],
+      "engine": [
+        "audio-cpp"
+      ],
       "local": {
         "path": "D:/Models/huggingface/hub/models--audio-cpp--audio.cpp-gguf/snapshots/e36610ac69b5262e914a52635324050bee8f1ad2/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf",
         "params": 4954823665,
@@ -934,13 +1031,25 @@
     {
       "id": "voxcpm2-audiocpp",
       "audio_operations": {
-        "speech_generation": {"status": "supported", "verified_with": [{"engine": "audio-cpp", "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"}]}
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }
+          ]
+        }
       },
       "name": "VoxCPM2 (audio.cpp)",
       "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
       "capabilities": [],
-      "tasks": ["text-to-audio"],
-      "engine": ["audio-cpp"],
+      "tasks": [
+        "text-to-audio"
+      ],
+      "engine": [
+        "audio-cpp"
+      ],
       "local": {
         "path": "D:/Models/huggingface/hub/models--audio-cpp--audio.cpp-gguf/snapshots/e36610ac69b5262e914a52635324050bee8f1ad2/VoxCPM2-GGUF/voxcpm2-q8_0.gguf",
         "params": 2384218498,
@@ -1063,7 +1172,15 @@
     {
       "id": "audio8-tts-preview-0.6b",
       "audio_operations": {
-        "speech_generation": {"status": "supported", "verified_with": [{"engine": "audio-cpp", "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"}]}
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }
+          ]
+        }
       },
       "name": "Audio8 TTS Preview 0.6B",
       "description": "Ultra-low-latency real-time voice synthesis preview model",

@@ -79,6 +79,10 @@ pub struct ModelEntry {
     #[serde(default)]
     pub audio_operations: crate::audio_operations::AudioOperations,
     #[serde(default)]
+    pub tool_call_support: Option<crate::audio_operations::OperationSupport>,
+    #[serde(default)]
+    pub structured_output_support: Option<crate::audio_operations::OperationSupport>,
+    #[serde(default)]
     pub aliases: Vec<String>,
     #[serde(default)]
     pub roles: Vec<String>,
@@ -108,6 +112,12 @@ impl Serialize for ModelEntry {
         map.serialize_entry("capabilities", &self.capabilities)?;
         if !self.audio_operations.is_empty() {
             map.serialize_entry("audio_operations", &self.audio_operations)?;
+        }
+        if let Some(support) = &self.tool_call_support {
+            map.serialize_entry("tool_call_support", support)?;
+        }
+        if let Some(support) = &self.structured_output_support {
+            map.serialize_entry("structured_output_support", support)?;
         }
         map.serialize_entry("max_context_length", &self.max_context_length)?;
         if self.tasks.is_empty() {
@@ -451,6 +461,8 @@ impl TryFrom<ModelEntry> for ModelConfig {
             capabilities: (!e.capabilities.is_empty()).then_some(e.capabilities),
             tasks: e.tasks,
             audio_operations: e.audio_operations,
+            tool_call_support: e.tool_call_support,
+            structured_output_support: e.structured_output_support,
             sampling: (sampling != SamplingConfig::default()).then_some(sampling),
             engine,
             lora: extra.lora,
@@ -459,6 +471,8 @@ impl TryFrom<ModelEntry> for ModelConfig {
             roles: e.roles,
         };
         model.validate()?;
+        model.validate_tool_call_support()?;
+        model.validate_structured_output_support()?;
         model
             .audio_operations
             .validate(&model.engine_plan())

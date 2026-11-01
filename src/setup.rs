@@ -350,6 +350,8 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
         capabilities: c.capabilities.clone(),
         tasks: Vec::new(),
         audio_operations: Default::default(),
+        tool_call_support: None,
+        structured_output_support: None,
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {
@@ -430,6 +432,8 @@ fn cloud_entry(c: &CloudChoice) -> ModelEntry {
         capabilities: c.model.catalog_capabilities(),
         tasks: Vec::new(),
         audio_operations: Default::default(),
+        tool_call_support: None,
+        structured_output_support: None,
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: None,
