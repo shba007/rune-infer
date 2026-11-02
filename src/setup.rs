@@ -139,6 +139,7 @@ pub fn install_engine(engine: EngineKind) -> Result<PathBuf, String> {
         EngineKind::WhisperCpp => WhisperCppEngine::ensure_binary_installed(),
         EngineKind::Needle => NeedleEngine::ensure_binary_installed(),
         EngineKind::Litert => crate::inference::engines::litert::ensure_runtime_installed(),
+        EngineKind::Onnx => crate::inference::engines::onnx::runtime::ensure_runtime_installed(),
         EngineKind::Encoder => return Err(
             "encoder is built in; external installation does not validate its inference support"
                 .into(),

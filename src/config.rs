@@ -548,6 +548,8 @@ pub fn interpolate_with(raw: &str, lookup: &dyn Fn(&str) -> Option<String>) -> R
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EngineKind {
+    /// ONNX Runtime object detection.
+    Onnx,
     /// LiteRT CompiledModel CPU adapter for reviewed .tflite artifacts.
     Litert,
     /// llama.cpp `llama-server` (upstream build): GGUF text and vision models.
@@ -573,6 +575,7 @@ pub enum EngineKind {
 impl EngineKind {
     pub fn as_str(self) -> &'static str {
         match self {
+            EngineKind::Onnx => "onnx",
             EngineKind::Litert => "litert",
             EngineKind::LlamaServer => "llama-server",
             EngineKind::LlamaServerPrism => "llama-server-prism",

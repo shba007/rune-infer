@@ -433,6 +433,11 @@ impl ModelRegistry {
         };
 
         let capabilities_str = model.resolved_capabilities().join(", ");
+        if kind == EngineKind::Onnx {
+            return Ok(Arc::new(crate::inference::engines::onnx::OnnxEngine::new(
+                model,
+            )?));
+        }
         if kind == EngineKind::Litert {
             return Ok(Arc::new(
                 crate::inference::engines::litert::LiteRtEngine::new(model)?,

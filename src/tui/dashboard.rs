@@ -865,11 +865,14 @@ fn discover_engines() -> Vec<EngineRow> {
         ("needle", "needle", "needle", false),
         ("whisper-cpp", "whisper-cpp", "whisper-cli", true),
         ("litert", "litert", "libLiteRt", false),
+        ("onnx", "onnxruntime", "onnxruntime", false),
     ];
     let mut rows: Vec<EngineRow> = definitions
         .into_iter()
         .map(|(name, directory, executable, version_supported)| {
-            let filename = if name == "litert" {
+            let filename = if name == "onnx" {
+                "onnxruntime.dll".into()
+            } else if name == "litert" {
                 "libLiteRt.dll".into()
             } else {
                 format!("{executable}{suffix}")
@@ -882,13 +885,14 @@ fn discover_engines() -> Vec<EngineRow> {
                 "nemo-speech" => &["NEMO_SPEECH_PATH"],
                 "whisper-cpp" => &["WHISPER_CPP_PATH"],
                 "litert" => &["LITERT_LIBRARY_PATH"],
+                "onnx" => &["ONNX_RUNTIME_LIBRARY_PATH"],
                 _ => &[],
             };
             let custom = custom_vars
                 .iter()
                 .find_map(std::env::var_os)
                 .map(PathBuf::from)
-                .filter(|p| name == "litert" || p.is_file());
+                .filter(|p| matches!(name, "litert" | "onnx") || p.is_file());
             let base = PathBuf::from("bin").join(directory);
             let direct = base.join(&filename);
             let managed = direct.is_file().then_some(direct).or_else(|| {
@@ -911,7 +915,7 @@ fn discover_engines() -> Vec<EngineRow> {
                     .or_else(|| on_path().map(|p| (p, false)))
             } else {
                 managed.map(|p| (p, true)).or_else(|| {
-                    if matches!(name, "needle" | "litert") {
+                    if matches!(name, "needle" | "litert" | "onnx") {
                         None
                     } else {
                         root.map(|p| (p, false))
@@ -924,9 +928,11 @@ fn discover_engines() -> Vec<EngineRow> {
                     let installed = path.is_file();
                     (path, managed, installed)
                 }
-                None => (base.join(&filename), name == "litert", false),
+                None => (base.join(&filename), matches!(name, "litert" | "onnx"), false),
             };
-            let version = if name == "litert" && installed {
+            let version = if name == "onnx" && installed {
+                crate::inference::engines::onnx::runtime::runtime_version(&path)
+            } else if name == "litert" && installed {
                 crate::inference::engines::litert::runtime_version(&path)
             } else if name == "needle" && installed && managed {
                 crate::inference::engines::needle::installed_revision(&path)
@@ -954,7 +960,9 @@ fn discover_engines() -> Vec<EngineRow> {
                 managed,
                 installed,
                 version,
-                latest: if name == "litert" {
+                latest: if name == "onnx" {
+                    "1.31.1 · pinned".into()
+                } else if name == "litert" {
                     "2.3.0 · pinned".into()
                 } else if managed || !installed {
                     "Checking…".into()
@@ -964,7 +972,11 @@ fn discover_engines() -> Vec<EngineRow> {
                 build_tag: None,
                 published_at: None,
                 gpu_upgrade: false,
-                check_detail: (name == "litert").then(|| "Pinned Windows x64 CPU + WebGPU/DXC runtime · GPU requires a parity-verified model export".into()),
+                check_detail: match name {
+                    "litert" => Some("Pinned Windows x64 CPU + WebGPU/DXC runtime · GPU requires a parity-verified model export".into()),
+                    "onnx" => Some("Pinned Windows x64 ONNX Runtime + CUDA 12/cuDNN · approximately 1.7 GB download".into()),
+                    _ => None,
+                },
             }
         })
         .collect();
@@ -991,7 +1003,7 @@ fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
             return;
         }
         for index in 0..rows.len() {
-            if rows[index].name == "litert" {
+            if matches!(rows[index].name, "litert" | "onnx") {
                 continue;
             }
             if rows[index].installed && !rows[index].managed {
@@ -1079,6 +1091,24 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
     let unavailable = |reason: &str| EngineAction::Unavailable(reason.into());
     if engine.name == "encoder" {
         return unavailable("Built in; no installation or update required");
+    }
+    if engine.name == "onnx" {
+        if os != "windows" || arch != "x86_64" {
+            return unavailable("ONNX Runtime installation currently supports Windows x64 only");
+        }
+        if !engine.managed {
+            return unavailable(
+                "External ONNX Runtime: remove ONNX_RUNTIME_LIBRARY_PATH to use the managed installation",
+            );
+        }
+        if !engine.installed || engine.version == "ONNX Runtime 1.31.1 CPU" {
+            return EngineAction::Install;
+        }
+        return if engine.version == "ONNX Runtime 1.31.1 CPU + CUDA" {
+            unavailable("Pinned ONNX CPU and CUDA components are installed")
+        } else {
+            unavailable("Existing ONNX Runtime is unverified; preserve it before reinstalling")
+        };
     }
     if engine.name == "litert" {
         if os != "windows" || arch != "x86_64" {
@@ -1182,6 +1212,7 @@ fn install_engine_kind(name: &str) -> Option<crate::config::EngineKind> {
         "needle" => EngineKind::Needle,
         "whisper-cpp" => EngineKind::WhisperCpp,
         "litert" => EngineKind::Litert,
+        "onnx" => EngineKind::Onnx,
         _ => return None,
     })
 }
@@ -1367,6 +1398,15 @@ fn release_status(engine: &EngineRow) -> &'static str {
     }
     if !engine.installed {
         return "Not installed";
+    }
+    if engine.name == "onnx" {
+        return if engine.version == "ONNX Runtime 1.31.1 CPU + CUDA" {
+            "Ready · CUDA + CPU"
+        } else if engine.version == "ONNX Runtime 1.31.1 CPU" {
+            "Ready · CPU"
+        } else {
+            "Unverified runtime"
+        };
     }
     if engine.name == "litert" {
         return if engine.version == "LiteRT 2.3.0 GPU + CPU" {
@@ -2980,6 +3020,53 @@ mod tests {
         assert!(
             next.load(Ordering::Relaxed),
             "quitting also cancels the active engine worker"
+        );
+    }
+
+    #[test]
+    fn onnx_runtime_install_requires_verified_managed_windows_bundle() {
+        let mut row = EngineRow {
+            name: "onnx",
+            path: "bin/onnxruntime/onnxruntime.dll".into(),
+            managed: true,
+            installed: false,
+            version: "Not installed".into(),
+            latest: "1.31.1 · pinned".into(),
+            build_tag: None,
+            published_at: None,
+            gpu_upgrade: false,
+            check_detail: None,
+        };
+        assert_eq!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Install
+        );
+        assert!(matches!(
+            engine_action_on(&row, "linux", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        row.installed = true;
+        row.version = "ONNX Runtime 1.31.1 CPU".into();
+        assert_eq!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Install
+        );
+        assert_eq!(release_status(&row), "Ready · CPU");
+        row.version = "ONNX Runtime 1.31.1 CPU + CUDA".into();
+        assert_eq!(release_status(&row), "Ready · CUDA + CPU");
+        row.version = "Unknown".into();
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        row.managed = false;
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
+        assert_eq!(
+            install_engine_kind("onnx"),
+            Some(crate::config::EngineKind::Onnx)
         );
     }
 

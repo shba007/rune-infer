@@ -1,0 +1,25 @@
+$kind: http-request
+name: Detect Objects with YOLO26
+description: |-
+  Detect objects using a configured YOLO26 ONNX model. Set the model ID to the
+  ID in the Infer catalog and replace the image URL or use a base64 data URI.
+  This example requests bounding boxes only. Normalized box coordinates use
+  the center, width, and height; bbox_pixels uses the image-space corners.
+  execution_provider reports CPU or CUDA registration with CPU operator fallback.
+url: '{{base_url}}/v1/images/detections'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "yolo26x",
+      "image": "https://ultralytics.com/images/bus.jpg",
+      "confidence_threshold": 0.25,
+      "features": ["boxes"]
+    }
+order: 3301

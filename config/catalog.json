@@ -356,6 +356,53 @@
       }
     },
     {
+      "id": "qwen3.5-4b-q4",
+      "name": "Qwen3.5 4B Q4",
+      "description": "Local image and text model; basic tool calls tested. Screen coordinate accuracy is not established.",
+      "capabilities": [],
+      "structured_output_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
+      },
+      "tool_call_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
+      },
+      "max_context_length": 262144,
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "sampling": {
+        "temperature": 0.0,
+        "max_tokens": 512
+      },
+      "local": {
+        "path": "D:/Models/rune-infer-evaluation-qwen35/Qwen3.5-4B-Q4_K_M.gguf",
+        "params": 4000000000,
+        "bits_per_weight": 5.6,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "-fa on"
+      },
+      "extra": {
+        "mmproj_path": "D:/Models/rune-infer-evaluation-qwen35/mmproj-Qwen3.5-4B-f16.gguf"
+      }
+    },
+    {
       "id": "qwen3.5-0.8b",
       "name": "Qwen3.5 0.8B",
       "description": "Qwen3.5 0.8B reasoning model",
@@ -522,7 +569,16 @@
         {
           "engine": "sd-server",
           "version": "stable-diffusion.cpp version unknown, commit c6dfa9d",
-          "counts": [3, 4, 5, 6, 7, 8, 9, 10]
+          "counts": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
         }
       ],
       "name": "Qwen-Image-2.1 7B",
@@ -677,6 +733,122 @@
         "default_steps": 50,
         "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.5-9B-GGUF/snapshots/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf",
         "vae_path": "D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/vae/diffusion_pytorch_model.safetensors"
+      }
+    },
+    {
+      "id": "yolo26x",
+      "name": "YOLO26x Object Detection",
+      "description": "YOLO26x COCO object detection, reviewed ONNX export with embedded non-maximum suppression (AGPL-3.0).",
+      "capabilities": [],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Models/litert/yolo26x_detect.onnx",
+        "gpu_layers": 99
+      }
+    },
+    {
+      "id": "yolo26x-pose",
+      "name": "YOLO26x Pose Estimation",
+      "description": "YOLO26x COCO human pose estimation with 17 keypoints; reviewed ONNX export (AGPL-3.0).",
+      "capabilities": [
+        "Pose Estimation"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Models/litert/yolo26x-pose.onnx",
+        "gpu_layers": 99
+      }
+    },
+    {
+      "id": "yolo26x-seg",
+      "name": "YOLO26x Instance Segmentation",
+      "description": "YOLO26x COCO instance segmentation with per-object masks; reviewed ONNX export (AGPL-3.0).",
+      "capabilities": [
+        "Instance Segmentation"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Models/litert/yolo26x-seg.onnx",
+        "gpu_layers": 99
+      }
+    },
+    {
+      "id": "yolo26x-obb",
+      "name": "YOLO26x Oriented Bounding Boxes",
+      "description": "YOLO26x oriented detection for 15 DOTA aerial-image classes; reviewed ONNX export (AGPL-3.0).",
+      "capabilities": [
+        "Oriented Bounding Boxes"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Models/litert/yolo26x-obb.onnx",
+        "gpu_layers": 99
+      }
+    },
+    {
+      "id": "yolo26x-sem-ade20k",
+      "name": "YOLO26x Semantic Segmentation ADE20K",
+      "description": "YOLO26x semantic segmentation for 150 ADE20K scene classes; locally exported ONNX model (AGPL-3.0).",
+      "capabilities": [
+        "Semantic Segmentation"
+      ],
+      "tasks": [
+        "image-to-segmentation"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Models/litert/yolo26x-sem-ade20k.onnx",
+        "gpu_layers": 99
+      }
+    },
+    {
+      "id": "z-image-turbo-q8-0",
+      "name": "Z-Image Turbo 6B Q8_0",
+      "description": "Z-Image Turbo text-to-image generation using the local Qwen3 text encoder and VAE.",
+      "capabilities": [],
+      "max_context_length": null,
+      "tasks": [
+        "text-to-image"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "local": {
+        "path": "D:/Models/huggingface/hub/models--unsloth--Z-Image-Turbo-GGUF/snapshots/b40f712c569ecfff42f2307dcc43399ae1d71318/z-image-turbo-Q8_0.gguf",
+        "params": 6000000000,
+        "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa"
+      },
+      "extra": {
+        "default_cfg_scale": 1.0,
+        "default_sample_method": "euler",
+        "default_steps": 8,
+        "text_encoder_path": "D:/Models/huggingface/hub/models--Tongyi-MAI--Z-Image/snapshots/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder",
+        "vae_path": "D:/Models/huggingface/hub/models--Tongyi-MAI--Z-Image/snapshots/04cc4abb7c5069926f75c9bfde9ef43d49423021/vae/diffusion_pytorch_model.safetensors"
       }
     },
     {

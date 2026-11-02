@@ -32,6 +32,7 @@ pub(crate) fn install_engine(
         EngineKind::Needle => "needle",
         EngineKind::Encoder => return Err("Encoder is built in and uses synthetic output".into()),
         EngineKind::Litert => "litert",
+        EngineKind::Onnx => "onnxruntime",
     };
     if !cfg!(any(
         windows,
@@ -62,6 +63,16 @@ pub(crate) fn install_engine(
             emit("Installing pinned LiteRT WebGPU and DXC sidecars".into());
             crate::setup::install_engine(kind).map_err(|error| error.to_string())?;
             return Ok("Installed verified LiteRT GPU + CPU runtime".into());
+        }
+    }
+    if kind == EngineKind::Onnx && std::env::var_os("ONNX_RUNTIME_LIBRARY_PATH").is_none() {
+        let current = PathBuf::from("bin/onnxruntime/onnxruntime.dll");
+        if super::onnx::runtime::runtime_version(&current).as_deref()
+            == Some("ONNX Runtime 1.31.1 CPU")
+        {
+            emit("Installing pinned ONNX CUDA dependencies".into());
+            crate::setup::install_engine(kind).map_err(|error| error.to_string())?;
+            return Ok("Installed verified ONNX CPU + CUDA runtime".into());
         }
     }
     stage_engine_install(
@@ -106,6 +117,9 @@ fn stage_engine_install(
             match kind {
                 EngineKind::Needle => "Checking approved Needle distribution and SHA-256",
                 EngineKind::Litert => "Checking pinned LiteRT 2.3.0 CPU + GPU runtime and SHA-256",
+                EngineKind::Onnx => {
+                    "Checking pinned ONNX Runtime 1.31.1 and NVIDIA CUDA 12 dependencies"
+                }
                 _ => "Checking release · stable preferred",
             }
             .into(),
@@ -209,6 +223,7 @@ fn incomplete_installation(destination: &Path, kind: EngineKind) -> UpdateResult
         EngineKind::Needle => "needle",
         EngineKind::Encoder => return Err("Encoder is built in".into()),
         EngineKind::Litert => "libLiteRt.dll",
+        EngineKind::Onnx => "onnxruntime.dll",
     };
     if [executable.to_string(), format!("{executable}.exe")]
         .iter()
@@ -310,6 +325,12 @@ fn publish_new_engine(source: &Path, destination: &Path) -> std::io::Result<()> 
 }
 
 fn validate_install_binary(kind: EngineKind, path: &Path) -> UpdateResult<()> {
+    if kind == EngineKind::Onnx {
+        return (super::onnx::runtime::runtime_version(path).as_deref()
+            == Some("ONNX Runtime 1.31.1 CPU + CUDA"))
+        .then_some(())
+        .ok_or_else(|| "ONNX Runtime bundle is incomplete or unverified".into());
+    }
     if kind == EngineKind::Litert {
         return super::litert::validate_runtime(path).map_err(|e| e.to_string());
     }

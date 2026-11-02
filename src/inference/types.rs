@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InferenceTaskRequest {
+    ImageSegmentation {
+        model: Option<String>,
+        image_bytes: Vec<u8>,
+    },
     ImageDepth {
         model: Option<String>,
         image_bytes: Vec<u8>,
@@ -189,6 +193,7 @@ pub enum InferenceTaskRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum InferenceTaskResponse {
+    Segmentation(crate::types::ImageSegmentationResponse),
     Depth(crate::types::ImageDepthResponse),
     ToolCall {
         content: Option<String>,

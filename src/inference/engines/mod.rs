@@ -6,6 +6,7 @@ pub mod litert;
 pub mod llama_server;
 pub mod needle;
 pub mod nemo_speech;
+pub mod onnx;
 pub(crate) mod release_cache;
 pub mod sd_server;
 pub mod whisper;

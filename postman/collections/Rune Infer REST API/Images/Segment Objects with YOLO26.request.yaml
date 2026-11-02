@@ -1,0 +1,27 @@
+$kind: http-request
+name: Segment Objects with YOLO26
+description: |-
+  Detect objects and return each instance mask as a base64 PNG data URI.
+  Masks are binary grayscale images at the original image dimensions.
+  YOLO26x segmentation weights are licensed under AGPL-3.0.
+  Export source: https://huggingface.co/unileon-robotics/YOLO26-ONNX/tree/e046fc5125ee6b579f1801f0b6df68a60b949c42
+  SHA-256: c815dd6377a436a3c453c435a8da6b88c5136135148304750aa9d8c2300eb25d
+  Requests exceeding 64 million total mask pixels are rejected.
+url: '{{base_url}}/v1/images/detections'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "yolo26x-seg",
+      "image": "https://ultralytics.com/images/bus.jpg",
+      "confidence_threshold": 0.25,
+      "iou_threshold": 0.45,
+      "features": ["boxes", "masks"]
+    }
+order: 3303

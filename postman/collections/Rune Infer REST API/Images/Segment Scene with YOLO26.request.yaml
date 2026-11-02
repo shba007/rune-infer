@@ -1,0 +1,25 @@
+$kind: http-request
+name: Segment Scene with YOLO26
+description: |-
+  Produces a semantic class map for the 150 ADE20K scene classes. class_map is
+  a grayscale PNG data URI whose pixel values are class IDs; classes maps each
+  ID present in the image to its label. The returned width and height describe
+  the decoded input image. This model is licensed under AGPL-3.0.
+  Official checkpoint SHA-256: aa51833f1aa5dc73b378d7ba99f914ef9fa82e434cb23d7b1705dd24bd33b621
+  Local ONNX export SHA-256: 3740e49cd9150fac97a6b6fdb610b66e6d522b816c37c3fbb1a7642fe51efef0
+  Export: Ultralytics 8.4.198, PyTorch 2.15.0 CPU, ONNX 1.20.1, opset 17, 640x640, simplify=false.
+url: '{{base_url}}/v1/images/segmentations'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "yolo26x-sem-ade20k",
+      "image": "https://ultralytics.com/images/bus.jpg"
+    }
+order: 3305

@@ -1471,6 +1471,29 @@ pub struct DetectObjectsRequest {
     pub features: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageSegmentationRequest {
+    pub model: String,
+    pub image: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticClass {
+    pub id: u8,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageSegmentationResponse {
+    pub model: String,
+    pub execution_provider: String,
+    pub width: u32,
+    pub height: u32,
+    /// Base64 PNG data URI, grayscale pixel values are class IDs.
+    pub class_map: String,
+    pub classes: Vec<SemanticClass>,
+}
+
 /// Bounding box normalized between 0.0 and 1.0 (YOLO format).
 /// NOTE: `x` and `y` represent the CENTRE of the bounding box, not the top-left corner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1519,6 +1542,14 @@ pub struct DetectionAttributes {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectionOrientedBox {
+    /// Four image-space pixel corners, ordered around the rectangle. Values may lie outside the image.
+    pub corners_pixels: [[f64; 2]; 4],
+    /// Clockwise rotation of the predicted width edge from the positive x-axis, in radians.
+    pub angle_radians: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionItem {
     pub object: String,
     pub index: usize,
@@ -1527,6 +1558,8 @@ pub struct DetectionItem {
     #[serde(rename = "box")]
     pub box_: DetectionBox,
     pub bbox_pixels: DetectionBboxPixels,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oriented_box: Option<DetectionOrientedBox>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mask: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1541,6 +1574,8 @@ pub struct DetectObjectsResponse {
     pub object: String,
     pub created: u64,
     pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_provider: Option<String>,
     pub data: Vec<DetectionItem>,
     pub usage: DetectObjectsUsage,
 }

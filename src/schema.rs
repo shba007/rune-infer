@@ -214,7 +214,8 @@ pub fn allowed_extra_keys(kind: EngineKind) -> &'static [&'static str] {
             "max_resolution",
             "lora",
         ],
-        EngineKind::AudioCpp
+        EngineKind::Onnx
+        | EngineKind::AudioCpp
         | EngineKind::NemoSpeech
         | EngineKind::Crispasr
         | EngineKind::WhisperCpp
@@ -288,6 +289,7 @@ pub(crate) fn valid_task(task: &str) -> bool {
                     | "detection"
                     | "moderation"
                     | "depth"
+                    | "segmentation"
             ) && seen.insert(kind)
         })
     })

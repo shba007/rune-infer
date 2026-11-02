@@ -1,0 +1,29 @@
+$kind: http-request
+name: Detect Oriented Objects with YOLO26
+description: |-
+  Detect objects in aerial images using the 15 DOTA classes. Each detection
+  includes an axis-aligned box and oriented_box with four image-pixel corners
+  ordered around the rectangle, plus a clockwise angle in radians from the
+  positive x-axis. Corners may lie outside the image. IoU threshold uses
+  class-aware rotated rectangle intersection-over-union.
+  Weights are AGPL-3.0 licensed; export SHA-256:
+  565c3c7f1611027b509d6df2b81a8abbb2d3f3b004f84c17607545394458bfec
+  Source: https://huggingface.co/unileon-robotics/YOLO26-ONNX/tree/e046fc5125ee6b579f1801f0b6df68a60b949c42
+url: '{{base_url}}/v1/images/detections'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "yolo26x-obb",
+      "image": "https://ultralytics.com/images/boats.jpg",
+      "confidence_threshold": 0.25,
+      "iou_threshold": 0.45,
+      "features": ["boxes", "oriented_boxes"]
+    }
+order: 3304

@@ -54,6 +54,15 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Command {
     #[command(hide = true)]
+    OnnxWorker {
+        #[arg(long)]
+        runtime: std::path::PathBuf,
+        #[arg(long)]
+        model: std::path::PathBuf,
+        #[arg(long)]
+        cpu: bool,
+    },
+    #[command(hide = true)]
     LitertWorker {
         #[arg(long)]
         runtime: std::path::PathBuf,
@@ -91,6 +100,14 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    if let Some(Command::OnnxWorker {
+        runtime,
+        model,
+        cpu,
+    }) = &args.command
+    {
+        return rune_infer::inference::engines::onnx::worker(runtime, model, *cpu);
+    }
     if let Some(Command::LitertWorker { runtime, model }) = &args.command {
         return rune_infer::inference::engines::litert::native::run(runtime, model);
     }

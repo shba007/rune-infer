@@ -115,6 +115,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/images/variations", post(images::image_variation_handler))
         .route("/images/captions", post(images::image_caption_handler))
         .route("/images/detections", post(images::detect_objects_handler))
+        .route(
+            "/images/segmentations",
+            post(images::image_segmentation_handler),
+        )
         .route("/images/embeddings", post(images::image_embeddings_handler))
         .route("/images/recognize", post(images::recognize_objects_handler))
         .route("/images/upscales", post(images::image_upscale_handler))

@@ -15,6 +15,10 @@ pub(super) struct Requirements {
     llama_audio_error: Option<&'static str>,
     audiocpp_error: Option<&'static str>,
     sd_edit_error: Option<&'static str>,
+    onnx_detection_error: Option<&'static str>,
+    onnx_pose_error: Option<&'static str>,
+    onnx_segmentation_error: Option<&'static str>,
+    onnx_oriented_error: Option<&'static str>,
     image_references: Option<(usize, bool)>,
 }
 
@@ -83,6 +87,10 @@ impl Requirements {
             llama_audio_error: None,
             audiocpp_error: None,
             sd_edit_error: None,
+            onnx_detection_error: None,
+            onnx_pose_error: None,
+            onnx_segmentation_error: None,
+            onnx_oriented_error: None,
             image_references: None,
         }
     }
@@ -97,6 +105,7 @@ impl Requirements {
         use InferenceTaskRequest::*;
         let mut requirements = match task {
             ImageDepth { .. } => Self::new(&["image"], "depth", "depth"),
+            ImageSegmentation { .. } => Self::new(&["image"], "segmentation", "segmentation"),
             ToolCall {
                 prompt,
                 images,
@@ -164,6 +173,14 @@ impl Requirements {
         requirements.audiocpp_error = crate::inference::engines::audio::validate_task(task).err();
         requirements.sd_edit_error =
             crate::inference::engines::sd_server::edit::validate_task(task).err();
+        requirements.onnx_detection_error =
+            crate::inference::engines::onnx::validate_task(task, false).err();
+        requirements.onnx_pose_error =
+            crate::inference::engines::onnx::validate_task(task, true).err();
+        requirements.onnx_segmentation_error =
+            crate::inference::engines::onnx::validate_segmentation_task(task).err();
+        requirements.onnx_oriented_error =
+            crate::inference::engines::onnx::validate_oriented_task(task).err();
         if let ImageEdit { images, mask, .. } = task {
             requirements.image_references = Some((images.len(), mask.is_some()));
         }
@@ -287,6 +304,10 @@ impl Requirements {
                     self.operation == "chat" && self.inputs.iter().all(|input| *input == "text")
                 }
                 Encoder => false,
+                Onnx => {
+                    matches!(self.operation, "detection" | "segmentation")
+                        && self.inputs == ["image"]
+                }
                 Litert => self.operation == "depth",
             };
             if !implemented {
@@ -294,6 +315,24 @@ impl Requirements {
                     StatusCode::BAD_REQUEST,
                     "engine_task_unsupported",
                     format!("Engine '{engine}' does not implement {}", self.operation),
+                );
+            }
+            if engine == Onnx
+                && let Some(message) = if crate::inference::engines::onnx::declares_oriented(model)
+                {
+                    self.onnx_oriented_error
+                } else if crate::inference::engines::onnx::declares_segmentation(model) {
+                    self.onnx_segmentation_error
+                } else if crate::inference::engines::onnx::declares_pose(model) {
+                    self.onnx_pose_error
+                } else {
+                    self.onnx_detection_error
+                }
+            {
+                return refuse(
+                    StatusCode::BAD_REQUEST,
+                    "onnx_detection_option_unsupported",
+                    message.into(),
                 );
             }
             if engine == AudioCpp

@@ -1,0 +1,25 @@
+$kind: http-request
+name: Estimate Human Pose with YOLO26
+description: |-
+  Detect people and estimate their 17 COCO keypoints using the configured
+  YOLO26x pose model. Each pose point's x and y coordinates are normalized
+  against the source image width and height; confidence is between 0 and 1.
+  The response also contains normalized boxes and image-space pixel boxes.
+url: '{{base_url}}/v1/images/detections'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "yolo26x-pose",
+      "image": "https://ultralytics.com/images/bus.jpg",
+      "confidence_threshold": 0.25,
+      "iou_threshold": 0.45,
+      "features": ["boxes", "keypoints"]
+    }
+order: 3302

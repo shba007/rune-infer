@@ -74,6 +74,7 @@ name = "gateway_overhead"
 harness = false
 
 [target.'cfg(windows)'.dependencies]
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "cuda", "api-31"] }
 windows-sys = { version = "0.59", features = [
 	"Win32_System_JobObjects",
 	"Win32_Foundation",

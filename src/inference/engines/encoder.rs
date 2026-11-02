@@ -427,6 +427,7 @@ impl InferenceEngine for EncoderEngine {
                         x_max: 608,
                         y_max: 407,
                     },
+                    oriented_box: None,
                     mask: Some(format!(
                         "data:image/png;base64,{}",
                         base64::engine::general_purpose::STANDARD
@@ -468,6 +469,7 @@ impl InferenceEngine for EncoderEngine {
                         object: "list".to_string(),
                         created,
                         model: active_model,
+                        execution_provider: None,
                         data: vec![det],
                         usage: DetectObjectsUsage {
                             image_width: 1000,
