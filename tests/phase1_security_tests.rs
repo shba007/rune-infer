@@ -72,6 +72,12 @@ async fn test_audio_upload_filename_path_traversal_sanitized() {
         "tasks": ["audio-to-text"],
         "capabilities": ["Speech-to-Text"],
         "engine": { "supported": ["audio-cpp"], "preferred": "audio-cpp" },
+        "audio_operations": {
+            "transcription": {
+                "status": "supported",
+                "verified_with": [{ "engine": "audio-cpp", "version": "transport fixture" }]
+            }
+        },
         "sampling": {},
         "local": {
             "path": "Cargo.toml",
