@@ -184,6 +184,61 @@ pub struct SdServerEngine {
     _process: Arc<Mutex<ProcessGuard>>,
     default_steps: u32,
     default_cfg: f32,
+    diagnostics: Arc<Mutex<SdDiagnostics>>,
+    execution_lock: Mutex<()>,
+}
+
+#[derive(Default)]
+struct SdDiagnostics {
+    fatal: Option<String>,
+    weight_failures: Vec<String>,
+    prefix_retries: usize,
+}
+
+impl SdDiagnostics {
+    fn observe(&mut self, line: &str) {
+        if weight_preparation_failure(line) {
+            self.weight_failures.push(line.to_owned());
+        }
+        if prefix_cache_retry(line) {
+            self.prefix_retries += 1;
+        }
+    }
+}
+
+fn prefix_cache_retry(line: &str) -> bool {
+    line.starts_with("[W] Qwen Image 2.1: insufficient memory for prefix caching; retrying without it for this sampling run")
+        && line.contains("qwen_image_2_1.hpp:")
+}
+
+fn weight_preparation_failure(line: &str) -> bool {
+    (line.contains("[E]") || line.contains("[ERROR"))
+        && line.contains("failed during weight preparation")
+}
+
+fn runtime_failure(diagnostics: &Mutex<SdDiagnostics>) -> Option<String> {
+    diagnostics
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .fatal
+        .clone()
+}
+
+fn checked_result<T>(
+    diagnostics: &Mutex<SdDiagnostics>,
+    result: Result<T, Box<dyn Error>>,
+) -> Result<T, Box<dyn Error>> {
+    let mut state = diagnostics.lock().unwrap_or_else(|p| p.into_inner());
+    if state.weight_failures.len() > state.prefix_retries && state.fatal.is_none() {
+        state.fatal = Some(format!(
+            "sd-server failed during weight preparation: {}. Unload and reload the model before retrying; check available GPU memory.",
+            state.weight_failures[0]
+        ));
+    }
+    match &state.fatal {
+        Some(error) => Err(error.clone().into()),
+        None => result,
+    }
 }
 
 impl SdServerEngine {
@@ -206,7 +261,7 @@ impl SdServerEngine {
             .arg("127.0.0.1")
             .arg("--listen-port")
             .arg(port.to_string())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
         if let Some(ref llm) = model.text_encoder_path {
@@ -254,14 +309,36 @@ impl SdServerEngine {
         })?;
 
         let stderr_pipe = child.stderr.take();
+        let stdout_pipe = child.stdout.take();
         let last_stderr_lines = Arc::new(Mutex::new(Vec::new()));
+        let diagnostics = Arc::new(Mutex::new(SdDiagnostics::default()));
+        let guard = ProcessGuard::new(child, format!("sd-server-{}", model.id));
+        if let Some(pipe) = stdout_pipe {
+            let diagnostics = diagnostics.clone();
+            std::thread::spawn(move || {
+                for line in std::io::BufReader::new(pipe).lines().map_while(Result::ok) {
+                    if prefix_cache_retry(&line) {
+                        tracing::warn!("[sd-server] {line}");
+                        diagnostics
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .observe(&line);
+                    }
+                }
+            });
+        }
         if let Some(pipe) = stderr_pipe {
             let lines_clone = last_stderr_lines.clone();
+            let diagnostics = diagnostics.clone();
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
                 for line in reader.lines().map_while(Result::ok) {
                     // Stream logs so you can see live progress and errors
                     tracing::info!("[sd-server] {}", line);
+                    diagnostics
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .observe(&line);
                     let mut l = lines_clone.lock().unwrap();
                     if l.len() >= 30 {
                         l.remove(0);
@@ -271,7 +348,6 @@ impl SdServerEngine {
             });
         }
 
-        let guard = ProcessGuard::new(child, format!("sd-server-{}", model.id));
         Self::wait_for_server(port, &guard, &last_stderr_lines)?;
 
         let client = reqwest::blocking::Client::builder()
@@ -287,6 +363,8 @@ impl SdServerEngine {
             _process: guard,
             default_steps: steps,
             default_cfg: cfg,
+            diagnostics,
+            execution_lock: Mutex::new(()),
         })
     }
 
@@ -453,7 +531,19 @@ impl InferenceEngine for SdServerEngine {
         task: &InferenceTaskRequest,
         _on_token: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<InferenceOutput, Box<dyn Error>> {
-        match task {
+        let _execution = self
+            .execution_lock
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(error) = runtime_failure(&self.diagnostics) {
+            return Err(error.into());
+        }
+        {
+            let mut state = self.diagnostics.lock().unwrap_or_else(|p| p.into_inner());
+            state.weight_failures.clear();
+            state.prefix_retries = 0;
+        }
+        let result = (|| match task {
             InferenceTaskRequest::ImageEdit { .. } => self.execute_edit(task),
             InferenceTaskRequest::ImageGeneration {
                 prompt,
@@ -581,13 +671,53 @@ impl InferenceEngine for SdServerEngine {
                 })
             }
             _ => Err("SdServerEngine only supports ImageGeneration tasks".into()),
+        })();
+        let result = checked_result(&self.diagnostics, result);
+        if runtime_failure(&self.diagnostics).is_some() {
+            let _ = self
+                ._process
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .terminate();
         }
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weight_preparation_error_requires_a_matching_recovery() {
+        let failure = "[E] qwen_image_2_1 segment 23/34 (qwen_image_2_1.transformer_blocks.21) failed during weight preparation --- ggml_runner.cpp:933";
+        assert!(weight_preparation_failure(failure));
+        assert!(weight_preparation_failure(
+            "[ERROR] model failed during weight preparation"
+        ));
+        assert!(!weight_preparation_failure(
+            "[W] retrying weight preparation"
+        ));
+        let state = Mutex::new(SdDiagnostics::default());
+        assert_eq!(
+            checked_result(&state, Ok::<_, Box<dyn Error>>(200)).unwrap(),
+            200
+        );
+        state.lock().unwrap().observe(failure);
+        for response in [Ok(200), Err("connection closed".into())] {
+            let error = checked_result(&state, response).unwrap_err().to_string();
+            assert!(error.contains("failed during weight preparation"));
+        }
+        let recovered = Mutex::new(SdDiagnostics::default());
+        recovered.lock().unwrap().observe("[W] Qwen Image 2.1: insufficient memory for prefix caching; retrying without it for this sampling run --- qwen_image_2_1.hpp:585");
+        recovered.lock().unwrap().observe(failure);
+        assert_eq!(
+            checked_result(&recovered, Ok::<_, Box<dyn Error>>(200)).unwrap(),
+            200
+        );
+        recovered.lock().unwrap().observe(failure);
+        assert!(checked_result(&recovered, Ok::<_, Box<dyn Error>>(200)).is_err());
+    }
 
     #[test]
     fn sd_packages_match_platform_and_pair_cuda_dependencies_exactly() {

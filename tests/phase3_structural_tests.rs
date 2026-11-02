@@ -118,6 +118,7 @@ async fn test_runtime_catalog_hot_reloading() {
         audio_operations: Default::default(),
         tool_call_support: None,
         structured_output_support: None,
+        image_reference_checks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {
@@ -161,6 +162,7 @@ async fn test_runtime_catalog_hot_reloading() {
         audio_operations: Default::default(),
         tool_call_support: None,
         structured_output_support: None,
+        image_reference_checks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {

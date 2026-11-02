@@ -83,6 +83,8 @@ pub struct ModelEntry {
     #[serde(default)]
     pub structured_output_support: Option<crate::audio_operations::OperationSupport>,
     #[serde(default)]
+    pub image_reference_checks: Vec<crate::config::ImageReferenceVerification>,
+    #[serde(default)]
     pub aliases: Vec<String>,
     #[serde(default)]
     pub roles: Vec<String>,
@@ -118,6 +120,9 @@ impl Serialize for ModelEntry {
         }
         if let Some(support) = &self.structured_output_support {
             map.serialize_entry("structured_output_support", support)?;
+        }
+        if !self.image_reference_checks.is_empty() {
+            map.serialize_entry("image_reference_checks", &self.image_reference_checks)?;
         }
         map.serialize_entry("max_context_length", &self.max_context_length)?;
         if self.tasks.is_empty() {
@@ -463,6 +468,7 @@ impl TryFrom<ModelEntry> for ModelConfig {
             audio_operations: e.audio_operations,
             tool_call_support: e.tool_call_support,
             structured_output_support: e.structured_output_support,
+            image_reference_checks: e.image_reference_checks,
             sampling: (sampling != SamplingConfig::default()).then_some(sampling),
             engine,
             lora: extra.lora,
@@ -473,6 +479,7 @@ impl TryFrom<ModelEntry> for ModelConfig {
         model.validate()?;
         model.validate_tool_call_support()?;
         model.validate_structured_output_support()?;
+        model.validate_image_reference_checks()?;
         model
             .audio_operations
             .validate(&model.engine_plan())

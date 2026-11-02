@@ -518,15 +518,23 @@
     },
     {
       "id": "qwen-image-2.1",
+      "image_reference_checks": [
+        {
+          "engine": "sd-server",
+          "version": "stable-diffusion.cpp version unknown, commit c6dfa9d",
+          "counts": [3, 4, 5, 6, 7, 8, 9, 10]
+        }
+      ],
       "name": "Qwen-Image-2.1 7B",
-      "description": "Qwen-Image-2.1 7B Single-Stream DiT foundation model with native 2K rendering, RGBA transparency, and image editing",
+      "description": "Qwen-Image-2.1 7B with native 2K rendering, RGBA transparency, live-verified instruction edits and image variations, up to ten unmasked references and two references with alpha masks",
       "capabilities": [
-        "Image Editing",
         "Transparency (RGBA)"
       ],
       "max_context_length": null,
       "tasks": [
-        "text-to-image"
+        "text-to-image",
+        "text-image-to-image",
+        "image-to-image"
       ],
       "engine": [
         "sd-server"
@@ -558,7 +566,9 @@
       ],
       "max_context_length": null,
       "tasks": [
-        "text-to-image"
+        "text-to-image",
+        "text-image-to-image",
+        "image-to-image"
       ],
       "engine": [
         "sd-server"

@@ -42,8 +42,8 @@ pub(crate) fn validate_task(task: &InferenceTaskRequest) -> Result<(), &'static 
     if prompt.trim().is_empty() {
         return Err("Image edits require a nonempty prompt");
     }
-    if images.is_empty() || images.len() > 2 {
-        return Err("Image edits currently support one or two verified source images");
+    if images.is_empty() || images.len() > 10 {
+        return Err("Image edits require between one and ten source images");
     }
     if n.unwrap_or(1) != 1 {
         return Err("This edit cycle supports n=1 only");
@@ -339,11 +339,11 @@ mod tests {
         }
         let mut value = edit();
         let image = value["images"][0].clone();
-        for count in 1..=4 {
+        for count in 1..=11 {
             value["images"] = json!(vec![image.clone(); count]);
             assert_eq!(
                 validate_task(&serde_json::from_value(value.clone()).unwrap()).is_ok(),
-                count <= 2
+                count <= 10
             );
         }
         let mut value = edit();
@@ -408,6 +408,17 @@ mod tests {
         let jpeg = encode(image::ImageFormat::Jpeg);
         let source = decode_image(&jpeg).unwrap().to_rgba8();
         value["images"] = json!([jpeg, encode(image::ImageFormat::WebP)]);
+        for i in 0..8_u8 {
+            let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                64,
+                64,
+                image::Rgba([i, 20, 30, 255]),
+            ));
+            value["images"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!(png(&image).unwrap()));
+        }
         value["mask"] = json!(mask());
         value["size"] = json!("400x240");
         value["steps"] = json!(3);
@@ -443,12 +454,18 @@ mod tests {
             .iter()
             .filter(|(name, _)| name == "image[]")
             .collect();
-        assert_eq!(images.len(), 2);
+        assert_eq!(images.len(), 10);
         assert_eq!(decode_image(&images[0].1).unwrap().to_rgba8(), source);
         assert_eq!(
             decode_image(&images[1].1).unwrap().to_rgba8(),
             original.to_rgba8()
         );
+        for (i, image) in images[2..].iter().enumerate() {
+            assert_eq!(
+                decode_image(&image.1).unwrap().to_rgba8().get_pixel(0, 0).0,
+                [i as u8, 20, 30, 255]
+            );
+        }
         let text = |key: &str| {
             String::from_utf8(
                 fields

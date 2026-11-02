@@ -6,6 +6,8 @@ description: |-
   unverified; reason explains the resolved state. supported includes verified_with
   engine/version evidence. Only supported permits the corresponding operation.
   audio-to-text alone does not establish speech translation support.
+  Image edit models expose max_image_references and
+  max_masked_image_references for the selected engine.
 url: "{{base_url}}/v1/models"
 method: GET
 headers:

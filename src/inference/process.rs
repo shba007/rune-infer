@@ -222,6 +222,10 @@ impl ProcessGuard {
     pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
         self.child.try_wait()
     }
+
+    pub fn terminate(&mut self) -> std::io::Result<()> {
+        self.child.kill()
+    }
 }
 
 impl Drop for ProcessGuard {

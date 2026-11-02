@@ -1,8 +1,10 @@
 $kind: http-request
 description: |-
-  Edit with qwen-image-edit-2511 using one or two PNG, JPEG or WEBP references.
-  Select your first file in image[]. Enable the second image[] row to add
-  a reference; upload order matches image 1 and image 2 in the prompt.
+  Select PNG, JPEG or WEBP references in image[] rows. Upload order matches
+  image 1, image 2, and so on in the prompt. Check the selected model's
+  max_image_references and max_masked_image_references in List Models.
+  qwen-image-edit-2511 supports two references; qwen-image-2.1 supports ten
+  unmasked references and two masked references with its verified sd-server.
   Optional mask: 8-bit PNG with alpha, matching the first image (also 8-bit). Fully transparent
   pixels are editable; all other pixels are preserved exactly. For masked
   edits, omit size or match the first image; dimensions must be multiples
@@ -19,6 +21,46 @@ body:
       src:
         - ''
       disabled: false
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
+    - type: file
+      key: image[]
+      src:
+        - ''
+      disabled: true
     - type: file
       key: image[]
       src:

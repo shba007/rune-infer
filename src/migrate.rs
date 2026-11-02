@@ -209,6 +209,7 @@ fn convert(m: V1Model, notes: &mut Vec<String>) -> Result<ModelEntry> {
         audio_operations: Default::default(),
         tool_call_support: None,
         structured_output_support: None,
+        image_reference_checks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: None,

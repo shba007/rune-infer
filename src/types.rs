@@ -595,6 +595,10 @@ pub struct ModelInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_image_edge_px: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_image_references: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_masked_image_references: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub context_tokens: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<usize>,
@@ -654,6 +658,8 @@ impl ModelInfo {
             tool_calls: None,
             thinking_control: None,
             max_image_edge_px: None,
+            max_image_references: None,
+            max_masked_image_references: None,
             context_tokens: None,
             max_output_tokens: None,
             engine: None,

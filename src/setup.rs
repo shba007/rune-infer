@@ -352,6 +352,7 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
         audio_operations: Default::default(),
         tool_call_support: None,
         structured_output_support: None,
+        image_reference_checks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: Some(EngineConfig {
@@ -434,6 +435,7 @@ fn cloud_entry(c: &CloudChoice) -> ModelEntry {
         audio_operations: Default::default(),
         tool_call_support: None,
         structured_output_support: None,
+        image_reference_checks: Vec::new(),
         roles: Vec::new(),
         aliases: Vec::new(),
         engine: None,

@@ -756,6 +756,16 @@ fn default_lora_scale() -> f32 {
     1.0
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageReferenceVerification {
+    pub engine: EngineKind,
+    pub version: String,
+    pub counts: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub masked_counts: Vec<u8>,
+}
+
 /// A model as the rest of the server sees it, flattened from the file's
 /// [`ModelEntry`](crate::schema::ModelEntry).
 #[derive(Debug, Clone, PartialEq)]
@@ -788,6 +798,7 @@ pub struct ModelConfig {
     pub audio_operations: crate::audio_operations::AudioOperations,
     pub tool_call_support: Option<crate::audio_operations::OperationSupport>,
     pub structured_output_support: Option<crate::audio_operations::OperationSupport>,
+    pub image_reference_checks: Vec<ImageReferenceVerification>,
     pub sampling: Option<SamplingConfig>,
     /// `Some` for local models, `None` for cloud models.
     pub engine: Option<EngineConfig>,
@@ -798,6 +809,67 @@ pub struct ModelConfig {
 }
 
 impl ModelConfig {
+    pub fn image_reference_limit(&self, engine: Option<EngineKind>, masked: bool) -> usize {
+        let Some(engine) = engine else { return 2 };
+        if !self.is_local()
+            || !Path::new(&self.model_path).is_file()
+            || self
+                .text_encoder_path
+                .as_deref()
+                .is_some_and(|path| !Path::new(path).exists())
+            || self
+                .vae_path
+                .as_deref()
+                .is_some_and(|path| !Path::new(path).exists())
+        {
+            return 2;
+        }
+        let mut limit = 2;
+        while limit < 10
+            && self.image_reference_checks.iter().any(|check| {
+                check.engine == engine
+                    && if masked {
+                        &check.masked_counts
+                    } else {
+                        &check.counts
+                    }
+                    .contains(&((limit + 1) as u8))
+            })
+        {
+            limit += 1;
+        }
+        limit
+    }
+
+    pub fn validate_image_reference_checks(&self) -> anyhow::Result<()> {
+        for check in &self.image_reference_checks {
+            anyhow::ensure!(
+                self.is_local()
+                    && check.engine == EngineKind::SdServer
+                    && self.engine_plan().contains(&check.engine)
+                    && !check.version.trim().is_empty()
+                    && self.tasks.iter().any(|t| t == "text-image-to-image"),
+                "Model '{}': invalid image reference engine verification",
+                self.id
+            );
+            anyhow::ensure!(
+                !check.counts.is_empty()
+                    && check
+                        .counts
+                        .iter()
+                        .chain(&check.masked_counts)
+                        .all(|n| (3..=10).contains(n)),
+                "Model '{}': image reference verification counts must be from 3 to 10",
+                self.id
+            );
+            anyhow::ensure!(
+                check.masked_counts.iter().all(|n| check.counts.contains(n)),
+                "Model '{}': masked image checks require matching unmasked checks",
+                self.id
+            );
+        }
+        Ok(())
+    }
     pub fn is_local(&self) -> bool {
         self.provider == ProviderType::Local
     }

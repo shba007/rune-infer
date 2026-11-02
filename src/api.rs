@@ -411,6 +411,12 @@ fn model_config_to_info(
     let mut info = ModelInfo::new(&m.id);
     info.tasks = m.tasks.clone();
     info.audio_operations = m.resolved_audio_operations(engine);
+    if m.tasks.iter().any(|task| task == "text-image-to-image")
+        && engine == Some(crate::config::EngineKind::SdServer)
+    {
+        info.max_image_references = Some(m.image_reference_limit(engine, false));
+        info.max_masked_image_references = Some(m.image_reference_limit(engine, true));
+    }
     info.with_mtp_heads(heads)
         .with_capabilities(m.resolved_capabilities_with_engine(engine))
         .with_locality(m.locality())

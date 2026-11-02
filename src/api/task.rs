@@ -15,6 +15,7 @@ pub(super) struct Requirements {
     llama_audio_error: Option<&'static str>,
     audiocpp_error: Option<&'static str>,
     sd_edit_error: Option<&'static str>,
+    image_references: Option<(usize, bool)>,
 }
 
 impl Requirements {
@@ -82,6 +83,7 @@ impl Requirements {
             llama_audio_error: None,
             audiocpp_error: None,
             sd_edit_error: None,
+            image_references: None,
         }
     }
 
@@ -162,6 +164,9 @@ impl Requirements {
         requirements.audiocpp_error = crate::inference::engines::audio::validate_task(task).err();
         requirements.sd_edit_error =
             crate::inference::engines::sd_server::edit::validate_task(task).err();
+        if let ImageEdit { images, mask, .. } = task {
+            requirements.image_references = Some((images.len(), mask.is_some()));
+        }
         requirements
     }
 
@@ -182,6 +187,20 @@ impl Requirements {
             )
                 .into_response())
         };
+        if let Some((count, masked)) = self.image_references {
+            let maximum = model.image_reference_limit(engine, masked);
+            if count > maximum {
+                return refuse(
+                    StatusCode::BAD_REQUEST,
+                    "model_image_references_unverified",
+                    format!(
+                        "Model '{}' supports at most {maximum} verified {}reference images with the selected engine.",
+                        model.id,
+                        if masked { "masked " } else { "" }
+                    ),
+                );
+            }
+        }
         let audio_operation = match self.operation {
             "transcription" => Some(crate::audio_operations::AudioOperation::Transcription),
             "translation" => Some(crate::audio_operations::AudioOperation::SpeechTranslation),

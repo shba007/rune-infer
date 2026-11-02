@@ -661,6 +661,104 @@ fn structured_output_evidence_controls_discovery_and_execution() {
     );
 }
 
+#[test]
+fn image_reference_counts_are_model_engine_and_mask_specific() {
+    use crate::config::EngineKind;
+    let artifact = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let mut value = serde_json::json!({
+        "id":"fixture", "name":"Fixture", "tasks":["text-image-to-image"],
+        "engine":["sd-server"], "local":{"path":artifact.to_str().unwrap()},
+        "image_reference_checks":[{"engine":"sd-server", "version":"test version", "counts":[3,4,6], "masked_counts":[3]}]
+    });
+    let entry: crate::schema::ModelEntry = serde_json::from_value(value.clone()).unwrap();
+    let saved = serde_json::to_value(entry).unwrap();
+    assert_eq!(
+        saved["image_reference_checks"],
+        value["image_reference_checks"]
+    );
+    let model = crate::config::ModelConfig::try_from(
+        serde_json::from_value::<crate::schema::ModelEntry>(saved).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        model.image_reference_limit(Some(EngineKind::SdServer), false),
+        4
+    );
+    assert_eq!(
+        model.image_reference_limit(Some(EngineKind::SdServer), true),
+        3
+    );
+    assert_eq!(
+        model.image_reference_limit(Some(EngineKind::LlamaServer), false),
+        2
+    );
+    let mut missing = model.clone();
+    missing.model_path = artifact.join("missing").to_string_lossy().into_owned();
+    assert_eq!(
+        missing.image_reference_limit(Some(EngineKind::SdServer), false),
+        2
+    );
+    missing.model_path = artifact.to_string_lossy().into_owned();
+    missing.text_encoder_path = Some(artifact.join("missing").to_string_lossy().into_owned());
+    assert_eq!(
+        missing.image_reference_limit(Some(EngineKind::SdServer), false),
+        2
+    );
+    let info = super::model_config_to_info(&model, &[], &[], None, None);
+    assert_eq!(info.max_image_references, Some(4));
+    assert_eq!(info.max_masked_image_references, Some(3));
+    let mut mask = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        400,
+        240,
+        image::Rgba([0, 0, 0, 0]),
+    ))
+    .write_to(&mut mask, image::ImageFormat::Png)
+    .unwrap();
+    let mask = mask.into_inner();
+    let make_task = |count: usize, masked: bool| {
+        let image = include_bytes!("../../tests/fixtures/studio/off-center.png").to_vec();
+        crate::inference::types::InferenceTaskRequest::ImageEdit {
+            prompt: "edit".into(),
+            images: vec![image; count],
+            mask: masked.then(|| mask.clone()),
+            size: None,
+            response_format: None,
+            n: None,
+            steps: None,
+            cfg_scale: None,
+            seed: None,
+        }
+    };
+    assert!(
+        super::task::Requirements::task(&make_task(4, false))
+            .validate(&model, Some(EngineKind::SdServer))
+            .is_ok()
+    );
+    assert!(
+        super::task::Requirements::task(&make_task(5, false))
+            .validate(&model, Some(EngineKind::SdServer))
+            .is_err()
+    );
+    assert!(
+        super::task::Requirements::task(&make_task(3, true))
+            .validate(&model, Some(EngineKind::SdServer))
+            .is_ok()
+    );
+    assert!(
+        super::task::Requirements::task(&make_task(4, true))
+            .validate(&model, Some(EngineKind::SdServer))
+            .is_err()
+    );
+    value["image_reference_checks"][0]["masked_counts"] = serde_json::json!([5]);
+    assert!(
+        crate::config::ModelConfig::try_from(
+            serde_json::from_value::<crate::schema::ModelEntry>(value).unwrap()
+        )
+        .is_err()
+    );
+}
+
 #[tokio::test]
 async fn models_filter_matches_explicit_metadata_and_rejects_invalid_bounds() {
     let (router, state) = app(None);
