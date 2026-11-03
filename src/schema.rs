@@ -207,6 +207,7 @@ pub fn allowed_extra_keys(kind: EngineKind) -> &'static [&'static str] {
         EngineKind::SdServer => &[
             "vae_path",
             "text_encoder_path",
+            "tokenizer_path",
             "llm_vision_path",
             "default_steps",
             "default_cfg_scale",
@@ -234,6 +235,7 @@ struct ExtraFields {
     mtp_heads: Option<u32>,
     vae_path: Option<String>,
     text_encoder_path: Option<String>,
+    tokenizer_path: Option<String>,
     llm_vision_path: Option<String>,
     default_steps: Option<u32>,
     default_cfg_scale: Option<f32>,
@@ -455,6 +457,7 @@ impl TryFrom<ModelEntry> for ModelConfig {
             mtp_path: extra.mtp_path,
             vae_path: extra.vae_path,
             text_encoder_path: extra.text_encoder_path,
+            tokenizer_path: extra.tokenizer_path,
             llm_vision_path: extra.llm_vision_path,
             default_steps: extra.default_steps,
             default_cfg_scale: extra.default_cfg_scale,

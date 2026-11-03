@@ -42,6 +42,16 @@ pub(crate) fn companion_path_available(path: &Path) -> bool {
             .any(|marker| path.join(marker).is_file()))
 }
 
+fn attach_tokenizer(cmd: &mut Command, tokenizer: Option<&str>) -> Result<(), Box<dyn Error>> {
+    if let Some(tokenizer) = tokenizer {
+        if !Path::new(tokenizer).is_file() {
+            return Err(format!("SD-server tokenizer file not found: {tokenizer}").into());
+        }
+        cmd.arg("--tokenizer").arg(tokenizer);
+    }
+    Ok(())
+}
+
 fn valid_commit(value: &str) -> bool {
     (7..=40).contains(&value.len()) && value.bytes().all(|c| c.is_ascii_hexdigit())
 }
@@ -271,6 +281,8 @@ impl SdServerEngine {
             }
         }
 
+        attach_tokenizer(&mut cmd, model.tokenizer_path.as_deref())?;
+
         if let Some(ref vae) = model.vae_path {
             if Path::new(vae).exists() {
                 tracing::info!("[SdServerEngine] Attaching VAE: {}", vae);
@@ -419,12 +431,11 @@ impl SdServerEngine {
             return Err(download::engine_unavailable("sd-server").into());
         }
 
-        tracing::info!("[SdServerEngine] Resolving sd-server runtime from GitHub...");
+        tracing::info!("[SdServerEngine] Resolving sd-server runtime from the registry...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
-        let release_url = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases";
-        let release_val = download::resolve_release(&client, release_url)?;
+        let release_val = super::registry::sd_release(&client)?;
 
         Self::install_release(&client, &release_val, base_dir)
     }
@@ -461,13 +472,17 @@ impl SdServerEngine {
         }
 
         for (archive_name, download_url) in download_urls {
-            download::download_and_extract(
+            download::download_and_extract_sized(
                 client,
                 &download_url,
                 &base_dir,
                 &archive_name,
                 "[SdServerEngine]",
                 &download::asset_sha256(assets, &archive_name)?,
+                assets
+                    .iter()
+                    .find(|asset| asset["name"].as_str() == Some(&archive_name))
+                    .and_then(|asset| asset["size"].as_u64()),
             )?;
         }
 
@@ -687,6 +702,43 @@ impl InferenceEngine for SdServerEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tokenizer_path_with_spaces_is_one_argument() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!(
+                "tokenizer fixture {}",
+                crate::setup::generate_api_key()
+            ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("tokenizer.json");
+        std::fs::write(&path, "{}").unwrap();
+        let mut command = Command::new("sd-server");
+        attach_tokenizer(&mut command, path.to_str()).unwrap();
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0], "--tokenizer");
+        assert_eq!(args[1], path.as_os_str());
+        assert!(attach_tokenizer(&mut command, root.join("missing.json").to_str()).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn registry_release_selects_real_platform_bundles() {
+        let release =
+            super::super::registry::parse_sd(include_bytes!("../../../registry/engines.json"))
+                .unwrap();
+        let assets = release["assets"].as_array().unwrap();
+        let cuda = release_assets(assets, "windows", "x86_64", Some((12, 8))).unwrap();
+        assert_eq!(cuda.len(), 2);
+        assert_eq!(cuda[0]["name"], "cudart-sd-bin-win-cu12-x64.zip");
+        assert_eq!(cuda[1]["name"], "sd-master-3be2378-bin-win-cuda12-x64.zip");
+        assert!(release_assets(assets, "linux", "x86_64", None).is_ok());
+        assert!(release_assets(assets, "macos", "aarch64", None).is_ok());
+        assert!(release_assets(assets, "windows", "aarch64", None).is_err());
+    }
 
     #[test]
     fn weight_preparation_error_requires_a_matching_recovery() {

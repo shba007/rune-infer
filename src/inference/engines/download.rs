@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 use std::error::Error;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -17,6 +17,36 @@ pub struct DownloadProgress {
 thread_local! {
     static INSTALL_BIN: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     static CANCEL: std::cell::RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>> = const { std::cell::RefCell::new(None) };
+    static DOWNLOAD_LABEL: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn with_download_label<T>(label: &str, work: impl FnOnce() -> T) -> T {
+    struct Restore(Option<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            DOWNLOAD_LABEL.with(|slot| {
+                slot.replace(self.0.take());
+            });
+        }
+    }
+    let _restore = Restore(DOWNLOAD_LABEL.with(|slot| slot.replace(Some(label.to_owned()))));
+    work()
+}
+
+fn download_display_name(dest_path: &Path) -> String {
+    DOWNLOAD_LABEL
+        .with(|slot| slot.borrow().clone())
+        .unwrap_or_else(|| {
+            let filename = dest_path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("file");
+            filename
+                .split(".part-")
+                .next()
+                .unwrap_or(filename)
+                .to_owned()
+        })
 }
 
 #[cfg(any(feature = "tui", test))]
@@ -36,7 +66,7 @@ pub(crate) fn with_cancellation<T>(
     work()
 }
 
-fn check_cancelled() -> std::io::Result<()> {
+pub(crate) fn check_cancelled() -> std::io::Result<()> {
     if CANCEL.with(|slot| {
         slot.borrow()
             .as_ref()
@@ -200,6 +230,7 @@ pub(crate) fn fetch_release_tag(
 
 pub(crate) fn compare_sd_commits(
     client: &reqwest::blocking::Client,
+    comparison_url: &str,
     installed: &str,
     selected: &str,
 ) -> Result<serde_json::Value, Box<dyn Error>> {
@@ -208,11 +239,11 @@ pub(crate) fn compare_sd_commits(
             return Err("Invalid SD-server commit identity".into());
         }
     }
-    // Fixed official repository, immutable commit references, existing cache and
-    // rate-limit policy. Only ancestry metadata is needed, not the commit list.
-    github_metadata(client, &format!(
-        "https://api.github.com/repos/leejet/stable-diffusion.cpp/compare/{installed}...{selected}?per_page=1"
-    ))?.ok_or_else(|| "Cannot establish SD-server release ancestry".into())
+    github_metadata(
+        client,
+        &format!("{comparison_url}/{installed}...{selected}?per_page=1"),
+    )?
+    .ok_or_else(|| "Cannot establish SD-server release ancestry".into())
 }
 
 pub(crate) fn resolve_release(
@@ -303,11 +334,7 @@ fn download_to_file(
     prefix: &str,
 ) -> Result<(), Box<dyn Error>> {
     check_cancelled()?;
-    let filename = dest_path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("file");
-    let filename = filename.split(".part-").next().unwrap_or(filename);
+    let filename = download_display_name(dest_path);
 
     let mut resp = client.get(url).send()?.error_for_status()?;
     let total_size = resp.content_length().unwrap_or(0);
@@ -586,6 +613,164 @@ pub fn download_verified(
     download_verified_inner(client, url, dest, prefix, expected, None)
 }
 
+/// Resume a model's managed partial file. The caller serializes installations for
+/// the containing model directory and publishes only after full verification.
+pub(crate) fn download_resumable_model(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
+    prefix: &str,
+    expected: &str,
+    size: u64,
+) -> Result<(), Box<dyn Error>> {
+    if expected.len() != 64 || !expected.bytes().all(|c| c.is_ascii_hexdigit()) || size == 0 {
+        return Err("Invalid model integrity metadata".into());
+    }
+    if reqwest::Url::parse(url)?.scheme() != "https" {
+        return Err("Model downloads require HTTPS".into());
+    }
+    download_resumable_model_inner(client, url, dest, prefix, expected, size)
+}
+
+fn download_resumable_model_inner(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
+    prefix: &str,
+    expected: &str,
+    size: u64,
+) -> Result<(), Box<dyn Error>> {
+    check_cancelled()?;
+    if let Ok(meta) = std::fs::symlink_metadata(dest) {
+        if !meta.is_file() || meta.file_type().is_symlink() {
+            return Err("Model partial is not a regular file".into());
+        }
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dest)?;
+    let mut offset = file.metadata()?.len();
+    if offset > size {
+        return Err(format!(
+            "Model partial exceeds expected size; preserve or remove {}",
+            dest.display()
+        )
+        .into());
+    }
+    if offset == size {
+        verify_sha256(dest, expected).map_err(|_| {
+            format!(
+                "Model partial checksum mismatch; preserve or remove {}",
+                dest.display()
+            )
+        })?;
+        return Ok(());
+    }
+    let mut request = client
+        .get(url)
+        .header(reqwest::header::ACCEPT_ENCODING, "identity");
+    if offset > 0 {
+        request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
+    }
+    let mut response = request.send()?.error_for_status()?;
+    if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+        let range = response
+            .headers()
+            .get(reqwest::header::CONTENT_RANGE)
+            .and_then(|header| header.to_str().ok())
+            .ok_or("Missing model Content-Range")?;
+        let (span, total) = range
+            .strip_prefix("bytes ")
+            .and_then(|s| s.split_once('/'))
+            .ok_or("Invalid model Content-Range")?;
+        let (start, end) = span.split_once('-').ok_or("Invalid model Content-Range")?;
+        if start.parse::<u64>().ok() != Some(offset)
+            || end.parse::<u64>().ok() != Some(size - 1)
+            || total.parse::<u64>().ok() != Some(size)
+        {
+            return Err(
+                "Model server returned an incompatible Content-Range; partial preserved".into(),
+            );
+        }
+    } else if response.status() == reqwest::StatusCode::OK {
+        if response
+            .content_length()
+            .is_some_and(|length| length != size)
+        {
+            return Err("Model download size does not match registry; partial preserved".into());
+        }
+        if offset > 0 {
+            tracing::info!(
+                "{prefix} Server does not support resuming; restarting the managed partial"
+            );
+            file.set_len(0)?;
+            offset = 0;
+        }
+    } else {
+        return Err("Unexpected model download response; partial preserved".into());
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length != size - offset)
+    {
+        return Err("Model download size does not match registry; partial preserved".into());
+    }
+    file.seek(SeekFrom::Start(offset))?;
+    let filename = download_display_name(dest);
+    let started = Instant::now();
+    let mut downloaded = offset;
+    let mut last_update = Instant::now();
+    let update = |downloaded: u64| {
+        report(DownloadProgress {
+            filename: filename.clone(),
+            extracting: false,
+            downloaded,
+            total: Some(size),
+            bytes_per_second: (downloaded - offset) as f64
+                / started.elapsed().as_secs_f64().max(0.001),
+        })
+    };
+    update(downloaded);
+    let mut buffer = [0u8; 65536];
+    loop {
+        check_cancelled()?;
+        let count = response.read(&mut buffer)?;
+        check_cancelled()?;
+        if count == 0 {
+            break;
+        }
+        let next = downloaded
+            .checked_add(count as u64)
+            .ok_or("Model download size overflow")?;
+        if next > size {
+            return Err("Model download exceeds expected size; partial preserved".into());
+        }
+        file.write_all(&buffer[..count])?;
+        downloaded = next;
+        if last_update.elapsed() >= Duration::from_millis(100) {
+            update(downloaded);
+            last_update = Instant::now();
+        }
+    }
+    file.flush()?;
+    update(downloaded);
+    if downloaded != size {
+        return Err("Incomplete model download; partial preserved for retry".into());
+    }
+    check_cancelled()?;
+    verify_sha256(dest, expected).map_err(|_| {
+        format!(
+            "Model partial checksum mismatch; preserve or remove {}",
+            dest.display()
+        )
+    })?;
+    check_cancelled()?;
+    Ok(())
+}
+
 pub(crate) fn download_verified_sized(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -800,6 +985,288 @@ mod progress_tests {
     use super::*;
     use std::cell::RefCell;
     use std::rc::Rc;
+
+    fn serve_resume_response(
+        response: Vec<u8>,
+        expected_range: Option<&'static str>,
+    ) -> (String, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/model", listener.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            let started = Instant::now();
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            && started.elapsed() < Duration::from_secs(5) =>
+                    {
+                        std::thread::sleep(Duration::from_millis(10))
+                    }
+                    Err(error) => panic!("Model test request was not received: {error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 1024];
+            while !request.windows(4).any(|p| p == b"\r\n\r\n") {
+                let n = stream.read(&mut buffer).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..n]);
+            }
+            if let Some(range) = expected_range {
+                assert!(
+                    String::from_utf8_lossy(&request)
+                        .to_ascii_lowercase()
+                        .contains(range),
+                    "unexpected request"
+                );
+            }
+            stream.write_all(&response).unwrap();
+        });
+        (url, worker)
+    }
+
+    #[test]
+    fn model_partial_resumes_with_range_and_cumulative_progress() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("resume-{}", crate::setup::generate_api_key()));
+        std::fs::create_dir_all(&root).unwrap();
+        let partial = root.join("partial");
+        let body = b"GGUF-resume-model";
+        std::fs::write(&partial, &body[..5]).unwrap();
+        let expected = hex::encode(Sha256::digest(body));
+        let remaining = &body[5..];
+        let mut response = format!("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 5-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()-1, body.len(), remaining.len()).into_bytes();
+        response.extend_from_slice(remaining);
+        let (url, worker) = serve_resume_response(response, Some("range: bytes=5-"));
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap();
+        let progress = Rc::new(RefCell::new(Vec::new()));
+        let saved = progress.clone();
+        with_progress(
+            move |event| saved.borrow_mut().push(event),
+            || {
+                download_resumable_model_inner(
+                    &client,
+                    &url,
+                    &partial,
+                    "test",
+                    &expected,
+                    body.len() as u64,
+                )
+            },
+        )
+        .unwrap();
+        worker.join().unwrap();
+        assert_eq!(std::fs::read(&partial).unwrap(), body);
+        assert_eq!(progress.borrow().first().unwrap().downloaded, 5);
+        assert_eq!(
+            progress.borrow().last().unwrap().downloaded,
+            body.len() as u64
+        );
+        assert_eq!(
+            progress.borrow().last().unwrap().total,
+            Some(body.len() as u64)
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cancelling_resumed_model_download_preserves_saved_bytes() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("resume-{}", crate::setup::generate_api_key()));
+        std::fs::create_dir_all(&root).unwrap();
+        let partial = root.join("partial");
+        let body = b"GGUF-cancelled-model";
+        std::fs::write(&partial, &body[..5]).unwrap();
+        let expected = hex::encode(Sha256::digest(body));
+        let mut response = format!("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 5-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()-1, body.len(), body.len()-5).into_bytes();
+        response.extend_from_slice(&body[5..]);
+        let (url, worker) = serve_resume_response(response, Some("range: bytes=5-"));
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let signal = cancel.clone();
+        let result = with_cancellation(cancel, || {
+            with_progress(
+                move |_| {
+                    signal.store(true, std::sync::atomic::Ordering::Relaxed);
+                },
+                || {
+                    download_resumable_model_inner(
+                        &client,
+                        &url,
+                        &partial,
+                        "test",
+                        &expected,
+                        body.len() as u64,
+                    )
+                },
+            )
+        });
+        assert!(result.is_err());
+        worker.join().unwrap();
+        assert_eq!(std::fs::read(&partial).unwrap(), &body[..5]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn model_partial_rejects_bad_range_and_restarts_if_server_ignores_it() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("resume-{}", crate::setup::generate_api_key()));
+        std::fs::create_dir_all(&root).unwrap();
+        let partial = root.join("partial");
+        let body = b"GGUF-restart-model";
+        std::fs::write(&partial, &body[..5]).unwrap();
+        let expected = hex::encode(Sha256::digest(body));
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap();
+        let bad = format!("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()-1, body.len(), body.len()).into_bytes();
+        let (url, worker) = serve_resume_response(bad, Some("range: bytes=5-"));
+        assert!(
+            download_resumable_model_inner(
+                &client,
+                &url,
+                &partial,
+                "test",
+                &expected,
+                body.len() as u64
+            )
+            .is_err()
+        );
+        worker.join().unwrap();
+        assert_eq!(std::fs::read(&partial).unwrap(), &body[..5]);
+        let mut full = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        full.extend_from_slice(body);
+        let (url, worker) = serve_resume_response(full, Some("range: bytes=5-"));
+        download_resumable_model_inner(
+            &client,
+            &url,
+            &partial,
+            "test",
+            &expected,
+            body.len() as u64,
+        )
+        .unwrap();
+        worker.join().unwrap();
+        assert_eq!(std::fs::read(&partial).unwrap(), body);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn interrupted_model_download_keeps_partial_for_retry() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("resume-{}", crate::setup::generate_api_key()));
+        std::fs::create_dir_all(&root).unwrap();
+        let partial = root.join("partial");
+        let body = b"GGUF-interrupted";
+        let expected = hex::encode(Sha256::digest(body));
+        let mut broken = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        broken.extend_from_slice(&body[..5]);
+        let (url, worker) = serve_resume_response(broken, None);
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap();
+        assert!(
+            download_resumable_model_inner(
+                &client,
+                &url,
+                &partial,
+                "test",
+                &expected,
+                body.len() as u64
+            )
+            .is_err()
+        );
+        worker.join().unwrap();
+        assert_eq!(std::fs::read(&partial).unwrap(), &body[..5]);
+        let mut rest = format!("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 5-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()-1, body.len(), body.len()-5).into_bytes();
+        rest.extend_from_slice(&body[5..]);
+        let (url, worker) = serve_resume_response(rest, Some("range: bytes=5-"));
+        download_resumable_model_inner(
+            &client,
+            &url,
+            &partial,
+            "test",
+            &expected,
+            body.len() as u64,
+        )
+        .unwrap();
+        worker.join().unwrap();
+        assert_eq!(std::fs::read(&partial).unwrap(), body);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn completed_partial_with_wrong_digest_is_preserved_and_rejected() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("resume-{}", crate::setup::generate_api_key()));
+        std::fs::create_dir_all(&root).unwrap();
+        let partial = root.join("partial");
+        let bytes = b"GGUF-bad";
+        std::fs::write(&partial, bytes).unwrap();
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap();
+        let error = download_resumable_model_inner(
+            &client,
+            "http://127.0.0.1:1/model",
+            &partial,
+            "test",
+            &"0".repeat(64),
+            bytes.len() as u64,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("checksum mismatch"));
+        assert_eq!(std::fs::read(&partial).unwrap(), bytes);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn model_download_label_replaces_temporary_name_and_restores_previous_label() {
+        let path = Path::new(".rune-model-download-123.part-456");
+        assert_eq!(download_display_name(path), ".rune-model-download-123");
+        with_download_label("model.gguf", || {
+            assert_eq!(download_display_name(path), "model.gguf");
+            with_download_label("projector.gguf", || {
+                assert_eq!(download_display_name(path), "projector.gguf")
+            });
+            assert_eq!(download_display_name(path), "model.gguf");
+        });
+        assert_eq!(download_display_name(path), ".rune-model-download-123");
+    }
 
     fn serve(response: &'static [u8]) -> (String, std::thread::JoinHandle<()>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

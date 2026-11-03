@@ -370,12 +370,9 @@ pub(crate) fn update_llama(
     if !cfg!(all(windows, target_arch = "x86_64")) {
         return Err("llama-server updates are currently supported on Windows x64 only".into());
     }
-    let (directory, release_url) = match kind {
-        EngineKind::LlamaServer => ("llama-upstream", ""),
-        EngineKind::LlamaServerPrism => (
-            "llama-prism",
-            "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases",
-        ),
+    let directory = match kind {
+        EngineKind::LlamaServer => "llama-upstream",
+        EngineKind::LlamaServerPrism => "llama-prism",
         _ => return Err("Unsupported llama-server engine kind".into()),
     };
     let _ = events.send(UpdateEvent::Progress("Waiting for models to unload".into()));
@@ -392,7 +389,7 @@ pub(crate) fn update_llama(
     let release = if kind == EngineKind::LlamaServer {
         super::registry::llama_release(&client)
     } else {
-        download::resolve_release(&client, release_url)
+        super::registry::prism_release(&client)
     }
     .map_err(|e| e.to_string())?;
     let (build, commit) = if kind == EngineKind::LlamaServerPrism {
@@ -427,10 +424,38 @@ pub(crate) fn update_llama(
                 );
             }
         }
-    } else if installed > build
-        || llama_version_matches(&installed_output, build, commit.as_deref())
-    {
-        return Ok("Installed build is current or newer; no download needed".into());
+    } else {
+        let selected_number = release["rune_registry_release"]
+            .as_u64()
+            .ok_or("Registry release number missing")?;
+        if expected_registry_release != Some(selected_number) {
+            return Err("The selected registry release changed; check versions again".into());
+        }
+        let versions: std::collections::BTreeMap<String, u64> =
+            serde_json::from_value(release["rune_registry_revisions"].clone())
+                .map_err(|_| "Invalid registry version order")?;
+        if versions.get(&expected_tag) != Some(&selected_number) {
+            return Err("Selected registry release identity does not match its order".into());
+        }
+        let installed_commit = installed_output
+            .split_once("commit ")
+            .and_then(|(_, tail)| tail.split(|c: char| !c.is_ascii_hexdigit()).next())
+            .ok_or("Cannot verify installed Prism commit")?;
+        match super::registry::compare_prism_revision(
+            &versions,
+            installed,
+            installed_commit,
+            &expected_tag,
+        )
+        .ok_or("Installed Prism build is not in the registry; update refused")?
+        {
+            std::cmp::Ordering::Less => (),
+            _ => {
+                return Ok(
+                    "Installed registry release is current or newer; no download needed".into(),
+                );
+            }
+        }
     }
     stage_engine_update(
         PathBuf::from("bin"),
@@ -726,6 +751,7 @@ pub(crate) fn update_sd(
     state: Arc<AppState>,
     stop: Arc<AtomicBool>,
     expected_tag: String,
+    expected_registry_release: Option<u64>,
     events: std::sync::mpsc::Sender<UpdateEvent>,
 ) -> UpdateResult<String> {
     if !cfg!(all(windows, target_arch = "x86_64")) {
@@ -742,11 +768,7 @@ pub(crate) fn update_sd(
         std::thread::sleep(Duration::from_millis(300));
     };
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let release = download::resolve_release(
-        &client,
-        "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases",
-    )
-    .map_err(|e| e.to_string())?;
+    let release = super::registry::sd_release(&client).map_err(|e| e.to_string())?;
     if release["tag_name"].as_str() != Some(expected_tag.as_str()) {
         return Err("The selected SD-server release has changed; check versions again".into());
     }
@@ -764,6 +786,23 @@ pub(crate) fn update_sd(
         .ok_or("Managed SD-server executable not found")?;
     let installed = super::sd_server::reported_version(&candidate_version(&exe)?)
         .ok_or("Cannot verify installed SD-server commit")?;
+    let number = release["rune_registry_release"]
+        .as_u64()
+        .ok_or("SD-server registry release missing")?;
+    if expected_registry_release != Some(number) {
+        return Err("The selected registry release changed; check versions again".into());
+    }
+    let versions: std::collections::BTreeMap<String, u64> =
+        serde_json::from_value(release["rune_registry_revisions"].clone())
+            .map_err(|_| "Invalid SD-server registry order")?;
+    if versions.get(selected) != Some(&number) {
+        return Err("SD-server release identity does not match its order".into());
+    }
+    let order = super::registry::compare_sd_registry(&versions, &installed, &expected_tag)
+        .ok_or("Installed SD-server commit is not in the registry; update refused")?;
+    if order == std::cmp::Ordering::Greater {
+        return Err("Selected SD-server registry release is older; downgrade refused".into());
+    }
     if super::sd_server::revision_matches(&installed, &expected_tag) == Some(true) {
         return Ok("Already up to date; no download needed".into());
     }
@@ -773,8 +812,12 @@ pub(crate) fn update_sd(
     let _ = events.send(UpdateEvent::Progress(
         "Verifying selected release ancestry".into(),
     ));
-    let comparison = download::compare_sd_commits(&client, installed_commit, selected)
-        .map_err(|e| format!("Cannot verify SD-server release order; update refused: {e}"))?;
+    let comparison_url = release["rune_comparison_url"]
+        .as_str()
+        .ok_or("Registry comparison source missing")?;
+    let comparison =
+        download::compare_sd_commits(&client, comparison_url, installed_commit, selected)
+            .map_err(|e| format!("Cannot verify SD-server release order; update refused: {e}"))?;
     if !sd_update_is_forward(installed_commit, &comparison)? {
         return Ok("Already up to date; no download needed".into());
     }
@@ -905,13 +948,14 @@ pub(crate) fn update_audio(
     state: Arc<AppState>,
     stop: Arc<AtomicBool>,
     expected_tag: String,
+    expected_registry_release: Option<u64>,
     events: std::sync::mpsc::Sender<UpdateEvent>,
 ) -> UpdateResult<String> {
     let emit = |message: String| {
         let _ = events.send(UpdateEvent::Progress(message));
     };
-    if !cfg!(windows) {
-        return Err("audio.cpp updates are currently supported on Windows only".into());
+    if !cfg!(all(windows, target_arch = "x86_64")) {
+        return Err("audio.cpp updates are currently supported on Windows x64 only".into());
     }
     emit("Waiting for models to unload".into());
     let _reservation = loop {
@@ -938,18 +982,16 @@ pub(crate) fn update_audio(
     };
     let installed_version = candidate_version(&current_exe)
         .map_err(|e| format!("Cannot verify installed audio.cpp version: {e}"))?;
-    if version_matches(&installed_version, &expected_tag) {
-        return Ok("Already up to date; no download needed".into());
-    }
     emit("Checking release assets".into());
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let release = download::resolve_release(
-        &client,
-        "https://api.github.com/repos/0xShug0/audio.cpp/releases",
-    )
-    .map_err(|e| e.to_string())?;
-    if release["tag_name"].as_str() != Some(expected_tag.as_str()) {
-        return Err("The selected release has changed; check versions again".into());
+    let release = super::registry::audio_release(&client).map_err(|e| e.to_string())?;
+    if !audio_update_needed(
+        &release,
+        &expected_tag,
+        expected_registry_release,
+        &installed_version,
+    )? {
+        return Ok("Installed registry release is current or newer; no download needed".into());
     }
     let assets = release["assets"]
         .as_array()
@@ -963,7 +1005,10 @@ pub(crate) fn update_audio(
                 download::extract_release_asset_info(asset).map_err(|e| e.to_string())?;
             let sha = download::asset_sha256(std::slice::from_ref(asset), &name)
                 .map_err(|e| e.to_string())?;
-            Ok((name, url, sha))
+            let size = asset["size"]
+                .as_u64()
+                .ok_or("Registry artifact size missing")?;
+            Ok((name, url, sha, size))
         })
         .collect::<UpdateResult<_>>()?;
     let bin = PathBuf::from("bin");
@@ -983,7 +1028,7 @@ pub(crate) fn update_audio(
     let backup = bin.join(format!(".audio-backup-{}-{id}", std::process::id()));
     std::fs::create_dir(&stage).map_err(|e| e.to_string())?;
     let result = (|| {
-        for (name, url, sha) in packages {
+        for (name, url, sha, size) in packages {
             if stop.load(Ordering::Relaxed) {
                 return Err("Update cancelled".into());
             }
@@ -1017,13 +1062,14 @@ pub(crate) fn update_audio(
                     }
                 },
                 || {
-                    download::download_and_extract(
+                    download::download_and_extract_sized(
                         &client,
                         &url,
                         &stage,
                         &name,
                         "[EngineUpdate]",
                         &sha,
+                        Some(size),
                     )
                 },
             )
@@ -1250,6 +1296,7 @@ pub(crate) fn update_crispasr(
     state: Arc<AppState>,
     stop: Arc<AtomicBool>,
     expected_tag: String,
+    expected_registry_release: Option<u64>,
     events: std::sync::mpsc::Sender<UpdateEvent>,
 ) -> UpdateResult<String> {
     let emit = |message: String| {
@@ -1289,30 +1336,19 @@ pub(crate) fn update_crispasr(
         .map_err(|e| format!("Cannot verify installed CrispASR version: {e}"))?;
     let installed_version = crispasr_version(&installed)
         .ok_or("Cannot determine installed CrispASR version; use a supported managed build")?;
-    if version_matches(installed_version, &expected_tag) {
-        return Ok("Already up to date; no download needed".into());
-    }
-    if let (Some(installed), Some(available)) = (
-        semantic_version(installed_version),
-        semantic_version(&expected_tag),
-    ) {
-        if installed > available {
-            return Ok(
-                "Installed version is newer than the available release; no download needed".into(),
-            );
-        }
-    }
     let asset_name = crispasr_asset_name(&installed).unwrap_or_else(|_| crispasr_hardware_asset());
     emit(format!("Selected hardware build: {asset_name}"));
     emit("Checking release assets".into());
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let release = download::resolve_release(
-        &client,
-        "https://api.github.com/repos/CrispStrobe/CrispASR/releases",
-    )
-    .map_err(|e| e.to_string())?;
-    if release["tag_name"].as_str() != Some(expected_tag.as_str()) {
-        return Err("The selected release has changed; check versions again".into());
+    let release = super::registry::crispasr_release(&client).map_err(|e| e.to_string())?;
+    let order = checked_crispasr_registry_order(
+        &release,
+        &expected_tag,
+        expected_registry_release,
+        installed_version,
+    )?;
+    if order != std::cmp::Ordering::Less {
+        return Ok("Installed registry release is current or newer; no download needed".into());
     }
     let asset = release["assets"]
         .as_array()
@@ -1327,6 +1363,9 @@ pub(crate) fn update_crispasr(
     let (name, url) = download::extract_release_asset_info(asset).map_err(|e| e.to_string())?;
     let digest =
         download::asset_sha256(std::slice::from_ref(asset), &name).map_err(|e| e.to_string())?;
+    let size = asset["size"]
+        .as_u64()
+        .ok_or("Registry artifact size missing")?;
     let id = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -1368,13 +1407,14 @@ pub(crate) fn update_crispasr(
                 }
             },
             || {
-                download::download_and_extract(
+                download::download_and_extract_sized(
                     &client,
                     &url,
                     &stage,
                     &name,
                     "[CrispAsrUpdate]",
                     &digest,
+                    Some(size),
                 )
             },
         )
@@ -1421,6 +1461,31 @@ pub(crate) fn update_crispasr(
         }
     }
     result
+}
+
+fn checked_crispasr_registry_order(
+    release: &serde_json::Value,
+    expected_tag: &str,
+    expected_release: Option<u64>,
+    installed: &str,
+) -> UpdateResult<std::cmp::Ordering> {
+    if release["tag_name"].as_str() != Some(expected_tag) {
+        return Err("The selected release has changed; check versions again".into());
+    }
+    let number = release["rune_registry_release"]
+        .as_u64()
+        .ok_or("Registry release number missing")?;
+    if expected_release != Some(number) {
+        return Err("The selected registry release changed; check versions again".into());
+    }
+    let versions: std::collections::BTreeMap<String, u64> =
+        serde_json::from_value(release["rune_registry_revisions"].clone())
+            .map_err(|_| "Invalid CrispASR registry version order")?;
+    if versions.get(expected_tag.trim_start_matches('v')) != Some(&number) {
+        return Err("Registry release identity does not match its order".into());
+    }
+    super::registry::compare_nemo_revision(&versions, installed, expected_tag)
+        .ok_or("Installed CrispASR version is not in the registry; update refused".into())
 }
 
 fn whisper_package_is_current(
@@ -1527,6 +1592,34 @@ fn crispasr_hardware_asset_for(
     } else {
         "crispasr-windows-x86_64-cpu-legacy.zip"
     }
+}
+
+fn audio_update_needed(
+    release: &serde_json::Value,
+    expected_tag: &str,
+    expected_release: Option<u64>,
+    installed_version: &str,
+) -> UpdateResult<bool> {
+    if release["tag_name"].as_str() != Some(expected_tag) {
+        return Err("The selected release has changed; check versions again".into());
+    }
+    let (installed, custom) = super::registry::audio_identity(installed_version)
+        .ok_or("Cannot verify installed audio.cpp identity; update refused")?;
+    let number = release["rune_registry_release"]
+        .as_u64()
+        .ok_or("Registry release number missing")?;
+    if expected_release != Some(number) {
+        return Err("The selected registry release changed; check versions again".into());
+    }
+    let versions: std::collections::BTreeMap<String, u64> =
+        serde_json::from_value(release["rune_registry_revisions"].clone())
+            .map_err(|_| "Invalid audio.cpp registry version order")?;
+    if versions.get(expected_tag.trim_start_matches('v')) != Some(&number) {
+        return Err("Registry release identity does not match its order".into());
+    }
+    let order = super::registry::compare_nemo_revision(&versions, installed, expected_tag)
+        .ok_or("Installed audio.cpp version is not in the registry; update refused")?;
+    Ok(order == std::cmp::Ordering::Less || (order == std::cmp::Ordering::Equal && custom))
 }
 
 fn semantic_version(text: &str) -> Option<(u64, u64, u64)> {
@@ -1836,6 +1929,43 @@ fn publish(current: &Path, staged: &Path, backup: &Path) -> UpdateResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn crispasr_update_uses_reviewed_release_order() {
+        let release = serde_json::json!({
+            "tag_name":"v0.8.49", "rune_registry_release":2,
+            "rune_registry_revisions":{"0.8.48":1,"0.8.49":2}
+        });
+        assert_eq!(
+            checked_crispasr_registry_order(&release, "v0.8.49", Some(2), "0.8.48").unwrap(),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            checked_crispasr_registry_order(&release, "v0.8.49", Some(2), "0.8.49").unwrap(),
+            std::cmp::Ordering::Equal
+        );
+        assert!(checked_crispasr_registry_order(&release, "v0.8.49", Some(1), "0.8.48").is_err());
+        assert!(checked_crispasr_registry_order(&release, "v0.8.49", Some(2), "0.8.47").is_err());
+    }
+    #[test]
+    fn audio_updates_require_unchanged_registry_and_known_builds() {
+        let release = serde_json::json!({
+            "tag_name":"v0.9.3",
+            "rune_registry_release":2,
+            "rune_registry_revisions":{"0.9.2":1,"0.9.3":2,"9.0.0":3}
+        });
+        assert!(audio_update_needed(&release, "v0.9.3", Some(2), "audio.cpp 0.9.2").unwrap());
+        assert!(
+            audio_update_needed(&release, "v0.9.3", Some(2), "audio.cpp 0.9.3 (rune-gguf1)")
+                .unwrap()
+        );
+        assert!(!audio_update_needed(&release, "v0.9.3", Some(2), "audio.cpp 0.9.3").unwrap());
+        assert!(!audio_update_needed(&release, "v0.9.3", Some(2), "audio.cpp 9.0.0").unwrap());
+        assert!(audio_update_needed(&release, "v0.9.3", Some(1), "audio.cpp 0.9.2").is_err());
+        assert!(
+            audio_update_needed(&release, "v0.9.3", Some(2), "audio.cpp 0.9.3 (other)").is_err()
+        );
+        assert!(audio_update_needed(&release, "v0.9.3", Some(2), "audio.cpp 2.0.0").is_err());
+    }
     #[test]
     #[cfg(all(windows, target_arch = "x86_64"))]
     #[ignore = "downloads the official GPU package into target, runs --version and verifies its receipt; active engines are unchanged"]

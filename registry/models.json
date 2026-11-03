@@ -799,6 +799,343 @@
       }
     },
     {
+      "id": "qwen-image-2.1",
+      "name": "Qwen-Image-2.1 7B",
+      "description": "Qwen-Image-2.1 7B with native 2K rendering, RGBA transparency, live-verified instruction edits and image variations, up to ten unmasked references and two references with alpha masks",
+      "license": "Qwen Research License",
+      "source_url": "https://huggingface.co/unsloth/Qwen-Image-2.1-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": ["Image Generation"],
+      "catalog": {
+        "tasks": ["text-to-image", "text-image-to-image", "image-to-image"],
+        "capabilities": ["Transparency (RGBA)"],
+        "max_context_length": null,
+        "local": {"params":7000000000,"bits_per_weight":4.5,"context_length":-1,"gpu_layers":99,"args":"--diffusion-fa --params-backend disk"},
+        "engines": ["sd-server"],
+        "extra": {"default_cfg_scale":4.0,"default_sample_method":"euler","default_steps":30,"max_resolution":"2048×2048 (Native DiT)"},
+        "image_reference_checks": [{"engine":"sd-server","version":"stable-diffusion.cpp version unknown, commit c6dfa9d","counts":[3,4,5,6,7,8,9,10]}]
+      },
+      "latest": "2c31ccd392b367a6637841a143813320a02dff55",
+      "versions": {
+        "2c31ccd392b367a6637841a143813320a02dff55": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"qwen-image-2.1-Q4_K_M.gguf","url":"https://huggingface.co/unsloth/Qwen-Image-2.1-GGUF/resolve/2c31ccd392b367a6637841a143813320a02dff55/qwen-image-2.1-Q4_K_M.gguf","sha256":"631d532e7ca71e8d90a87c71d3699761a812039d22e3370e87498d87754660fe","size_bytes":4199565024},
+            {"id":"text_encoder","filename":"Qwen-Image-2.1-text_encoder-FP8.safetensors","url":"https://huggingface.co/unsloth/Qwen-Image-2.1-FP8/resolve/d67caebb412f98c968f9be41b3a8cea80b3e039a/Qwen-Image-2.1-text_encoder-FP8.safetensors","sha256":"0a1e217ea5a327c77cf4c58ee2ec4b15dabdd55cc4ffa6d999085865e70db3df","size_bytes":9394530592},
+            {"id":"vae","filename":"diffusion_pytorch_model.safetensors","url":"https://huggingface.co/Qwen/Qwen-Image-2.1/resolve/790c92633540aa0cb11d9abf19eb46d861714758/vae/diffusion_pytorch_model.safetensors","sha256":"a07a1b7c4ee2966a1b3bdc37de9b4f983d56937e46619f709a80b6e490675417","size_bytes":1350989512}
+          ]
+        }
+      }
+    },
+    {
+      "id": "qwen-image-2.1-uncensored",
+      "name": "Qwen-Image-2.1 7B Uncensored",
+      "description": "Qwen-Image-2.1 7B Uncensored variant with bypassed alignment filtering",
+      "license": "Qwen Research License",
+      "source_url": "https://huggingface.co/abenzerps/Qwen-Image-2.1-Uncensored-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": ["Image Generation"],
+      "catalog": {
+        "tasks": ["text-to-image", "text-image-to-image", "image-to-image"],
+        "capabilities": ["Uncensored", "Transparency (RGBA)"],
+        "max_context_length": null,
+        "local": {"params":7000000000,"bits_per_weight":8.5,"context_length":-1,"gpu_layers":99,"args":"--diffusion-fa --params-backend disk"},
+        "engines": ["sd-server"],
+        "extra": {"default_cfg_scale":4.0,"default_sample_method":"euler","default_steps":30,"max_resolution":"2048×2048 (Native DiT)"}
+      },
+      "latest": "728891aa68ed51fb92624f4c2080cd0c63461edd",
+      "versions": {
+        "728891aa68ed51fb92624f4c2080cd0c63461edd": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"qwen-image-2.1-Q8_0.gguf","url":"https://huggingface.co/abenzerps/Qwen-Image-2.1-Uncensored-GGUF/resolve/728891aa68ed51fb92624f4c2080cd0c63461edd/qwen-image-2.1-Q8_0.gguf","sha256":"763ee46b76069d9c54ab26719a0b9222575751560c8bf3a48275736c44351c0e","size_bytes":7591551648},
+            {"id":"text_encoder","filename":"Qwen-Image-2.1-text_encoder-FP8.safetensors","url":"https://huggingface.co/unsloth/Qwen-Image-2.1-FP8/resolve/d67caebb412f98c968f9be41b3a8cea80b3e039a/Qwen-Image-2.1-text_encoder-FP8.safetensors","sha256":"0a1e217ea5a327c77cf4c58ee2ec4b15dabdd55cc4ffa6d999085865e70db3df","size_bytes":9394530592},
+            {"id":"vae","filename":"diffusion_pytorch_model.safetensors","url":"https://huggingface.co/Qwen/Qwen-Image-2.1/resolve/790c92633540aa0cb11d9abf19eb46d861714758/vae/diffusion_pytorch_model.safetensors","sha256":"a07a1b7c4ee2966a1b3bdc37de9b4f983d56937e46619f709a80b6e490675417","size_bytes":1350989512}
+          ]
+        }
+      }
+    },
+    {
+      "id": "moss-image-sft",
+      "name": "MOSS Image SFT",
+      "description": "OpenMOSS MOSS-Image-SFT text-to-image model using the local Qwen3.5 encoder, tokenizer and VAE",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/MOSS-Image-SFT-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": ["Image Generation"],
+      "catalog": {
+        "tasks": ["text-to-image"],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {"params":5082308624,"bits_per_weight":8.63,"context_length":-1,"gpu_layers":99,"args":"--diffusion-fa --params-backend disk --flow-shift 5"},
+        "engines": ["sd-server"],
+        "extra": {"default_cfg_scale":3.0,"default_sample_method":"euler","default_steps":50}
+      },
+      "latest": "a013f7442e672e67b21f485b4b4f369df5500847",
+      "versions": {
+        "a013f7442e672e67b21f485b4b4f369df5500847": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"MOSS-Image-SFT-Q8_0.gguf","url":"https://huggingface.co/unsloth/MOSS-Image-SFT-GGUF/resolve/a013f7442e672e67b21f485b4b4f369df5500847/MOSS-Image-SFT-Q8_0.gguf","sha256":"f18beeb8c6101a3edaff379acce2bdf9fcc1272dfb4c40530c9070f7a0650458","size_bytes":5482213536},
+            {"id":"text_encoder","filename":"Qwen3.5-9B-Q8_0.gguf","url":"https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf","sha256":"809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4","size_bytes":9527502048},
+            {"id":"vae","filename":"diffusion_pytorch_model.safetensors","url":"https://huggingface.co/unsloth/MOSS-Image-SFT-FP8/resolve/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/vae/diffusion_pytorch_model.safetensors","sha256":"c3bdf94dc67ec69b30ea9fe1fa8340085679cae64d019f7c7e4a9921f1a7f17a","size_bytes":249521372},
+            {"id":"tokenizer","filename":"tokenizer.json","url":"https://huggingface.co/unsloth/MOSS-Image-SFT-FP8/resolve/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/tokenizer/tokenizer.json","sha256":"06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523","size_bytes":19989325}
+          ]
+        }
+      }
+    },
+    {
+      "id": "z-image-turbo-q8-0",
+      "name": "Z-Image Turbo 6B Q8_0",
+      "description": "Z-Image Turbo text-to-image generation using the local Qwen3 text encoder and VAE.",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/Z-Image-Turbo-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": ["Image Generation"],
+      "catalog": {
+        "tasks": ["text-to-image"], "capabilities": [], "max_context_length": null,
+        "local": {"params":6000000000,"bits_per_weight":8.5,"context_length":-1,"gpu_layers":99,"args":"--diffusion-fa"},
+        "engines": ["sd-server"],
+        "extra": {"default_cfg_scale":1.0,"default_sample_method":"euler","default_steps":8}
+      },
+      "latest": "b40f712c569ecfff42f2307dcc43399ae1d71318",
+      "versions": {
+        "b40f712c569ecfff42f2307dcc43399ae1d71318": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"z-image-turbo-Q8_0.gguf","url":"https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/resolve/b40f712c569ecfff42f2307dcc43399ae1d71318/z-image-turbo-Q8_0.gguf","sha256":"f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe","size_bytes":7224707136},
+            {"id":"vae","filename":"diffusion_pytorch_model.safetensors","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/vae/diffusion_pytorch_model.safetensors","sha256":"f5b59a26851551b67ae1fe58d32e76486e1e812def4696a4bea97f16604d40a3","size_bytes":167666902},
+            {"id":"encoder_config","filename":"config.json","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/config.json","sha256":"8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a","size_bytes":726},
+            {"id":"encoder_generation_config","filename":"generation_config.json","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/generation_config.json","sha256":"2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2","size_bytes":239},
+            {"id":"encoder_index","filename":"model.safetensors.index.json","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/model.safetensors.index.json","sha256":"6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2","size_bytes":32819},
+            {"id":"encoder_shard_001","filename":"model-00001-of-00003.safetensors","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/model-00001-of-00003.safetensors","sha256":"328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223","size_bytes":3957900840},
+            {"id":"encoder_shard_002","filename":"model-00002-of-00003.safetensors","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/model-00002-of-00003.safetensors","sha256":"6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5","size_bytes":3987450520},
+            {"id":"encoder_shard_003","filename":"model-00003-of-00003.safetensors","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/model-00003-of-00003.safetensors","sha256":"7ca841ee75b9c61267c0c6148fd8d096d3d21b6d3e161256a9b878154f91fc52","size_bytes":99630640}
+          ]
+        }
+      }
+    },
+    {
+      "id": "qwen-image-edit-2511",
+      "name": "Qwen Image Edit 2511",
+      "description": "Qwen-Image-Edit 2511 with live-verified instruction edits, one or two reference images and alpha masks preserving protected pixels",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": ["Image Generation"],
+      "catalog": {
+        "tasks": ["text-image-to-image", "image-to-image"], "capabilities": [], "max_context_length": null,
+        "local": {"params":20430401088,"bits_per_weight":4.14,"context_length":-1,"gpu_layers":99,"args":"--diffusion-fa --params-backend disk --model-args qwen_image_zero_cond_t=true"},
+        "engines": ["sd-server"],
+        "extra": {"default_cfg_scale":5.0,"default_sample_method":"euler","default_steps":30}
+      },
+      "latest": "0d33d9692b4b26212297240d87b0d4719aa4fd06",
+      "versions": {
+        "0d33d9692b4b26212297240d87b0d4719aa4fd06": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"qwen-image-edit-2511-Q3_K_L.gguf","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/resolve/0d33d9692b4b26212297240d87b0d4719aa4fd06/qwen-image-edit-2511-Q3_K_L.gguf","sha256":"0b21b582014f62aa183d58987d5cf734fc00ed2d17fe8deef11b995806c11423","size_bytes":10581408352},
+            {"id":"vae","filename":"diffusion_pytorch_model.safetensors","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511/resolve/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/vae/diffusion_pytorch_model.safetensors","sha256":"0c8bc8b758c649abef9ea407b95408389a3b2f610d0d10fcb054fe171d0a8344","size_bytes":253806966},
+            {"id":"encoder_config","filename":"config.json","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511/resolve/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder/config.json","sha256":"4a49f14a1594fd988ab301e491ac522cd9b0e8fd1c9232b806c54568f348c1fb","size_bytes":3146},
+            {"id":"encoder_generation_config","filename":"generation_config.json","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511/resolve/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder/generation_config.json","sha256":"50867494bddf9ddc8e289e6214be5a2263e68f16c127a3652c6eb9f17990e5d9","size_bytes":244},
+            {"id":"encoder_index","filename":"model.safetensors.index.json","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511/resolve/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder/model.safetensors.index.json","sha256":"4be35310ddc165e46e88de4c3fec8c1210014b0b8717f4544d82cc740814ae0c","size_bytes":57655},
+            {"id":"encoder_shard_001","filename":"model-00001-of-00004.safetensors","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511/resolve/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder/model-00001-of-00004.safetensors","sha256":"d725335e4ea2399be706469e4b8807716a8fa64bd03468252e9f7acf2415fee4","size_bytes":4968243304},
+            {"id":"encoder_shard_002","filename":"model-00002-of-00004.safetensors","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511/resolve/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder/model-00002-of-00004.safetensors","sha256":"b1830db6908dcc76df3a71492acbcf2b8cac130114cf1f3c2d9edae8de8c6de3","size_bytes":4991495816},
+            {"id":"encoder_shard_003","filename":"model-00003-of-00004.safetensors","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511/resolve/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder/model-00003-of-00004.safetensors","sha256":"09c1807c6d00d7cab94f7db39d4c02ebb8537225ccde383861ac48db97945aa6","size_bytes":4932751040},
+            {"id":"encoder_shard_004","filename":"model-00004-of-00004.safetensors","url":"https://huggingface.co/unsloth/Qwen-Image-Edit-2511/resolve/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder/model-00004-of-00004.safetensors","sha256":"5dd068336d14d45ffb43cef374d286cc6ba9d8741b028f90a7d040d847961f4a","size_bytes":1691924384}
+          ]
+        }
+      }
+    },
+    {
+      "id": "z-image",
+      "name": "Z-Image 6B",
+      "description": "Z-Image 6B Single-Stream Diffusion Transformer for high-fidelity photorealistic text-to-image generation",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/Z-Image-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": ["Image Generation"],
+      "catalog": {
+        "tasks": ["text-to-image"],
+        "capabilities": ["Photorealism", "Bilingual Rendering"],
+        "max_context_length": null,
+        "local": {"params":6000000000,"bits_per_weight":8.5,"context_length":-1,"gpu_layers":99,"args":"--diffusion-fa"},
+        "engines": ["sd-server"],
+        "extra": {"default_cfg_scale":4.0,"default_sample_method":"euler","default_steps":30}
+      },
+      "latest": "c9913e69743c5d9dfa7fdac58a0cc5709a17aa08",
+      "versions": {
+        "c9913e69743c5d9dfa7fdac58a0cc5709a17aa08": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"z-image-Q8_0.gguf","url":"https://huggingface.co/unsloth/Z-Image-GGUF/resolve/c9913e69743c5d9dfa7fdac58a0cc5709a17aa08/z-image-Q8_0.gguf","sha256":"a51d4e36f84caa972e0eff65e8bd2961add14374d8a7038a51eefea2fe45f2c9","size_bytes":7224707136},
+            {"id":"vae","filename":"diffusion_pytorch_model.safetensors","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/vae/diffusion_pytorch_model.safetensors","sha256":"f5b59a26851551b67ae1fe58d32e76486e1e812def4696a4bea97f16604d40a3","size_bytes":167666902},
+            {"id":"encoder_config","filename":"config.json","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/config.json","sha256":"8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a","size_bytes":726},
+            {"id":"encoder_generation_config","filename":"generation_config.json","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/generation_config.json","sha256":"2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2","size_bytes":239},
+            {"id":"encoder_index","filename":"model.safetensors.index.json","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/model.safetensors.index.json","sha256":"6dc0981b8829fead746441f68f38f24c5ca4a3a66351f652c26c6df0efc43ab2","size_bytes":32819},
+            {"id":"encoder_shard_001","filename":"model-00001-of-00003.safetensors","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/model-00001-of-00003.safetensors","sha256":"328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223","size_bytes":3957900840},
+            {"id":"encoder_shard_002","filename":"model-00002-of-00003.safetensors","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/model-00002-of-00003.safetensors","sha256":"6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5","size_bytes":3987450520},
+            {"id":"encoder_shard_003","filename":"model-00003-of-00003.safetensors","url":"https://huggingface.co/Tongyi-MAI/Z-Image/resolve/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder/model-00003-of-00003.safetensors","sha256":"7ca841ee75b9c61267c0c6148fd8d096d3d21b6d3e161256a9b878154f91fc52","size_bytes":99630640}
+          ]
+        }
+      }
+    },
+    {
+      "id": "qwen-image-2512",
+      "name": "Qwen Image 2512 7B",
+      "description": "Qwen-Image 2512 7B DiT foundation model for high-fidelity text-to-image synthesis and image editing",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/Qwen-Image-2512-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": ["Image Generation"],
+      "catalog": {
+        "tasks": ["text-to-image"],
+        "capabilities": ["Image Editing", "Photorealism"],
+        "max_context_length": null,
+        "local": {"params":7000000000,"bits_per_weight":4.5,"context_length":-1,"gpu_layers":99,"args":"--diffusion-fa --params-backend disk"},
+        "engines": ["sd-server"],
+        "extra": {"default_cfg_scale":6.0,"default_sample_method":"euler","default_steps":30}
+      },
+      "latest": "1626d7531f84b4d2ea1cd6d2e69f41ec027dd354",
+      "versions": {
+        "1626d7531f84b4d2ea1cd6d2e69f41ec027dd354": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"qwen-image-2512-Q5_K_M.gguf","url":"https://huggingface.co/unsloth/Qwen-Image-2512-GGUF/resolve/1626d7531f84b4d2ea1cd6d2e69f41ec027dd354/qwen-image-2512-Q5_K_M.gguf","sha256":"e9ea2c513cf25645829fcccbd0882e821b858f4fabfb48ae1b5f103da68ecd0f","size_bytes":15000074784},
+            {"id":"text_encoder","filename":"Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf","url":"https://huggingface.co/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/resolve/68bb8bc4b7df5289c143aaec0ab477a7d4051aab/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf","sha256":"8edd10e3ae170ab8b8d114e70763ff63a220f16deec9a56acf9330034efc0bb5","size_bytes":4785159040},
+            {"id":"vae","filename":"diffusion_pytorch_model.safetensors","url":"https://huggingface.co/unsloth/Qwen-Image-2512/resolve/b96dde7fa56044ec6892801be5a37540a253717e/vae/diffusion_pytorch_model.safetensors","sha256":"0c8bc8b758c649abef9ea407b95408389a3b2f610d0d10fcb054fe171d0a8344","size_bytes":253806966}
+          ]
+        }
+      }
+    },
+    {
+      "id": "gemma-4-12b-it",
+      "name": "Gemma 4 12B IT",
+      "description": "Google DeepMind Gemma 4 12B Instruction-Tuned omni multimodal foundation model for text, image, audio, and video",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": ["Chat", "Vision"],
+      "catalog": {
+        "tasks": ["text-to-text", "text-image-to-text"],
+        "capabilities": ["Tool Call", "Structured Output"],
+        "max_context_length": 262144,
+        "sampling": {"temperature":0.6,"top_p":0.95,"top_k":40,"max_tokens":4096},
+        "local": {"params":12000000000,"bits_per_weight":4.5,"context_length":-1,"gpu_layers":99,"args":"-fa on"},
+        "engines": ["llama-server", "encoder"]
+      },
+      "latest": "fc034cfff751157913579611efad8462ac1be606",
+      "versions": {
+        "fc034cfff751157913579611efad8462ac1be606": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"gemma-4-12b-it-UD-Q6_K_XL.gguf","url":"https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/fc034cfff751157913579611efad8462ac1be606/gemma-4-12b-it-UD-Q6_K_XL.gguf","sha256":"70d04059c74be85c5e709921f05acac412b8b8f24f3ee7dd07e91ddc5f4d4de8","size_bytes":10685012800},
+            {"id":"projector","filename":"mmproj-BF16.gguf","url":"https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/fc034cfff751157913579611efad8462ac1be606/mmproj-BF16.gguf","sha256":"2e269f906eb15169ee9ce880ea649bd6d42d4964c21f8ede10d0d0efc738bcbb","size_bytes":175115840}
+          ]
+        }
+      }
+    },
+    {
+      "id": "qwen3.5-4b-q4",
+      "name": "Qwen3.5 4B Q4",
+      "description": "Local image and text model; basic tool calls tested. Screen coordinate accuracy is not established.",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/SoAIHQ/Qwen3.5-4B-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": ["Chat", "Vision"],
+      "catalog": {
+        "tasks": ["text-to-text", "text-image-to-text"],
+        "capabilities": [],
+        "max_context_length": 262144,
+        "sampling": {"temperature":0.0,"max_tokens":512},
+        "local": {"params":4000000000,"bits_per_weight":5.6,"context_length":-1,"gpu_layers":99,"args":"-fa on"},
+        "engines": ["llama-server"],
+        "tool_call_support": {"status":"supported","verified_with":[{"engine":"llama-server","version":"version: 0.8.0-dev (build 11960, commit 8642541b2)"}]},
+        "structured_output_support": {"status":"supported","verified_with":[{"engine":"llama-server","version":"version: 0.8.0-dev (build 11960, commit 8642541b2)"}]}
+      },
+      "latest": "5f113e0dbe6862596f7f5927dbe583c592e887aa",
+      "versions": {
+        "5f113e0dbe6862596f7f5927dbe583c592e887aa": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"Qwen3.5-4B-Q4_K_M.gguf","url":"https://huggingface.co/SoAIHQ/Qwen3.5-4B-GGUF/resolve/5f113e0dbe6862596f7f5927dbe583c592e887aa/Qwen3.5-4B-Q4_K_M.gguf","sha256":"2ebe6eb67cb92adeffc7073c48dd4e3baf79465ac650793dc751cad2b29cf219","size_bytes":2783447136},
+            {"id":"projector","filename":"mmproj-Qwen3.5-4B-f16.gguf","url":"https://huggingface.co/SoAIHQ/Qwen3.5-4B-GGUF/resolve/5f113e0dbe6862596f7f5927dbe583c592e887aa/mmproj-Qwen3.5-4B-f16.gguf","sha256":"659b59dd44b73b1cd34af6cc424669484b06dc80f4340adf8ea84ad776eef813","size_bytes":672423488}
+          ]
+        }
+      }
+    },
+    {
+      "id": "minicpm-o-4-5-q8-0",
+      "name": "MiniCPM-o 4.5 Q8_0",
+      "description": "OpenBMB MiniCPM-o 4.5 (an omni model). Wired up for text and image input via the vision encoder in extra.mmproj_path; llama-server loads a single mmproj, so audio input and speech output are not available",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/openbmb/MiniCPM-o-4_5-gguf",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": ["Chat", "Vision"],
+      "catalog": {
+        "tasks": ["text-to-text", "text-image-to-text"],
+        "capabilities": ["Tool Call", "Structured Output"],
+        "max_context_length": 40960,
+        "sampling": {"temperature":0.7,"top_p":0.9,"top_k":40,"min_p":0.05,"max_tokens":4096},
+        "local": {"params":null,"bits_per_weight":8.5,"context_length":-1,"gpu_layers":99,"args":"-fa on --cache-type-k q8_0 --cache-type-v q8_0"},
+        "engines": ["llama-server"]
+      },
+      "latest": "db25077c33951fe163b42986fba0132e279872a2",
+      "versions": {
+        "db25077c33951fe163b42986fba0132e279872a2": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"MiniCPM-o-4_5-Q8_0.gguf","url":"https://huggingface.co/openbmb/MiniCPM-o-4_5-gguf/resolve/db25077c33951fe163b42986fba0132e279872a2/MiniCPM-o-4_5-Q8_0.gguf","sha256":"ae6af22ad3b7f1a7bf667922af84b9eb3e2199cc86f402702eaf9b054054788d","size_bytes":8707877536},
+            {"id":"projector","filename":"MiniCPM-o-4_5-vision-F16.gguf","url":"https://huggingface.co/openbmb/MiniCPM-o-4_5-gguf/resolve/db25077c33951fe163b42986fba0132e279872a2/vision/MiniCPM-o-4_5-vision-F16.gguf","sha256":"1453678cc4e4fe18de241952962e234f265cb8dda780773526103ab8ba82f421","size_bytes":1095113184}
+          ]
+        }
+      }
+    },
+    {
+      "id": "lfm3-1.7b-q4-k-m",
+      "name": "LiquidAI LFM3 1.7B Q4_K_M",
+      "description": "Liquid AI's 1.7B text model in the official Q4_K_M GGUF format.",
+      "license": "LFM Open License v1.0",
+      "source_url": "https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": ["Chat"],
+      "catalog": {
+        "tasks": ["text-to-text"],
+        "capabilities": [],
+        "max_context_length": 262144,
+        "sampling": {"temperature":0.1,"top_k":50},
+        "local": {
+          "path":"liquidai/lfm3-1.7b/LFM3-1.7B-Q4_K_M.gguf",
+          "params":1700000000,
+          "bits_per_weight":null,
+          "context_length":-1,
+          "gpu_layers":99,
+          "args":"--repeat-penalty 1.1"
+        },
+        "engines": ["llama-server"]
+      },
+      "latest": "fa4368c4338a022b713374116ea8945ae416ee93",
+      "versions": {
+        "fa4368c4338a022b713374116ea8945ae416ee93": {
+          "release_number": 1,
+          "files": [
+            {"id":"model","filename":"LFM3-1.7B-Q4_K_M.gguf","url":"https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/resolve/fa4368c4338a022b713374116ea8945ae416ee93/LFM3-1.7B-Q4_K_M.gguf","sha256":"3793e1e6e2266919d6e015287221b41100175a98eddaba92e111aed3b05c93c4","size_bytes":1099627808}
+          ]
+        }
+      }
+    },
+    {
       "id": "fish-audio-s2-pro",
       "name": "Fish Audio S2 Pro",
       "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
@@ -848,6 +1185,72 @@
               "url": "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/e36610ac69b5262e914a52635324050bee8f1ad2/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf",
               "sha256": "781fdece3ff837838c48f7d5a7b37e37c4d661a6416416ad57fe92fed47d96ff",
               "size_bytes": 10229278080
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ternary-bonsai-2-27b-pq2-0",
+      "name": "Ternary Bonsai-2 27B",
+      "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf",
+      "engine": "llama-server-prism",
+      "format": "gguf",
+      "capabilities": [
+        "Chat",
+        "Vision"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-text"
+        ],
+        "capabilities": [
+          "Reasoning",
+          "Structured Output",
+          "Tool Call"
+        ],
+        "max_context_length": 262144,
+        "sampling": {
+          "max_tokens": 4096,
+          "min_p": 0.05,
+          "temperature": 0.7,
+          "top_k": 50,
+          "top_p": 0.9
+        },
+        "local": {
+          "params": 27000000000,
+          "bits_per_weight": 2.13,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
+        },
+        "engines": [
+          "llama-server-prism"
+        ],
+        "extra": {
+          "max_resolution": "4096×4096 (Dynamic 4K)"
+        }
+      },
+      "latest": "8b7157531df3859ce2a415c60754e9152554e25d",
+      "versions": {
+        "8b7157531df3859ce2a415c60754e9152554e25d": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "Ternary-Bonsai-2-27B-PQ2_0.gguf",
+              "url": "https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf/resolve/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-PQ2_0.gguf",
+              "sha256": "3907dc1658db1f78a9826bf8d5bcb8dc65db0d466388937af57f2294fae62ec1",
+              "size_bytes": 7206168928
+            },
+            {
+              "id": "projector",
+              "filename": "Ternary-Bonsai-2-27B-mmproj-BF16.gguf",
+              "url": "https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf/resolve/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-mmproj-BF16.gguf",
+              "sha256": "e287342d92332fa3577ed1d42e921dac9370c08da58ba9337fa450f6cc76cfd7",
+              "size_bytes": 931145856
             }
           ]
         }

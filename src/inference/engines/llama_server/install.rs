@@ -71,10 +71,7 @@ pub(super) fn resolve_binary(
     let client = download::create_download_client()?;
     let release_data = match flavor {
         RuntimeFlavor::Upstream => super::super::registry::llama_release(&client)?,
-        RuntimeFlavor::Prism => download::resolve_release(
-            &client,
-            "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases",
-        )?,
+        RuntimeFlavor::Prism => super::super::registry::prism_release(&client)?,
     };
 
     install_release(&client, &release_data, base_dir)
@@ -260,7 +257,7 @@ pub(crate) fn install_release(
             .open(receipt_path)?;
         let receipt_data = serde_json::json!({
             "schema_version": 1,
-            "engine": "llama-server",
+            "engine": if target_release["tag_name"].as_str().is_some_and(|tag| tag.starts_with("prism-")) { "llama-server-prism" } else { "llama-server" },
             "version": target_release["tag_name"],
             "release_number": target_release["rune_registry_release"],
             "files": receipt_files,

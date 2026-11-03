@@ -109,14 +109,8 @@ fn repair_managed_runtime(executable: &Path) -> Result<(), Box<dyn Error>> {
             return Err(audio_failure("startup check", &output).into());
         }
         let client = download::create_download_client()?;
-        let releases = download::fetch_releases(
-            &client,
-            "https://api.github.com/repos/0xShug0/audio.cpp/releases",
-        )?;
-        let has_stable = releases
-            .as_array()
-            .is_some_and(|items| items.iter().any(download::is_stable_release));
-        let asset = releases.as_array().into_iter().flatten().filter(|release| download::is_published_release(release) && (!has_stable || download::is_stable_release(release))).flat_map(|release| release["assets"].as_array().into_iter().flatten())
+        let release = super::registry::audio_release(&client)?;
+        let asset = release["assets"].as_array().into_iter().flatten()
             .find(|asset| {
                 let name = asset["name"].as_str().unwrap_or("");
                 name.contains("-cudart-windows-") && name.contains(versions[0].1) && download::matches_arch(name)
@@ -127,7 +121,15 @@ fn repair_managed_runtime(executable: &Path) -> Result<(), Box<dyn Error>> {
         let directory = executable
             .parent()
             .ok_or("Engine executable has no parent")?;
-        download::download_and_extract(&client, &url, directory, &name, "[AudioEngine]", &digest)?;
+        download::download_and_extract_sized(
+            &client,
+            &url,
+            directory,
+            &name,
+            "[AudioEngine]",
+            &digest,
+            asset["size"].as_u64(),
+        )?;
         download::flatten_dlls(directory);
         let output = Command::new(executable).arg("--version").output()?;
         if !output.status.success() {
@@ -333,12 +335,11 @@ impl AudioEngine {
             return Err(download::engine_unavailable("audio-cpp").into());
         }
 
-        tracing::info!("[AudioEngine] Resolving audio.cpp runtime from GitHub releases...");
+        tracing::info!("[AudioEngine] Resolving audio.cpp runtime from the registry...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
-        let release_url = "https://api.github.com/repos/0xShug0/audio.cpp/releases";
-        let release_val = download::resolve_release(&client, release_url)?;
+        let release_val = super::registry::audio_release(&client)?;
 
         let assets = download::preferred_release(&release_val)?["assets"]
             .as_array()
@@ -354,7 +355,7 @@ impl AudioEngine {
         } else if cfg!(target_os = "macos") {
             if let Some(asset) = assets.iter().find(|a| {
                 let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("macos") || n.contains("darwin")
+                (n.contains("macos") || n.contains("darwin")) && download::matches_arch(&n)
             }) {
                 download_urls.push(download::extract_release_asset_info(asset)?);
             }
@@ -370,7 +371,7 @@ impl AudioEngine {
 
             let fallback = assets.iter().find(|a| {
                 let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("linux") || n.contains("ubuntu")
+                (n.contains("linux") || n.contains("ubuntu")) && download::matches_arch(&n)
             });
 
             if let Some(target) = cuda_asset.or(fallback) {
@@ -383,14 +384,23 @@ impl AudioEngine {
         }
 
         for (archive_name, download_url) in download_urls {
-            download::download_and_extract(
+            download::download_and_extract_sized(
                 &client,
                 &download_url,
                 &base_dir,
                 &archive_name,
                 "[AudioEngine]",
                 &download::asset_sha256(assets, &archive_name)?,
+                assets
+                    .iter()
+                    .find(|a| a["name"].as_str() == Some(&archive_name))
+                    .and_then(|a| a["size"].as_u64()),
             )?;
+        }
+
+        if !exe_path.exists() && download::find_executable_recursive(&base_dir, exe_name).is_none()
+        {
+            return Err("No compatible audio.cpp registry artifact was installed".into());
         }
 
         download::flatten_dlls(&base_dir);

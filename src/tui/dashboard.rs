@@ -41,6 +41,9 @@ pub struct DashboardInfo {
     pub auth_enabled: bool,
     pub exposed_to_network: bool,
     pub config_path: PathBuf,
+    pub root: PathBuf,
+    pub server_path: PathBuf,
+    pub model_registry_path: Option<PathBuf>,
     pub models: Vec<ModelRow>,
 }
 
@@ -82,6 +85,17 @@ struct App {
     model_action: Option<ModelAction>,
     model_action_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     model_action_status: Option<String>,
+    model_registry_open: bool,
+    model_registry_refresh: bool,
+    model_registry_selected: usize,
+    model_registry_models: Vec<crate::model_registry::LocalModel>,
+    model_registry_rx:
+        Option<std::sync::mpsc::Receiver<Result<Vec<crate::model_registry::LocalModel>, String>>>,
+    model_registry_status: Option<String>,
+    model_install_requested: bool,
+    model_install_rx: Option<std::sync::mpsc::Receiver<ModelInstallEvent>>,
+    model_install_cancel: Option<Arc<AtomicBool>>,
+    model_download: Option<crate::inference::engines::download::DownloadProgress>,
     engines: Vec<EngineRow>,
     engine_selected: usize,
     refresh_engines: bool,
@@ -117,9 +131,17 @@ enum ModelAction {
     Unload,
 }
 
+enum ModelInstallEvent {
+    Progress(crate::inference::engines::download::DownloadProgress),
+    Finished(Result<String, String>),
+}
+
 impl Drop for App {
     fn drop(&mut self) {
         if let Some(cancel) = &self.update_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(cancel) = &self.model_install_cancel {
             cancel.store(true, Ordering::Relaxed);
         }
     }
@@ -165,6 +187,16 @@ impl App {
             model_action: None,
             model_action_rx: None,
             model_action_status: None,
+            model_registry_open: false,
+            model_registry_refresh: false,
+            model_registry_selected: 0,
+            model_registry_models: Vec::new(),
+            model_registry_rx: None,
+            model_registry_status: None,
+            model_install_requested: false,
+            model_install_rx: None,
+            model_install_cancel: None,
+            model_download: None,
             engines: Vec::new(),
             engine_selected: 0,
             refresh_engines: false,
@@ -207,6 +239,176 @@ impl App {
             Status::Loaded { .. } => Some(ModelAction::Unload),
             Status::Loading(_) => None,
             Status::Idle | Status::Failed(_) => Some(ModelAction::Load),
+        }
+    }
+
+    fn sync_configured_models(&mut self, state: Option<&Arc<crate::inference::AppState>>) {
+        let Some(state) = state else {
+            return;
+        };
+        let Ok(registry) = state.registry.lock() else {
+            return;
+        };
+        for model in &registry.config.models {
+            if self.index.contains_key(&model.id) {
+                continue;
+            }
+            let row = ModelRow {
+                id: model.id.clone(),
+                name: model.name.clone(),
+                modality: model.modality.as_str().to_string(),
+                provider: (!model.is_local()).then(|| model.provider.as_str().to_string()),
+                engine: model
+                    .is_local()
+                    .then(|| model.engine_plan()[0].as_str().to_string()),
+                locality: if model.is_local() {
+                    "LOCAL".into()
+                } else {
+                    "CLOUD".into()
+                },
+                capabilities: model.capabilities.clone().unwrap_or_default(),
+            };
+            self.index.insert(row.id.clone(), self.models.len());
+            self.models.push(ModelState {
+                row,
+                status: Status::Idle,
+                requests: 0,
+                errors: 0,
+                tps_sum: 0.0,
+                tps_n: 0,
+                last_used: None,
+            });
+        }
+    }
+
+    fn process_model_registry(&mut self) {
+        if self.model_registry_refresh && self.model_registry_rx.is_none() {
+            self.model_registry_refresh = false;
+            self.model_registry_status = Some("Loading model registry…".into());
+            let path = self.info.model_registry_path.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let result = match path {
+                    Some(path) => crate::model_registry::load_from_path(&path),
+                    None => crate::model_registry::fetch(),
+                }
+                .map_err(|error| format!("{error:#}"));
+                let _ = tx.send(result);
+            });
+            self.model_registry_rx = Some(rx);
+        }
+        if let Some(rx) = &self.model_registry_rx {
+            match rx.try_recv() {
+                Ok(Ok(models)) => {
+                    self.model_registry_models = models;
+                    self.model_registry_selected = self
+                        .model_registry_selected
+                        .min(self.model_registry_models.len().saturating_sub(1));
+                    self.model_registry_status = Some(if self.model_registry_models.is_empty() {
+                        "No downloadable models listed".into()
+                    } else {
+                        "Select a model and press Enter to install".into()
+                    });
+                    self.model_registry_rx = None;
+                }
+                Ok(Err(error)) => {
+                    self.model_registry_models.clear();
+                    self.model_registry_status = Some(format!("Registry failed: {error}"));
+                    self.model_registry_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.model_registry_status =
+                        Some("Registry worker stopped unexpectedly".into());
+                    self.model_registry_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if self.model_install_requested {
+            self.model_install_requested = false;
+            if self.model_registry_rx.is_some() {
+                self.model_registry_status = Some("Wait for the registry to load".into());
+            } else if let Some(model) = self
+                .model_registry_models
+                .get(self.model_registry_selected)
+                .cloned()
+            {
+                if self.index.contains_key(&model.id) {
+                    self.model_registry_status = Some(
+                        "Model ID already configured; existing configuration preserved".into(),
+                    );
+                } else {
+                    let root = self.info.root.clone();
+                    let server = self.info.server_path.clone();
+                    let catalog = self.info.config_path.clone();
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    let worker_cancel = cancel.clone();
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    self.model_registry_status = Some(format!("Installing {}…", model.id));
+                    self.model_install_cancel = Some(cancel);
+                    self.model_install_rx = Some(rx);
+                    self.model_download = None;
+                    std::thread::spawn(move || {
+                        let progress_tx = tx.clone();
+                        let result = crate::inference::engines::download::with_cancellation(
+                            worker_cancel,
+                            || {
+                                crate::inference::engines::download::with_progress(
+                                    move |progress| {
+                                        let _ =
+                                            progress_tx.send(ModelInstallEvent::Progress(progress));
+                                    },
+                                    || {
+                                        crate::model_registry::install(
+                                            &model, &root, &server, &catalog,
+                                        )
+                                    },
+                                )
+                            },
+                        )
+                        .map(|_| format!("Installed {}; waiting for catalog reload", model.id))
+                        .map_err(|error| format!("{error:#}"));
+                        let _ = tx.send(ModelInstallEvent::Finished(result));
+                    });
+                }
+            } else {
+                self.model_registry_status = Some("Select a model from the registry".into());
+            }
+        }
+        if let Some(rx) = &self.model_install_rx {
+            loop {
+                match rx.try_recv() {
+                    Ok(ModelInstallEvent::Progress(progress)) => {
+                        self.model_download = Some(progress)
+                    }
+                    Ok(ModelInstallEvent::Finished(result)) => {
+                        let cancelled = self
+                            .model_install_cancel
+                            .as_ref()
+                            .is_some_and(|cancel| cancel.load(Ordering::Relaxed));
+                        self.model_registry_status = Some(match result {
+                            Ok(message) => message,
+                            Err(_) if cancelled => {
+                                "Installation cancelled; partial download saved for retry".into()
+                            }
+                            Err(error) => format!("Installation failed: {error}"),
+                        });
+                        self.model_install_rx = None;
+                        self.model_install_cancel = None;
+                        self.model_download = None;
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.model_registry_status =
+                            Some("Model installer stopped unexpectedly".into());
+                        self.model_install_rx = None;
+                        self.model_install_cancel = None;
+                        self.model_download = None;
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -364,6 +566,39 @@ impl App {
             self.help = false;
             return;
         }
+        if self.tab == Tab::Models && self.model_registry_open {
+            match code {
+                KeyCode::Char('i') | KeyCode::Esc => {
+                    self.model_registry_open = false;
+                    return;
+                }
+                KeyCode::Char('r') => {
+                    self.model_registry_refresh = true;
+                    return;
+                }
+                KeyCode::Up => {
+                    self.model_registry_selected = self.model_registry_selected.saturating_sub(1);
+                    return;
+                }
+                KeyCode::Down => {
+                    self.model_registry_selected = (self.model_registry_selected + 1)
+                        .min(self.model_registry_models.len().saturating_sub(1));
+                    return;
+                }
+                KeyCode::Enter if self.model_install_rx.is_none() => {
+                    self.model_install_requested = true;
+                    return;
+                }
+                KeyCode::Char('c') => {
+                    if let Some(cancel) = &self.model_install_cancel {
+                        cancel.store(true, Ordering::Relaxed);
+                        self.model_registry_status = Some("Cancelling model installation".into());
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
         match code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('?') => self.help = true,
@@ -389,6 +624,10 @@ impl App {
                 }
             }
             KeyCode::Char('r') if self.tab == Tab::Engines => self.refresh_engines = true,
+            KeyCode::Char('i') if self.tab == Tab::Models => {
+                self.model_registry_open = true;
+                self.model_registry_refresh = true;
+            }
             KeyCode::Enter if self.tab == Tab::Models && self.model_action_rx.is_none() => {
                 self.model_action = self.selected_model_action();
             }
@@ -478,6 +717,10 @@ fn run_dashboard_inner(
     app.engine_rx = Some(start_engine_inventory());
     while !app.quit {
         app.process_model_action(state.as_ref());
+        app.process_model_registry();
+        if app.tick.is_multiple_of(15) {
+            app.sync_configured_models(state.as_ref());
+        }
         if app.refresh_engines && app.engine_rx.is_none() {
             app.engine_rx = Some(start_engine_inventory());
             app.refresh_engines = false;
@@ -535,11 +778,17 @@ fn run_dashboard_inner(
                             || {
                                 if matches!(engine.name, "llama-server" | "llama-server-prism") {
                                     let expected_registry_release =
-                                        engine.registry_versions.as_ref().and_then(|versions| {
-                                            engine_build_identity(&engine.latest).and_then(
-                                                |(build, _)| versions.get(&build).copied(),
+                                        if engine.name == "llama-server-prism" {
+                                            engine.registry_revisions.as_ref().and_then(
+                                                |versions| versions.get(&engine.latest).copied(),
                                             )
-                                        });
+                                        } else {
+                                            engine.registry_versions.as_ref().and_then(|versions| {
+                                                engine_build_identity(&engine.latest).and_then(
+                                                    |(build, _)| versions.get(&build).copied(),
+                                                )
+                                            })
+                                        };
                                     crate::inference::engines::update::update_llama(
                                         state,
                                         if engine.name == "llama-server-prism" {
@@ -561,10 +810,18 @@ fn run_dashboard_inner(
                                         tx.clone(),
                                     )
                                 } else if engine.name == "sd-server" {
+                                    let expected_release =
+                                        engine.registry_revisions.as_ref().and_then(|versions| {
+                                            crate::inference::engines::sd_server::release_commit(
+                                                &engine.latest,
+                                            )
+                                            .and_then(|commit| versions.get(commit).copied())
+                                        });
                                     crate::inference::engines::update::update_sd(
                                         state,
                                         cancel,
                                         engine.latest,
+                                        expected_release,
                                         tx.clone(),
                                     )
                                 } else if engine.name == "nemo-speech" {
@@ -589,17 +846,31 @@ fn run_dashboard_inner(
                                         tx.clone(),
                                     )
                                 } else if engine.name == "crispasr" {
+                                    let expected_release =
+                                        engine.registry_revisions.as_ref().and_then(|versions| {
+                                            versions
+                                                .get(engine.latest.trim_start_matches('v'))
+                                                .copied()
+                                        });
                                     crate::inference::engines::update::update_crispasr(
                                         state,
                                         cancel,
                                         engine.latest,
+                                        expected_release,
                                         tx.clone(),
                                     )
                                 } else {
+                                    let expected_release =
+                                        engine.registry_revisions.as_ref().and_then(|versions| {
+                                            versions
+                                                .get(engine.latest.trim_start_matches('v'))
+                                                .copied()
+                                        });
                                     crate::inference::engines::update::update_audio(
                                         state,
                                         cancel,
                                         engine.latest,
+                                        expected_release,
                                         tx.clone(),
                                     )
                                 }
@@ -829,10 +1100,21 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     }
     if app.tab == Tab::Models {
         spans.extend(key_hint("↑↓", "select"));
-        match app.selected_model_action() {
-            Some(ModelAction::Load) => spans.extend(key_hint("Enter", "load")),
-            Some(ModelAction::Unload) => spans.extend(key_hint("Enter", "unload")),
-            None => spans.push(Span::styled(" model busy ", Style::new().fg(DIM))),
+        if app.model_registry_open {
+            spans.extend(key_hint("i/Esc", "configured"));
+            spans.extend(key_hint("r", "refresh registry"));
+            if app.model_install_rx.is_some() {
+                spans.extend(key_hint("c", "cancel"));
+            } else {
+                spans.extend(key_hint("Enter", "install"));
+            }
+        } else {
+            spans.extend(key_hint("i", "install models"));
+            match app.selected_model_action() {
+                Some(ModelAction::Load) => spans.extend(key_hint("Enter", "load")),
+                Some(ModelAction::Unload) => spans.extend(key_hint("Enter", "unload")),
+                None => spans.push(Span::styled(" model busy ", Style::new().fg(DIM))),
+            }
         }
     }
     if app.tab == Tab::Logs {
@@ -1159,7 +1441,7 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
     }
     if engine.installed {
         let supported = match engine.name {
-            "audio-cpp" => os == "windows",
+            "audio-cpp" => os == "windows" && arch == "x86_64",
             "llama-server" | "llama-server-prism" | "sd-server" | "nemo-speech" | "whisper-cpp"
             | "crispasr" | "needle" => os == "windows" && arch == "x86_64",
             _ => return unavailable("Automatic update is not implemented for this engine"),
@@ -1200,10 +1482,7 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
     if engine.name == "needle" && release_status(engine) == "Revision unknown" {
         return unavailable("Cannot verify Needle installation receipt; update refused");
     }
-    if engine.name == "sd-server"
-        && crate::inference::engines::sd_server::revision_matches(&engine.version, &engine.latest)
-            .is_none()
-    {
+    if engine.name == "sd-server" && release_status(engine) == "Unknown" {
         return unavailable(
             "Cannot verify SD-server commit identities; check versions before updating",
         );
@@ -1217,11 +1496,15 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
             "Cannot verify llama-server build identities; check versions before updating",
         );
     }
-    if engine.name == "llama-server" && release_status(engine) == "Unknown" {
+    if matches!(engine.name, "llama-server" | "llama-server-prism")
+        && release_status(engine) == "Unknown"
+    {
         return unavailable("Installed llama-server build is not in the registry; update refused");
     }
-    if engine.name == "nemo-speech" && release_status(engine) == "Unknown" {
-        return unavailable("Installed NeMo Speech version is not in the registry; update refused");
+    if matches!(engine.name, "nemo-speech" | "audio-cpp" | "crispasr")
+        && release_status(engine) == "Unknown"
+    {
+        return unavailable("Installed engine version is not in the registry; update refused");
     }
     match release_status(engine) {
         "Up to date" => unavailable("Already up to date; no download needed"),
@@ -1249,10 +1532,6 @@ fn install_engine_kind(name: &str) -> Option<crate::config::EngineKind> {
 
 fn release_url(name: &str) -> Option<&'static str> {
     match name {
-        "llama-server-prism" => Some("https://api.github.com/repos/PrismML-Eng/llama.cpp/releases"),
-        "audio-cpp" => Some("https://api.github.com/repos/0xShug0/audio.cpp/releases"),
-        "sd-server" => Some("https://api.github.com/repos/leejet/stable-diffusion.cpp/releases"),
-        "crispasr" => Some("https://api.github.com/repos/CrispStrobe/CrispASR/releases"),
         "needle" => Some("https://huggingface.co/api/models/Cactus-Compute/needle3"),
         "whisper-cpp" => Some("https://api.github.com/repos/ggml-org/whisper.cpp/releases"),
         _ => None,
@@ -1272,7 +1551,15 @@ struct AvailableRelease {
 fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
     use crate::inference::engines::download;
     crate::inference::engines::release_cache::begin_check();
-    let url = if matches!(name, "llama-server" | "nemo-speech") {
+    let url = if matches!(
+        name,
+        "llama-server"
+            | "llama-server-prism"
+            | "nemo-speech"
+            | "audio-cpp"
+            | "crispasr"
+            | "sd-server"
+    ) {
         ""
     } else {
         release_url(name).ok_or("No release source is available for this engine")?
@@ -1312,8 +1599,20 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
     let value = if name == "llama-server" {
         crate::inference::engines::registry::llama_release(&client)
             .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
+    } else if name == "llama-server-prism" {
+        crate::inference::engines::registry::prism_release(&client)
+            .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
     } else if name == "nemo-speech" {
         crate::inference::engines::registry::nemo_release(&client)
+            .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
+    } else if name == "audio-cpp" {
+        crate::inference::engines::registry::audio_release(&client)
+            .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
+    } else if name == "crispasr" {
+        crate::inference::engines::registry::crispasr_release(&client)
+            .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
+    } else if name == "sd-server" {
+        crate::inference::engines::registry::sd_release(&client)
             .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
     } else if name == "whisper-cpp" {
         crate::inference::engines::whisper::resolve_release(&client)
@@ -1357,7 +1656,10 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
         } else {
             None
         },
-        registry_revisions: if name == "nemo-speech" {
+        registry_revisions: if matches!(
+            name,
+            "nemo-speech" | "audio-cpp" | "crispasr" | "sd-server" | "llama-server-prism"
+        ) {
             Some(
                 serde_json::from_value(value["rune_registry_revisions"].clone())
                     .map_err(|_| "Invalid registry version order")?,
@@ -1494,16 +1796,41 @@ fn release_status(engine: &EngineRow) -> &'static str {
         return "Rate limited";
     }
     if engine.name == "sd-server" {
-        return match crate::inference::engines::sd_server::revision_matches(
-            &engine.version,
-            &engine.latest,
-        ) {
-            Some(true) => "Up to date",
-            Some(false) => "Different revision",
-            None => "Revision unknown",
+        return match engine.registry_revisions.as_ref().and_then(|versions| {
+            crate::inference::engines::registry::compare_sd_registry(
+                versions,
+                &engine.version,
+                &engine.latest,
+            )
+        }) {
+            Some(std::cmp::Ordering::Less) => "New release",
+            Some(std::cmp::Ordering::Equal) => "Up to date",
+            Some(std::cmp::Ordering::Greater) => "Ahead",
+            None => "Unknown",
         };
     }
-    if engine.name == "nemo-speech" {
+    if matches!(engine.name, "nemo-speech" | "audio-cpp" | "crispasr") {
+        if engine.name == "audio-cpp" {
+            let Some((version, custom)) =
+                crate::inference::engines::registry::audio_identity(&engine.version)
+            else {
+                return "Unknown";
+            };
+            let order = engine.registry_revisions.as_ref().and_then(|versions| {
+                crate::inference::engines::registry::compare_nemo_revision(
+                    versions,
+                    version,
+                    &engine.latest,
+                )
+            });
+            return match order {
+                Some(std::cmp::Ordering::Less) => "New release",
+                Some(std::cmp::Ordering::Equal) if custom => "Different revision",
+                Some(std::cmp::Ordering::Equal) => "Up to date",
+                Some(std::cmp::Ordering::Greater) => "Ahead",
+                None => "Unknown",
+            };
+        }
         let installed = engine
             .version
             .trim()
@@ -1540,25 +1867,21 @@ fn release_status(engine: &EngineRow) -> &'static str {
         };
     }
     if engine.name == "llama-server-prism" {
-        let available = engine.build_tag.as_deref().unwrap_or(&engine.latest);
-        if let Some((installed, published)) =
-            engine_build_identity(&engine.version).zip(engine_build_identity(available))
-        {
-            return match installed.0.cmp(&published.0) {
-                std::cmp::Ordering::Less => "New release",
-                std::cmp::Ordering::Greater => "Ahead",
-                std::cmp::Ordering::Equal => match (installed.1, published.1) {
-                    (Some(a), Some(b))
-                        if !a.to_ascii_lowercase().starts_with(&b.to_ascii_lowercase())
-                            && !b.to_ascii_lowercase().starts_with(&a.to_ascii_lowercase()) =>
-                    {
-                        "Different revision"
-                    }
-                    (None, Some(_)) => "Unknown",
-                    _ => "Up to date",
-                },
-            };
-        }
+        let order = engine.registry_revisions.as_ref().and_then(|versions| {
+            let (build, commit) = engine_build_identity(&engine.version)?;
+            crate::inference::engines::registry::compare_prism_revision(
+                versions,
+                build,
+                commit?,
+                &engine.latest,
+            )
+        });
+        return match order {
+            Some(std::cmp::Ordering::Less) => "New release",
+            Some(std::cmp::Ordering::Equal) => "Up to date",
+            Some(std::cmp::Ordering::Greater) => "Ahead",
+            None => "Unknown",
+        };
     }
     let lower = engine.version.to_ascii_lowercase();
     if lower.contains("nightly") || lower.contains("-dev") {
@@ -1664,7 +1987,7 @@ fn engine_status_label(engine: &EngineRow) -> String {
     }
 }
 
-fn engine_download_line(
+fn download_progress_line(
     progress: &crate::inference::engines::download::DownloadProgress,
     tick: u64,
 ) -> Line<'static> {
@@ -1832,7 +2155,7 @@ fn draw_engines(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(detail).wrap(Wrap { trim: false }), text_area);
     if let Some(progress) = progress {
         f.render_widget(
-            Paragraph::new(engine_download_line(progress, app.tick)),
+            Paragraph::new(download_progress_line(progress, app.tick)),
             progress_area,
         );
     }
@@ -2177,6 +2500,10 @@ fn draw_stats(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
+    if app.model_registry_open {
+        draw_model_registry(f, area, app);
+        return;
+    }
     let [table_area, details] =
         Layout::vertical([Constraint::Min(4), Constraint::Length(6)]).areas(area);
     let block = panel(format!(
@@ -2300,6 +2627,94 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
             .block(panel(" Model controls ")),
         details,
     );
+}
+
+fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
+    let [table_area, details] =
+        Layout::vertical([Constraint::Min(4), Constraint::Length(5)]).areas(area);
+    let visible = table_area.height.saturating_sub(3) as usize;
+    let start = app
+        .model_registry_selected
+        .saturating_add(1)
+        .saturating_sub(visible);
+    let rows = app
+        .model_registry_models
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible)
+        .map(|(index, model)| {
+            let size: u64 = model.versions[&model.latest]
+                .files
+                .iter()
+                .fold(0_u64, |sum, file| sum.saturating_add(file.size_bytes));
+            Row::new([
+                if index == app.model_registry_selected {
+                    ">"
+                } else {
+                    " "
+                }
+                .to_string(),
+                model.id.clone(),
+                model.name.clone(),
+                crate::inference::engines::download::format_bytes(size),
+                if app.index.contains_key(&model.id) {
+                    "Configured"
+                } else {
+                    "Available"
+                }
+                .to_string(),
+            ])
+        });
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(2),
+            Constraint::Min(20),
+            Constraint::Min(20),
+            Constraint::Length(12),
+            Constraint::Length(11),
+        ],
+    )
+    .header(
+        Row::new(["", "Model ID", "Name", "Download", "Status"])
+            .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD)),
+    )
+    .block(panel(if app.info.model_registry_path.is_some() {
+        " Available models · local registry "
+    } else {
+        " Available models · remote registry "
+    }));
+    f.render_widget(table, table_area);
+    let status = app
+        .model_registry_status
+        .as_deref()
+        .unwrap_or("Open the registry to browse models");
+    let detail = if let Some(progress) = &app.model_download {
+        format!("{status}\n{}", progress.filename)
+    } else if let Some(model) = app.model_registry_models.get(app.model_registry_selected) {
+        format!(
+            "{status}\nEngine: {} · License: {}\n{}",
+            model.engine, model.license, model.description
+        )
+    } else {
+        status.to_string()
+    };
+    let block = panel(" Model installation ");
+    let inner = block.inner(details);
+    f.render_widget(block, details);
+    let [text_area, progress_area] = Layout::vertical([
+        Constraint::Min(0),
+        Constraint::Length(u16::from(app.model_download.is_some())),
+    ])
+    .areas(inner);
+    f.render_widget(Paragraph::new(detail).wrap(Wrap { trim: false }), text_area);
+    if let Some(progress) = &app.model_download {
+        f.render_widget(
+            Paragraph::new(download_progress_line(progress, app.tick)),
+            progress_area,
+        );
+    }
 }
 
 fn draw_requests(f: &mut Frame, area: Rect, app: &App) {
@@ -2486,6 +2901,8 @@ fn draw_help(f: &mut Frame) {
         Line::from("  m               toggle models"),
         Line::from("  ↑ ↓             select a model in Models"),
         Line::from("  Enter           toggle selected model load/unload"),
+        Line::from("  i               browse/install registry models"),
+        Line::from("  Enter / c       install / cancel in registry"),
         Line::from("  e               toggle engines"),
         Line::from("  ↑ ↓             select an engine"),
         Line::from("  r               check engine releases"),
@@ -2601,6 +3018,9 @@ mod tests {
             auth_enabled: false,
             exposed_to_network: true,
             config_path: "x".into(),
+            root: "fixture-root".into(),
+            server_path: "fixture-server.json".into(),
+            model_registry_path: None,
             models: vec![
                 ModelRow {
                     id: "a".into(),
@@ -2627,6 +3047,119 @@ mod tests {
 
     fn ts() -> String {
         "00:00:00".into()
+    }
+
+    #[test]
+    fn model_registry_view_loads_the_explicit_file_and_navigates() {
+        let mut app = app();
+        app.info.model_registry_path = Some(
+            std::env::current_dir()
+                .unwrap()
+                .join("registry/models.json"),
+        );
+        app.on_key(KeyCode::Char('m'), KeyModifiers::NONE);
+        app.on_key(KeyCode::Char('i'), KeyModifiers::NONE);
+        assert!(app.model_registry_open && app.model_registry_refresh);
+        app.process_model_registry();
+        let received = app
+            .model_registry_rx
+            .take()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(received).unwrap();
+        app.model_registry_rx = Some(rx);
+        app.process_model_registry();
+        assert!(
+            app.model_registry_models
+                .iter()
+                .any(|model| model.id == "lfm3-1.7b-q4-k-m")
+        );
+        app.model_registry_selected = app
+            .model_registry_models
+            .iter()
+            .position(|model| model.id == "lfm3-1.7b-q4-k-m")
+            .unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(rendered.contains("lfm3-1.7b-q4-k-m"));
+        assert!(rendered.contains("LFM Open License"));
+        app.model_registry_selected = 0;
+        app.on_key(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.model_registry_selected, 1);
+        app.on_key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.model_install_requested);
+        app.on_key(KeyCode::Esc, KeyModifiers::NONE);
+        assert!(!app.model_registry_open);
+    }
+
+    #[test]
+    fn dashboard_model_install_uses_selected_registry_entry() {
+        use sha2::{Digest, Sha256};
+        let mut app = app();
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!(
+                "dashboard-model-{}",
+                crate::setup::generate_api_key()
+            ));
+        app.info.root = root.clone();
+        app.info.server_path = root.join("config/server.json");
+        app.info.config_path = root.join("config/catalog.json");
+        let mut model = crate::model_registry::load_from_path(
+            &std::env::current_dir()
+                .unwrap()
+                .join("registry/models.json"),
+        )
+        .unwrap()
+        .into_iter()
+        .find(|model| model.id == "smollm2-135m-instruct-q4-k-m")
+        .unwrap();
+        let file = &mut model.versions.get_mut(&model.latest).unwrap().files[0];
+        let bytes = b"GGUF fixture dashboard";
+        file.sha256 = hex::encode(Sha256::digest(bytes));
+        file.size_bytes = bytes.len() as u64;
+        let directory = root.join("models").join(&model.id);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join(&file.filename), bytes).unwrap();
+        app.model_registry_models = vec![model.clone()];
+        app.model_registry_open = true;
+        app.tab = Tab::Models;
+        app.on_key(KeyCode::Enter, KeyModifiers::NONE);
+        app.process_model_registry();
+        let received = app
+            .model_install_rx
+            .take()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(received).unwrap();
+        app.model_install_rx = Some(rx);
+        app.process_model_registry();
+        assert!(
+            app.model_registry_status
+                .as_deref()
+                .unwrap()
+                .contains("Installed")
+        );
+        let loaded =
+            crate::config::ModelRegistry::from_files(&app.info.server_path, &app.info.config_path)
+                .unwrap();
+        assert!(loaded.models.iter().any(|entry| entry.id == model.id));
+        let state = Arc::new(crate::inference::AppState::new(&loaded));
+        app.sync_configured_models(Some(&state));
+        assert!(app.index.contains_key(&model.id));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -2840,7 +3373,7 @@ mod tests {
             latest: "v0.9.3".into(),
             build_tag: None,
             registry_versions: None,
-            registry_revisions: None,
+            registry_revisions: Some([("0.9.2".into(), 1), ("0.9.3".into(), 2)].into()),
             published_at: None,
             gpu_upgrade: false,
             check_detail: None,
@@ -2849,6 +3382,15 @@ mod tests {
         row.latest = "v0.9.2".into();
         assert_eq!(release_status(&row), "Up to date");
         row.latest = "nightly".into();
+        assert_eq!(release_status(&row), "Unknown");
+        row.latest = "v0.9.3".into();
+        row.version = "audio.cpp 0.9.3 (rune-gguf1)".into();
+        assert_eq!(release_status(&row), "Different revision");
+        assert_eq!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Update
+        );
+        row.version = "audio.cpp 0.9.3 (unknown)".into();
         assert_eq!(release_status(&row), "Unknown");
         row.name = "whisper-cpp";
         row.version = "whisper.cpp version: 1.9.2".into();
@@ -2940,7 +3482,7 @@ mod tests {
                 "0.2.0-dev (build 10826, commit aaaaaaa)",
                 "prism-b10826-c9c34bc",
                 None,
-                "Different revision",
+                "Unknown",
             ),
             (
                 "llama-server-prism",
@@ -2961,6 +3503,7 @@ mod tests {
             row.version = version.into();
             row.latest = latest.into();
             row.build_tag = build.map(str::to_owned);
+            row.registry_revisions = Some([("prism-b10826-c9c34bc".to_string(), 1)].into());
             assert_eq!(
                 release_status(&row),
                 expected,
@@ -3040,7 +3583,7 @@ mod tests {
         assert!(text.contains("Path: bin/whisper-cpp"));
         let progress = app.engine_download.as_mut().unwrap();
         progress.total = None;
-        let line = engine_download_line(progress, 0);
+        let line = download_progress_line(progress, 0);
         let text: String = line
             .spans
             .iter()
@@ -3053,6 +3596,45 @@ mod tests {
         assert!(!app.update_requested);
         app.on_key(KeyCode::Char('u'), KeyModifiers::NONE);
         assert!(app.update_requested);
+    }
+
+    #[test]
+    fn model_download_uses_engine_progress_bar_and_real_filename() {
+        let mut app = app();
+        app.tab = Tab::Models;
+        app.model_registry_open = true;
+        app.model_registry_status = Some("Installing lfm3…".into());
+        app.model_download = Some(crate::inference::engines::download::DownloadProgress {
+            filename: "LFM3-1.7B-Q4_K_M.gguf".into(),
+            extracting: false,
+            downloaded: 512,
+            total: Some(1024),
+            bytes_per_second: 256.0,
+        });
+        let mut terminal = Terminal::new(TestBackend::new(120, 16)).unwrap();
+        terminal
+            .draw(|frame| draw_model_registry(frame, frame.area(), &app))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("LFM3-1.7B-Q4_K_M.gguf"));
+        assert!(text.contains("••••••••········"));
+        assert!(text.contains("50%"));
+        assert!(text.contains("256 B/s"));
+        let progress = app.model_download.as_mut().unwrap();
+        progress.total = None;
+        let line = download_progress_line(progress, 0);
+        let text: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(text.contains("size unknown"));
     }
 
     #[test]
@@ -3086,13 +3668,14 @@ mod tests {
         assert_eq!(release_status(&row), "Different revision");
         assert!(install_engine_kind("encoder").is_none());
         row.name = "sd-server";
+        row.registry_revisions = Some([("be48649".into(), 1), ("37bc88b".into(), 2)].into());
         row.version = "commit be48649".into();
         row.latest = "master-1017-be48649".into();
         assert_eq!(release_status(&row), "Up to date");
         row.latest = "master-1028-37bc88b".into();
-        assert_eq!(release_status(&row), "Different revision");
+        assert_eq!(release_status(&row), "New release");
         row.version = "Unknown".into();
-        assert_eq!(release_status(&row), "Revision unknown");
+        assert_eq!(release_status(&row), "Unknown");
         let mut app = app();
         app.on_key(KeyCode::Char('e'), KeyModifiers::NONE);
         app.on_key(KeyCode::Char('u'), KeyModifiers::NONE);
@@ -3353,12 +3936,32 @@ mod tests {
                 row.latest = "b12100".into();
                 row.registry_versions = Some([(12000, 1), (12100, 2)].into());
             }
+            if name == "llama-server-prism" {
+                row.latest = "prism-b12100-bbbbbbb".into();
+                row.build_tag = None;
+                row.registry_revisions = Some(
+                    [
+                        ("prism-b12000-abcdef1".into(), 1),
+                        ("prism-b12100-bbbbbbb".into(), 2),
+                    ]
+                    .into(),
+                );
+            }
             if name == "nemo-speech" {
+                row.registry_revisions = Some([("0.9.2".into(), 1), ("0.9.3".into(), 2)].into());
+            }
+            if name == "audio-cpp" {
+                row.version = "audio.cpp 0.9.2".into();
+                row.registry_revisions = Some([("0.9.2".into(), 1), ("0.9.3".into(), 2)].into());
+            }
+            if name == "crispasr" {
                 row.registry_revisions = Some([("0.9.2".into(), 1), ("0.9.3".into(), 2)].into());
             }
             if name == "sd-server" {
                 row.version = "commit be48649".into();
                 row.latest = "master-1028-37bc88b".into();
+                row.registry_revisions =
+                    Some([("be48649".into(), 1), ("37bc88b".into(), 2)].into());
             }
             if name == "needle" {
                 row.version = format!("revision {}", "a".repeat(40));

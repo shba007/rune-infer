@@ -786,6 +786,7 @@ pub struct ModelConfig {
     pub mtp_path: Option<String>,
     pub vae_path: Option<String>,
     pub text_encoder_path: Option<String>,
+    pub tokenizer_path: Option<String>,
     pub llm_vision_path: Option<String>,
     pub default_steps: Option<u32>,
     pub default_cfg_scale: Option<f32>,

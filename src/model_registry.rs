@@ -52,10 +52,14 @@ pub struct CatalogDefaults {
     pub tool_call_support: Option<crate::audio_operations::OperationSupport>,
     #[serde(default)]
     pub structured_output_support: Option<crate::audio_operations::OperationSupport>,
+    #[serde(default)]
+    pub image_reference_checks: Vec<crate::config::ImageReferenceVerification>,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LocalDefaults {
+    #[serde(default)]
+    pub path: Option<String>,
     pub params: Option<u64>,
     pub bits_per_weight: Option<f64>,
     pub context_length: i64,
@@ -80,6 +84,21 @@ pub struct File {
 
 pub fn fetch() -> Result<Vec<LocalModel>> {
     parse(&fetch_document()?)
+}
+
+/// Load model metadata from an explicitly selected local registry file.
+pub fn load_from_path(path: &Path) -> Result<Vec<LocalModel>> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("Cannot open model registry {}", path.display()))?;
+    let mut body = Vec::new();
+    file.take(LIMIT + 1)
+        .read_to_end(&mut body)
+        .with_context(|| format!("Cannot read model registry {}", path.display()))?;
+    ensure!(
+        body.len() as u64 <= LIMIT,
+        "Model registry exceeds size limit"
+    );
+    parse(&body).with_context(|| format!("Invalid model registry {}", path.display()))
 }
 
 pub(crate) fn fetch_document() -> Result<Vec<u8>> {
@@ -126,7 +145,7 @@ fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
         ensure!(
             matches!(
                 model.engine.as_str(),
-                "llama-server" | "nemo-speech" | "audio-cpp"
+                "llama-server" | "llama-server-prism" | "nemo-speech" | "audio-cpp" | "sd-server"
             ) && model.format == "gguf",
             "Unsupported model format or engine"
         );
@@ -134,6 +153,18 @@ fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
             .versions
             .get(&model.latest)
             .context("Missing selected model version")?;
+        if let Some(path) = model
+            .catalog
+            .as_ref()
+            .and_then(|catalog| catalog.local.path.as_deref())
+        {
+            let main = latest
+                .files
+                .iter()
+                .find(|file| file.id == "model")
+                .context("Model file missing")?;
+            validate_install_path(path, &main.filename)?;
+        }
         let mut order = HashSet::new();
         for version in model.versions.values() {
             ensure!(
@@ -146,7 +177,9 @@ fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
             for file in &version.files {
                 ensure!(
                     !file.filename.is_empty()
-                        && file.filename.ends_with(".gguf")
+                        && (file.filename.ends_with(".gguf")
+                            || file.filename.ends_with(".safetensors")
+                            || file.filename.ends_with(".json"))
                         && file
                             .filename
                             .bytes()
@@ -186,18 +219,113 @@ fn valid_model_id(id: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'.'))
 }
 
+fn validate_install_path<'a>(path: &'a str, filename: &str) -> Result<Vec<&'a str>> {
+    let parts: Vec<_> = path.split('/').collect();
+    ensure!(
+        !parts.is_empty() && parts.len() <= 32 && parts.last() == Some(&filename),
+        "Registry model path must end in the model filename"
+    );
+    for part in &parts {
+        ensure!(
+            !part.is_empty()
+                && *part != "."
+                && *part != ".."
+                && !part.ends_with('.')
+                && part.trim() == *part
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._- ".contains(&b)),
+            "Registry model path must stay under the models directory"
+        );
+        let stem = part.split('.').next().unwrap_or("").to_ascii_uppercase();
+        ensure!(
+            !matches!(
+                stem.as_str(),
+                "CON"
+                    | "PRN"
+                    | "AUX"
+                    | "NUL"
+                    | "COM1"
+                    | "COM2"
+                    | "COM3"
+                    | "COM4"
+                    | "COM5"
+                    | "COM6"
+                    | "COM7"
+                    | "COM8"
+                    | "COM9"
+                    | "LPT1"
+                    | "LPT2"
+                    | "LPT3"
+                    | "LPT4"
+                    | "LPT5"
+                    | "LPT6"
+                    | "LPT7"
+                    | "LPT8"
+                    | "LPT9"
+            ),
+            "Registry model path contains a reserved filename"
+        );
+    }
+    Ok(parts)
+}
+
+fn encoder_directory_file(file: &File) -> bool {
+    matches!(
+        file.id.as_str(),
+        "encoder_config" | "encoder_generation_config" | "encoder_index"
+    ) || file
+        .id
+        .strip_prefix("encoder_shard_")
+        .is_some_and(|n| n.len() == 3 && n.bytes().all(|b| b.is_ascii_digit()) && n != "000")
+}
+
+fn bundle_path(model_dir: &Path, file: &File) -> PathBuf {
+    if encoder_directory_file(file) {
+        model_dir.join("text_encoder").join(&file.filename)
+    } else {
+        model_dir.join(&file.filename)
+    }
+}
+
+fn validate_encoder_index(version: &Version, index_path: &Path) -> Result<()> {
+    let index: serde_json::Value = serde_json::from_reader(std::fs::File::open(index_path)?)?;
+    let weights = index["weight_map"]
+        .as_object()
+        .context("Encoder index has no weight map")?;
+    ensure!(!weights.is_empty(), "Encoder index is empty");
+    let shards: HashSet<_> = version
+        .files
+        .iter()
+        .filter(|file| file.id.starts_with("encoder_shard_"))
+        .map(|file| file.filename.as_str())
+        .collect();
+    let used: HashSet<_> = weights
+        .values()
+        .map(|value| value.as_str().context("Invalid encoder shard reference"))
+        .collect::<Result<_>>()?;
+    ensure!(
+        used == shards,
+        "Encoder index and registry shards do not match"
+    );
+    Ok(())
+}
+
 fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     let vision = model.capabilities == ["Chat", "Vision"]
         || model.capabilities == ["Chat", "Vision", "Audio", "Video"];
+    let image = model.capabilities == ["Image Generation"];
     ensure!(
         vision
+            || image
             || model.capabilities == ["Chat"]
             || model.capabilities == ["Decision"]
             || model.capabilities == ["Transcription"]
             || model.capabilities == ["Speech Generation"],
         "Unsupported model capabilities"
     );
-    if model.capabilities == ["Decision"]
+    if image
+        || model.capabilities == ["Decision"]
         || model.capabilities == ["Transcription"]
         || model.capabilities == ["Speech Generation"]
         || model.capabilities == ["Chat", "Vision", "Audio", "Video"]
@@ -208,10 +336,17 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
         );
     }
     ensure!(
-        version.files.len() == 1 || version.files.len() == 2,
+        if image {
+            (3..=32).contains(&version.files.len())
+        } else {
+            version.files.len() == 1 || version.files.len() == 2
+        },
         "Model has missing or unsupported companion files"
     );
-    if model.capabilities == ["Transcription"] || model.capabilities == ["Speech Generation"] {
+    if image {
+        ensure!(model.engine == "sd-server", "Unsupported image engine");
+    } else if model.capabilities == ["Transcription"] || model.capabilities == ["Speech Generation"]
+    {
         ensure!(
             version.files.len() == 1,
             "Speech model requires a single reviewed GGUF"
@@ -223,7 +358,7 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
         );
     } else {
         ensure!(
-            model.engine == "llama-server",
+            matches!(model.engine.as_str(), "llama-server" | "llama-server-prism"),
             "Unsupported model engine combination"
         );
     }
@@ -231,12 +366,30 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     let mut names = HashSet::new();
     for file in &version.files {
         ensure!(
-            matches!(file.id.as_str(), "model" | "projector") && roles.insert(&file.id),
+            (if image {
+                matches!(
+                    file.id.as_str(),
+                    "model" | "text_encoder" | "vae" | "tokenizer"
+                ) || encoder_directory_file(file)
+            } else {
+                matches!(file.id.as_str(), "model" | "projector")
+            }) && roles.insert(&file.id),
             "Duplicate or unsupported model file role"
         );
         ensure!(
             !file.filename.is_empty()
-                && file.filename.ends_with(".gguf")
+                && (match file.id.as_str() {
+                    "tokenizer" => file.filename.ends_with(".json"),
+                    "vae" => file.filename.ends_with(".safetensors"),
+                    "encoder_config" => file.filename == "config.json",
+                    "encoder_generation_config" => file.filename == "generation_config.json",
+                    "encoder_index" => file.filename == "model.safetensors.index.json",
+                    id if id.starts_with("encoder_shard_") =>
+                        file.filename.ends_with(".safetensors"),
+                    "text_encoder" =>
+                        file.filename.ends_with(".safetensors") || file.filename.ends_with(".gguf"),
+                    _ => file.filename.ends_with(".gguf"),
+                })
                 && file
                     .filename
                     .bytes()
@@ -247,9 +400,28 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     }
     ensure!(
         roles.contains(&"model".to_string())
-            && (!vision || roles.contains(&"projector".to_string())),
+            && (!vision || roles.contains(&"projector".to_string()))
+            && (!image
+                || (roles.contains(&"vae".to_string())
+                    && (roles.contains(&"text_encoder".to_string())
+                        != roles.contains(&"encoder_index".to_string())))),
         "Model capabilities do not match companion files"
     );
+    if roles.contains(&"encoder_index".to_string()) {
+        ensure!(
+            roles.contains(&"encoder_config".to_string())
+                && version
+                    .files
+                    .iter()
+                    .any(|file| file.id.starts_with("encoder_shard_")),
+            "Sharded encoder is incomplete"
+        );
+    } else {
+        ensure!(
+            !version.files.iter().any(encoder_directory_file),
+            "Unexpected sharded encoder file"
+        );
+    }
     Ok(())
 }
 
@@ -258,13 +430,16 @@ pub fn install(model: &LocalModel, root: &Path, server: &Path, catalog: &Path) -
     let client = crate::inference::engines::download::create_download_client()
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     install_with(model, root, server, catalog, |file, dest| {
-        crate::inference::engines::download::download_verified(
-            &client,
-            &file.url,
-            dest,
-            "[Model]",
-            &file.sha256,
-        )
+        crate::inference::engines::download::with_download_label(&file.filename, || {
+            crate::inference::engines::download::download_resumable_model(
+                &client,
+                &file.url,
+                dest,
+                "[Model]",
+                &file.sha256,
+                file.size_bytes,
+            )
+        })
         .map_err(|e| anyhow::anyhow!(e.to_string()))
     })
 }
@@ -319,9 +494,30 @@ fn verify_file(path: &Path, file: &File) -> Result<()> {
         meta.is_file() && !meta.file_type().is_symlink() && meta.len() == file.size_bytes,
         "Model size or file type does not match registry"
     );
-    let mut magic = [0; 4];
-    std::fs::File::open(path)?.read_exact(&mut magic)?;
-    ensure!(&magic == b"GGUF", "Downloaded file is not GGUF");
+    let mut input = std::fs::File::open(path)?;
+    if file.filename.ends_with(".json") {
+        ensure!(
+            meta.len() <= 64 * 1024 * 1024,
+            "Tokenizer exceeds size limit"
+        );
+        let json: serde_json::Value = serde_json::from_reader(input)?;
+        ensure!(json.is_object(), "Invalid tokenizer JSON");
+    } else if file.filename.ends_with(".safetensors") {
+        let mut length = [0; 8];
+        input.read_exact(&mut length)?;
+        let header_size = u64::from_le_bytes(length);
+        ensure!(
+            (2..=100_000_000).contains(&header_size) && header_size <= meta.len().saturating_sub(8),
+            "Invalid safetensors header length"
+        );
+        let mut first = [0; 1];
+        input.read_exact(&mut first)?;
+        ensure!(first[0] == b'{', "Invalid safetensors header");
+    } else {
+        let mut magic = [0; 4];
+        input.read_exact(&mut magic)?;
+        ensure!(&magic == b"GGUF", "Downloaded file is not GGUF");
+    }
     let hash = crate::inference::engines::download::file_sha256(path)
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     ensure!(
@@ -352,7 +548,7 @@ fn install_with(
     ensure!(
         matches!(
             model.engine.as_str(),
-            "llama-server" | "nemo-speech" | "audio-cpp"
+            "llama-server" | "llama-server-prism" | "nemo-speech" | "audio-cpp" | "sd-server"
         ) && model.format == "gguf",
         "Unsupported model entry"
     );
@@ -368,8 +564,42 @@ fn install_with(
     let root = std::fs::canonicalize(root)?;
     let models = root.join("models");
     regular_dir(&models)?;
-    let model_dir = models.join(&model.id);
-    regular_dir(&model_dir)?;
+    let mut model_dir = models.clone();
+    if let Some(path) = model
+        .catalog
+        .as_ref()
+        .and_then(|catalog| catalog.local.path.as_deref())
+    {
+        let parts = validate_install_path(path, &file.filename)?;
+        for part in &parts[..parts.len() - 1] {
+            model_dir.push(part);
+            regular_dir(&model_dir)?;
+        }
+    } else {
+        model_dir.push(&model.id);
+        regular_dir(&model_dir)?;
+    }
+    let encoder_dir = model_dir.join("text_encoder");
+    if version.files.iter().any(encoder_directory_file) {
+        regular_dir(&encoder_dir)?;
+    }
+    let lock_path = model_dir.join(".rune-model-install.lock");
+    if let Ok(meta) = std::fs::symlink_metadata(&lock_path) {
+        ensure!(
+            meta.is_file() && !meta.file_type().is_symlink(),
+            "Model installation lock is not a regular file"
+        );
+    }
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .context("Cannot open model installation lock")?;
+    lock.try_lock().map_err(|_| {
+        anyhow::anyhow!("Another installation is already using this model directory")
+    })?;
     let dest = model_dir.join(&file.filename);
     let server_before = read_regular(server_path)?;
     let catalog_before = read_regular(catalog_path)?;
@@ -421,9 +651,39 @@ fn install_with(
                 "Model ID already exists with a different projector"
             );
         }
+        for (role, key) in [
+            ("text_encoder", "text_encoder_path"),
+            ("vae", "vae_path"),
+            ("tokenizer", "tokenizer_path"),
+        ] {
+            if let Some(companion) = version.files.iter().find(|file| file.id == role) {
+                let expected = model_dir.join(&companion.filename);
+                ensure!(
+                    entry
+                        .extra
+                        .get(key)
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|path| Path::new(path) == expected),
+                    "Model ID already exists with different companion paths"
+                );
+            }
+        }
+        if version.files.iter().any(|file| file.id == "encoder_index") {
+            ensure!(
+                entry
+                    .extra
+                    .get("text_encoder_path")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|path| Path::new(path) == encoder_dir),
+                "Model ID already exists with different encoder directory"
+            );
+        }
         for file in &version.files {
-            verify_file(&model_dir.join(&file.filename), file)
+            verify_file(&bundle_path(&model_dir, file), file)
                 .context("Existing model does not match registry")?;
+        }
+        if let Some(index) = version.files.iter().find(|file| file.id == "encoder_index") {
+            validate_encoder_index(version, &bundle_path(&model_dir, index))?;
         }
         return Ok(dest);
     }
@@ -437,6 +697,11 @@ fn install_with(
         "tasks": tasks, "capabilities": model.capabilities, "engine": [model.engine], "local": {"path": path}});
     if let Some(defaults) = &model.catalog {
         let allowed = match model.capabilities.as_slice() {
+            [a] if a == "Image Generation" => {
+                defaults.tasks == ["text-to-image"]
+                    || defaults.tasks == ["text-image-to-image", "image-to-image"]
+                    || defaults.tasks == ["text-to-image", "text-image-to-image", "image-to-image"]
+            }
             [a] if a == "Decision" => defaults.tasks == ["text-to-decision"],
             [a] if a == "Transcription" => defaults.tasks == ["audio-to-text"],
             [a] if a == "Speech Generation" => defaults.tasks == ["text-to-audio"],
@@ -461,8 +726,22 @@ fn install_with(
             allowed,
             "Catalog tasks do not match the verified model files"
         );
+        if version.files.iter().any(|file| file.id == "tokenizer") {
+            ensure!(
+                !defaults
+                    .local
+                    .args
+                    .split_whitespace()
+                    .any(|arg| arg == "--tokenizer" || arg.starts_with("--tokenizer=")),
+                "Tokenizer must be provided by a verified file"
+            );
+        }
         ensure!(
-            !defaults.extra.contains_key("mmproj_path") && !defaults.extra.contains_key("mtp_path"),
+            !defaults.extra.contains_key("mmproj_path")
+                && !defaults.extra.contains_key("mtp_path")
+                && !defaults.extra.contains_key("text_encoder_path")
+                && !defaults.extra.contains_key("vae_path")
+                && !defaults.extra.contains_key("tokenizer_path"),
             "Catalog paths must be provided by verified files"
         );
         entry["tasks"] = serde_json::to_value(&defaults.tasks)?;
@@ -479,6 +758,10 @@ fn install_with(
         }
         if let Some(support) = &defaults.structured_output_support {
             entry["structured_output_support"] = serde_json::to_value(support)?;
+        }
+        if !defaults.image_reference_checks.is_empty() {
+            entry["image_reference_checks"] =
+                serde_json::to_value(&defaults.image_reference_checks)?;
         }
         entry["local"]["params"] = serde_json::to_value(defaults.local.params)?;
         entry["local"]["bits_per_weight"] = serde_json::to_value(defaults.local.bits_per_weight)?;
@@ -504,6 +787,24 @@ fn install_with(
                 .context("Projector path is not valid UTF-8")?
         );
     }
+    for (role, key) in [
+        ("text_encoder", "text_encoder_path"),
+        ("vae", "vae_path"),
+        ("tokenizer", "tokenizer_path"),
+    ] {
+        if let Some(companion) = version.files.iter().find(|file| file.id == role) {
+            let path = model_dir.join(&companion.filename);
+            entry["extra"][key] =
+                serde_json::json!(path.to_str().context("Companion path is not valid UTF-8")?);
+        }
+    }
+    if version.files.iter().any(|file| file.id == "encoder_index") {
+        entry["extra"]["text_encoder_path"] = serde_json::json!(
+            encoder_dir
+                .to_str()
+                .context("Encoder path is not valid UTF-8")?
+        );
+    }
     catalog_value["models"]
         .as_array_mut()
         .context("Invalid catalog models")?
@@ -526,7 +827,7 @@ fn install_with(
     })?;
     crate::config::ModelRegistry::from_json(&interpolated, None)?.validate()?;
     for file in &version.files {
-        let path = model_dir.join(&file.filename);
+        let path = bundle_path(&model_dir, file);
         if path.exists() {
             verify_file(&path, file).context("Conflicting model file; existing file preserved")?;
         }
@@ -534,24 +835,44 @@ fn install_with(
     let mut staged_files = Vec::new();
     let staged_result = (|| -> Result<()> {
         for file in &version.files {
-            let target = model_dir.join(&file.filename);
+            crate::inference::engines::download::check_cancelled()?;
+            let target = bundle_path(&model_dir, file);
             if target.exists() {
                 continue;
             }
-            let staged = unique_path(&model_dir, "model-download");
+            ensure!(
+                file.sha256.len() == 64 && file.sha256.bytes().all(|b| b.is_ascii_hexdigit()),
+                "Invalid model checksum"
+            );
+            let staged = target
+                .parent()
+                .context("Missing model file directory")?
+                .join(format!(
+                    ".rune-model-download-{}-{}.part",
+                    file.id,
+                    file.sha256.to_ascii_lowercase()
+                ));
             staged_files.push((staged, target));
             let (staged, _) = staged_files.last().expect("just added");
             download(file, staged)?;
             verify_file(staged, file)?;
+            crate::inference::engines::download::check_cancelled()?;
+        }
+        if let Some(index) = version.files.iter().find(|file| file.id == "encoder_index") {
+            let target = bundle_path(&model_dir, index);
+            let index_path = staged_files
+                .iter()
+                .find(|(_, path)| *path == target)
+                .map(|(staged, _)| staged)
+                .unwrap_or(&target);
+            validate_encoder_index(version, index_path)?;
         }
         for (staged, target) in &staged_files {
+            crate::inference::engines::download::check_cancelled()?;
             publish_new(staged, target)?;
         }
         Ok(())
     })();
-    for (staged, _) in staged_files {
-        let _ = std::fs::remove_file(staged);
-    }
     staged_result?;
     let catalog_dir = catalog_path
         .parent()
@@ -565,6 +886,7 @@ fn install_with(
     let catalog_bytes = serde_json::to_vec_pretty(&catalog_value)?;
     write_new(&staged_catalog, &catalog_bytes)?;
     let result = (|| -> Result<()> {
+        crate::inference::engines::download::check_cancelled()?;
         ensure!(
             read_regular(server_path)? == server_before,
             "Server configuration changed during model download; retry"
@@ -667,6 +989,200 @@ fn move_no_replace(source: &Path, target: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+
+    #[test]
+    fn interrupted_install_reuses_staged_partial_before_registering() {
+        let (root, model, bytes) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let first = install_with(&model, &root, &server, &catalog, |_, path| {
+            std::fs::write(path, &bytes[..5])?;
+            anyhow::bail!("interrupted");
+        });
+        assert!(first.is_err());
+        assert!(!catalog.exists());
+        let installed = install_with(&model, &root, &server, &catalog, |_, path| {
+            assert_eq!(std::fs::read(path)?, &bytes[..5]);
+            let mut file = std::fs::OpenOptions::new().append(true).open(path)?;
+            file.write_all(&bytes[5..])?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(std::fs::read(installed).unwrap(), bytes);
+        assert!(catalog.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_model_install_is_refused_without_touching_partial() {
+        let (root, model, bytes) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let worker_root = root.clone();
+        let worker_model = model.clone();
+        let worker_server = server.clone();
+        let worker_catalog = catalog.clone();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            install_with(
+                &worker_model,
+                &worker_root,
+                &worker_server,
+                &worker_catalog,
+                |_, path| {
+                    std::fs::write(path, &bytes[..5])?;
+                    ready_tx.send(()).unwrap();
+                    release_rx
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                    std::fs::write(path, bytes)?;
+                    Ok(())
+                },
+            )
+        });
+        ready_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let error = install_with(&model, &root, &server, &catalog, |_, _| {
+            panic!("second installer must not write")
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("Another installation"));
+        release_tx.send(()).unwrap();
+        worker.join().unwrap().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_local_registry_is_loaded_and_invalid_files_fail() {
+        let (root, _, _) = fixture();
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("local-models.json");
+        std::fs::write(&path, include_bytes!("../registry/models.json")).unwrap();
+        assert!(
+            load_from_path(&path)
+                .unwrap()
+                .iter()
+                .any(|model| model.id == "lfm3-1.7b-q4-k-m")
+        );
+        std::fs::write(&path, b"not JSON").unwrap();
+        assert!(load_from_path(&path).is_err());
+        std::fs::write(&path, vec![b' '; LIMIT as usize + 1]).unwrap();
+        assert!(
+            load_from_path(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("size limit")
+        );
+        std::fs::remove_file(&path).unwrap();
+        assert!(
+            load_from_path(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("Cannot open")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn fixture_bytes(file: &File) -> &'static [u8] {
+        if file.id == "encoder_index" && file.url.contains("Qwen-Image-Edit-2511") {
+            br#"{"weight_map":{"a":"model-00001-of-00004.safetensors","b":"model-00002-of-00004.safetensors","c":"model-00003-of-00004.safetensors","d":"model-00004-of-00004.safetensors"}}"#
+        } else if file.id == "encoder_index" {
+            br#"{"weight_map":{"a":"model-00001-of-00003.safetensors","b":"model-00002-of-00003.safetensors","c":"model-00003-of-00003.safetensors"}}"#
+        } else if file.filename.ends_with(".json") {
+            b"{\"model\":{}}"
+        } else if file.filename.ends_with(".safetensors") {
+            b"\x02\0\0\0\0\0\0\0{}"
+        } else {
+            b"GGUF fixture model bytes"
+        }
+    }
+
+    #[test]
+    fn lfm3_installs_at_registry_path_with_runtime_and_sampling_defaults() {
+        let mut model = parse(include_bytes!("../registry/models.json"))
+            .unwrap()
+            .into_iter()
+            .find(|model| model.id == "lfm3-1.7b-q4-k-m")
+            .unwrap();
+        let file = &mut model.versions.get_mut(&model.latest).unwrap().files[0];
+        let bytes = fixture_bytes(file);
+        file.sha256 = hex::encode(Sha256::digest(bytes));
+        file.size_bytes = bytes.len() as u64;
+        let (root, _, _) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let path = install_with(&model, &root, &server, &catalog, |file, destination| {
+            std::fs::write(destination, fixture_bytes(file))?;
+            Ok(())
+        })
+        .unwrap();
+        let expected = std::fs::canonicalize(&root)
+            .unwrap()
+            .join("models/liquidai/lfm3-1.7b/LFM3-1.7B-Q4_K_M.gguf");
+        assert_eq!(path, expected);
+        let loaded = crate::config::ModelRegistry::from_files(&server, &catalog).unwrap();
+        let installed = loaded
+            .models
+            .iter()
+            .find(|entry| entry.id == model.id)
+            .unwrap();
+        assert_eq!(Path::new(&installed.model_path), expected);
+        assert_eq!(
+            installed.runtime.as_ref().unwrap().extra_args.as_deref(),
+            Some("--repeat-penalty 1.1")
+        );
+        let defaults = installed.effective_sampling(&crate::config::SamplingConfig::default());
+        assert_eq!(defaults.temperature, Some(0.1));
+        assert_eq!(defaults.top_k, Some(50));
+        let overridden = installed.effective_sampling(&crate::config::SamplingConfig {
+            temperature: Some(0.7),
+            ..Default::default()
+        });
+        assert_eq!(overridden.temperature, Some(0.7));
+        install_with(&model, &root, &server, &catalog, |_, _| {
+            panic!("verified file should be reused")
+        })
+        .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn registry_install_path_rejects_escape_and_conflicting_filenames() {
+        let value: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../registry/models.json")).unwrap();
+        for invalid in [
+            "../LFM3-1.7B-Q4_K_M.gguf",
+            "/LFM3-1.7B-Q4_K_M.gguf",
+            "C:/LFM3-1.7B-Q4_K_M.gguf",
+            "dir\\LFM3-1.7B-Q4_K_M.gguf",
+            "NUL/LFM3-1.7B-Q4_K_M.gguf",
+            "dir/other.gguf",
+            "dir//LFM3-1.7B-Q4_K_M.gguf",
+        ] {
+            let mut candidate = value.clone();
+            let model = candidate["local_models"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|model| model["id"] == "lfm3-1.7b-q4-k-m")
+                .unwrap();
+            model["catalog"]["local"]["path"] = invalid.into();
+            assert!(
+                parse(&serde_json::to_vec(&candidate).unwrap()).is_err(),
+                "{invalid}"
+            );
+        }
+        assert!(parse(&serde_json::to_vec(&value).unwrap()).is_ok());
+        assert!(
+            validate_install_path(
+                "Liquid Models/LFM3-1.7B-Q4_K_M.gguf",
+                "LFM3-1.7B-Q4_K_M.gguf"
+            )
+            .is_ok()
+        );
+    }
 
     fn fixture() -> (PathBuf, LocalModel, &'static [u8]) {
         let root = std::env::current_dir()
@@ -804,23 +1320,272 @@ mod tests {
     }
 
     #[test]
+    fn image_bundle_installs_all_companions_and_rejects_bad_or_conflicting_files() {
+        let mut model = parse(include_bytes!("../registry/models.json"))
+            .unwrap()
+            .into_iter()
+            .find(|model| model.id == "qwen-image-2.1")
+            .unwrap();
+        for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
+            let contents = fixture_bytes(file);
+            file.sha256 = hex::encode(Sha256::digest(contents));
+            file.size_bytes = contents.len() as u64;
+        }
+        let (root, _, _) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        assert!(
+            install_with(&model, &root, &server, &catalog, |file, path| {
+                std::fs::write(
+                    path,
+                    if file.id == "vae" {
+                        b"invalid".as_slice()
+                    } else {
+                        fixture_bytes(file)
+                    },
+                )?;
+                Ok(())
+            })
+            .is_err()
+        );
+        assert!(!catalog.exists());
+        for file in &model.versions[&model.latest].files {
+            assert!(
+                !root
+                    .join("models")
+                    .join(&model.id)
+                    .join(&file.filename)
+                    .exists()
+            );
+        }
+        install_with(&model, &root, &server, &catalog, |file, path| {
+            std::fs::write(path, fixture_bytes(file))?;
+            Ok(())
+        })
+        .unwrap();
+        let installed: crate::schema::CatalogFile =
+            serde_json::from_slice(&std::fs::read(&catalog).unwrap()).unwrap();
+        let entry = installed
+            .models
+            .iter()
+            .find(|entry| entry.id == model.id)
+            .unwrap();
+        for (role, key) in [("text_encoder", "text_encoder_path"), ("vae", "vae_path")] {
+            let file = model.versions[&model.latest]
+                .files
+                .iter()
+                .find(|file| file.id == role)
+                .unwrap();
+            assert_eq!(
+                entry.extra[key].as_str().unwrap(),
+                std::fs::canonicalize(&root)
+                    .unwrap()
+                    .join("models")
+                    .join(&model.id)
+                    .join(&file.filename)
+                    .to_str()
+                    .unwrap()
+            );
+        }
+        install_with(&model, &root, &server, &catalog, |_, _| {
+            panic!("existing verified bundle should be reused")
+        })
+        .unwrap();
+        let vae = model.versions[&model.latest]
+            .files
+            .iter()
+            .find(|file| file.id == "vae")
+            .unwrap();
+        let path = root.join("models").join(&model.id).join(&vae.filename);
+        std::fs::write(&path, b"conflicting file").unwrap();
+        let original = std::fs::read(&catalog).unwrap();
+        assert!(
+            install_with(&model, &root, &server, &catalog, |_, _| panic!(
+                "must not overwrite"
+            ))
+            .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"conflicting file");
+        assert_eq!(std::fs::read(&catalog).unwrap(), original);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn image_registry_requires_all_distinct_companions() {
+        let original: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../registry/models.json")).unwrap();
+        for change in ["missing", "duplicate", "wrong-format"] {
+            let mut registry = original.clone();
+            let model = registry["local_models"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|model| model["id"] == "qwen-image-2.1")
+                .unwrap();
+            let latest = model["latest"].as_str().unwrap().to_owned();
+            let files = model["versions"][&latest]["files"].as_array_mut().unwrap();
+            match change {
+                "missing" => {
+                    files.pop();
+                }
+                "duplicate" => files[2]["id"] = "text_encoder".into(),
+                _ => files[2]["filename"] = "vae.gguf".into(),
+            }
+            assert!(
+                parse(&serde_json::to_vec(&registry).unwrap()).is_err(),
+                "{change}"
+            );
+        }
+    }
+
+    #[test]
+    fn moss_bundle_installs_verified_tokenizer_and_reuses_it() {
+        let mut model = parse(include_bytes!("../registry/models.json"))
+            .unwrap()
+            .into_iter()
+            .find(|model| model.id == "moss-image-sft")
+            .unwrap();
+        for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
+            let bytes = fixture_bytes(file);
+            file.sha256 = hex::encode(Sha256::digest(bytes));
+            file.size_bytes = bytes.len() as u64;
+        }
+        let (root, _, _) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        assert!(
+            install_with(&model, &root, &server, &catalog, |file, path| {
+                std::fs::write(
+                    path,
+                    if file.id == "tokenizer" {
+                        b"bad".as_slice()
+                    } else {
+                        fixture_bytes(file)
+                    },
+                )?;
+                Ok(())
+            })
+            .is_err()
+        );
+        assert!(!catalog.exists());
+        install_with(&model, &root, &server, &catalog, |file, path| {
+            std::fs::write(path, fixture_bytes(file))?;
+            Ok(())
+        })
+        .unwrap();
+        let loaded = crate::config::ModelRegistry::from_files(&server, &catalog).unwrap();
+        let installed = loaded
+            .models
+            .iter()
+            .find(|entry| entry.id == model.id)
+            .unwrap();
+        assert!(
+            installed
+                .tokenizer_path
+                .as_ref()
+                .unwrap()
+                .ends_with("tokenizer.json")
+        );
+        assert_eq!(
+            std::fs::read(installed.tokenizer_path.as_ref().unwrap()).unwrap(),
+            b"{\"model\":{}}"
+        );
+        install_with(&model, &root, &server, &catalog, |_, _| {
+            panic!("verified bundle should be reused")
+        })
+        .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn sharded_encoder_requires_matching_index_before_publishing() {
+        let mut model = parse(include_bytes!("../registry/models.json"))
+            .unwrap()
+            .into_iter()
+            .find(|model| model.id == "z-image-turbo-q8-0")
+            .unwrap();
+        for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
+            let bytes = fixture_bytes(file);
+            file.sha256 = hex::encode(Sha256::digest(bytes));
+            file.size_bytes = bytes.len() as u64;
+        }
+        let (root, _, _) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let mut invalid = model.clone();
+        let bad_index = br#"{"weight_map":{"a":"missing.safetensors"}}"#;
+        let file = invalid
+            .versions
+            .get_mut(&invalid.latest)
+            .unwrap()
+            .files
+            .iter_mut()
+            .find(|file| file.id == "encoder_index")
+            .unwrap();
+        file.sha256 = hex::encode(Sha256::digest(bad_index));
+        file.size_bytes = bad_index.len() as u64;
+        assert!(
+            install_with(&invalid, &root, &server, &catalog, |file, path| {
+                std::fs::write(
+                    path,
+                    if file.id == "encoder_index" {
+                        bad_index.as_slice()
+                    } else {
+                        fixture_bytes(file)
+                    },
+                )?;
+                Ok(())
+            })
+            .is_err()
+        );
+        assert!(!catalog.exists());
+        for file in &model.versions[&model.latest].files {
+            assert!(!bundle_path(&root.join("models").join(&model.id), file).exists());
+        }
+        install_with(&model, &root, &server, &catalog, |file, path| {
+            std::fs::write(path, fixture_bytes(file))?;
+            Ok(())
+        })
+        .unwrap();
+        let loaded = crate::config::ModelRegistry::from_files(&server, &catalog).unwrap();
+        let installed = loaded
+            .models
+            .iter()
+            .find(|entry| entry.id == model.id)
+            .unwrap();
+        let encoder = Path::new(installed.text_encoder_path.as_ref().unwrap());
+        assert!(encoder.join("model.safetensors.index.json").is_file());
+        assert!(encoder.join("model-00003-of-00003.safetensors").is_file());
+        install_with(&model, &root, &server, &catalog, |_, _| {
+            panic!("verified bundle should be reused")
+        })
+        .unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn migrated_model_keeps_catalog_settings_when_installed() {
         let configured: crate::schema::CatalogFile =
             serde_json::from_slice(include_bytes!("../config/catalog.json")).unwrap();
         for mut model in parse(include_bytes!("../registry/models.json"))
             .unwrap()
             .into_iter()
-            .filter(|entry| entry.catalog.is_some())
+            .filter(|entry| {
+                entry.catalog.is_some()
+                    && configured.models.iter().any(|model| model.id == entry.id)
+            })
         {
             let (root, _, bytes) = fixture();
             for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
-                file.sha256 = hex::encode(Sha256::digest(bytes));
-                file.size_bytes = bytes.len() as u64;
+                let contents = fixture_bytes(file);
+                file.sha256 = hex::encode(Sha256::digest(contents));
+                file.size_bytes = contents.len() as u64;
             }
             let server = root.join("config/server.json");
             let catalog = root.join("config/catalog.json");
-            install_with(&model, &root, &server, &catalog, |_, path| {
-                std::fs::write(path, bytes)?;
+            let _ = bytes;
+            install_with(&model, &root, &server, &catalog, |file, path| {
+                std::fs::write(path, fixture_bytes(file))?;
                 Ok(())
             })
             .unwrap();
@@ -854,19 +1619,37 @@ mod tests {
                 "audio_operations",
                 "tool_call_support",
                 "structured_output_support",
+                "image_reference_checks",
             ] {
                 assert_eq!(actual[field], original[field], "{}: {field}", model.id);
             }
-            for field in [
-                "params",
-                "bits_per_weight",
-                "context_length",
-                "gpu_layers",
-                "args",
-            ] {
+            for field in ["params", "bits_per_weight", "context_length", "gpu_layers"] {
                 assert_eq!(
                     actual["local"][field], original["local"][field],
                     "{}: local.{field}",
+                    model.id
+                );
+            }
+            if model.id == "moss-image-sft" {
+                assert_eq!(
+                    actual["local"]["args"].as_str().unwrap(),
+                    original["local"]["args"]
+                        .as_str()
+                        .unwrap()
+                        .split(" --tokenizer ")
+                        .next()
+                        .unwrap()
+                );
+                assert!(
+                    actual["extra"]["tokenizer_path"]
+                        .as_str()
+                        .unwrap()
+                        .ends_with("tokenizer.json")
+                );
+            } else {
+                assert_eq!(
+                    actual["local"]["args"], original["local"]["args"],
+                    "{}: local.args",
                     model.id
                 );
             }
@@ -875,6 +1658,10 @@ mod tests {
                     actual["extra"]["max_resolution"],
                     original["extra"]["max_resolution"]
                 );
+            }
+            if model.id == "z-image" {
+                assert!(actual["extra"]["lora"].is_null());
+                assert!(!original["extra"]["lora"].as_array().unwrap().is_empty());
             }
             std::fs::remove_dir_all(root).unwrap();
         }

@@ -14,6 +14,57 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+fn cpu_has_avx2() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::is_x86_feature_detected!("avx2")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+fn select_install_asset<'a>(
+    assets: &'a [serde_json::Value],
+    os: &str,
+    arch: &str,
+    cuda: Option<(u32, u32)>,
+    avx2: bool,
+) -> Option<&'a serde_json::Value> {
+    let candidates = assets.iter().filter(|asset| {
+        asset["rune_platform"]["os"] == os && asset["rune_platform"]["arch"] == arch
+    });
+    if let Some(host) = cuda {
+        if let Some(asset) = candidates
+            .clone()
+            .filter_map(|asset| {
+                let p = &asset["rune_platform"];
+                if p["accelerator"] != "cuda" {
+                    return None;
+                }
+                let (major, minor) = p["cuda_version"].as_str()?.split_once('.')?;
+                let version = (major.parse::<u32>().ok()?, minor.parse::<u32>().ok()?);
+                (version <= host).then_some((version, asset))
+            })
+            .max_by_key(|(version, _)| *version)
+            .map(|(_, asset)| asset)
+        {
+            return Some(asset);
+        }
+    }
+    let desired = if os == "macos" && arch == "aarch64" {
+        "metal"
+    } else if arch == "x86_64" && !avx2 {
+        "cpu-legacy"
+    } else {
+        "cpu"
+    };
+    candidates
+        .into_iter()
+        .find(|asset| asset["rune_platform"]["accelerator"] == desired)
+}
+
 pub struct CrispAsrEngine {
     id: String,
     port: u16,
@@ -183,120 +234,38 @@ impl CrispAsrEngine {
             return Err(download::engine_unavailable("crispasr").into());
         }
 
-        tracing::info!("[CrispAsrEngine] Resolving CrispASR runtime from GitHub releases...");
+        tracing::info!("[CrispAsrEngine] Resolving CrispASR runtime from the registry...");
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
-        let release_url = "https://api.github.com/repos/CrispStrobe/CrispASR/releases";
-        let release_val = download::resolve_release(&client, release_url)?;
+        let release_val = super::registry::crispasr_release(&client)?;
 
         let assets = download::preferred_release(&release_val)?["assets"]
             .as_array()
             .ok_or("Selected release has no engine assets")?;
 
-        let host_cuda = download::detect_host_cuda_version();
-        let mut download_urls: Vec<(String, String)> = Vec::new();
-
-        let cudart_asset = assets.iter().find(|a| {
-            let n = a["name"].as_str().unwrap_or("").to_lowercase();
-            if let Some(ref ver) = host_cuda {
-                if ver.0 >= 13 {
-                    return n.contains("cudart") && n.contains("13");
-                }
-            }
-            n.contains("cudart") && (n.contains("12") || n.contains("win"))
-        });
-
-        if cfg!(target_os = "windows") {
-            let cuda_asset = if let Some(ref ver) = host_cuda {
-                if ver.0 >= 13 {
-                    assets.iter().find(|a| {
-                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                        n.contains("windows") && n.contains("cuda13")
-                    })
-                } else {
-                    None
-                }
-                .or_else(|| {
-                    assets.iter().find(|a| {
-                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                        (n.contains("win-cuda") || (n.contains("windows") && n.contains("cuda")))
-                            && !n.contains("cuda13")
-                    })
-                })
-            } else {
-                None
-            };
-
-            let fallback = assets.iter().find(|a| {
-                let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("win-cpu") || (n.contains("windows") && !n.contains("cuda"))
-            });
-
-            if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push(download::extract_release_asset_info(target)?);
-                if target == cuda_asset.unwrap_or(target) {
-                    if let Some(cda) = cudart_asset {
-                        download_urls.push(download::extract_release_asset_info(cda)?);
-                    }
-                }
-            }
-        } else if cfg!(target_os = "macos") {
-            if let Some(asset) = assets.iter().find(|a| {
-                let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("macos") || n.contains("darwin")
-            }) {
-                download_urls.push(download::extract_release_asset_info(asset)?);
-            }
-        } else {
-            let cuda_asset = if let Some(ref ver) = host_cuda {
-                if ver.0 >= 13 {
-                    assets.iter().find(|a| {
-                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                        n.contains("linux") && n.contains("cuda13")
-                    })
-                } else {
-                    None
-                }
-                .or_else(|| {
-                    assets.iter().find(|a| {
-                        let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                        (n.contains("linux-cuda") || (n.contains("linux") && n.contains("cuda")))
-                            && !n.contains("cuda13")
-                    })
-                })
-            } else {
-                None
-            };
-
-            let fallback = assets.iter().find(|a| {
-                let n = a["name"].as_str().unwrap_or("").to_lowercase();
-                n.contains("linux") && (n.contains("cpu") || !n.contains("rocm"))
-            });
-
-            if let Some(target) = cuda_asset.or(fallback) {
-                download_urls.push(download::extract_release_asset_info(target)?);
-            }
-        }
-
-        if download_urls.is_empty() {
-            return Err("No compatible CrispASR release asset found for this platform".into());
-        }
-
-        for (name, _) in &download_urls {
-            download::asset_sha256(assets, name)?;
-        }
-
-        for (archive_name, download_url) in download_urls {
-            download::download_and_extract(
-                &client,
-                &download_url,
-                &base_dir,
-                &archive_name,
-                "[CrispAsrEngine]",
-                &download::asset_sha256(assets, &archive_name)?,
-            )?;
-        }
+        let asset = select_install_asset(
+            assets,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            download::detect_host_cuda_version(),
+            cpu_has_avx2(),
+        )
+        .ok_or("No compatible CrispASR registry artifact found for this platform")?;
+        let (archive_name, download_url) = download::extract_release_asset_info(asset)?;
+        let digest = download::asset_sha256(std::slice::from_ref(asset), &archive_name)?;
+        let size = asset["size"]
+            .as_u64()
+            .ok_or("CrispASR artifact size missing")?;
+        download::download_and_extract_sized(
+            &client,
+            &download_url,
+            &base_dir,
+            &archive_name,
+            "[CrispAsrEngine]",
+            &digest,
+            Some(size),
+        )?;
 
         download::flatten_dlls(&base_dir);
 
@@ -573,6 +542,39 @@ impl InferenceEngine for CrispAsrEngine {
 #[cfg(test)]
 mod audio_transport_tests {
     use super::*;
+    #[test]
+    fn registry_selection_honors_platform_cuda_and_cpu_capabilities() {
+        let registry = include_bytes!("../../../registry/engines.json");
+        let release = super::super::registry::parse_crispasr(registry).unwrap();
+        let assets = release["assets"].as_array().unwrap();
+        let name = |os, arch, cuda, avx| {
+            select_install_asset(assets, os, arch, cuda, avx).unwrap()["name"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        assert_eq!(
+            name("windows", "x86_64", Some((12, 6)), true),
+            "crispasr-windows-x86_64-cuda126.zip"
+        );
+        assert_eq!(
+            name("windows", "x86_64", Some((12, 8)), true),
+            "crispasr-windows-x86_64-cuda.zip"
+        );
+        assert_eq!(
+            name("windows", "x86_64", Some((13, 0)), true),
+            "crispasr-windows-x86_64-cuda13.zip"
+        );
+        assert_eq!(
+            name("windows", "x86_64", None, false),
+            "crispasr-windows-x86_64-cpu-legacy.zip"
+        );
+        assert_eq!(
+            name("macos", "aarch64", None, false),
+            "crispasr-macos-arm64.tar.gz"
+        );
+        assert!(select_install_asset(assets, "windows", "aarch64", None, false).is_none());
+    }
     use std::io::{BufRead, Read, Write};
 
     #[test]

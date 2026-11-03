@@ -1,118 +1,114 @@
 {
-  "schema_version": 3,
   "models": [
     {
-      "id": "gemma-4-12b-it",
-      "name": "Gemma 4 12B IT",
-      "description": "Google DeepMind Gemma 4 12B Instruction-Tuned omni multimodal foundation model for text, image, audio, and video",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
-      "max_context_length": 262144,
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
+      "description": "Google DeepMind Gemma 4 12B Instruction-Tuned omni multimodal foundation model for text, image, audio, and video",
       "engine": [
         "llama-server",
         "encoder"
       ],
-      "sampling": {
-        "temperature": 0.6,
-        "top_p": 0.95,
-        "top_k": 40,
-        "max_tokens": 4096
+      "extra": {
+        "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--gemma-4-12b-it-GGUF/snapshots/fc034cfff751157913579611efad8462ac1be606/mmproj-BF16.gguf"
       },
+      "id": "gemma-4-12b-it",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--gemma-4-12b-it-GGUF/snapshots/fc034cfff751157913579611efad8462ac1be606/gemma-4-12b-it-UD-Q6_K_XL.gguf",
-        "params": 12000000000,
+        "args": "-fa on",
         "bits_per_weight": 4.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "-fa on"
+        "params": 12000000000,
+        "path": "D:/Models/huggingface/hub/models--unsloth--gemma-4-12b-it-GGUF/snapshots/fc034cfff751157913579611efad8462ac1be606/gemma-4-12b-it-UD-Q6_K_XL.gguf"
       },
-      "extra": {
-        "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--gemma-4-12b-it-GGUF/snapshots/fc034cfff751157913579611efad8462ac1be606/mmproj-BF16.gguf"
-      }
+      "max_context_length": 262144,
+      "name": "Gemma 4 12B IT",
+      "sampling": {
+        "max_tokens": 4096,
+        "temperature": 0.6,
+        "top_k": 40,
+        "top_p": 0.95
+      },
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ]
     },
     {
-      "id": "minicpm-o-4-5-q8-0",
-      "name": "MiniCPM-o 4.5 Q8_0",
-      "description": "OpenBMB MiniCPM-o 4.5 (an omni model). Wired up for text and image input via the vision encoder in extra.mmproj_path; llama-server loads a single mmproj, so audio input and speech output are not available",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
-      "max_context_length": 40960,
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
+      "description": "OpenBMB MiniCPM-o 4.5 (an omni model). Wired up for text and image input via the vision encoder in extra.mmproj_path; llama-server loads a single mmproj, so audio input and speech output are not available",
       "engine": [
         "llama-server"
       ],
-      "sampling": {
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "top_k": 40,
-        "min_p": 0.05,
-        "max_tokens": 4096
+      "extra": {
+        "mmproj_path": "D:/Models/huggingface/hub/models--openbmb--MiniCPM-o-4_5-gguf/snapshots/db25077c33951fe163b42986fba0132e279872a2/vision/MiniCPM-o-4_5-vision-F16.gguf"
       },
+      "id": "minicpm-o-4-5-q8-0",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--openbmb--MiniCPM-o-4_5-gguf/snapshots/db25077c33951fe163b42986fba0132e279872a2/MiniCPM-o-4_5-Q8_0.gguf",
-        "params": null,
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0",
         "bits_per_weight": 8.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0"
+        "params": null,
+        "path": "D:/Models/huggingface/hub/models--openbmb--MiniCPM-o-4_5-gguf/snapshots/db25077c33951fe163b42986fba0132e279872a2/MiniCPM-o-4_5-Q8_0.gguf"
       },
-      "extra": {
-        "mmproj_path": "D:/Models/huggingface/hub/models--openbmb--MiniCPM-o-4_5-gguf/snapshots/db25077c33951fe163b42986fba0132e279872a2/vision/MiniCPM-o-4_5-vision-F16.gguf"
-      }
+      "max_context_length": 40960,
+      "name": "MiniCPM-o 4.5 Q8_0",
+      "sampling": {
+        "max_tokens": 4096,
+        "min_p": 0.05,
+        "temperature": 0.7,
+        "top_k": 40,
+        "top_p": 0.9
+      },
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ]
     },
     {
-      "id": "huihui-qwen3.8-27b-abliterated",
-      "name": "Huihui Qwen3.8 27B Abliterated",
-      "description": "Huihui-AI abliterated uncensored Qwen3.8 27B instruction and reasoning model",
       "capabilities": [
         "Reasoning",
         "Tool Call",
         "Structured Output",
         "Uncensored"
       ],
-      "max_context_length": 262144,
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
+      "description": "Huihui-AI abliterated uncensored Qwen3.8 27B instruction and reasoning model",
       "engine": [
         "llama-server"
       ],
-      "sampling": {
-        "temperature": 0.7,
-        "top_p": 0.95,
-        "top_k": 40,
-        "min_p": 0.05,
-        "max_tokens": 4096
-      },
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--huihui-ai--Huihui-Qwen3.8-27B-abliterated-GGUF/snapshots/8f1b52408a2f6e317535190c9386f776cacf0079/Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_S-mtp.gguf",
-        "params": 27000000000,
-        "bits_per_weight": 4.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
-      },
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",
         "mmproj_path": "D:/Models/huggingface/hub/models--huihui-ai--Huihui-Qwen3.8-27B-abliterated-GGUF/snapshots/8f1b52408a2f6e317535190c9386f776cacf0079/mmproj-model-bf16.gguf"
-      }
+      },
+      "id": "huihui-qwen3.8-27b-abliterated",
+      "local": {
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1",
+        "bits_per_weight": 4.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 27000000000,
+        "path": "D:/Models/huggingface/hub/models--huihui-ai--Huihui-Qwen3.8-27B-abliterated-GGUF/snapshots/8f1b52408a2f6e317535190c9386f776cacf0079/Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_S-mtp.gguf"
+      },
+      "max_context_length": 262144,
+      "name": "Huihui Qwen3.8 27B Abliterated",
+      "sampling": {
+        "max_tokens": 4096,
+        "min_p": 0.05,
+        "temperature": 0.7,
+        "top_k": 40,
+        "top_p": 0.95
+      },
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ]
     },
     {
-      "id": "qwen3.8-27b",
-      "name": "Qwen3.8 27B",
-      "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
       "capabilities": [
         "Reasoning",
         "Agentic Tasks",
@@ -121,180 +117,180 @@
         "Person Identification",
         "MTP"
       ],
-      "max_context_length": 262144,
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
+      "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
       "engine": [
         "llama-server"
       ],
-      "sampling": {
-        "temperature": 0.3,
-        "top_p": 0.9,
-        "top_k": 40,
-        "min_p": 0.05,
-        "max_tokens": 1024
-      },
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-IQ3_S.gguf",
-        "params": 27000000000,
-        "bits_per_weight": 3.44,
-        "context_length": 49152,
-        "gpu_layers": 99,
-        "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
-      },
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",
         "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/mmproj-BF16.gguf"
-      }
+      },
+      "id": "qwen3.8-27b",
+      "local": {
+        "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256",
+        "bits_per_weight": 3.44,
+        "context_length": 49152,
+        "gpu_layers": 99,
+        "params": 27000000000,
+        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-IQ3_S.gguf"
+      },
+      "max_context_length": 262144,
+      "name": "Qwen3.8 27B",
+      "sampling": {
+        "max_tokens": 1024,
+        "min_p": 0.05,
+        "temperature": 0.3,
+        "top_k": 40,
+        "top_p": 0.9
+      },
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ]
     },
     {
-      "id": "ternary-bonsai-2-27b-pq2-0",
-      "name": "Ternary Bonsai-2 27B",
-      "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
       "capabilities": [
         "Reasoning",
         "Structured Output",
         "Tool Call"
       ],
-      "max_context_length": 262144,
-      "tasks": [
-        "text-to-text"
-      ],
+      "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
       "engine": [
         "llama-server-prism"
       ],
-      "sampling": {
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "top_k": 50,
-        "min_p": 0.05,
-        "max_tokens": 4096
-      },
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-PQ2_0.gguf",
-        "params": 27000000000,
-        "bits_per_weight": 2.13,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
-      },
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",
         "mmproj_path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-mmproj-BF16.gguf"
-      }
+      },
+      "id": "ternary-bonsai-2-27b-pq2-0",
+      "local": {
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1",
+        "bits_per_weight": 2.13,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 27000000000,
+        "path": "D:/Models/huggingface/hub/models--prism-ml--Ternary-Bonsai-2-27B-gguf/snapshots/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-PQ2_0.gguf"
+      },
+      "max_context_length": 262144,
+      "name": "Ternary Bonsai-2 27B",
+      "sampling": {
+        "max_tokens": 4096,
+        "min_p": 0.05,
+        "temperature": 0.7,
+        "top_k": 50,
+        "top_p": 0.9
+      },
+      "tasks": [
+        "text-to-text"
+      ]
     },
     {
-      "id": "ornith-1.5-9b",
-      "name": "Ornith 1.5 9B",
-      "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
       "capabilities": [
         "Reasoning",
         "Agentic Coding",
         "Structured Output",
         "Tool Call"
       ],
-      "max_context_length": 262144,
-      "tasks": [
-        "text-to-text"
-      ],
+      "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
       "engine": [
         "llama-server"
       ],
-      "sampling": {
-        "temperature": 0.6,
-        "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.01,
-        "max_tokens": 4096
-      },
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--ornith-ai--Ornith-1.5-9B-GGUF/snapshots/abdd624b12ebf020b767fff532ff44fe552b28c3/Ornith-1.5-9B-Q8_0.gguf",
-        "params": 9400000000,
-        "bits_per_weight": 8.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
       "extra": {
         "max_resolution": "3840×2160 (4K UHD)",
         "mmproj_path": "D:/Models/huggingface/hub/models--ornith-ai--Ornith-1.5-9B-GGUF/snapshots/abdd624b12ebf020b767fff532ff44fe552b28c3/mmproj-Ornith-1.5-9B-BF16.gguf"
-      }
+      },
+      "id": "ornith-1.5-9b",
+      "local": {
+        "args": "",
+        "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 9400000000,
+        "path": "D:/Models/huggingface/hub/models--ornith-ai--Ornith-1.5-9B-GGUF/snapshots/abdd624b12ebf020b767fff532ff44fe552b28c3/Ornith-1.5-9B-Q8_0.gguf"
+      },
+      "max_context_length": 262144,
+      "name": "Ornith 1.5 9B",
+      "sampling": {
+        "max_tokens": 4096,
+        "min_p": 0.01,
+        "temperature": 0.6,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "tasks": [
+        "text-to-text"
+      ]
     },
     {
-      "id": "dinov2-giant",
-      "name": "DINOv2 Giant",
-      "description": "Self-supervised vision transformer foundation backbone for dense feature representation, depth, and semantics",
       "capabilities": [
         "Vision Features",
         "Semantic Search",
         "Depth Estimation"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Self-supervised vision transformer foundation backbone for dense feature representation, depth, and semantics",
       "engine": [
         "encoder"
       ],
+      "id": "dinov2-giant",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--facebook--dinov2-giant/snapshots/main",
-        "params": 1100000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 1100000000,
+        "path": "D:/Models/huggingface/hub/models--facebook--dinov2-giant/snapshots/main"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "DINOv2 Giant"
     },
     {
-      "id": "sam2.1-hiera-large",
-      "name": "SAM 2.1 Hiera Large",
-      "description": "Meta Segment Anything Model 2.1 for visual segmentation and promptable mask extraction in images and video",
       "capabilities": [
         "Visual Segmentation",
         "Object Masking",
         "Video Tracking"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Meta Segment Anything Model 2.1 for visual segmentation and promptable mask extraction in images and video",
       "engine": [
         "encoder"
       ],
+      "id": "sam2.1-hiera-large",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--facebook--sam2.1-hiera-large/snapshots/main",
-        "params": 224000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 224000000,
+        "path": "D:/Models/huggingface/hub/models--facebook--sam2.1-hiera-large/snapshots/main"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "SAM 2.1 Hiera Large"
     },
     {
-      "id": "grounding-dino-base",
-      "name": "Grounding DINO Base",
-      "description": "Open-world zero-shot object detection model conditioned on language text queries",
       "capabilities": [
         "Zero-Shot Detection",
         "Grounding",
         "Bounding Boxes"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Open-world zero-shot object detection model conditioned on language text queries",
       "engine": [
         "encoder"
       ],
+      "id": "grounding-dino-base",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--IDEA-Research--grounding-dino-base/snapshots/main",
-        "params": 172000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 172000000,
+        "path": "D:/Models/huggingface/hub/models--IDEA-Research--grounding-dino-base/snapshots/main"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "Grounding DINO Base"
     },
     {
-      "id": "oxcoder-9b",
-      "name": "OxCoder 9B",
-      "description": "Code generation and instruction following",
       "capabilities": [
         "Agentic Coding",
         "Terminal Automation",
@@ -303,63 +299,85 @@
         "Structured Output",
         "Error Recovery"
       ],
-      "max_context_length": 262144,
-      "tasks": [
-        "text-to-text"
-      ],
+      "description": "Code generation and instruction following",
       "engine": [
         "llama-server"
       ],
-      "sampling": {
-        "temperature": 0.2,
-        "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.01,
-        "max_tokens": 4096
-      },
+      "id": "oxcoder-9b",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--mradermacher--OxCoder-9B-i1-GGUF/snapshots/e3335e20fc13b04618c821f9b99d1f8ef5cd103d/OxCoder-9B.i1-Q6_K.gguf",
-        "params": 9000000000,
+        "args": "",
         "bits_per_weight": 6.56,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 9000000000,
+        "path": "D:/Models/huggingface/hub/models--mradermacher--OxCoder-9B-i1-GGUF/snapshots/e3335e20fc13b04618c821f9b99d1f8ef5cd103d/OxCoder-9B.i1-Q6_K.gguf"
+      },
+      "max_context_length": 262144,
+      "name": "OxCoder 9B",
+      "sampling": {
+        "max_tokens": 4096,
+        "min_p": 0.01,
+        "temperature": 0.2,
+        "top_k": 20,
+        "top_p": 0.95
+      },
+      "tasks": [
+        "text-to-text"
+      ]
     },
     {
-      "id": "qwen3-embedding-4b",
-      "name": "Qwen3 Embedding 4B",
-      "description": "Dense dense text and code embeddings foundation model for semantic retrieval and RAG",
       "capabilities": [
         "Semantic Search",
         "Code Retrieval"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Dense dense text and code embeddings foundation model for semantic retrieval and RAG",
       "engine": [
         "encoder"
       ],
-      "sampling": {
-        "temperature": 0.0,
-        "top_p": 1.0,
-        "top_k": 1,
-        "min_p": 0.0,
-        "max_tokens": 1
-      },
+      "id": "qwen3-embedding-4b",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen3-Embedding-4B/snapshots/main",
-        "params": 4000000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
+        "params": 4000000000,
+        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen3-Embedding-4B/snapshots/main"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "Qwen3 Embedding 4B",
+      "sampling": {
+        "max_tokens": 1,
+        "min_p": 0.0,
+        "temperature": 0.0,
+        "top_k": 1,
+        "top_p": 1.0
       }
     },
     {
-      "id": "qwen3.5-4b-q4",
-      "name": "Qwen3.5 4B Q4",
-      "description": "Local image and text model; basic tool calls tested. Screen coordinate accuracy is not established.",
       "capabilities": [],
+      "description": "Local image and text model; basic tool calls tested. Screen coordinate accuracy is not established.",
+      "engine": [
+        "llama-server"
+      ],
+      "extra": {
+        "mmproj_path": "D:/Models/rune-infer-evaluation-qwen35/mmproj-Qwen3.5-4B-f16.gguf"
+      },
+      "id": "qwen3.5-4b-q4",
+      "local": {
+        "args": "-fa on",
+        "bits_per_weight": 5.6,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 4000000000,
+        "path": "D:/Models/rune-infer-evaluation-qwen35/Qwen3.5-4B-Q4_K_M.gguf"
+      },
+      "max_context_length": 262144,
+      "name": "Qwen3.5 4B Q4",
+      "sampling": {
+        "max_tokens": 512,
+        "temperature": 0.0
+      },
       "structured_output_support": {
         "status": "supported",
         "verified_with": [
@@ -369,6 +387,10 @@
           }
         ]
       },
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ],
       "tool_call_support": {
         "status": "supported",
         "verified_with": [
@@ -377,115 +399,73 @@
             "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
           }
         ]
-      },
-      "max_context_length": 262144,
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "sampling": {
-        "temperature": 0.0,
-        "max_tokens": 512
-      },
-      "local": {
-        "path": "D:/Models/rune-infer-evaluation-qwen35/Qwen3.5-4B-Q4_K_M.gguf",
-        "params": 4000000000,
-        "bits_per_weight": 5.6,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "-fa on"
-      },
-      "extra": {
-        "mmproj_path": "D:/Models/rune-infer-evaluation-qwen35/mmproj-Qwen3.5-4B-f16.gguf"
       }
     },
     {
-      "id": "qwen3.5-0.8b",
-      "name": "Qwen3.5 0.8B",
-      "description": "Qwen3.5 0.8B reasoning model",
       "capabilities": [
         "Reasoning",
         "Tool Call",
         "Structured Output",
         "Code Generation"
       ],
-      "max_context_length": 262144,
-      "tasks": [
-        "text-to-text"
-      ],
+      "description": "Qwen3.5 0.8B reasoning model",
       "engine": [
         "llama-server"
       ],
-      "sampling": {
-        "temperature": 0.6,
-        "top_p": 0.9,
-        "top_k": 20,
-        "min_p": 0.05,
-        "max_tokens": 4096
-      },
+      "id": "qwen3.5-0.8b",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--Qwen--Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-BF16.gguf",
-        "params": 873000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 873000000,
+        "path": "D:/Models/huggingface/hub/models--Qwen--Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-BF16.gguf"
+      },
+      "max_context_length": 262144,
+      "name": "Qwen3.5 0.8B",
+      "sampling": {
+        "max_tokens": 4096,
+        "min_p": 0.05,
+        "temperature": 0.6,
+        "top_k": 20,
+        "top_p": 0.9
+      },
+      "tasks": [
+        "text-to-text"
+      ]
     },
     {
-      "id": "cactus-needle-3",
-      "name": "Cactus Needle 3",
-      "description": "Cactus Needle 3 tool-calling and structured extraction engine",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
-      "max_context_length": 8192,
-      "modality": "Text",
+      "description": "Cactus Needle 3 tool-calling and structured extraction engine",
       "engine": [
         "needle"
       ],
-      "sampling": {
-        "temperature": 0.1,
-        "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.01,
-        "max_tokens": 2048
-      },
+      "id": "cactus-needle-3",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--Cactus-Compute--needle3/needle3.cact",
-        "params": 121000000,
+        "args": "",
         "bits_per_weight": 2.0,
         "context_length": -1,
         "gpu_layers": 0,
-        "args": ""
+        "params": 121000000,
+        "path": "D:/Models/huggingface/hub/models--Cactus-Compute--needle3/needle3.cact"
+      },
+      "max_context_length": 8192,
+      "modality": "Text",
+      "name": "Cactus Needle 3",
+      "sampling": {
+        "max_tokens": 2048,
+        "min_p": 0.01,
+        "temperature": 0.1,
+        "top_k": 20,
+        "top_p": 0.95
       }
     },
     {
-      "id": "lfm3-omni-2b",
-      "structured_output_support": {
-        "status": "supported",
-        "verified_with": [
-          {
-            "engine": "llama-server",
-            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-          }
-        ]
-      },
-      "tool_call_support": {
-        "status": "supported",
-        "verified_with": [
-          {
-            "engine": "llama-server",
-            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-          }
-        ]
-      },
       "audio_operations": {
-        "transcription": {
+        "speech_generation": {
           "status": "supported",
           "verified_with": [
             {
@@ -494,7 +474,7 @@
             }
           ]
         },
-        "speech_generation": {
+        "transcription": {
           "status": "supported",
           "verified_with": [
             {
@@ -504,10 +484,39 @@
           ]
         }
       },
-      "name": "LiquidAI LFM3 Omni 2B",
-      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
       "capabilities": [],
+      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
+      "engine": [
+        "llama-server"
+      ],
+      "extra": {
+        "mmproj_path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/mmproj-LFM3-Omni-2B-F16.gguf"
+      },
+      "id": "lfm3-omni-2b",
+      "local": {
+        "args": "",
+        "bits_per_weight": 8.54,
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "params": 1728801600,
+        "path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/LFM3-Omni-2B-Q8_0.gguf"
+      },
       "max_context_length": 128000,
+      "name": "LiquidAI LFM3 Omni 2B",
+      "sampling": {
+        "max_tokens": 256,
+        "temperature": 0.0,
+        "top_k": 1
+      },
+      "structured_output_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
+      },
       "tasks": [
         "text-to-text",
         "text-image-to-text",
@@ -515,60 +524,63 @@
         "text-video-to-text",
         "text-to-audio"
       ],
-      "engine": [
-        "llama-server"
-      ],
-      "sampling": {
-        "temperature": 0.0,
-        "top_k": 1,
-        "max_tokens": 256
-      },
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/LFM3-Omni-2B-Q8_0.gguf",
-        "params": 1728801600,
-        "bits_per_weight": 8.54,
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "extra": {
-        "mmproj_path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/mmproj-LFM3-Omni-2B-F16.gguf"
+      "tool_call_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
       }
     },
     {
-      "id": "liquid-d1-3b",
-      "name": "Liquid AI d1-3B",
-      "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",
       "capabilities": [
         "Classification",
         "Scoring"
       ],
-      "max_context_length": 32768,
-      "tasks": [
-        "text-to-decision"
-      ],
+      "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",
       "engine": [
         "llama-server",
         "encoder"
       ],
+      "extra": {
+        "mmproj_path": "D:/Models/huggingface/hub/models--LiquidAI--d1-3B-GGUF/snapshots/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/mmproj-d1-3B-F16.gguf"
+      },
+      "id": "liquid-d1-3b",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--LiquidAI--d1-3B-GGUF/snapshots/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/d1-3B-Q8_0.gguf",
-        "params": 3120000000,
+        "args": "",
         "bits_per_weight": 4.5,
         "context_length": 32768,
         "gpu_layers": 99,
-        "args": ""
+        "params": 3120000000,
+        "path": "D:/Models/huggingface/hub/models--LiquidAI--d1-3B-GGUF/snapshots/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/d1-3B-Q8_0.gguf"
       },
-      "extra": {
-        "mmproj_path": "D:/Models/huggingface/hub/models--LiquidAI--d1-3B-GGUF/snapshots/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/mmproj-d1-3B-F16.gguf"
-      }
+      "max_context_length": 32768,
+      "name": "Liquid AI d1-3B",
+      "tasks": [
+        "text-to-decision"
+      ]
     },
     {
+      "capabilities": [
+        "Transparency (RGBA)"
+      ],
+      "description": "Qwen-Image-2.1 7B with native 2K rendering, RGBA transparency, live-verified instruction edits and image variations, up to ten unmasked references and two references with alpha masks",
+      "engine": [
+        "sd-server"
+      ],
+      "extra": {
+        "default_cfg_scale": 4.0,
+        "default_sample_method": "euler",
+        "default_steps": 30,
+        "max_resolution": "2048×2048 (Native DiT)",
+        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-FP8/snapshots/d67caebb412f98c968f9be41b3a8cea80b3e039a/Qwen-Image-2.1-text_encoder-FP8.safetensors",
+        "vae_path": "D:/Models/huggingface/hub/models--Qwen--Qwen-Image-2.1/snapshots/790c92633540aa0cb11d9abf19eb46d861714758/vae/diffusion_pytorch_model.safetensors"
+      },
       "id": "qwen-image-2.1",
       "image_reference_checks": [
         {
-          "engine": "sd-server",
-          "version": "stable-diffusion.cpp version unknown, commit c6dfa9d",
           "counts": [
             3,
             4,
@@ -578,65 +590,36 @@
             8,
             9,
             10
-          ]
+          ],
+          "engine": "sd-server",
+          "version": "stable-diffusion.cpp version unknown, commit c6dfa9d"
         }
       ],
-      "name": "Qwen-Image-2.1 7B",
-      "description": "Qwen-Image-2.1 7B with native 2K rendering, RGBA transparency, live-verified instruction edits and image variations, up to ten unmasked references and two references with alpha masks",
-      "capabilities": [
-        "Transparency (RGBA)"
-      ],
+      "local": {
+        "args": "--diffusion-fa --params-backend disk",
+        "bits_per_weight": 4.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 7000000000,
+        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-GGUF/snapshots/2c31ccd392b367a6637841a143813320a02dff55/qwen-image-2.1-Q4_K_M.gguf"
+      },
       "max_context_length": null,
+      "name": "Qwen-Image-2.1 7B",
       "tasks": [
         "text-to-image",
         "text-image-to-image",
         "image-to-image"
-      ],
-      "engine": [
-        "sd-server"
-      ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-GGUF/snapshots/2c31ccd392b367a6637841a143813320a02dff55/qwen-image-2.1-Q4_K_M.gguf",
-        "params": 7000000000,
-        "bits_per_weight": 4.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk"
-      },
-      "extra": {
-        "default_cfg_scale": 4.0,
-        "default_sample_method": "euler",
-        "default_steps": 30,
-        "max_resolution": "2048×2048 (Native DiT)",
-        "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-FP8/snapshots/d67caebb412f98c968f9be41b3a8cea80b3e039a/Qwen-Image-2.1-text_encoder-FP8.safetensors",
-        "vae_path": "D:/Models/huggingface/hub/models--Qwen--Qwen-Image-2.1/snapshots/790c92633540aa0cb11d9abf19eb46d861714758/vae/diffusion_pytorch_model.safetensors"
-      }
+      ]
     },
     {
-      "id": "qwen-image-2.1-uncensored",
-      "name": "Qwen-Image-2.1 7B Uncensored",
-      "description": "Qwen-Image-2.1 7B Uncensored variant with bypassed alignment filtering",
       "capabilities": [
         "Uncensored",
         "Transparency (RGBA)"
       ],
-      "max_context_length": null,
-      "tasks": [
-        "text-to-image",
-        "text-image-to-image",
-        "image-to-image"
-      ],
+      "description": "Qwen-Image-2.1 7B Uncensored variant with bypassed alignment filtering",
       "engine": [
         "sd-server"
       ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--abenzerps--Qwen-Image-2.1-Uncensored-GGUF/snapshots/728891aa68ed51fb92624f4c2080cd0c63461edd/qwen-image-2.1-Q8_0.gguf",
-        "params": 7000000000,
-        "bits_per_weight": 8.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk"
-      },
       "extra": {
         "default_cfg_scale": 4.0,
         "default_sample_method": "euler",
@@ -644,236 +627,238 @@
         "max_resolution": "2048×2048 (Native DiT)",
         "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2.1-FP8/snapshots/d67caebb412f98c968f9be41b3a8cea80b3e039a/Qwen-Image-2.1-text_encoder-FP8.safetensors",
         "vae_path": "D:/Models/huggingface/hub/models--Qwen--Qwen-Image-2.1/snapshots/790c92633540aa0cb11d9abf19eb46d861714758/vae/diffusion_pytorch_model.safetensors"
-      }
+      },
+      "id": "qwen-image-2.1-uncensored",
+      "local": {
+        "args": "--diffusion-fa --params-backend disk",
+        "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 7000000000,
+        "path": "D:/Models/huggingface/hub/models--abenzerps--Qwen-Image-2.1-Uncensored-GGUF/snapshots/728891aa68ed51fb92624f4c2080cd0c63461edd/qwen-image-2.1-Q8_0.gguf"
+      },
+      "max_context_length": null,
+      "name": "Qwen-Image-2.1 7B Uncensored",
+      "tasks": [
+        "text-to-image",
+        "text-image-to-image",
+        "image-to-image"
+      ]
     },
     {
-      "id": "qwen-image-2512",
-      "name": "Qwen Image 2512 7B",
-      "description": "Qwen-Image 2512 7B DiT foundation model for high-fidelity text-to-image synthesis and image editing",
       "capabilities": [
         "Image Editing",
         "Photorealism"
       ],
-      "max_context_length": null,
-      "tasks": [
-        "text-to-image"
-      ],
+      "description": "Qwen-Image 2512 7B DiT foundation model for high-fidelity text-to-image synthesis and image editing",
       "engine": [
         "sd-server"
       ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2512-GGUF/snapshots/1626d7531f84b4d2ea1cd6d2e69f41ec027dd354/qwen-image-2512-Q5_K_M.gguf",
-        "params": 7000000000,
-        "bits_per_weight": 4.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk"
-      },
       "extra": {
         "default_cfg_scale": 6.0,
         "default_sample_method": "euler",
         "default_steps": 30,
         "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth-Qwen2.5VL/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
         "vae_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2512/snapshots/b96dde7fa56044ec6892801be5a37540a253717e/vae/diffusion_pytorch_model.safetensors"
-      }
+      },
+      "id": "qwen-image-2512",
+      "local": {
+        "args": "--diffusion-fa --params-backend disk",
+        "bits_per_weight": 4.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 7000000000,
+        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-2512-GGUF/snapshots/1626d7531f84b4d2ea1cd6d2e69f41ec027dd354/qwen-image-2512-Q5_K_M.gguf"
+      },
+      "max_context_length": null,
+      "name": "Qwen Image 2512 7B",
+      "tasks": [
+        "text-to-image"
+      ]
     },
     {
-      "id": "qwen-image-edit-2511",
-      "name": "Qwen Image Edit 2511",
-      "description": "Qwen-Image-Edit 2511 with live-verified instruction edits, one or two reference images and alpha masks preserving protected pixels",
       "capabilities": [],
-      "max_context_length": null,
-      "modality": "ImageGeneration",
-      "tasks": [
-        "text-image-to-image",
-        "image-to-image"
-      ],
+      "description": "Qwen-Image-Edit 2511 with live-verified instruction edits, one or two reference images and alpha masks preserving protected pixels",
       "engine": [
         "sd-server"
       ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511-GGUF/snapshots/0d33d9692b4b26212297240d87b0d4719aa4fd06/qwen-image-edit-2511-Q3_K_L.gguf",
-        "params": 20430401088,
-        "bits_per_weight": 4.14,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk --model-args qwen_image_zero_cond_t=true"
-      },
       "extra": {
         "default_cfg_scale": 5.0,
         "default_sample_method": "euler",
         "default_steps": 30,
         "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511/snapshots/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/text_encoder",
         "vae_path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511/snapshots/a8b177b8e8acc1ff947d08b58efb5d3cf147fe20/vae/diffusion_pytorch_model.safetensors"
-      }
+      },
+      "id": "qwen-image-edit-2511",
+      "local": {
+        "args": "--diffusion-fa --params-backend disk --model-args qwen_image_zero_cond_t=true",
+        "bits_per_weight": 4.14,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 20430401088,
+        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen-Image-Edit-2511-GGUF/snapshots/0d33d9692b4b26212297240d87b0d4719aa4fd06/qwen-image-edit-2511-Q3_K_L.gguf"
+      },
+      "max_context_length": null,
+      "modality": "ImageGeneration",
+      "name": "Qwen Image Edit 2511",
+      "tasks": [
+        "text-image-to-image",
+        "image-to-image"
+      ]
     },
     {
-      "id": "moss-image-sft",
-      "name": "MOSS Image SFT",
-      "description": "OpenMOSS MOSS-Image-SFT text-to-image model using the local Qwen3.5 encoder, tokenizer and VAE",
       "capabilities": [],
-      "max_context_length": null,
-      "tasks": [
-        "text-to-image"
-      ],
+      "description": "OpenMOSS MOSS-Image-SFT text-to-image model using the local Qwen3.5 encoder, tokenizer and VAE",
       "engine": [
         "sd-server"
       ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-GGUF/snapshots/a013f7442e672e67b21f485b4b4f369df5500847/MOSS-Image-SFT-Q8_0.gguf",
-        "params": 5082308624,
-        "bits_per_weight": 8.63,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk --flow-shift 5 --tokenizer D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/tokenizer/tokenizer.json"
-      },
       "extra": {
         "default_cfg_scale": 3.0,
         "default_sample_method": "euler",
         "default_steps": 50,
         "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.5-9B-GGUF/snapshots/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf",
         "vae_path": "D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/vae/diffusion_pytorch_model.safetensors"
-      }
+      },
+      "id": "moss-image-sft",
+      "local": {
+        "args": "--diffusion-fa --params-backend disk --flow-shift 5 --tokenizer D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/tokenizer/tokenizer.json",
+        "bits_per_weight": 8.63,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 5082308624,
+        "path": "D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-GGUF/snapshots/a013f7442e672e67b21f485b4b4f369df5500847/MOSS-Image-SFT-Q8_0.gguf"
+      },
+      "max_context_length": null,
+      "name": "MOSS Image SFT",
+      "tasks": [
+        "text-to-image"
+      ]
     },
     {
-      "id": "yolo26x",
-      "name": "YOLO26x Object Detection",
-      "description": "YOLO26x COCO object detection, reviewed ONNX export with embedded non-maximum suppression (AGPL-3.0).",
       "capabilities": [],
-      "tasks": [
-        "image-to-detection"
-      ],
+      "description": "YOLO26x COCO object detection, reviewed ONNX export with embedded non-maximum suppression (AGPL-3.0).",
       "engine": [
         "onnx"
       ],
+      "id": "yolo26x",
       "local": {
-        "path": "D:/Models/litert/yolo26x_detect.onnx",
-        "gpu_layers": 99
-      }
+        "gpu_layers": 99,
+        "path": "D:/Models/litert/yolo26x_detect.onnx"
+      },
+      "name": "YOLO26x Object Detection",
+      "tasks": [
+        "image-to-detection"
+      ]
     },
     {
-      "id": "yolo26x-pose",
-      "name": "YOLO26x Pose Estimation",
-      "description": "YOLO26x COCO human pose estimation with 17 keypoints; reviewed ONNX export (AGPL-3.0).",
       "capabilities": [
         "Pose Estimation"
       ],
-      "tasks": [
-        "image-to-detection"
-      ],
+      "description": "YOLO26x COCO human pose estimation with 17 keypoints; reviewed ONNX export (AGPL-3.0).",
       "engine": [
         "onnx"
       ],
+      "id": "yolo26x-pose",
       "local": {
-        "path": "D:/Models/litert/yolo26x-pose.onnx",
-        "gpu_layers": 99
-      }
+        "gpu_layers": 99,
+        "path": "D:/Models/litert/yolo26x-pose.onnx"
+      },
+      "name": "YOLO26x Pose Estimation",
+      "tasks": [
+        "image-to-detection"
+      ]
     },
     {
-      "id": "yolo26x-seg",
-      "name": "YOLO26x Instance Segmentation",
-      "description": "YOLO26x COCO instance segmentation with per-object masks; reviewed ONNX export (AGPL-3.0).",
       "capabilities": [
         "Instance Segmentation"
       ],
-      "tasks": [
-        "image-to-detection"
-      ],
+      "description": "YOLO26x COCO instance segmentation with per-object masks; reviewed ONNX export (AGPL-3.0).",
       "engine": [
         "onnx"
       ],
+      "id": "yolo26x-seg",
       "local": {
-        "path": "D:/Models/litert/yolo26x-seg.onnx",
-        "gpu_layers": 99
-      }
+        "gpu_layers": 99,
+        "path": "D:/Models/litert/yolo26x-seg.onnx"
+      },
+      "name": "YOLO26x Instance Segmentation",
+      "tasks": [
+        "image-to-detection"
+      ]
     },
     {
-      "id": "yolo26x-obb",
-      "name": "YOLO26x Oriented Bounding Boxes",
-      "description": "YOLO26x oriented detection for 15 DOTA aerial-image classes; reviewed ONNX export (AGPL-3.0).",
       "capabilities": [
         "Oriented Bounding Boxes"
       ],
-      "tasks": [
-        "image-to-detection"
-      ],
+      "description": "YOLO26x oriented detection for 15 DOTA aerial-image classes; reviewed ONNX export (AGPL-3.0).",
       "engine": [
         "onnx"
       ],
+      "id": "yolo26x-obb",
       "local": {
-        "path": "D:/Models/litert/yolo26x-obb.onnx",
-        "gpu_layers": 99
-      }
+        "gpu_layers": 99,
+        "path": "D:/Models/litert/yolo26x-obb.onnx"
+      },
+      "name": "YOLO26x Oriented Bounding Boxes",
+      "tasks": [
+        "image-to-detection"
+      ]
     },
     {
-      "id": "yolo26x-sem-ade20k",
-      "name": "YOLO26x Semantic Segmentation ADE20K",
-      "description": "YOLO26x semantic segmentation for 150 ADE20K scene classes; locally exported ONNX model (AGPL-3.0).",
       "capabilities": [
         "Semantic Segmentation"
       ],
-      "tasks": [
-        "image-to-segmentation"
-      ],
+      "description": "YOLO26x semantic segmentation for 150 ADE20K scene classes; locally exported ONNX model (AGPL-3.0).",
       "engine": [
         "onnx"
       ],
+      "id": "yolo26x-sem-ade20k",
       "local": {
-        "path": "D:/Models/litert/yolo26x-sem-ade20k.onnx",
-        "gpu_layers": 99
-      }
+        "gpu_layers": 99,
+        "path": "D:/Models/litert/yolo26x-sem-ade20k.onnx"
+      },
+      "name": "YOLO26x Semantic Segmentation ADE20K",
+      "tasks": [
+        "image-to-segmentation"
+      ]
     },
     {
-      "id": "z-image-turbo-q8-0",
-      "name": "Z-Image Turbo 6B Q8_0",
-      "description": "Z-Image Turbo text-to-image generation using the local Qwen3 text encoder and VAE.",
       "capabilities": [],
-      "max_context_length": null,
-      "tasks": [
-        "text-to-image"
-      ],
+      "description": "Z-Image Turbo text-to-image generation using the local Qwen3 text encoder and VAE.",
       "engine": [
         "sd-server"
       ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--Z-Image-Turbo-GGUF/snapshots/b40f712c569ecfff42f2307dcc43399ae1d71318/z-image-turbo-Q8_0.gguf",
-        "params": 6000000000,
-        "bits_per_weight": 8.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa"
-      },
       "extra": {
         "default_cfg_scale": 1.0,
         "default_sample_method": "euler",
         "default_steps": 8,
         "text_encoder_path": "D:/Models/huggingface/hub/models--Tongyi-MAI--Z-Image/snapshots/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder",
         "vae_path": "D:/Models/huggingface/hub/models--Tongyi-MAI--Z-Image/snapshots/04cc4abb7c5069926f75c9bfde9ef43d49423021/vae/diffusion_pytorch_model.safetensors"
-      }
+      },
+      "id": "z-image-turbo-q8-0",
+      "local": {
+        "args": "--diffusion-fa",
+        "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 6000000000,
+        "path": "D:/Models/huggingface/hub/models--unsloth--Z-Image-Turbo-GGUF/snapshots/b40f712c569ecfff42f2307dcc43399ae1d71318/z-image-turbo-Q8_0.gguf"
+      },
+      "max_context_length": null,
+      "name": "Z-Image Turbo 6B Q8_0",
+      "tasks": [
+        "text-to-image"
+      ]
     },
     {
-      "id": "z-image",
-      "name": "Z-Image 6B",
-      "description": "Z-Image 6B Single-Stream Diffusion Transformer for high-fidelity photorealistic text-to-image generation",
       "capabilities": [
         "Photorealism",
         "Bilingual Rendering"
       ],
-      "max_context_length": null,
-      "tasks": [
-        "text-to-image"
-      ],
+      "description": "Z-Image 6B Single-Stream Diffusion Transformer for high-fidelity photorealistic text-to-image generation",
       "engine": [
         "sd-server"
       ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--unsloth--Z-Image-GGUF/snapshots/c9913e69743c5d9dfa7fdac58a0cc5709a17aa08/z-image-Q8_0.gguf",
-        "params": 6000000000,
-        "bits_per_weight": 8.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa"
-      },
       "extra": {
         "default_cfg_scale": 4.0,
         "default_sample_method": "euler",
@@ -912,73 +897,77 @@
         ],
         "text_encoder_path": "D:/Models/huggingface/hub/models--Tongyi-MAI--Z-Image/snapshots/04cc4abb7c5069926f75c9bfde9ef43d49423021/text_encoder",
         "vae_path": "D:/Models/huggingface/hub/models--Tongyi-MAI--Z-Image/snapshots/04cc4abb7c5069926f75c9bfde9ef43d49423021/vae/diffusion_pytorch_model.safetensors"
-      }
+      },
+      "id": "z-image",
+      "local": {
+        "args": "--diffusion-fa",
+        "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 6000000000,
+        "path": "D:/Models/huggingface/hub/models--unsloth--Z-Image-GGUF/snapshots/c9913e69743c5d9dfa7fdac58a0cc5709a17aa08/z-image-Q8_0.gguf"
+      },
+      "max_context_length": null,
+      "name": "Z-Image 6B",
+      "tasks": [
+        "text-to-image"
+      ]
     },
     {
-      "id": "acestep-v1.5-turbo",
-      "name": "AceStep v1.5 Turbo",
-      "description": "AceStep v1.5 Turbo accelerated diffusion model for sub-second generation",
       "capabilities": [
         "Turbo Generation",
         "Photorealism"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "AceStep v1.5 Turbo accelerated diffusion model for sub-second generation",
       "engine": [
         "sd-server"
       ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--ACE-Step--Ace-Step1.5/acestep_v1.5_turbo.safetensors",
-        "params": 4500000000,
-        "bits_per_weight": 8.0,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--vae D:/Models/gguf/ace_1.5_vae.safetensors"
-      },
       "extra": {
         "default_cfg_scale": 2.0,
         "default_sample_method": "euler",
         "default_steps": 8,
         "text_encoder_path": "D:/Models/huggingface/hub/models--unsloth-Qwen2.5VL/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
         "vae_path": "D:/Models/gguf/ace_1.5_vae.safetensors"
-      }
+      },
+      "id": "acestep-v1.5-turbo",
+      "local": {
+        "args": "--vae D:/Models/gguf/ace_1.5_vae.safetensors",
+        "bits_per_weight": 8.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 4500000000,
+        "path": "D:/Models/huggingface/hub/models--ACE-Step--Ace-Step1.5/acestep_v1.5_turbo.safetensors"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "AceStep v1.5 Turbo"
     },
     {
-      "id": "audio8-asr-infinite",
-      "name": "Edge0 Audio8 ASR Infinite",
-      "description": "Infinite 24/7 rolling-KV streaming ASR with 80ms clock and semantic VAD based on Voxtral Realtime 4B + Qwen2.5-3B",
       "capabilities": [
         "Streaming",
         "Realtime",
         "Semantic VAD"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Infinite 24/7 rolling-KV streaming ASR with 80ms clock and semantic VAD based on Voxtral Realtime 4B + Qwen2.5-3B",
       "engine": [
         "audio-cpp",
         "crispasr"
       ],
+      "id": "audio8-asr-infinite",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--edge0-Audio8-ASR-Infinite/model.safetensors",
-        "params": 4100000000,
+        "args": "--backend voxtral4b",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--backend voxtral4b"
-      }
+        "params": 4100000000,
+        "path": "D:/Models/huggingface/hub/models--edge0-Audio8-ASR-Infinite/model.safetensors"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "Edge0 Audio8 ASR Infinite"
     },
     {
-      "id": "whisper-large-v3-full",
       "audio_operations": {
-        "transcription": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "crispasr",
-              "version": "version       : 0.8.49; git sha       : d9426437"
-            }
-          ]
-        },
         "speech_translation": {
           "status": "supported",
           "verified_with": [
@@ -987,29 +976,38 @@
               "version": "version       : 0.8.49; git sha       : d9426437"
             }
           ]
+        },
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "crispasr",
+              "version": "version       : 0.8.49; git sha       : d9426437"
+            }
+          ]
         }
       },
-      "name": "Whisper Large v3 Full",
-      "description": "OpenAI Whisper Large v3 full model, converted locally to FP16 GGML for speech-to-text",
       "capabilities": [],
-      "max_context_length": null,
-      "tasks": [
-        "audio-to-text"
-      ],
+      "description": "OpenAI Whisper Large v3 full model, converted locally to FP16 GGML for speech-to-text",
       "engine": [
         "crispasr"
       ],
+      "id": "whisper-large-v3-full",
       "local": {
-        "path": "D:/Models/litert/whisper-large-v3-full/ggml-large-v3-f16.bin",
-        "params": 1543490560,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 1543490560,
+        "path": "D:/Models/litert/whisper-large-v3-full/ggml-large-v3-f16.bin"
+      },
+      "max_context_length": null,
+      "name": "Whisper Large v3 Full",
+      "tasks": [
+        "audio-to-text"
+      ]
     },
     {
-      "id": "whisper-large-v3",
       "audio_operations": {
         "transcription": {
           "status": "supported",
@@ -1021,32 +1019,36 @@
           ]
         }
       },
-      "name": "Whisper Large v3",
-      "description": "OpenAI Whisper Large v3 Turbo multilingual speech-to-text transcription with Silero VAD; speech translation remains unverified",
       "capabilities": [
         "Multilingual",
         "Bengali",
         "Timestamps"
       ],
-      "max_context_length": null,
-      "tasks": [
-        "audio-to-text"
-      ],
+      "description": "OpenAI Whisper Large v3 Turbo multilingual speech-to-text transcription with Silero VAD; speech translation remains unverified",
       "engine": [
         "crispasr"
       ],
+      "id": "whisper-large-v3",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--openai--whisper-large-v3-turbo/ggml-large-v3-turbo.bin",
-        "params": 809000000,
+        "args": "--vad",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--vad"
-      }
+        "params": 809000000,
+        "path": "D:/Models/huggingface/hub/models--openai--whisper-large-v3-turbo/ggml-large-v3-turbo.bin"
+      },
+      "max_context_length": null,
+      "name": "Whisper Large v3",
+      "tasks": [
+        "audio-to-text"
+      ]
     },
     {
-      "id": "parakeet-tdt-0.6b-v3",
       "audio_operations": {
+        "speech_translation": {
+          "reason": "The configured Parakeet ASR model does not translate speech, and no NMT companion is configured.",
+          "status": "unsupported"
+        },
         "transcription": {
           "status": "supported",
           "verified_with": [
@@ -1055,38 +1057,34 @@
               "version": "nemo-speech 0.3.0"
             }
           ]
-        },
-        "speech_translation": {
-          "status": "unsupported",
-          "reason": "The configured Parakeet ASR model does not translate speech, and no NMT companion is configured."
         }
       },
-      "name": "NVIDIA Parakeet TDT 0.6B v3",
-      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
       "capabilities": [
         "Multilingual",
         "Timestamps",
         "Punctuation",
         "FastConformer-TDT"
       ],
-      "max_context_length": null,
-      "tasks": [
-        "audio-to-text"
-      ],
+      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
       "engine": [
         "nemo-speech"
       ],
+      "id": "parakeet-tdt-0.6b-v3",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--nvidia--parakeet-tdt-0.6b-v3/snapshots/541d1f99c6b0c3cd0b11a95167540bb8edefd82b/parakeet-tdt-0.6b-v3.q8_0.gguf",
-        "params": 600000000,
+        "args": "",
         "bits_per_weight": 8.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 600000000,
+        "path": "D:/Models/huggingface/hub/models--nvidia--parakeet-tdt-0.6b-v3/snapshots/541d1f99c6b0c3cd0b11a95167540bb8edefd82b/parakeet-tdt-0.6b-v3.q8_0.gguf"
+      },
+      "max_context_length": null,
+      "name": "NVIDIA Parakeet TDT 0.6B v3",
+      "tasks": [
+        "audio-to-text"
+      ]
     },
     {
-      "id": "bangla-asr",
       "audio_operations": {
         "transcription": {
           "status": "supported",
@@ -1098,31 +1096,31 @@
           ]
         }
       },
-      "name": "BanglaASR (Whisper Small Fine-tuned)",
+      "capabilities": [
+        "Bengali",
+        "Low WER",
+        "Timestamps"
+      ],
       "description": "Fine-tuned Whisper Small ASR model achieving 4.58% WER on conversational Bengali speech",
-      "capabilities": [
-        "Bengali",
-        "Low WER",
-        "Timestamps"
-      ],
-      "max_context_length": null,
-      "tasks": [
-        "audio-to-text"
-      ],
       "engine": [
         "crispasr"
       ],
+      "id": "bangla-asr",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--bangla-speech-processing--BanglaASR/ggml-model.bin",
-        "params": 244000000,
+        "args": "--vad -vp 250 -vsd 400",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--vad -vp 250 -vsd 400"
-      }
+        "params": 244000000,
+        "path": "D:/Models/huggingface/hub/models--bangla-speech-processing--BanglaASR/ggml-model.bin"
+      },
+      "max_context_length": null,
+      "name": "BanglaASR (Whisper Small Fine-tuned)",
+      "tasks": [
+        "audio-to-text"
+      ]
     },
     {
-      "id": "indicwhisper-bengali",
       "audio_operations": {
         "transcription": {
           "status": "supported",
@@ -1134,53 +1132,53 @@
           ]
         }
       },
-      "name": "AI4Bharat IndicWhisper Bengali",
-      "description": "Multilingual Whisper model fine-tuned for Indic speech-to-text transcription with Silero VAD",
       "capabilities": [
         "Bengali",
         "Low WER",
         "Timestamps"
       ],
-      "max_context_length": null,
-      "tasks": [
-        "audio-to-text"
-      ],
+      "description": "Multilingual Whisper model fine-tuned for Indic speech-to-text transcription with Silero VAD",
       "engine": [
         "crispasr"
       ],
+      "id": "indicwhisper-bengali",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--bangla-speech-processing--BanglaASR/ggml-model.bin",
-        "params": 244000000,
+        "args": "--vad -vp 250 -vsd 400",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--vad -vp 250 -vsd 400"
-      }
+        "params": 244000000,
+        "path": "D:/Models/huggingface/hub/models--bangla-speech-processing--BanglaASR/ggml-model.bin"
+      },
+      "max_context_length": null,
+      "name": "AI4Bharat IndicWhisper Bengali",
+      "tasks": [
+        "audio-to-text"
+      ]
     },
     {
-      "id": "higgs-audio-v3-tts-4b",
-      "name": "Higgs Audio v3 TTS 4B",
-      "description": "Expressive dialogue conversational TTS engine using Higgs tokenizer",
       "capabilities": [
         "Conversational Voice",
         "Expressive Synthesis"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Expressive dialogue conversational TTS engine using Higgs tokenizer",
       "engine": [
         "crispasr"
       ],
+      "id": "higgs-audio-v3-tts-4b",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--multimodalart--higgs-audio-v3-tts-4b-transformers/snapshots/main",
-        "params": 4000000000,
+        "args": "--tokenizer D:/Models/huggingface/hub/models--bosonai--higgs-audio-v2-tokenizer/snapshots/main",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--tokenizer D:/Models/huggingface/hub/models--bosonai--higgs-audio-v2-tokenizer/snapshots/main"
-      }
+        "params": 4000000000,
+        "path": "D:/Models/huggingface/hub/models--multimodalart--higgs-audio-v3-tts-4b-transformers/snapshots/main"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "Higgs Audio v3 TTS 4B"
     },
     {
-      "id": "fish-audio-s2-pro",
       "audio_operations": {
         "speech_generation": {
           "status": "supported",
@@ -1191,27 +1189,27 @@
             }
           ]
         }
+      },
+      "capabilities": [],
+      "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
+      "engine": [
+        "audio-cpp"
+      ],
+      "id": "fish-audio-s2-pro",
+      "local": {
+        "args": "",
+        "bits_per_weight": 16.0,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 4954823665,
+        "path": "D:/Models/huggingface/hub/models--audio-cpp--audio.cpp-gguf/snapshots/e36610ac69b5262e914a52635324050bee8f1ad2/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf"
       },
       "name": "Fish Audio S2 Pro",
-      "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
-      "capabilities": [],
       "tasks": [
         "text-to-audio"
-      ],
-      "engine": [
-        "audio-cpp"
-      ],
-      "local": {
-        "path": "D:/Models/huggingface/hub/models--audio-cpp--audio.cpp-gguf/snapshots/e36610ac69b5262e914a52635324050bee8f1ad2/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf",
-        "params": 4954823665,
-        "bits_per_weight": 16.0,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      }
+      ]
     },
     {
-      "id": "voxcpm2-audiocpp",
       "audio_operations": {
         "speech_generation": {
           "status": "supported",
@@ -1223,136 +1221,136 @@
           ]
         }
       },
-      "name": "VoxCPM2 (audio.cpp)",
-      "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
       "capabilities": [],
-      "tasks": [
-        "text-to-audio"
-      ],
+      "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
       "engine": [
         "audio-cpp"
       ],
+      "id": "voxcpm2-audiocpp",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--audio-cpp--audio.cpp-gguf/snapshots/e36610ac69b5262e914a52635324050bee8f1ad2/VoxCPM2-GGUF/voxcpm2-q8_0.gguf",
-        "params": 2384218498,
+        "args": "--seed 42",
         "bits_per_weight": 9.9023,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--seed 42"
-      }
+        "params": 2384218498,
+        "path": "D:/Models/huggingface/hub/models--audio-cpp--audio.cpp-gguf/snapshots/e36610ac69b5262e914a52635324050bee8f1ad2/VoxCPM2-GGUF/voxcpm2-q8_0.gguf"
+      },
+      "name": "VoxCPM2 (audio.cpp)",
+      "tasks": [
+        "text-to-audio"
+      ]
     },
     {
-      "id": "voxcpm2",
-      "name": "VoxCPM 2",
-      "description": "OpenBMB end-to-end omni-conversational voice speech generation engine",
       "capabilities": [
         "Voice Duplex",
         "Emotional Synthesis"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "OpenBMB end-to-end omni-conversational voice speech generation engine",
       "engine": [
         "crispasr"
       ],
+      "id": "voxcpm2",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--openbmb--VoxCPM2/snapshots/bffb3df5a29440629464e5e839f4d214c8714c3d/model.safetensors",
-        "params": 2400000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 2400000000,
+        "path": "D:/Models/huggingface/hub/models--openbmb--VoxCPM2/snapshots/bffb3df5a29440629464e5e839f4d214c8714c3d/model.safetensors"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "VoxCPM 2"
     },
     {
-      "id": "qwen3-tts-1.7b-base",
-      "name": "Qwen3 TTS 12Hz 1.7B Base",
-      "description": "Qwen3 1.7B 12Hz tokenized continuous acoustic speech generator backbone",
       "capabilities": [
         "Acoustic Modeling"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Qwen3 1.7B 12Hz tokenized continuous acoustic speech generator backbone",
       "engine": [
         "crispasr"
       ],
+      "id": "qwen3-tts-1.7b-base",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-Base/snapshots/main",
-        "params": 1700000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 1700000000,
+        "path": "D:/Models/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-Base/snapshots/main"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "Qwen3 TTS 12Hz 1.7B Base"
     },
     {
-      "id": "qwen3-tts-1.7b-customvoice",
-      "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
-      "description": "Zero-shot voice cloning and custom reference speaker voice synthesis",
       "capabilities": [
         "Voice Cloning",
         "Zero-Shot TTS"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Zero-shot voice cloning and custom reference speaker voice synthesis",
       "engine": [
         "crispasr"
       ],
+      "id": "qwen3-tts-1.7b-customvoice",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice/snapshots/main",
-        "params": 1700000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 1700000000,
+        "path": "D:/Models/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice/snapshots/main"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "Qwen3 TTS 12Hz 1.7B CustomVoice"
     },
     {
-      "id": "qwen3-tts-1.7b-gguf",
-      "name": "Qwen3 1.7B Multilingual TTS (GGUF)",
-      "description": "High-fidelity multilingual streaming speech synthesis foundation model in native GGUF",
       "capabilities": [
         "Multilingual",
         "Streaming Voice",
         "Custom Voice"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "High-fidelity multilingual streaming speech synthesis foundation model in native GGUF",
       "engine": [
         "crispasr"
       ],
+      "id": "qwen3-tts-1.7b-gguf",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--mradermacher--Qwen3-1.7B-Multilingual-TTS-GGUF/qwen3-1.7B-Multilingual-TTS-f16.gguf",
-        "params": 1700000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 1700000000,
+        "path": "D:/Models/huggingface/hub/models--mradermacher--Qwen3-1.7B-Multilingual-TTS-GGUF/qwen3-1.7B-Multilingual-TTS-f16.gguf"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "Qwen3 1.7B Multilingual TTS (GGUF)"
     },
     {
-      "id": "omnivoice",
-      "name": "OmniVoice",
-      "description": "K2-FSA zero-shot multilingual voice cloning and speech generation engine",
       "capabilities": [
         "Zero-Shot Cloning",
         "Multilingual"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "K2-FSA zero-shot multilingual voice cloning and speech generation engine",
       "engine": [
         "crispasr"
       ],
+      "id": "omnivoice",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--k2-fsa--OmniVoice/snapshots/main",
-        "params": 1500000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 1500000000,
+        "path": "D:/Models/huggingface/hub/models--k2-fsa--OmniVoice/snapshots/main"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "OmniVoice"
     },
     {
-      "id": "audio8-tts-preview-0.6b",
       "audio_operations": {
         "speech_generation": {
           "status": "supported",
@@ -1364,337 +1362,364 @@
           ]
         }
       },
-      "name": "Audio8 TTS Preview 0.6B",
-      "description": "Ultra-low-latency real-time voice synthesis preview model",
       "capabilities": [
         "Low Latency",
         "Realtime"
       ],
-      "max_context_length": null,
-      "tasks": [
-        "text-to-audio"
-      ],
+      "description": "Ultra-low-latency real-time voice synthesis preview model",
       "engine": [
         "audio-cpp"
       ],
+      "id": "audio8-tts-preview-0.6b",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--Audio8--Audio8-TTS-Preview-0.6b/snapshots/f07040f3d151f1ba0253bfb92cb2f5dd38b44594/audio8-tts.gguf",
-        "params": 600000000,
+        "args": "",
         "bits_per_weight": 16.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 600000000,
+        "path": "D:/Models/huggingface/hub/models--Audio8--Audio8-TTS-Preview-0.6b/snapshots/f07040f3d151f1ba0253bfb92cb2f5dd38b44594/audio8-tts.gguf"
+      },
+      "max_context_length": null,
+      "name": "Audio8 TTS Preview 0.6B",
+      "tasks": [
+        "text-to-audio"
+      ]
     },
     {
-      "id": "nemotron-3-diarization",
-      "name": "NVIDIA Nemotron-3 Diarization",
-      "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",
       "capabilities": [
         "Speech-Analysis",
         "Speaker-Diarization",
         "Multi-Speaker",
         "Timestamps"
       ],
-      "max_context_length": null,
-      "modality": "Text",
+      "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",
       "engine": [
         "audio-cpp"
       ],
+      "id": "nemotron-3-diarization",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--nvidia--Nemotron-3-Diarization/nemotron-3-diarization-q8_0.gguf",
-        "params": 100000000,
+        "args": "",
         "bits_per_weight": 8.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 100000000,
+        "path": "D:/Models/huggingface/hub/models--nvidia--Nemotron-3-Diarization/nemotron-3-diarization-q8_0.gguf"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "NVIDIA Nemotron-3 Diarization"
     },
     {
-      "id": "google/embeddinggemma-2",
-      "name": "Google EmbeddingGemma 2",
-      "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
       "capabilities": [
         "Semantic Search",
         "Code Retrieval",
         "Matryoshka Representations"
       ],
-      "max_context_length": 8192,
-      "tasks": [
-        "text-to-embedding"
-      ],
+      "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
       "engine": [
         "llama-server"
       ],
+      "id": "google/embeddinggemma-2",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--google--embeddinggemma-2/snapshots/main/embeddinggemma-2.gguf",
-        "params": 740000000,
+        "args": "",
         "bits_per_weight": 8.0,
         "context_length": 8192,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": 740000000,
+        "path": "D:/Models/huggingface/hub/models--google--embeddinggemma-2/snapshots/main/embeddinggemma-2.gguf"
+      },
+      "max_context_length": 8192,
+      "name": "Google EmbeddingGemma 2",
+      "tasks": [
+        "text-to-embedding"
+      ]
     },
     {
-      "id": "granite-embedding-311m-multilingual-r2",
-      "name": "Granite Embedding 311M Multilingual R2",
+      "capabilities": [],
       "description": "IBM Granite 311M Multilingual ModernBERT dense embedding model",
-      "capabilities": [],
-      "max_context_length": null,
-      "modality": "Text",
       "engine": [
         "encoder"
       ],
+      "id": "granite-embedding-311m-multilingual-r2",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--ibm-granite--granite-embedding-311m-multilingual-r2/snapshots/44399559930365213510b1ee2eb15ded83374f0e/model.safetensors",
-        "params": null,
+        "args": "",
         "bits_per_weight": null,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": null,
+        "path": "D:/Models/huggingface/hub/models--ibm-granite--granite-embedding-311m-multilingual-r2/snapshots/44399559930365213510b1ee2eb15ded83374f0e/model.safetensors"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "Granite Embedding 311M Multilingual R2"
     },
     {
-      "id": "gliguard-LLMGuardrails-300M",
-      "name": "GLiGuard LLM Guardrails 300M",
+      "capabilities": [],
       "description": "Fastino GLiGuard 300M multi-category safety moderation model",
-      "capabilities": [],
-      "max_context_length": null,
-      "modality": "Text",
       "engine": [
         "encoder"
       ],
+      "id": "gliguard-LLMGuardrails-300M",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--fastino--gliguard-LLMGuardrails-300M/snapshots/7776816b54581f37b90dd2de12dbe13123229a9b/model.safetensors",
-        "params": null,
+        "args": "",
         "bits_per_weight": null,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": null,
+        "path": "D:/Models/huggingface/hub/models--fastino--gliguard-LLMGuardrails-300M/snapshots/7776816b54581f37b90dd2de12dbe13123229a9b/model.safetensors"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "GLiGuard LLM Guardrails 300M"
     },
     {
-      "id": "mmbert32k-intent-classifier-merged",
-      "name": "mmBERT 32K Intent Classifier",
+      "capabilities": [],
       "description": "ModernBERT 32K zero-shot intent and entity classifier",
-      "capabilities": [],
-      "max_context_length": null,
-      "modality": "Text",
       "engine": [
         "encoder"
       ],
+      "id": "mmbert32k-intent-classifier-merged",
       "local": {
-        "path": "D:/Models/huggingface/hub/models--vllm-sr--mmbert32k-intent-classifier-merged/snapshots/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/model.safetensors",
-        "params": null,
+        "args": "",
         "bits_per_weight": null,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": null,
+        "path": "D:/Models/huggingface/hub/models--vllm-sr--mmbert32k-intent-classifier-merged/snapshots/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/model.safetensors"
+      },
+      "max_context_length": null,
+      "modality": "Text",
+      "name": "mmBERT 32K Intent Classifier"
     },
     {
-      "id": "gemini-3.5-flash-lite",
-      "name": "Gemini 3.5 Flash-Lite (Google AI Cloud)",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output"
+      ],
       "description": "Google Gemini 3.5 Flash-Lite high-throughput, ultra-low latency model optimized for high-frequency tasks and agentic tool calling",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output"
-      ],
+      "id": "gemini-3.5-flash-lite",
       "max_context_length": 1048576,
       "modality": "Text",
+      "name": "Gemini 3.5 Flash-Lite (Google AI Cloud)",
       "remote": {
-        "provider": "google",
-        "upstream_model": "gemini-3.5-flash-lite",
         "api_key": "{{GEMINI_API_KEY}}",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "provider": "google",
         "rate_limit": {
-          "requests_per_minute": 15,
-          "tokens_per_minute": 250000,
-          "requests_per_day": 500,
           "max_concurrent": 5,
-          "queue_timeout_seconds": 30,
           "max_retries": 6,
+          "queue_timeout_seconds": 30,
+          "requests_per_day": 500,
+          "requests_per_minute": 15,
           "retry_delay_ms": 2000,
-          "retry_timeout_seconds": 45
-        }
+          "retry_timeout_seconds": 45,
+          "tokens_per_minute": 250000
+        },
+        "upstream_model": "gemini-3.5-flash-lite"
       }
     },
     {
-      "id": "gemini-3.7-flash",
-      "name": "Gemini 3.7 Flash (Google AI Cloud)",
-      "description": "Google Gemini 3.7 Flash workhorse model for coding, agentic workflows, and general reasoning",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
+      "description": "Google Gemini 3.7 Flash workhorse model for coding, agentic workflows, and general reasoning",
+      "id": "gemini-3.7-flash",
       "max_context_length": 1048576,
       "modality": "Text",
+      "name": "Gemini 3.7 Flash (Google AI Cloud)",
       "remote": {
-        "provider": "google",
-        "upstream_model": "gemini-3.7-flash",
         "api_key": "{{GEMINI_API_KEY}}",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "provider": "google",
         "rate_limit": {
-          "requests_per_minute": 5,
-          "tokens_per_minute": 250000,
-          "requests_per_day": 20,
           "max_concurrent": 2,
-          "queue_timeout_seconds": 30,
           "max_retries": 6,
+          "queue_timeout_seconds": 30,
+          "requests_per_day": 20,
+          "requests_per_minute": 5,
           "retry_delay_ms": 2000,
-          "retry_timeout_seconds": 45
-        }
+          "retry_timeout_seconds": 45,
+          "tokens_per_minute": 250000
+        },
+        "upstream_model": "gemini-3.7-flash"
       }
     },
     {
-      "id": "space-bunny-alpha",
-      "name": "Space Bunny Alpha (Stealth)",
-      "description": "Stealth Space Bunny Alpha anonymous 1M-token multimodal reasoning model",
       "capabilities": [
         "Tool Call",
         "Structured Output",
         "Structured JSON",
         "Reasoning"
       ],
+      "description": "Stealth Space Bunny Alpha anonymous 1M-token multimodal reasoning model",
+      "id": "space-bunny-alpha",
       "max_context_length": 1000000,
       "modality": "Text",
+      "name": "Space Bunny Alpha (Stealth)",
       "remote": {
-        "provider": "openrouter",
-        "upstream_model": "stealth/space-bunny-alpha",
         "api_key": "{{OPENROUTER_API_KEY}}",
         "base_url": "https://openrouter.ai/api/v1",
+        "provider": "openrouter",
         "rate_limit": {
-          "requests_per_minute": 20,
           "max_concurrent": 2,
-          "queue_timeout_seconds": 60,
           "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "requests_per_minute": 20,
           "retry_delay_ms": 1500,
           "retry_timeout_seconds": 45
-        }
+        },
+        "upstream_model": "stealth/space-bunny-alpha"
       }
     },
     {
-      "id": "dots-3-note-preview",
-      "name": "Dots3-Note Preview (Free)",
-      "description": "Dots Studio Dots3-Note Preview 16B/280B MoE multimodal reasoning model with 512K context",
       "capabilities": [
         "Tool Call",
         "Structured Output",
         "Structured JSON",
         "Reasoning"
       ],
+      "description": "Dots Studio Dots3-Note Preview 16B/280B MoE multimodal reasoning model with 512K context",
+      "id": "dots-3-note-preview",
       "max_context_length": 512000,
       "modality": "Text",
+      "name": "Dots3-Note Preview (Free)",
       "remote": {
-        "provider": "openrouter",
-        "upstream_model": "dots-studio/dots-3-note-preview:free",
         "api_key": "{{OPENROUTER_API_KEY}}",
         "base_url": "https://openrouter.ai/api/v1",
+        "provider": "openrouter",
         "rate_limit": {
-          "requests_per_minute": 20,
           "max_concurrent": 2,
-          "queue_timeout_seconds": 60,
           "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "requests_per_minute": 20,
           "retry_delay_ms": 1500,
           "retry_timeout_seconds": 45
-        }
+        },
+        "upstream_model": "dots-studio/dots-3-note-preview:free"
       }
     },
     {
-      "id": "gemini-3.8-flash",
-      "name": "Gemini 3.8 Flash (Google AI Cloud)",
-      "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
+      "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",
+      "id": "gemini-3.8-flash",
       "max_context_length": null,
       "modality": "Text",
+      "name": "Gemini 3.8 Flash (Google AI Cloud)",
       "remote": {
-        "provider": "google",
-        "upstream_model": "gemini-3.8-flash",
         "api_key": "{{GEMINI_API_KEY}}",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "provider": "google",
         "rate_limit": {
-          "requests_per_minute": 5,
-          "tokens_per_minute": 250000,
-          "requests_per_day": 20,
           "max_concurrent": 2,
-          "queue_timeout_seconds": 30,
           "max_retries": 6,
+          "queue_timeout_seconds": 30,
+          "requests_per_day": 20,
+          "requests_per_minute": 5,
           "retry_delay_ms": 2000,
-          "retry_timeout_seconds": 45
-        }
+          "retry_timeout_seconds": 45,
+          "tokens_per_minute": 250000
+        },
+        "upstream_model": "gemini-3.8-flash"
       }
     },
     {
-      "id": "apodex-1.1-mini",
-      "name": "Apodex 1.1 Mini (Free)",
-      "description": "Apodex 1.1 Mini reasoning model hosted on OpenRouter Free Tier",
       "capabilities": [
         "Tool Call",
         "Structured Output",
         "Structured JSON",
         "Reasoning"
       ],
+      "description": "Apodex 1.1 Mini reasoning model hosted on OpenRouter Free Tier",
+      "id": "apodex-1.1-mini",
       "max_context_length": 262144,
       "modality": "Text",
+      "name": "Apodex 1.1 Mini (Free)",
       "remote": {
-        "provider": "openrouter",
-        "upstream_model": "apodex/apodex-1.1-mini:free",
         "api_key": "{{OPENROUTER_API_KEY}}",
         "base_url": "https://openrouter.ai/api/v1",
+        "provider": "openrouter",
         "rate_limit": {
-          "requests_per_minute": 20,
           "max_concurrent": 2,
-          "queue_timeout_seconds": 60,
           "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "requests_per_minute": 20,
           "retry_delay_ms": 1500,
           "retry_timeout_seconds": 45
-        }
+        },
+        "upstream_model": "apodex/apodex-1.1-mini:free"
       }
     },
     {
-      "id": "depth-anything-v2-small",
-      "name": "Depth Anything V2 Small FP32",
-      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-small architecture)",
       "capabilities": [],
-      "max_context_length": null,
-      "tasks": [
-        "image-to-depth"
-      ],
+      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-small architecture)",
       "engine": [
         "litert"
       ],
+      "id": "depth-anything-v2-small",
       "local": {
-        "path": "D:\\Models\\litert\\depth_anything_v2_small.tflite",
-        "params": null,
+        "args": "",
         "bits_per_weight": null,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
-    },
-    {
-      "id": "depth-anything-v2-large",
-      "name": "Depth Anything V2 Large FP32",
-      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-large architecture)",
-      "capabilities": [],
+        "params": null,
+        "path": "D:\\Models\\litert\\depth_anything_v2_small.tflite"
+      },
       "max_context_length": null,
+      "name": "Depth Anything V2 Small FP32",
       "tasks": [
         "image-to-depth"
-      ],
+      ]
+    },
+    {
+      "capabilities": [],
+      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-large architecture)",
       "engine": [
         "litert"
       ],
+      "id": "depth-anything-v2-large",
       "local": {
-        "path": "D:\\Models\\litert\\depth_anything_v2_large_gpu_fp32.tflite",
-        "params": null,
+        "args": "",
         "bits_per_weight": 32.0,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
-      }
+        "params": null,
+        "path": "D:\\Models\\litert\\depth_anything_v2_large_gpu_fp32.tflite"
+      },
+      "max_context_length": null,
+      "name": "Depth Anything V2 Large FP32",
+      "tasks": [
+        "image-to-depth"
+      ]
+    },
+    {
+      "capabilities": [],
+      "description": "Liquid AI's 1.7B text model in the official Q4_K_M GGUF format.",
+      "engine": [
+        "llama-server"
+      ],
+      "id": "lfm3-1.7b-q4-k-m",
+      "local": {
+        "args": "--repeat-penalty 1.1",
+        "bits_per_weight": null,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": 1700000000,
+        "path": "D:\\Models\\rune\\liquidai\\lfm3-1.7b\\LFM3-1.7B-Q4_K_M.gguf"
+      },
+      "max_context_length": 262144,
+      "name": "LiquidAI LFM3 1.7B Q4_K_M",
+      "sampling": {
+        "temperature": 0.1,
+        "top_k": 50
+      },
+      "tasks": [
+        "text-to-text"
+      ]
     }
-  ]
+  ],
+  "schema_version": 3
 }
