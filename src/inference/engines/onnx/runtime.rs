@@ -6,13 +6,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const ORT_URL: &str = "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-gpu_cuda12-1.31.1.zip";
 const ORT_ARCHIVE_SHA: &str = "5cbf65edc93dc7bb3296249b1b6e1b2228e575902af64d6163d0da2103cef9d5";
-const CUDNN_URL: &str = "https://files.pythonhosted.org/packages/aa/38/f856579877f7c1c5066e61182e7de7bc27bf35a78c8d1b0fa592e6985bc4/nvidia_cudnn_cu12-9.27.0.42-py3-none-win_amd64.whl";
 const CUDNN_ARCHIVE_SHA: &str = "06e9b0026f3bad97d2b58666330fabec04fe1672f776661ecb0ce0029c27f142";
-const CUBLAS_URL: &str = "https://files.pythonhosted.org/packages/20/e2/fc9a0e985249d873150276d5afb02e39a66817fedbf1a385724393e505ed/nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl";
 const CUBLAS_ARCHIVE_SHA: &str = "623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661";
-const CUDART_URL: &str = "https://files.pythonhosted.org/packages/59/df/e7c3a360be4f7b93cee39271b792669baeb3846c58a4df6dfcf187a7ffab/nvidia_cuda_runtime_cu12-12.9.79-py3-none-win_amd64.whl";
 const CUDART_ARCHIVE_SHA: &str = "8e018af8fa02363876860388bd10ccb89eb9ab8fb0aa749aaf58430a9f7c4891";
 
 const ORT_FILES: [(&str, &str); 3] = [
@@ -133,9 +129,10 @@ fn unpack(
     name: &str,
     url: &str,
     hash: &str,
+    size: u64,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let archive = stage.join(format!("{name}.zip"));
-    download::download_verified(client, url, &archive, "[ONNX Runtime]", hash)?;
+    download::download_verified_sized(client, url, &archive, "[ONNX Runtime]", hash, size)?;
     let destination = stage.join(name);
     std::fs::create_dir(&destination)?;
     download::extract_archive(&archive, &destination, "[ONNX Runtime]")?;
@@ -156,19 +153,19 @@ fn copy_checked(
 
 fn assemble_cuda(
     stage: &Path,
-    mut obtain: impl FnMut(&Path, &str, &str, &str) -> Result<PathBuf, Box<dyn Error>>,
+    mut obtain: impl FnMut(&Path, &str, &str) -> Result<PathBuf, Box<dyn Error>>,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let dependencies = stage.join("cuda-12");
     std::fs::create_dir(&dependencies)?;
     let licenses = dependencies.join("licenses");
     std::fs::create_dir(&licenses)?;
-    let cudnn = obtain(stage, "cudnn", CUDNN_URL, CUDNN_ARCHIVE_SHA)?;
+    let cudnn = obtain(stage, "cudnn", CUDNN_ARCHIVE_SHA)?;
     copy_checked(&cudnn.join("nvidia/cudnn/bin"), &dependencies, &CUDNN_FILES)?;
     std::fs::copy(
         cudnn.join("nvidia_cudnn_cu12-9.27.0.42.dist-info/licenses/License.txt"),
         licenses.join("cudnn.txt"),
     )?;
-    let cublas = obtain(stage, "cublas", CUBLAS_URL, CUBLAS_ARCHIVE_SHA)?;
+    let cublas = obtain(stage, "cublas", CUBLAS_ARCHIVE_SHA)?;
     copy_checked(
         &cublas.join("nvidia/cublas/bin"),
         &dependencies,
@@ -178,7 +175,7 @@ fn assemble_cuda(
         cublas.join("nvidia_cublas_cu12-12.9.2.10.dist-info/licenses/License.txt"),
         licenses.join("cublas.txt"),
     )?;
-    let cudart = obtain(stage, "cudart", CUDART_URL, CUDART_ARCHIVE_SHA)?;
+    let cudart = obtain(stage, "cudart", CUDART_ARCHIVE_SHA)?;
     copy_checked(
         &cudart.join("nvidia/cuda_runtime/bin"),
         &dependencies,
@@ -204,14 +201,25 @@ pub(crate) fn ensure_runtime_installed() -> Result<PathBuf, Box<dyn Error>> {
         return Ok(path);
     }
     let client = download::create_download_client()?;
-    install_at(download::engine_bin(), |stage, name, url, hash| {
-        unpack(&client, stage, name, url, hash)
+    let mut registry = None;
+    install_at(download::engine_bin(), |stage, name, hash| {
+        if registry.is_none() {
+            registry = Some(super::super::registry::onnx_files(&client)?);
+        }
+        let file = registry
+            .as_ref()
+            .and_then(|files| files.get(name))
+            .ok_or("Missing ONNX registry component")?;
+        if file.sha256 != hash {
+            return Err("ONNX registry checksum mismatch".into());
+        }
+        unpack(&client, stage, name, &file.url, hash, file.size_bytes)
     })
 }
 
 fn install_at(
     bin: PathBuf,
-    mut obtain: impl FnMut(&Path, &str, &str, &str) -> Result<PathBuf, Box<dyn Error>>,
+    mut obtain: impl FnMut(&Path, &str, &str) -> Result<PathBuf, Box<dyn Error>>,
 ) -> Result<PathBuf, Box<dyn Error>> {
     std::fs::create_dir_all(&bin)?;
     let bin = std::fs::canonicalize(bin)?;
@@ -238,7 +246,7 @@ fn install_at(
             if root.exists() {
                 return Err("Existing ONNX Runtime directory is incomplete; preserve it before installation".into());
             }
-            let unpacked = obtain(&stage, "ort", ORT_URL, ORT_ARCHIVE_SHA)?;
+            let unpacked = obtain(&stage, "ort", ORT_ARCHIVE_SHA)?;
             let core = stage.join("onnxruntime");
             std::fs::create_dir(&core)?;
             copy_checked(
@@ -333,7 +341,7 @@ mod tests {
             std::env::var_os("RUNE_ONNX_TEST_DESTINATION").expect("set RUNE_ONNX_TEST_DESTINATION"),
         );
         std::fs::create_dir(&destination).unwrap();
-        let path = install_at(destination, |stage, name, _url, expected| {
+        let path = install_at(destination, |stage, name, expected| {
             let filename = match name {
                 "ort" => "onnxruntime-win-x64-gpu_cuda12-1.31.1.zip",
                 "cudnn" => "cudnn-9.27.0.42.zip",

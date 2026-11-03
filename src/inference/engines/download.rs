@@ -458,12 +458,38 @@ pub fn download_and_extract(
     prefix: &str,
     expected_sha256: &str,
 ) -> Result<(), Box<dyn Error>> {
+    download_and_extract_sized(
+        client,
+        url,
+        dest_dir,
+        archive_name,
+        prefix,
+        expected_sha256,
+        None,
+    )
+}
+
+pub(crate) fn download_and_extract_sized(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest_dir: &Path,
+    archive_name: &str,
+    prefix: &str,
+    expected_sha256: &str,
+    expected_size: Option<u64>,
+) -> Result<(), Box<dyn Error>> {
     validate_archive_path(archive_name)?;
     if archive_name.contains('/') || matches!(archive_name, "." | "..") {
         return Err("Invalid archive filename.".into());
     }
     let temp_archive = dest_dir.join(archive_name);
     download_verified(client, url, &temp_archive, prefix, expected_sha256)?;
+    if expected_size
+        .is_some_and(|size| std::fs::metadata(&temp_archive).map_or(true, |m| m.len() != size))
+    {
+        let _ = std::fs::remove_file(&temp_archive);
+        return Err("Engine archive size mismatch; installation refused.".into());
+    }
     let result = extract_archive(&temp_archive, dest_dir, prefix);
     let _ = std::fs::remove_file(&temp_archive);
     result
@@ -557,6 +583,28 @@ pub fn download_verified(
     prefix: &str,
     expected: &str,
 ) -> Result<(), Box<dyn Error>> {
+    download_verified_inner(client, url, dest, prefix, expected, None)
+}
+
+pub(crate) fn download_verified_sized(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
+    prefix: &str,
+    expected: &str,
+    size: u64,
+) -> Result<(), Box<dyn Error>> {
+    download_verified_inner(client, url, dest, prefix, expected, Some(size))
+}
+
+fn download_verified_inner(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    dest: &Path,
+    prefix: &str,
+    expected: &str,
+    size: Option<u64>,
+) -> Result<(), Box<dyn Error>> {
     if expected.len() != 64 || !expected.bytes().all(|c| c.is_ascii_hexdigit()) {
         return Err("Missing or invalid published SHA-256; verified installation required.".into());
     }
@@ -577,6 +625,10 @@ pub fn download_verified(
         download_to_file(client, url, &part, prefix)?;
         check_cancelled()?;
         verify_sha256(&part, expected)?;
+        if size.is_some_and(|size| std::fs::metadata(&part).map_or(true, |meta| meta.len() != size))
+        {
+            return Err("Engine size mismatch; installation refused.".into());
+        }
         check_cancelled()?;
         if dest.exists() {
             return Err(format!(

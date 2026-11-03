@@ -534,6 +534,12 @@ fn run_dashboard_inner(
                             cancel.clone(),
                             || {
                                 if matches!(engine.name, "llama-server" | "llama-server-prism") {
+                                    let expected_registry_release =
+                                        engine.registry_versions.as_ref().and_then(|versions| {
+                                            engine_build_identity(&engine.latest).and_then(
+                                                |(build, _)| versions.get(&build).copied(),
+                                            )
+                                        });
                                     crate::inference::engines::update::update_llama(
                                         state,
                                         if engine.name == "llama-server-prism" {
@@ -544,6 +550,7 @@ fn run_dashboard_inner(
                                         cancel,
                                         engine.latest,
                                         engine.build_tag,
+                                        expected_registry_release,
                                         tx.clone(),
                                     )
                                 } else if engine.name == "needle" {
@@ -561,10 +568,17 @@ fn run_dashboard_inner(
                                         tx.clone(),
                                     )
                                 } else if engine.name == "nemo-speech" {
+                                    let expected_release =
+                                        engine.registry_revisions.as_ref().and_then(|versions| {
+                                            versions
+                                                .get(engine.latest.trim_start_matches('v'))
+                                                .copied()
+                                        });
                                     crate::inference::engines::update::update_nemo(
                                         state,
                                         cancel,
                                         engine.latest,
+                                        expected_release,
                                         tx.clone(),
                                     )
                                 } else if engine.name == "whisper-cpp" {
@@ -848,6 +862,8 @@ struct EngineRow {
     version: String,
     latest: String,
     build_tag: Option<String>,
+    registry_versions: Option<std::collections::BTreeMap<u64, u64>>,
+    registry_revisions: Option<std::collections::BTreeMap<String, u64>>,
     published_at: Option<String>,
     gpu_upgrade: bool,
     check_detail: Option<String>,
@@ -970,6 +986,8 @@ fn discover_engines() -> Vec<EngineRow> {
                     "External".into()
                 },
                 build_tag: None,
+                registry_versions: None,
+registry_revisions: None,
                 published_at: None,
                 gpu_upgrade: false,
                 check_detail: match name {
@@ -988,6 +1006,8 @@ fn discover_engines() -> Vec<EngineRow> {
         version: "Built in".into(),
         latest: "Built in".into(),
         build_tag: None,
+        registry_versions: None,
+        registry_revisions: None,
         published_at: None,
         gpu_upgrade: false,
         check_detail: Some("Built-in encoder uses synthetic outputs".into()),
@@ -1013,6 +1033,8 @@ fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
                 Ok(release) => {
                     rows[index].latest = release.tag;
                     rows[index].build_tag = release.build_tag;
+                    rows[index].registry_versions = release.registry_versions;
+                    rows[index].registry_revisions = release.registry_revisions;
                     rows[index].published_at = release.published_at;
                     let mut whisper_verified = false;
                     if rows[index].name == "whisper-cpp"
@@ -1063,6 +1085,8 @@ fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
                     }
                     .into();
                     rows[index].build_tag = None;
+                    rows[index].registry_versions = None;
+                    rows[index].registry_revisions = None;
                     rows[index].check_detail = Some(error);
                 }
             }
@@ -1193,6 +1217,12 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
             "Cannot verify llama-server build identities; check versions before updating",
         );
     }
+    if engine.name == "llama-server" && release_status(engine) == "Unknown" {
+        return unavailable("Installed llama-server build is not in the registry; update refused");
+    }
+    if engine.name == "nemo-speech" && release_status(engine) == "Unknown" {
+        return unavailable("Installed NeMo Speech version is not in the registry; update refused");
+    }
     match release_status(engine) {
         "Up to date" => unavailable("Already up to date; no download needed"),
         "Ahead" => unavailable("Installed version is newer; no downgrade will be performed"),
@@ -1219,12 +1249,10 @@ fn install_engine_kind(name: &str) -> Option<crate::config::EngineKind> {
 
 fn release_url(name: &str) -> Option<&'static str> {
     match name {
-        "llama-server" => Some("https://api.github.com/repos/ggml-org/llama.cpp/releases"),
         "llama-server-prism" => Some("https://api.github.com/repos/PrismML-Eng/llama.cpp/releases"),
         "audio-cpp" => Some("https://api.github.com/repos/0xShug0/audio.cpp/releases"),
         "sd-server" => Some("https://api.github.com/repos/leejet/stable-diffusion.cpp/releases"),
         "crispasr" => Some("https://api.github.com/repos/CrispStrobe/CrispASR/releases"),
-        "nemo-speech" => Some("https://api.github.com/repos/NVIDIA/NeMo-Speech.cpp/releases"),
         "needle" => Some("https://huggingface.co/api/models/Cactus-Compute/needle3"),
         "whisper-cpp" => Some("https://api.github.com/repos/ggml-org/whisper.cpp/releases"),
         _ => None,
@@ -1234,6 +1262,8 @@ fn release_url(name: &str) -> Option<&'static str> {
 struct AvailableRelease {
     tag: String,
     build_tag: Option<String>,
+    registry_versions: Option<std::collections::BTreeMap<u64, u64>>,
+    registry_revisions: Option<std::collections::BTreeMap<String, u64>>,
     published_at: Option<String>,
     detail: String,
     whisper_gpu: Option<crate::inference::engines::whisper::PackageIdentity>,
@@ -1242,7 +1272,11 @@ struct AvailableRelease {
 fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
     use crate::inference::engines::download;
     crate::inference::engines::release_cache::begin_check();
-    let url = release_url(name).ok_or("No release source is available for this engine")?;
+    let url = if matches!(name, "llama-server" | "nemo-speech") {
+        ""
+    } else {
+        release_url(name).ok_or("No release source is available for this engine")?
+    };
     let client = reqwest::blocking::Client::builder()
         .https_only(true)
         .user_agent(concat!("rune-infer/", env!("CARGO_PKG_VERSION")))
@@ -1266,6 +1300,8 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
         return Ok(AvailableRelease {
             tag: format!("revision {revision}"),
             build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
             published_at: value["lastModified"].as_str().map(str::to_owned),
             detail:
                 "Approved Needle distribution · revision and SHA-256 verified during installation"
@@ -1273,7 +1309,13 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
             whisper_gpu: None,
         });
     }
-    let value = if name == "whisper-cpp" {
+    let value = if name == "llama-server" {
+        crate::inference::engines::registry::llama_release(&client)
+            .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
+    } else if name == "nemo-speech" {
+        crate::inference::engines::registry::nemo_release(&client)
+            .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
+    } else if name == "whisper-cpp" {
         crate::inference::engines::whisper::resolve_release(&client)
             .map_err(|e| format!("Release check failed: {e}; press r to retry"))?
     } else {
@@ -1284,7 +1326,9 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
         .as_str()
         .ok_or("Release tag missing")?
         .to_owned();
-    let channel = if download::is_stable_release(&value) {
+    let channel = if value["rune_registry"].as_bool() == Some(true) {
+        "Reviewed registry build"
+    } else if download::is_stable_release(&value) {
         "Stable release"
     } else {
         "Latest published build · no stable release available"
@@ -1305,6 +1349,22 @@ fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
     Ok(AvailableRelease {
         tag,
         build_tag: value["rune_build_tag"].as_str().map(str::to_owned),
+        registry_versions: if name == "llama-server" {
+            Some(
+                serde_json::from_value(value["rune_registry_versions"].clone())
+                    .map_err(|_| "Invalid registry version order")?,
+            )
+        } else {
+            None
+        },
+        registry_revisions: if name == "nemo-speech" {
+            Some(
+                serde_json::from_value(value["rune_registry_revisions"].clone())
+                    .map_err(|_| "Invalid registry version order")?,
+            )
+        } else {
+            None
+        },
         published_at,
         detail,
         whisper_gpu: if name == "whisper-cpp" {
@@ -1443,7 +1503,43 @@ fn release_status(engine: &EngineRow) -> &'static str {
             None => "Revision unknown",
         };
     }
-    if matches!(engine.name, "llama-server" | "llama-server-prism") {
+    if engine.name == "nemo-speech" {
+        let installed = engine
+            .version
+            .trim()
+            .strip_prefix("nemo-speech ")
+            .unwrap_or(engine.version.trim())
+            .split_whitespace()
+            .next()
+            .unwrap_or("");
+        let order = engine.registry_revisions.as_ref().and_then(|versions| {
+            crate::inference::engines::registry::compare_nemo_revision(
+                versions,
+                installed,
+                &engine.latest,
+            )
+        });
+        return match order {
+            Some(std::cmp::Ordering::Less) => "New release",
+            Some(std::cmp::Ordering::Equal) => "Up to date",
+            Some(std::cmp::Ordering::Greater) => "Ahead",
+            None => "Unknown",
+        };
+    }
+    if engine.name == "llama-server" {
+        let order = engine.registry_versions.as_ref().and_then(|versions| {
+            let installed = engine_build_identity(&engine.version)?.0;
+            let selected = engine_build_identity(&engine.latest)?.0;
+            crate::inference::engines::registry::compare_llama_build(versions, installed, selected)
+        });
+        return match order {
+            Some(std::cmp::Ordering::Less) => "New release",
+            Some(std::cmp::Ordering::Equal) => "Up to date",
+            Some(std::cmp::Ordering::Greater) => "Ahead",
+            None => "Unknown",
+        };
+    }
+    if engine.name == "llama-server-prism" {
         let available = engine.build_tag.as_deref().unwrap_or(&engine.latest);
         if let Some((installed, published)) =
             engine_build_identity(&engine.version).zip(engine_build_identity(available))
@@ -2637,6 +2733,8 @@ mod tests {
             version: "0.9.2".into(),
             latest: "Not checked".into(),
             build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
             published_at: None,
             gpu_upgrade: false,
             check_detail: None,
@@ -2674,6 +2772,8 @@ mod tests {
                 version: "0.9.2".into(),
                 latest: "Not checked".into(),
                 build_tag: None,
+                registry_versions: None,
+                registry_revisions: None,
                 published_at: None,
                 gpu_upgrade: false,
                 check_detail: None,
@@ -2686,6 +2786,8 @@ mod tests {
                 version: "1.0".into(),
                 latest: "Not checked".into(),
                 build_tag: None,
+                registry_versions: None,
+                registry_revisions: None,
                 published_at: None,
                 gpu_upgrade: false,
                 check_detail: None,
@@ -2737,6 +2839,8 @@ mod tests {
             version: "audio.cpp 0.9.2".into(),
             latest: "v0.9.3".into(),
             build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
             published_at: None,
             gpu_upgrade: false,
             check_detail: None,
@@ -2754,38 +2858,75 @@ mod tests {
         assert_eq!(release_status(&row), "New release");
         row.latest = "v1.9.1".into();
         assert_eq!(release_status(&row), "Ahead");
+        row.name = "nemo-speech";
+        row.registry_revisions = Some(
+            [
+                ("9.0.0".into(), 1),
+                ("1.0.0".into(), 2),
+                ("3.0.0".into(), 3),
+            ]
+            .into(),
+        );
+        row.latest = "v1.0.0".into();
+        row.version = "nemo-speech 9.0.0".into();
+        assert_eq!(release_status(&row), "New release");
+        row.version = "nemo-speech 1.0.0".into();
+        assert_eq!(release_status(&row), "Up to date");
+        row.version = "nemo-speech 3.0.0".into();
+        assert_eq!(release_status(&row), "Ahead");
+        row.version = "nemo-speech 4.0.0".into();
+        assert_eq!(release_status(&row), "Unknown");
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
         row.name = "llama-server";
         row.version = "0.6.0-dev (build 11512, commit abc)".into();
         row.latest = "b11512".into();
+        row.registry_versions = Some([(11512, 1)].into());
         assert_eq!(release_status(&row), "Up to date");
+        row.registry_versions = Some([(900, 1), (3, 2), (100, 3)].into());
+        row.latest = "b3".into();
+        row.version = "version: test (build 900)".into();
+        assert_eq!(release_status(&row), "New release");
+        row.version = "version: test (build 3)".into();
+        assert_eq!(release_status(&row), "Up to date");
+        row.version = "version: test (build 100)".into();
+        assert_eq!(release_status(&row), "Ahead");
+        row.version = "version: test (build 42)".into();
+        assert_eq!(release_status(&row), "Unknown");
+        assert!(matches!(
+            engine_action_on(&row, "windows", "x86_64"),
+            EngineAction::Unavailable(_)
+        ));
         for (name, version, latest, build, expected) in [
             (
                 "llama-server",
                 "0.7.0-dev (build 11669, commit 620d2225c)",
                 "v0.7.0",
                 Some("b11669"),
-                "Up to date",
+                "Unknown",
             ),
             (
                 "llama-server",
                 "0.7.0-dev (build 11668, commit 620d2225c)",
                 "v0.7.0",
                 Some("b11669"),
-                "New release",
+                "Unknown",
             ),
             (
                 "llama-server",
                 "0.7.0-dev (build 11670, commit 620d2225c)",
                 "v0.7.0",
                 Some("b11669"),
-                "Ahead",
+                "Unknown",
             ),
             (
                 "llama-server",
                 "0.7.0-dev (build 11669, commit 620d2225c)",
                 "v0.7.0",
                 None,
-                "Development build",
+                "Unknown",
             ),
             (
                 "llama-server-prism",
@@ -2867,6 +3008,8 @@ mod tests {
             version: "Not installed".into(),
             latest: "v1.9.2".into(),
             build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
             published_at: None,
             gpu_upgrade: false,
             check_detail: None,
@@ -2922,6 +3065,8 @@ mod tests {
             version: "Not installed".into(),
             latest: "v1.9.2".into(),
             build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
             published_at: None,
             gpu_upgrade: false,
             check_detail: None,
@@ -3033,6 +3178,8 @@ mod tests {
             version: "Not installed".into(),
             latest: "1.31.1 · pinned".into(),
             build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
             published_at: None,
             gpu_upgrade: false,
             check_detail: None,
@@ -3080,6 +3227,8 @@ mod tests {
             version: "Not installed".into(),
             latest: "2.3.0 · pinned".into(),
             build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
             published_at: None,
             gpu_upgrade: false,
             check_detail: None,
@@ -3159,6 +3308,8 @@ mod tests {
             version: "0.9.2".into(),
             latest: "v0.9.3".into(),
             build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
             published_at: None,
             gpu_upgrade: false,
             check_detail: None,
@@ -3198,6 +3349,13 @@ mod tests {
             };
             row.build_tag = Some("b12100".into());
             row.latest = "v0.9.3".into();
+            if name == "llama-server" {
+                row.latest = "b12100".into();
+                row.registry_versions = Some([(12000, 1), (12100, 2)].into());
+            }
+            if name == "nemo-speech" {
+                row.registry_revisions = Some([("0.9.2".into(), 1), ("0.9.3".into(), 2)].into());
+            }
             if name == "sd-server" {
                 row.version = "commit be48649".into();
                 row.latest = "master-1028-37bc88b".into();
@@ -3272,6 +3430,8 @@ mod tests {
             version: "whisper.cpp version: 1.9.5".into(),
             latest: "v1.9.5".into(),
             build_tag: Some("b5454".into()),
+            registry_versions: None,
+            registry_revisions: None,
             published_at: None,
             gpu_upgrade: true,
             check_detail: None,
@@ -3314,6 +3474,8 @@ mod tests {
                 version: "audio.cpp 0.9.2".into(),
                 latest: "Not checked".into(),
                 build_tag: None,
+                registry_versions: None,
+                registry_revisions: None,
                 published_at: None,
                 gpu_upgrade: false,
                 check_detail: None,
@@ -3326,6 +3488,8 @@ mod tests {
                 version: "Unknown".into(),
                 latest: "Not checked".into(),
                 build_tag: None,
+                registry_versions: None,
+                registry_revisions: None,
                 published_at: None,
                 gpu_upgrade: false,
                 check_detail: None,

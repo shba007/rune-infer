@@ -1,8 +1,7 @@
-//! Reviewed, bundled cloud metadata. Add entries to registry/models.json; no id
+//! Reviewed remote cloud metadata. Add entries to registry/models.json; no id
 //! prefix or family-name guessing is used and setup never edits the registry.
 use super::CloudCapabilities;
 use serde::Deserialize;
-use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -59,6 +58,8 @@ impl ModelMetadata {
 struct Registry {
     schema_version: u32,
     models: Vec<ModelMetadata>,
+    #[serde(default)]
+    local_models: Vec<serde_json::Value>,
 }
 fn parse_registry(raw: &str) -> Result<Vec<ModelMetadata>, String> {
     let registry: Registry =
@@ -66,6 +67,7 @@ fn parse_registry(raw: &str) -> Result<Vec<ModelMetadata>, String> {
     if registry.schema_version != 1 {
         return Err("Unsupported model registry schema.".into());
     }
+    let _ = &registry.local_models;
     let mut seen = std::collections::HashSet::new();
     for model in &registry.models {
         if !seen.insert((&model.provider, &model.id)) {
@@ -114,29 +116,81 @@ fn parse_registry(raw: &str) -> Result<Vec<ModelMetadata>, String> {
     Ok(registry.models)
 }
 
-pub fn registered_model(provider: &str, id: &str) -> Result<Option<ModelMetadata>, String> {
-    static REGISTRY: OnceLock<Result<Vec<ModelMetadata>, String>> = OnceLock::new();
-    match REGISTRY.get_or_init(|| parse_registry(include_str!("../../registry/models.json"))) {
-        Ok(models) => Ok(models
+pub(crate) struct CloudRegistry(Vec<ModelMetadata>);
+
+#[cfg(test)]
+thread_local! {
+    static TEST_DOCUMENT: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn with_fixture_registry<T>(work: impl FnOnce() -> T) -> T {
+    struct Restore(Option<Vec<u8>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TEST_DOCUMENT.with(|slot| {
+                slot.replace(self.0.take());
+            });
+        }
+    }
+    let previous = TEST_DOCUMENT
+        .with(|slot| slot.replace(Some(include_bytes!("../../registry/models.json").to_vec())));
+    let _restore = Restore(previous);
+    work()
+}
+
+impl CloudRegistry {
+    pub(crate) fn fetch() -> Result<Self, String> {
+        #[cfg(test)]
+        if let Some(raw) = TEST_DOCUMENT.with(|slot| slot.borrow().clone()) {
+            return Self::from_fetch(|| Ok(raw));
+        }
+        Self::from_fetch(|| {
+            crate::model_registry::fetch_document().map_err(|_| {
+                "Cannot fetch the remote model registry. Check the network and retry.".to_string()
+            })
+        })
+    }
+    fn from_fetch(fetch: impl FnOnce() -> Result<Vec<u8>, String>) -> Result<Self, String> {
+        let raw = fetch()?;
+        let text = std::str::from_utf8(&raw)
+            .map_err(|_| "Invalid remote model registry encoding.".to_string())?;
+        parse_registry(text).map(Self)
+    }
+    pub(crate) fn get(&self, provider: &str, id: &str) -> Option<ModelMetadata> {
+        self.0
             .iter()
             .find(|m| m.provider == provider && m.id == id)
-            .cloned()),
-        Err(error) => Err(error.clone()),
+            .cloned()
     }
+}
+
+pub fn registered_model(provider: &str, id: &str) -> Result<Option<ModelMetadata>, String> {
+    Ok(CloudRegistry::fetch()?.get(provider, id))
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_registry() -> CloudRegistry {
+    CloudRegistry(parse_registry(include_str!("../../registry/models.json")).unwrap())
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_model(provider: &str, id: &str) -> Result<Option<ModelMetadata>, String> {
+    Ok(fixture_registry().get(provider, id))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn bundled_registry_is_valid_unique_and_exactly_scoped() {
+    fn registry_fixture_is_valid_unique_and_exactly_scoped() {
         let models = parse_registry(include_str!("../../registry/models.json")).unwrap();
         assert_eq!(models.len(), 6);
         for m in models {
-            assert!(registered_model(&m.provider, &m.id).unwrap().is_some());
-            assert!(registered_model("other-provider", &m.id).unwrap().is_none());
+            assert!(fixture_model(&m.provider, &m.id).unwrap().is_some());
+            assert!(fixture_model("other-provider", &m.id).unwrap().is_none());
             assert!(
-                registered_model(&m.provider, &format!("{}-unknown-suffix", m.id))
+                fixture_model(&m.provider, &format!("{}-unknown-suffix", m.id))
                     .unwrap()
                     .is_none()
             );
@@ -153,6 +207,16 @@ mod tests {
         value["models"][0]["sources"] = serde_json::json!([]);
         assert!(parse_registry(&value.to_string()).is_err());
     }
+
+    #[test]
+    fn remote_errors_fail_without_fallback_and_later_fetches_retry() {
+        assert!(CloudRegistry::from_fetch(|| Err("offline".into())).is_err());
+        assert!(CloudRegistry::from_fetch(|| Ok(b"not json".to_vec())).is_err());
+        let registry =
+            CloudRegistry::from_fetch(|| Ok(include_bytes!("../../registry/models.json").to_vec()))
+                .unwrap();
+        assert!(registry.get("google", "gemini-3.5-flash-lite").is_some());
+    }
 }
 
 #[cfg(test)]
@@ -161,7 +225,7 @@ mod catalog_tests {
     use crate::setup::{CloudChoice, PROVIDERS};
     #[test]
     fn catalog_uses_reviewed_fields_without_changing_generation_defaults() {
-        let metadata = registered_model("google", "gemini-3.8-flash")
+        let metadata = fixture_model("google", "gemini-3.8-flash")
             .unwrap()
             .unwrap();
         let choice = CloudChoice {
@@ -176,7 +240,7 @@ mod catalog_tests {
             "provider output limit must not become a sampling default"
         );
         assert_eq!(entry.remote.unwrap().upstream_model, metadata.id);
-        let metadata = registered_model("openrouter", "apodex/apodex-1.1-mini:free")
+        let metadata = fixture_model("openrouter", "apodex/apodex-1.1-mini:free")
             .unwrap()
             .unwrap();
         let choice = CloudChoice {
@@ -190,7 +254,7 @@ mod catalog_tests {
     }
     #[test]
     fn live_contradictions_and_unknown_ids_cannot_be_selected() {
-        let metadata = registered_model("google", "gemini-3.8-flash")
+        let metadata = fixture_model("google", "gemini-3.8-flash")
             .unwrap()
             .unwrap();
         let mut model = crate::setup::CloudModel {
@@ -210,7 +274,7 @@ mod catalog_tests {
         model.context_tokens = None;
         model.metadata = None;
         assert!(model.selection_error().is_some());
-        let unavailable = registered_model("openrouter", "stealth/space-bunny-alpha")
+        let unavailable = fixture_model("openrouter", "stealth/space-bunny-alpha")
             .unwrap()
             .unwrap();
         assert!(unavailable.selection_error().is_some());

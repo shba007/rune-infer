@@ -274,8 +274,7 @@ impl NemoSpeechEngine {
         std::fs::create_dir_all(&base_dir)?;
 
         let client = download::create_download_client()?;
-        let release_url = "https://api.github.com/repos/NVIDIA/NeMo-Speech.cpp/releases";
-        let release_val = download::resolve_release(&client, release_url)?;
+        let release_val = super::registry::nemo_release(&client)?;
 
         Self::install_release(&client, &release_val, base_dir)
     }
@@ -312,13 +311,23 @@ impl NemoSpeechEngine {
         })?;
         let (archive_name, download_url) = download::extract_release_asset_info(asset)?;
         let sha256 = download::asset_sha256(std::slice::from_ref(asset), &archive_name)?;
-        download::download_and_extract(
+        let size = if release["rune_registry"].as_bool() == Some(true) {
+            Some(
+                asset["size"]
+                    .as_u64()
+                    .ok_or("NeMo registry artifact size missing")?,
+            )
+        } else {
+            None
+        };
+        download::download_and_extract_sized(
             client,
             &download_url,
             &base_dir,
             &archive_name,
             "[NemoSpeechEngine]",
             &sha256,
+            size,
         )?;
 
         Self::flatten_all_dlls_recursive(&base_dir, &base_dir);
@@ -748,6 +757,31 @@ mod asset_tests {
                     None
                 )
                 .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn registry_packages_match_existing_platform_selection() {
+        let release =
+            super::super::registry::parse_nemo(include_bytes!("../../../registry/engines.json"))
+                .unwrap();
+        let assets = release["assets"].as_array().unwrap();
+        for (os, arch, cuda) in [
+            ("windows", "x86_64", None),
+            ("windows", "x86_64", Some((12, 0))),
+            ("linux", "aarch64", None),
+            ("macos", "aarch64", None),
+        ] {
+            let asset = release_asset(assets, os, arch, cuda)
+                .expect("supported platform has registry artifact");
+            assert!(asset["size"].as_u64().unwrap() > 0);
+            assert!(
+                download::asset_sha256(
+                    std::slice::from_ref(asset),
+                    asset["name"].as_str().unwrap()
+                )
+                .is_ok()
             );
         }
     }

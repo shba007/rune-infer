@@ -177,5 +177,681 @@
         "https://openrouter.ai/apodex/apodex-1.1-mini:free"
       ]
     }
+  ],
+  "local_models": [
+    {
+      "id": "smollm2-135m-instruct-q4-k-m",
+      "name": "SmolLM2 135M Instruct Q4_K_M",
+      "description": "Small text chat model in GGUF format",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": ["Chat"],
+      "latest": "8637628433dc3df4a2d363adc89e4c3917f299dc",
+      "versions": {
+        "8637628433dc3df4a2d363adc89e4c3917f299dc": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
+              "url": "https://huggingface.co/unsloth/SmolLM2-135M-Instruct-GGUF/resolve/8637628433dc3df4a2d363adc89e4c3917f299dc/SmolLM2-135M-Instruct-Q4_K_M.gguf",
+              "sha256": "ed5fa30c487b282ec156c29062f1222e5c20875a944ac98289dbd242e947f747",
+              "size_bytes": 105454144
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "smolvlm-256m-instruct-q8-0",
+      "name": "SmolVLM 256M Instruct Q8_0",
+      "description": "Small vision and text chat model in GGUF format",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": ["Chat", "Vision"],
+      "latest": "b9e4379657e1450d04d02eec8e345667265b0a00",
+      "versions": {
+        "b9e4379657e1450d04d02eec8e345667265b0a00": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "SmolVLM-256M-Instruct-Q8_0.gguf",
+              "url": "https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/b9e4379657e1450d04d02eec8e345667265b0a00/SmolVLM-256M-Instruct-Q8_0.gguf",
+              "sha256": "2a31195d3769c0b0fd0a4906201666108834848db768af11de1d2cef7cd35e65",
+              "size_bytes": 175054528
+            },
+            {
+              "id": "projector",
+              "filename": "mmproj-SmolVLM-256M-Instruct-Q8_0.gguf",
+              "url": "https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/b9e4379657e1450d04d02eec8e345667265b0a00/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf",
+              "sha256": "7e943f7c53f0382a6fc41b6ee0c2def63ba4fded9ab8ed039cc9e2ab905e0edd",
+              "size_bytes": 103769856
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "qwen3.5-0.8b",
+      "name": "Qwen3.5 0.8B",
+      "description": "Qwen3.5 0.8B reasoning model",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": ["Chat"],
+      "catalog": {
+        "tasks": ["text-to-text"],
+        "capabilities": ["Reasoning", "Tool Call", "Structured Output", "Code Generation"],
+        "max_context_length": 262144,
+        "sampling": {"temperature": 0.6, "top_p": 0.9, "top_k": 20, "min_p": 0.05, "max_tokens": 4096},
+        "local": {"params": 873000000, "bits_per_weight": 16.0, "context_length": -1, "gpu_layers": 99, "args": ""}
+      },
+      "latest": "7fc504f0407a77be199ef88330e469e2918fa786",
+      "versions": {
+        "7fc504f0407a77be199ef88330e469e2918fa786": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "Qwen3.5-0.8B-BF16.gguf",
+              "url": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/7fc504f0407a77be199ef88330e469e2918fa786/Qwen3.5-0.8B-BF16.gguf",
+              "sha256": "cedf89af31c9041b601fa58303285bc46d99c51baee1b13f5e919626ca526ee5",
+              "size_bytes": 1516744736
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "huihui-qwen3.8-27b-abliterated",
+      "name": "Huihui Qwen3.8 27B Abliterated",
+      "description": "Huihui-AI abliterated uncensored Qwen3.8 27B instruction and reasoning model",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Chat",
+        "Vision"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-text",
+          "text-image-to-text"
+        ],
+        "capabilities": [
+          "Reasoning",
+          "Tool Call",
+          "Structured Output",
+          "Uncensored"
+        ],
+        "max_context_length": 262144,
+        "sampling": {
+          "temperature": 0.7,
+          "top_p": 0.95,
+          "top_k": 40,
+          "min_p": 0.05,
+          "max_tokens": 4096
+        },
+        "local": {
+          "params": 27000000000,
+          "bits_per_weight": 4.5,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
+        },
+        "engines": [
+          "llama-server"
+        ],
+        "extra": {
+          "max_resolution": "4096×4096 (Dynamic 4K)"
+        }
+      },
+      "latest": "8f1b52408a2f6e317535190c9386f776cacf0079",
+      "versions": {
+        "8f1b52408a2f6e317535190c9386f776cacf0079": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_S-mtp.gguf",
+              "url": "https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF/resolve/8f1b52408a2f6e317535190c9386f776cacf0079/Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_S-mtp.gguf",
+              "sha256": "eea0638e283433e27b0edbd409b552be467a75ecc777d91c51db554c0a644c19",
+              "size_bytes": 12120016416
+            },
+            {
+              "id": "projector",
+              "filename": "mmproj-model-bf16.gguf",
+              "url": "https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF/resolve/8f1b52408a2f6e317535190c9386f776cacf0079/mmproj-model-bf16.gguf",
+              "sha256": "c9a09064683620bea3d3bfed5d4462e1a97a7d2fff7e5045d6862a0a85eeb5b5",
+              "size_bytes": 931145888
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "qwen3.8-27b",
+      "name": "Qwen3.8 27B",
+      "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Chat",
+        "Vision"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-text",
+          "text-image-to-text"
+        ],
+        "capabilities": [
+          "Reasoning",
+          "Agentic Tasks",
+          "Tool Call",
+          "Structured Output",
+          "Person Identification",
+          "MTP"
+        ],
+        "max_context_length": 262144,
+        "sampling": {
+          "temperature": 0.3,
+          "top_p": 0.9,
+          "top_k": 40,
+          "min_p": 0.05,
+          "max_tokens": 1024
+        },
+        "local": {
+          "params": 27000000000,
+          "bits_per_weight": 3.44,
+          "context_length": 49152,
+          "gpu_layers": 99,
+          "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
+        },
+        "engines": [
+          "llama-server"
+        ],
+        "extra": {
+          "max_resolution": "4096×4096 (Dynamic 4K)"
+        }
+      },
+      "latest": "4ca720788d1e01f1bff70c033e0d0028fd02e502",
+      "versions": {
+        "4ca720788d1e01f1bff70c033e0d0028fd02e502": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "Qwen3.8-27B-UD-IQ3_S.gguf",
+              "url": "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-IQ3_S.gguf",
+              "sha256": "d847e2c1e4aa276e4b7b8e9ad7628050e61e165d49ab995407bc36677a6f3864",
+              "size_bytes": 12040883104
+            },
+            {
+              "id": "projector",
+              "filename": "mmproj-BF16.gguf",
+              "url": "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/4ca720788d1e01f1bff70c033e0d0028fd02e502/mmproj-BF16.gguf",
+              "sha256": "83ee4f4f205fa514161778c41df1ea14144faa0f713510893b63c2395f5c2d53",
+              "size_bytes": 931146432
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ornith-1.5-9b",
+      "name": "Ornith 1.5 9B",
+      "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
+      "license": "MIT",
+      "source_url": "https://huggingface.co/ornith-ai/Ornith-1.5-9B-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Chat"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-text"
+        ],
+        "capabilities": [
+          "Reasoning",
+          "Agentic Coding",
+          "Structured Output",
+          "Tool Call"
+        ],
+        "max_context_length": 262144,
+        "sampling": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0.01,
+          "max_tokens": 4096
+        },
+        "local": {
+          "params": 9400000000,
+          "bits_per_weight": 8.5,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "llama-server"
+        ],
+        "extra": {
+          "max_resolution": "3840×2160 (4K UHD)"
+        }
+      },
+      "latest": "abdd624b12ebf020b767fff532ff44fe552b28c3",
+      "versions": {
+        "abdd624b12ebf020b767fff532ff44fe552b28c3": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "Ornith-1.5-9B-Q8_0.gguf",
+              "url": "https://huggingface.co/ornith-ai/Ornith-1.5-9B-GGUF/resolve/abdd624b12ebf020b767fff532ff44fe552b28c3/Ornith-1.5-9B-Q8_0.gguf",
+              "sha256": "22086870b009dbe9815ee752c48a82de930118a7c5ce5599590892ae03b8b010",
+              "size_bytes": 9786060384
+            },
+            {
+              "id": "projector",
+              "filename": "mmproj-Ornith-1.5-9B-BF16.gguf",
+              "url": "https://huggingface.co/ornith-ai/Ornith-1.5-9B-GGUF/resolve/abdd624b12ebf020b767fff532ff44fe552b28c3/mmproj-Ornith-1.5-9B-BF16.gguf",
+              "sha256": "626f9f90627402a6bf4a999111d0fbd69b5fcca7aa8ba089d69e5f10e8858e1d",
+              "size_bytes": 921704672
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "oxcoder-9b",
+      "name": "OxCoder 9B",
+      "description": "Code generation and instruction following",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/mradermacher/OxCoder-9B-i1-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Chat"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-text"
+        ],
+        "capabilities": [
+          "Agentic Coding",
+          "Terminal Automation",
+          "Code Generation",
+          "Tool Call",
+          "Structured Output",
+          "Error Recovery"
+        ],
+        "max_context_length": 262144,
+        "sampling": {
+          "temperature": 0.2,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0.01,
+          "max_tokens": 4096
+        },
+        "local": {
+          "params": 9000000000,
+          "bits_per_weight": 6.56,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "llama-server"
+        ],
+        "extra": {}
+      },
+      "latest": "e3335e20fc13b04618c821f9b99d1f8ef5cd103d",
+      "versions": {
+        "e3335e20fc13b04618c821f9b99d1f8ef5cd103d": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "OxCoder-9B.i1-Q6_K.gguf",
+              "url": "https://huggingface.co/mradermacher/OxCoder-9B-i1-GGUF/resolve/e3335e20fc13b04618c821f9b99d1f8ef5cd103d/OxCoder-9B.i1-Q6_K.gguf",
+              "sha256": "699439509434ba0605a4877c3254ea43966e3f18062f7d0ba8e5c5aa0645ddb0",
+              "size_bytes": 7359268544
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "lfm3-omni-2b",
+      "name": "LiquidAI LFM3 Omni 2B",
+      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
+      "license": "LFM Open License v1.0 (commercial restrictions)",
+      "source_url": "https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Audio",
+        "Video"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-text",
+          "text-image-to-text",
+          "text-audio-to-text",
+          "text-video-to-text",
+          "text-to-audio"
+        ],
+        "capabilities": [],
+        "max_context_length": 128000,
+        "sampling": {
+          "temperature": 0,
+          "top_k": 1,
+          "max_tokens": 256
+        },
+        "local": {
+          "params": 1728801600,
+          "bits_per_weight": 8.54,
+          "context_length": 32768,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "llama-server"
+        ],
+        "extra": {},
+        "audio_operations": {
+          "transcription": {
+            "status": "supported",
+            "verified_with": [
+              {
+                "engine": "llama-server",
+                "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+              }
+            ]
+          },
+          "speech_generation": {
+            "status": "supported",
+            "verified_with": [
+              {
+                "engine": "llama-server",
+                "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+              }
+            ]
+          }
+        },
+        "tool_call_support": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "llama-server",
+              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+            }
+          ]
+        },
+        "structured_output_support": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "llama-server",
+              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+            }
+          ]
+        }
+      },
+      "latest": "3d29af2ad166f8299c2d820937e47dc0add20ffc",
+      "versions": {
+        "3d29af2ad166f8299c2d820937e47dc0add20ffc": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "LFM3-Omni-2B-Q8_0.gguf",
+              "url": "https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF/resolve/3d29af2ad166f8299c2d820937e47dc0add20ffc/LFM3-Omni-2B-Q8_0.gguf",
+              "sha256": "59118f661eaacb93d204723d76355b53347f0940b508c11412f6290fd49158d4",
+              "size_bytes": 1846240768
+            },
+            {
+              "id": "projector",
+              "filename": "mmproj-LFM3-Omni-2B-F16.gguf",
+              "url": "https://huggingface.co/LiquidAI/LFM3-Omni-2B-GGUF/resolve/3d29af2ad166f8299c2d820937e47dc0add20ffc/mmproj-LFM3-Omni-2B-F16.gguf",
+              "sha256": "361bc95192c7d9156b566fcd4e48930363b78218e493fb1be607456bd51586e3",
+              "size_bytes": 949841248
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "liquid-d1-3b",
+      "name": "Liquid AI d1-3B",
+      "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",
+      "license": "LFM Open License v1.0 (commercial restrictions)",
+      "source_url": "https://huggingface.co/LiquidAI/d1-3B-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Decision"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-decision"
+        ],
+        "capabilities": [
+          "Classification",
+          "Scoring"
+        ],
+        "max_context_length": 32768,
+        "local": {
+          "params": 3120000000,
+          "bits_per_weight": 4.5,
+          "context_length": 32768,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "llama-server",
+          "encoder"
+        ],
+        "extra": {}
+      },
+      "latest": "bb1e436ea78eb96a3f1acb6da865f70c2fbeb563",
+      "versions": {
+        "bb1e436ea78eb96a3f1acb6da865f70c2fbeb563": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "d1-3B-Q8_0.gguf",
+              "url": "https://huggingface.co/LiquidAI/d1-3B-GGUF/resolve/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/d1-3B-Q8_0.gguf",
+              "sha256": "2f0942d5a5f64cf69c3356d2be439b71644b1f0eb3a580912a5a0179eeaba77d",
+              "size_bytes": 2874781280
+            },
+            {
+              "id": "projector",
+              "filename": "mmproj-d1-3B-F16.gguf",
+              "url": "https://huggingface.co/LiquidAI/d1-3B-GGUF/resolve/bb1e436ea78eb96a3f1acb6da865f70c2fbeb563/mmproj-d1-3B-F16.gguf",
+              "sha256": "093be6e3437800b868bc24df13f1d6f6da877ad28dfa5a5da5db01e9e8df7128",
+              "size_bytes": 853993696
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3",
+      "name": "NVIDIA Parakeet TDT 0.6B v3",
+      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
+      "license": "CC-BY-4.0",
+      "source_url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+      "engine": "nemo-speech",
+      "format": "gguf",
+      "capabilities": [
+        "Transcription"
+      ],
+      "catalog": {
+        "tasks": [
+          "audio-to-text"
+        ],
+        "capabilities": [
+          "Multilingual",
+          "Timestamps",
+          "Punctuation",
+          "FastConformer-TDT"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 600000000,
+          "bits_per_weight": 8,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "nemo-speech"
+        ],
+        "audio_operations": {
+          "transcription": {
+            "status": "supported",
+            "verified_with": [
+              {
+                "engine": "nemo-speech",
+                "version": "nemo-speech 0.3.0"
+              }
+            ]
+          },
+          "speech_translation": {
+            "status": "unsupported",
+            "reason": "The configured Parakeet ASR model does not translate speech, and no NMT companion is configured."
+          }
+        }
+      },
+      "latest": "541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
+      "versions": {
+        "541d1f99c6b0c3cd0b11a95167540bb8edefd82b": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "parakeet-tdt-0.6b-v3.q8_0.gguf",
+              "url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/resolve/541d1f99c6b0c3cd0b11a95167540bb8edefd82b/parakeet-tdt-0.6b-v3.q8_0.gguf",
+              "sha256": "e3880d0aaaaf2c308ea2c35016b2b895c423eb3fda924c1b463d1c19b7f4d32e",
+              "size_bytes": 713975456
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "voxcpm2-audiocpp",
+      "name": "VoxCPM2 (audio.cpp)",
+      "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/audio-cpp/audio.cpp-gguf",
+      "engine": "audio-cpp",
+      "format": "gguf",
+      "capabilities": ["Speech Generation"],
+      "catalog": {
+        "tasks": ["text-to-audio"],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {
+          "params": 2384218498,
+          "bits_per_weight": 9.9023,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "--seed 42"
+        },
+        "engines": ["audio-cpp"],
+        "audio_operations": {
+          "speech_generation": {
+            "status": "supported",
+            "verified_with": [{
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }]
+          }
+        }
+      },
+      "latest": "e36610ac69b5262e914a52635324050bee8f1ad2",
+      "versions": {
+        "e36610ac69b5262e914a52635324050bee8f1ad2": {
+          "release_number": 1,
+          "files": [{
+            "id": "model",
+            "filename": "voxcpm2-q8_0.gguf",
+            "url": "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/e36610ac69b5262e914a52635324050bee8f1ad2/VoxCPM2-GGUF/voxcpm2-q8_0.gguf",
+            "sha256": "c8e01ab4416011e12a28f24ede298a1aa5ce64b43f8e8aaad53b1e2fe7c96432",
+            "size_bytes": 2955000480
+          }]
+        }
+      }
+    },
+    {
+      "id": "fish-audio-s2-pro",
+      "name": "Fish Audio S2 Pro",
+      "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
+      "license": "Fish Audio Research License",
+      "source_url": "https://huggingface.co/audio-cpp/audio.cpp-gguf",
+      "engine": "audio-cpp",
+      "format": "gguf",
+      "capabilities": [
+        "Speech Generation"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {
+          "params": 4954823665,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "audio-cpp"
+        ],
+        "audio_operations": {
+          "speech_generation": {
+            "status": "supported",
+            "verified_with": [
+              {
+                "engine": "audio-cpp",
+                "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+              }
+            ]
+          }
+        }
+      },
+      "latest": "e36610ac69b5262e914a52635324050bee8f1ad2",
+      "versions": {
+        "e36610ac69b5262e914a52635324050bee8f1ad2": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "fish-audio-s2-pro-bf16.gguf",
+              "url": "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/e36610ac69b5262e914a52635324050bee8f1ad2/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf",
+              "sha256": "781fdece3ff837838c48f7d5a7b37e37c4d661a6416416ad57fe92fed47d96ff",
+              "size_bytes": 10229278080
+            }
+          ]
+        }
+      }
+    }
   ]
 }

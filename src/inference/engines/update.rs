@@ -364,16 +364,14 @@ pub(crate) fn update_llama(
     stop: Arc<AtomicBool>,
     expected_tag: String,
     expected_build: Option<String>,
+    expected_registry_release: Option<u64>,
     events: std::sync::mpsc::Sender<UpdateEvent>,
 ) -> UpdateResult<String> {
     if !cfg!(all(windows, target_arch = "x86_64")) {
         return Err("llama-server updates are currently supported on Windows x64 only".into());
     }
     let (directory, release_url) = match kind {
-        EngineKind::LlamaServer => (
-            "llama-upstream",
-            "https://api.github.com/repos/ggml-org/llama.cpp/releases",
-        ),
+        EngineKind::LlamaServer => ("llama-upstream", ""),
         EngineKind::LlamaServerPrism => (
             "llama-prism",
             "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases",
@@ -391,7 +389,12 @@ pub(crate) fn update_llama(
         std::thread::sleep(Duration::from_millis(300));
     };
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let release = download::resolve_release(&client, release_url).map_err(|e| e.to_string())?;
+    let release = if kind == EngineKind::LlamaServer {
+        super::registry::llama_release(&client)
+    } else {
+        download::resolve_release(&client, release_url)
+    }
+    .map_err(|e| e.to_string())?;
     let (build, commit) = if kind == EngineKind::LlamaServerPrism {
         let (build, commit) =
             checked_prism_build(&release, &expected_tag, expected_build.as_deref())?;
@@ -415,7 +418,18 @@ pub(crate) fn update_llama(
     let installed_output = candidate_version(&exe)?;
     let installed = llama_binary_build(&installed_output)
         .ok_or("Cannot verify installed llama-server build")?;
-    if installed > build || llama_version_matches(&installed_output, build, commit.as_deref()) {
+    if kind == EngineKind::LlamaServer {
+        match checked_registry_order(&release, expected_registry_release, installed, build)? {
+            std::cmp::Ordering::Less => (),
+            std::cmp::Ordering::Equal | std::cmp::Ordering::Greater => {
+                return Ok(
+                    "Installed registry release is current or newer; no download needed".into(),
+                );
+            }
+        }
+    } else if installed > build
+        || llama_version_matches(&installed_output, build, commit.as_deref())
+    {
         return Ok("Installed build is current or newer; no download needed".into());
     }
     stage_engine_update(
@@ -437,6 +451,28 @@ pub(crate) fn update_llama(
             Ok(())
         },
     )
+}
+
+fn checked_registry_order(
+    release: &serde_json::Value,
+    expected: Option<u64>,
+    installed: u64,
+    selected: u64,
+) -> UpdateResult<std::cmp::Ordering> {
+    let selected_number = release["rune_registry_release"]
+        .as_u64()
+        .ok_or("Registry release number missing")?;
+    if expected != Some(selected_number) {
+        return Err("The selected registry release changed; check versions again".into());
+    }
+    let versions: std::collections::BTreeMap<u64, u64> =
+        serde_json::from_value(release["rune_registry_versions"].clone())
+            .map_err(|_| "Invalid registry version order")?;
+    if versions.get(&selected) != Some(&selected_number) {
+        return Err("Selected registry release identity does not match its order".into());
+    }
+    super::registry::compare_llama_build(&versions, installed, selected)
+        .ok_or_else(|| "Installed llama-server build is not in the registry; update refused".into())
 }
 
 fn checked_llama_build(
@@ -581,6 +617,7 @@ pub(crate) fn update_nemo(
     state: Arc<AppState>,
     stop: Arc<AtomicBool>,
     expected_tag: String,
+    expected_registry_release: Option<u64>,
     events: std::sync::mpsc::Sender<UpdateEvent>,
 ) -> UpdateResult<String> {
     if !cfg!(all(windows, target_arch = "x86_64")) {
@@ -597,11 +634,7 @@ pub(crate) fn update_nemo(
         std::thread::sleep(Duration::from_millis(300));
     };
     let client = download::create_download_client().map_err(|e| e.to_string())?;
-    let release = download::resolve_release(
-        &client,
-        "https://api.github.com/repos/NVIDIA/NeMo-Speech.cpp/releases",
-    )
-    .map_err(|e| e.to_string())?;
+    let release = super::registry::nemo_release(&client).map_err(|e| e.to_string())?;
     let expected = checked_nemo_release(&release, &expected_tag)?;
     let current = Path::new("bin/nemo-speech");
     for directory in [Path::new("bin"), current] {
@@ -615,8 +648,16 @@ pub(crate) fn update_nemo(
         .ok_or("Managed NeMo Speech executable not found")?;
     let installed = nemo_binary_version(&candidate_version(&exe)?)
         .ok_or("Cannot verify installed NeMo Speech version")?;
-    if installed >= expected {
-        return Ok("Installed version is current or newer; no download needed".into());
+    match checked_nemo_registry_order(
+        &release,
+        expected_registry_release,
+        installed,
+        &expected_tag,
+    )? {
+        std::cmp::Ordering::Less => (),
+        std::cmp::Ordering::Equal | std::cmp::Ordering::Greater => {
+            return Ok("Installed registry release is current or newer; no download needed".into());
+        }
     }
     stage_engine_update(
         PathBuf::from("bin"),
@@ -636,6 +677,30 @@ pub(crate) fn update_nemo(
             Ok(())
         },
     )
+}
+
+fn checked_nemo_registry_order(
+    release: &serde_json::Value,
+    expected_release: Option<u64>,
+    installed: (u64, u64, u64),
+    selected: &str,
+) -> UpdateResult<std::cmp::Ordering> {
+    let number = release["rune_registry_release"]
+        .as_u64()
+        .ok_or("NeMo registry release number missing")?;
+    if expected_release != Some(number) {
+        return Err("The selected registry release changed; check versions again".into());
+    }
+    let versions: std::collections::BTreeMap<String, u64> =
+        serde_json::from_value(release["rune_registry_revisions"].clone())
+            .map_err(|_| "Invalid NeMo registry version order")?;
+    if versions.get(selected.trim_start_matches('v')) != Some(&number) {
+        return Err("NeMo registry release identity does not match its order".into());
+    }
+    let installed = format!("{}.{}.{}", installed.0, installed.1, installed.2);
+    super::registry::compare_nemo_revision(&versions, &installed, selected).ok_or_else(|| {
+        "Installed NeMo Speech version is not in the registry; update refused".into()
+    })
 }
 
 fn checked_nemo_release(release: &serde_json::Value, tag: &str) -> UpdateResult<(u64, u64, u64)> {
@@ -2137,6 +2202,27 @@ mod tests {
     }
 
     #[test]
+    fn registry_update_requires_known_order_and_unchanged_selection() {
+        let release = serde_json::json!({"rune_registry_release": 2, "rune_registry_versions": {"900": 1, "3": 2, "100": 3}});
+        use std::cmp::Ordering;
+        assert_eq!(
+            checked_registry_order(&release, Some(2), 900, 3).unwrap(),
+            Ordering::Less
+        );
+        assert_eq!(
+            checked_registry_order(&release, Some(2), 3, 3).unwrap(),
+            Ordering::Equal
+        );
+        assert_eq!(
+            checked_registry_order(&release, Some(2), 100, 3).unwrap(),
+            Ordering::Greater
+        );
+        assert!(checked_registry_order(&release, Some(2), 999, 3).is_err());
+        assert!(checked_registry_order(&release, Some(1), 900, 3).is_err());
+        assert!(checked_registry_order(&release, Some(2), 900, 100).is_err());
+    }
+
+    #[test]
     fn managed_updates_validate_preserve_extras_and_leave_original_on_failure() {
         for directory in [
             "llama-upstream",
@@ -2323,6 +2409,26 @@ mod tests {
         ] {
             assert_eq!(nemo_binary_version(output), expected, "{output}");
         }
+    }
+
+    #[test]
+    fn nemo_updates_use_registry_order_and_reject_unknown_or_changed_releases() {
+        let release = serde_json::json!({"rune_registry_release":2,"rune_registry_revisions":{"9.0.0":1,"1.0.0":2,"3.0.0":3}});
+        use std::cmp::Ordering;
+        assert_eq!(
+            checked_nemo_registry_order(&release, Some(2), (9, 0, 0), "v1.0.0").unwrap(),
+            Ordering::Less
+        );
+        assert_eq!(
+            checked_nemo_registry_order(&release, Some(2), (1, 0, 0), "v1.0.0").unwrap(),
+            Ordering::Equal
+        );
+        assert_eq!(
+            checked_nemo_registry_order(&release, Some(2), (3, 0, 0), "v1.0.0").unwrap(),
+            Ordering::Greater
+        );
+        assert!(checked_nemo_registry_order(&release, Some(2), (4, 0, 0), "v1.0.0").is_err());
+        assert!(checked_nemo_registry_order(&release, Some(1), (9, 0, 0), "v1.0.0").is_err());
     }
 
     #[test]

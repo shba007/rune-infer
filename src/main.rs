@@ -53,6 +53,11 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Browse downloadable local models in the remote registry
+    Models {
+        #[command(subcommand)]
+        action: Option<ModelCommand>,
+    },
     #[command(hide = true)]
     OnnxWorker {
         #[arg(long)]
@@ -97,6 +102,12 @@ enum Command {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum ModelCommand {
+    /// Download a listed model and add it to the local catalog
+    Install { id: String },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -121,6 +132,51 @@ async fn main() -> Result<()> {
     }
     if let Some(Command::SelfUpdate { check, version }) = &args.command {
         return self_update::run(*check, version.as_deref()).await;
+    }
+    if let Some(Command::Models { action }) = &args.command {
+        let id = action
+            .as_ref()
+            .map(|ModelCommand::Install { id }| id.clone());
+        let explicit = args.config.clone();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let models = rune_infer::model_registry::fetch()?;
+            if let Some(id) = id {
+                let model = models
+                    .iter()
+                    .find(|m| m.id == id)
+                    .context("Model is not listed in the registry")?;
+                let (root, server, catalog) = if let Some(path) = explicit {
+                    let ws = Workspace::resolve(Some(&path))?;
+                    if ws.legacy_config_path.exists() && !ws.server_path.exists() && !ws.catalog_path.exists() {
+                        anyhow::bail!("Legacy configuration exists at {}; run migrate before installing models", ws.legacy_config_path.display());
+                    }
+                    (ws.root, ws.server_path, ws.catalog_path)
+                } else {
+                    let root = rune_infer::home::rune_home()?;
+                    let server = root.join("config/server.json");
+                    let catalog = root.join("config/catalog.json");
+                    (root, server, catalog)
+                };
+                let path = rune_infer::model_registry::install(model, &root, &server, &catalog)?;
+                println!("Installed {} at {}", model.id, path.display());
+            } else {
+                for model in models {
+                    let size = model.versions[&model.latest]
+                        .files
+                        .iter()
+                        .map(|file| file.size_bytes)
+                        .sum::<u64>();
+                    println!(
+                        "{}  {}  {}  {} bytes",
+                        model.id, model.name, model.license, size
+                    );
+                }
+            }
+            Ok(())
+        })
+        .await
+        .context("Model registry task failed")??;
+        return Ok(());
     }
 
     let ws =

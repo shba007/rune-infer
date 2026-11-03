@@ -5,6 +5,10 @@
 //! reused by other front-ends; the interactive wizard lives in `tui::wizard`.
 
 mod registry;
+#[cfg(test)]
+pub(crate) use registry::fixture_model;
+#[cfg(test)]
+pub(crate) use registry::with_fixture_registry;
 pub use registry::{ModelMetadata, RegistryStatus, registered_model};
 mod cloud;
 pub use cloud::{CloudCapabilities, CloudModel, list_provider_models};
@@ -463,7 +467,19 @@ pub fn write_setup(
     catalog_path: &Path,
     env_path: &Path,
 ) -> Result<usize> {
-    write_setup_inner(plan, None, server_path, catalog_path, env_path)
+    let registry = if plan.cloud.is_empty() {
+        None
+    } else {
+        Some(registry::CloudRegistry::fetch().map_err(anyhow::Error::msg)?)
+    };
+    write_setup_inner(
+        plan,
+        None,
+        server_path,
+        catalog_path,
+        env_path,
+        registry.as_ref(),
+    )
 }
 
 /// Save verified local task metadata; cloud entries remain unverified.
@@ -478,7 +494,19 @@ pub fn write_verified_setup(
         plan.local.is_empty() || prepared.is_some(),
         "Local models require successful inference checks before saving."
     );
-    write_setup_inner(plan, prepared, server_path, catalog_path, env_path)
+    let registry = if plan.cloud.is_empty() {
+        None
+    } else {
+        Some(registry::CloudRegistry::fetch().map_err(anyhow::Error::msg)?)
+    };
+    write_setup_inner(
+        plan,
+        prepared,
+        server_path,
+        catalog_path,
+        env_path,
+        registry.as_ref(),
+    )
 }
 
 fn write_setup_inner(
@@ -487,6 +515,7 @@ fn write_setup_inner(
     server_path: &Path,
     catalog_path: &Path,
     env_path: &Path,
+    registry: Option<&registry::CloudRegistry>,
 ) -> Result<usize> {
     let local_entries = match prepared {
         Some(proof) => proof
@@ -499,8 +528,9 @@ fn write_setup_inner(
             .collect(),
     };
     for choice in &plan.cloud {
-        let reviewed = registered_model(choice.preset.provider, &choice.model.id)
-            .map_err(anyhow::Error::msg)?
+        let reviewed = registry
+            .context("Remote cloud registry was not loaded")?
+            .get(choice.preset.provider, &choice.model.id)
             .ok_or_else(|| {
                 anyhow::anyhow!("Selected cloud model is missing from registry/models.json.")
             })?;
@@ -780,7 +810,7 @@ mod tests {
             cloud: vec![CloudChoice {
                 preset: PROVIDERS[0],
                 api_key: "secret".into(),
-                model: registered_model("google", "gemini-3.5-flash-lite")
+                model: fixture_model("google", "gemini-3.5-flash-lite")
                     .unwrap()
                     .unwrap(),
             }],
@@ -790,11 +820,27 @@ mod tests {
         let srv = dir.join("config/server.json");
         let cat = dir.join("config/catalog.json");
         assert_eq!(
-            write_setup(&plan, &srv, &cat, &dir.join(".env")).unwrap(),
+            write_setup_inner(
+                &plan,
+                None,
+                &srv,
+                &cat,
+                &dir.join(".env"),
+                Some(&registry::fixture_registry())
+            )
+            .unwrap(),
             4
         );
         assert_eq!(
-            write_setup(&plan, &srv, &cat, &dir.join(".env")).unwrap(),
+            write_setup_inner(
+                &plan,
+                None,
+                &srv,
+                &cat,
+                &dir.join(".env"),
+                Some(&registry::fixture_registry())
+            )
+            .unwrap(),
             0,
             "idempotent"
         );
@@ -907,5 +953,44 @@ mod tests {
         let raw = std::fs::read_to_string(&cat).unwrap();
         assert!(raw.contains("\"id\": \"model\"") && raw.contains("\"id\": \"model-2\""));
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn cloud_save_requires_current_registry_and_does_not_write_on_mismatch() {
+        let dir = std::env::temp_dir().join(format!("rune-cloud-registry-{}", generate_api_key()));
+        let mut metadata = fixture_model("google", "gemini-3.5-flash-lite")
+            .unwrap()
+            .unwrap();
+        let plan = SetupPlan {
+            exposure: Exposure::Local,
+            port: 8080,
+            server_api_key: None,
+            cloud: vec![CloudChoice {
+                preset: PROVIDERS[0],
+                api_key: "fixture".into(),
+                model: metadata.clone(),
+            }],
+            local: vec![],
+            gpu_available: false,
+        };
+        let server = dir.join("server.json");
+        let catalog = dir.join("catalog.json");
+        let env = dir.join(".env");
+        assert!(write_setup_inner(&plan, None, &server, &catalog, &env, None).is_err());
+        metadata.name.push_str(" changed");
+        let mut stale = plan;
+        stale.cloud[0].model = metadata;
+        assert!(
+            write_setup_inner(
+                &stale,
+                None,
+                &server,
+                &catalog,
+                &env,
+                Some(&registry::fixture_registry())
+            )
+            .is_err()
+        );
+        assert!(!server.exists() && !catalog.exists() && !env.exists());
     }
 }

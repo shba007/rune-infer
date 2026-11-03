@@ -67,12 +67,13 @@ pub fn list_provider_models(preset: &ProviderPreset, key: &str) -> Result<Vec<Cl
     if key.trim().is_empty() {
         return Err("Enter a provider API key.".into());
     }
+    let registry = super::registry::CloudRegistry::fetch()?;
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "Cannot initialize the provider client.")?;
-    list_with(&client, preset, key)
+    list_with(&client, preset, key, &registry)
 }
 
 fn get_json(
@@ -123,6 +124,7 @@ fn list_with(
     client: &reqwest::blocking::Client,
     preset: &ProviderPreset,
     key: &str,
+    registry: &super::registry::CloudRegistry,
 ) -> Result<Vec<CloudModel>, String> {
     let deadline = Instant::now() + Duration::from_secs(60);
     if preset.provider == "openrouter" {
@@ -156,7 +158,8 @@ fn list_with(
         }
         let response = get_json(client, preset, key, "/models", &query)?;
         let (page, next) = parse_page(preset.provider, &response)?;
-        for model in page {
+        for mut model in page {
+            model.metadata = registry.get(preset.provider, &model.id);
             models.entry(model.id.clone()).or_insert(model);
         }
         if models.len() > 20_000 {
@@ -299,7 +302,7 @@ fn parse_page(
                 .filter(|n| *n > 0)
                 .and_then(|n| usize::try_from(n).ok()),
             capabilities,
-            metadata: super::registered_model(provider, id)?,
+            metadata: None,
         });
     }
     let next = if provider == "google" {
@@ -373,6 +376,20 @@ mod network_tests {
     use serde_json::json;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    fn list_provider_models(preset: &ProviderPreset, key: &str) -> Result<Vec<CloudModel>, String> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        list_with(
+            &client,
+            preset,
+            key,
+            &super::super::registry::fixture_registry(),
+        )
+    }
 
     fn server(
         provider: &'static str,

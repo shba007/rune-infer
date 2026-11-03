@@ -2033,7 +2033,7 @@ mod tests {
         w.on_key(key(KeyCode::Char('r')));
         assert!(matches!(w.validation, Validation::Idle) && w.cloud_done.is_empty());
         w.key_input = Input::new("fixture-key".into());
-        let metadata = setup::registered_model("google", "gemini-3.5-flash-lite")
+        let metadata = setup::fixture_model("google", "gemini-3.5-flash-lite")
             .unwrap()
             .unwrap();
         let model = CloudModel {
@@ -2077,7 +2077,7 @@ mod tests {
         w.cloud_queue = vec![0];
         w.key_input = Input::new("fixture-secret".into());
         for id in ["gemini-3.5-flash-lite", "gemini-3.8-flash"] {
-            let metadata = setup::registered_model("google", id).unwrap().unwrap();
+            let metadata = setup::fixture_model("google", id).unwrap().unwrap();
             w.cloud_models.push(CloudModel {
                 id: id.into(),
                 name: metadata.name.clone(),
@@ -2119,7 +2119,10 @@ mod tests {
         w.on_key(key(KeyCode::Enter));
         assert!(w.step == Step::Review);
         assert_eq!(w.cloud_done.len(), 2);
-        assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Finish));
+        assert!(matches!(
+            setup::with_fixture_registry(|| w.on_key(key(KeyCode::Enter))),
+            Flow::Finish
+        ));
         assert_eq!(ModelRegistryProbe::load(&ws).0, 2);
         let env = std::fs::read_to_string(ws.env_file()).unwrap();
         assert_eq!(env.matches("GEMINI_API_KEY=").count(), 1);
@@ -2254,12 +2257,15 @@ mod tests {
         w.cloud_done.push(CloudChoice {
             preset: PROVIDERS[0],
             api_key: "fixture-key".into(),
-            model: setup::registered_model("google", "gemini-3.5-flash-lite")
+            model: setup::fixture_model("google", "gemini-3.5-flash-lite")
                 .unwrap()
                 .unwrap(),
         });
         render_all_sizes(&w);
-        assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Finish));
+        assert!(matches!(
+            setup::with_fixture_registry(|| w.on_key(key(KeyCode::Enter))),
+            Flow::Finish
+        ));
         assert_eq!(ModelRegistryProbe::load(&ws).0, 1);
         assert!(
             !std::fs::read_to_string(&ws.catalog_path)

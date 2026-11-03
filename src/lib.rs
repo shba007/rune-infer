@@ -8,6 +8,7 @@ pub mod home;
 pub mod inference;
 pub mod media;
 pub mod migrate;
+pub mod model_registry;
 pub mod proxy;
 pub mod schema;
 pub mod server;

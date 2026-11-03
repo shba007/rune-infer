@@ -1,0 +1,743 @@
+{
+  "schema_version": 1,
+  "engines": [
+    {
+      "id": "llama-server",
+      "name": "llama-server",
+      "kind": "managed",
+      "latest": "b12027",
+      "versions": {
+        "b11960": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-macos-arm64.tar.gz",
+                  "sha256": "58e5a5e1d7c2bf66cedd9c29e0323f3e570660a70a1e2156d32eed08f4cc1e3c",
+                  "size_bytes": 16465074,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-macos-x64.tar.gz",
+                  "sha256": "d1e6c9ddcaed9a3b1bb8f3d946bdb3481c7b919357a4029dcb747762397f1da5",
+                  "size_bytes": 12205764,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-ubuntu-arm64.tar.gz",
+                  "sha256": "0065ecfbffe8a790bb0d28059a3320cdc8f723b7f3f248cdc8bfc04790927715",
+                  "size_bytes": 18411465,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-ubuntu-x64.tar.gz",
+                  "sha256": "31cc3a6bc638ac6c48dc4b1b74888f1eaadf3d14227c1e5f67daf9a49541d97a",
+                  "size_bytes": 22686210,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cpu-arm64.zip",
+                  "sha256": "77349357c38da235bb0eed37bcc5ecf3efef21bb5dc42c2269589c0e71cfa00f",
+                  "size_bytes": 13018162,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cpu-x64.zip",
+                  "sha256": "73f962f82850d244db47eaacb9d913637027b82399124324298576d58c5f4287",
+                  "size_bytes": 24407745,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-vulkan-arm64.zip",
+                  "sha256": "cd375e330452496aadf8a872cde6d48c92e51d598088e5575a32a0d43bc0c9f0",
+                  "size_bytes": 25547008,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-vulkan-x64.zip",
+                  "sha256": "bac6914b5e83523eb008c6789eaa12669f93fbc196c3b9e8237b6672323b33e9",
+                  "size_bytes": 37345851,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "8d9d819261de10cc2f03921b8b79c779c5c458e21edb60c170ee30a7d462d684",
+                  "size_bytes": 279763224,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/cudart-llama-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+                  "size_bytes": 391443627,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cuda-13.4-x64.zip",
+                  "sha256": "31c75ea62b80f0816c855ea783ef68757bc2d48028edaa57d904e4982bddea4a",
+                  "size_bytes": 164986387,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/cudart-llama-bin-win-cuda-13.4-x64.zip",
+                  "sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
+                  "size_bytes": 423535356,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "3bde5e443757db131bf6b6e26079bd22ce01e2e6170439997634d7ac7c000119",
+                  "size_bytes": 152745165,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/cudart-llama-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "642dcde8805b3e3165ca710a5443b3b4044b27d96bd3ee3132473988c9bcb774",
+                  "size_bytes": 153262407,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            }
+          ]
+        },
+        "b12027": {
+          "release_number": 2,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-macos-arm64.tar.gz",
+                  "sha256": "3d002860110d2110c886308419441481198472471433cf0580a07e421f412725",
+                  "size_bytes": 16513757,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-macos-x64.tar.gz",
+                  "sha256": "2c45d14df2c5d02edc42f0a9f1a49f93a6ad949123c7bfeba578939da736ef08",
+                  "size_bytes": 12258893,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-ubuntu-arm64.tar.gz",
+                  "sha256": "b5e52731d009e930ec5d769ac07822ab8df6dd2ba1ed3a87280f807bcf006e17",
+                  "size_bytes": 18591618,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-ubuntu-x64.tar.gz",
+                  "sha256": "b94376c7f3d2dd590b929f8bd21f8848b10a3d87156c3b15122d3d5a2d7e5c39",
+                  "size_bytes": 22886185,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cpu-arm64.zip",
+                  "sha256": "d38d062ef5d97dec8c25e820fc2ea310406e5e2ba5be77fea08dc0d9be0ded04",
+                  "size_bytes": 13075721,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cpu-x64.zip",
+                  "sha256": "041f4f252ae8fd36c52be2561a7ad78d3f9775efb99191a81a9cd0e95e4d5dc6",
+                  "size_bytes": 24581968,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-vulkan-arm64.zip",
+                  "sha256": "398997ce5a7b586c80c541a61917b0dcdc67e1db29f2dbe26e6da6e5dda97888",
+                  "size_bytes": 25602548,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-vulkan-x64.zip",
+                  "sha256": "f774dc62ebb5431a001d524de72ed0c4a15abeff408ec996a3e2a6bb91e644e5",
+                  "size_bytes": 37523179,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "005c9d8eba13a68ce76c7c9e55f041f43af3a0d8ef6cd387614ea041f1b1f771",
+                  "size_bytes": 279952295,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/cudart-llama-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+                  "size_bytes": 391443627,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cuda-13.4-x64.zip",
+                  "sha256": "a9b0e635d5aedb209c0344a1c8067ceeee389ec8df1d87605ed55d51371ecaaf",
+                  "size_bytes": 165164220,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/cudart-llama-bin-win-cuda-13.4-x64.zip",
+                  "sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
+                  "size_bytes": 423535356,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "2e5f2c7ce324769dd5748ed1d342906e95baf90bfd66acc6dbce3bba0bc0530a",
+                  "size_bytes": 152787353,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/cudart-llama-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "642dcde8805b3e3165ca710a5443b3b4044b27d96bd3ee3132473988c9bcb774",
+                  "size_bytes": 153262407,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "litert",
+      "name": "LiteRT",
+      "kind": "managed",
+      "latest": "2.3.0",
+      "versions": {
+        "2.3.0": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {"os": "windows", "arch": "x86_64", "accelerator": "cpu"},
+              "executable": "libLiteRt.dll",
+              "files": [
+                {"id": "cpu", "url": "https://storage.googleapis.com/litert/binaries/2.3.0/windows_x86_64/libLiteRt.dll", "sha256": "6fe42cfa518879dd7bae4500244cf371d949bf0c8559cb60be207d81112da16d", "size_bytes": 12173824, "format": "dll"},
+                {"id": "gpu", "url": "https://storage.googleapis.com/litert/binaries/2.3.0/windows_x86_64/libLiteRtWebGpuAccelerator.dll", "sha256": "ade56eff38715f3e7b3ada0cfb736db4cccb6bed4668a891a37ebcf4eee38548", "size_bytes": 30891008, "format": "dll"},
+                {"id": "dxc", "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.8.2505.1/dxc_2025_07_14.zip", "sha256": "9ad895a6b039e3a8f8c22a1009f866800b840a74b50db9218d13319e215ea8a4", "size_bytes": 26505604, "format": "zip"}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "onnx",
+      "name": "ONNX Runtime",
+      "kind": "managed",
+      "latest": "1.31.1",
+      "versions": {
+        "1.31.1": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {"os": "windows", "arch": "x86_64", "accelerator": "cuda", "cuda_version": "12"},
+              "executable": "onnxruntime.dll",
+              "files": [
+                {"id": "ort", "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-gpu_cuda12-1.31.1.zip", "sha256": "5cbf65edc93dc7bb3296249b1b6e1b2228e575902af64d6163d0da2103cef9d5", "size_bytes": 392924457, "format": "zip"},
+                {"id": "cudnn", "url": "https://files.pythonhosted.org/packages/aa/38/f856579877f7c1c5066e61182e7de7bc27bf35a78c8d1b0fa592e6985bc4/nvidia_cudnn_cu12-9.27.0.42-py3-none-win_amd64.whl", "sha256": "06e9b0026f3bad97d2b58666330fabec04fe1672f776661ecb0ce0029c27f142", "size_bytes": 743068852, "format": "whl"},
+                {"id": "cublas", "url": "https://files.pythonhosted.org/packages/20/e2/fc9a0e985249d873150276d5afb02e39a66817fedbf1a385724393e505ed/nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl", "sha256": "623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661", "size_bytes": 553162896, "format": "whl"},
+                {"id": "cudart", "url": "https://files.pythonhosted.org/packages/59/df/e7c3a360be4f7b93cee39271b792669baeb3846c58a4df6dfcf187a7ffab/nvidia_cuda_runtime_cu12-12.9.79-py3-none-win_amd64.whl", "sha256": "8e018af8fa02363876860388bd10ccb89eb9ab8fb0aa749aaf58430a9f7c4891", "size_bytes": 3591604, "format": "whl"}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nemo-speech",
+      "name": "NeMo Speech",
+      "kind": "managed",
+      "latest": "v0.3.0",
+      "versions": {
+        "v0.3.0": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-aarch64-cpu.tar.gz",
+                  "sha256": "56858eaf50d19b05902c043f65d0057352bdc107ae380c41053bfbddfc204bf1",
+                  "size_bytes": 9064856,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "12"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-aarch64-cuda12.tar.gz",
+                  "sha256": "8bc2b18589f6493373af1163ecd937cc6eba91b0305c585c6b898cd3b8a47028",
+                  "size_bytes": 641899633,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "13"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-aarch64-cuda13.tar.gz",
+                  "sha256": "5d8e55d5d14902a5845fb5129478446db5578fd470a80e3b621da001d7f0a971",
+                  "size_bytes": 612369189,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "vulkan"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-aarch64-vulkan.tar.gz",
+                  "sha256": "0de233655dd579117f8f0cfd6c9dc77fe53bf11673cc44b5c42017a1fb2b8140",
+                  "size_bytes": 18935014,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-x86_64-cpu.tar.gz",
+                  "sha256": "255f12b722ab15b2a38a51cf125d56e3fa97058b528f7e895b39d6a473deb06e",
+                  "size_bytes": 9605101,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cuda"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-x86_64-cuda.tar.gz",
+                  "sha256": "eca00a1f67d3ca200ddba11dd71c4f3d67e044cc0939d17d073978e40b995917",
+                  "size_bytes": 703984313,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-x86_64-vulkan.tar.gz",
+                  "sha256": "2a8b2ca4610b6ea5d659ba10794526f6e5a77fb1623d52c35272a9fd1f74abac",
+                  "size_bytes": 19482397,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-macos-aarch64-cpu.tar.gz",
+                  "sha256": "2c3a7a719b778daeb14f147e011891f16e4b2ac62388d8b8d8b365cc2eebdf15",
+                  "size_bytes": 6895976,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-macos-aarch64-metal.tar.gz",
+                  "sha256": "2b972ed8b5dba07492212acf8cb75cbf34ecb141198ffa1997febe84b7c4d9ed",
+                  "size_bytes": 7239335,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-macos-x86_64-cpu.tar.gz",
+                  "sha256": "97e98aa5eb82dffa4f513f26336b5301d792c9fb43f720ac8f9520a0e92ffe3f",
+                  "size_bytes": 7742012,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cuda"
+              },
+              "executable": "nemo-speech.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-aarch64-cuda.zip",
+                  "sha256": "69df7a29636ebf8fdaa20e7a2a6bd03c2838c69dc751fd00af62f0d7f041282a",
+                  "size_bytes": 184407279,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-cpu.zip",
+                  "sha256": "4ed9740e361e4653f56c3dce7d1e81883a1c8b831c1bd7d01567fff1130b5b05",
+                  "size_bytes": 8694509,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda"
+              },
+              "executable": "nemo-speech.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-cuda.zip",
+                  "sha256": "d0d32ae1bf6ee0534767a47b2aa0e9e2ff6fe39643465c0baae9301d04f6ed42",
+                  "size_bytes": 508625181,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "nemo-speech.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-vulkan.zip",
+                  "sha256": "72b3b8b41bfe2be0320eff4e9d310594e4f99deefcde4a157799a039656963ce",
+                  "size_bytes": 22417032,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

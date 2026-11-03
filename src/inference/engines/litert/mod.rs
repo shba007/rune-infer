@@ -23,8 +23,6 @@ pub const WIDTH: u32 = 686;
 pub const HEIGHT: u32 = 518;
 pub const PIXELS: usize = WIDTH as usize * HEIGHT as usize;
 const RUNTIME_SHA: &str = "6fe42cfa518879dd7bae4500244cf371d949bf0c8559cb60be207d81112da16d";
-const RUNTIME_URL: &str =
-    "https://storage.googleapis.com/litert/binaries/2.3.0/windows_x86_64/libLiteRt.dll";
 pub(crate) struct ModelProfile {
     pub sha256: &'static str,
     pub architecture: &'static str,
@@ -148,7 +146,16 @@ pub(crate) fn ensure_runtime_installed() -> Result<PathBuf, Box<dyn Error>> {
     }
     std::fs::create_dir_all(path.parent().ok_or("Missing LiteRT directory")?)?;
     let client = super::download::create_download_client()?;
-    super::download::download_verified(&client, RUNTIME_URL, &path, "[LiteRT]", RUNTIME_SHA)?;
+    let files = super::registry::litert_files(&client)?;
+    let cpu = files.get("cpu").ok_or("LiteRT CPU component missing")?;
+    super::download::download_verified_sized(
+        &client,
+        &cpu.url,
+        &path,
+        "[LiteRT]",
+        &cpu.sha256,
+        cpu.size_bytes,
+    )?;
     validate_runtime(&path)?;
     gpu_runtime::ensure_installed(&path)?;
     Ok(std::fs::canonicalize(path)?)

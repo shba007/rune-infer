@@ -69,12 +69,13 @@ pub(super) fn resolve_binary(
     std::fs::create_dir_all(&base_dir)?;
 
     let client = download::create_download_client()?;
-    let release_url = match flavor {
-        RuntimeFlavor::Upstream => "https://api.github.com/repos/ggml-org/llama.cpp/releases",
-        RuntimeFlavor::Prism => "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases",
+    let release_data = match flavor {
+        RuntimeFlavor::Upstream => super::super::registry::llama_release(&client)?,
+        RuntimeFlavor::Prism => download::resolve_release(
+            &client,
+            "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases",
+        )?,
     };
-
-    let release_data = download::resolve_release(&client, release_url)?;
 
     install_release(&client, &release_data, base_dir)
 }
@@ -196,14 +197,39 @@ pub(crate) fn install_release(
         download::asset_sha256(assets, name)?;
     }
 
+    let receipt_files: Vec<_> = download_urls
+        .iter()
+        .filter_map(|(name, _)| {
+            assets
+                .iter()
+                .find(|asset| asset["name"].as_str() == Some(name))
+                .map(|asset| {
+                    serde_json::json!({
+                        "name": name, "sha256": asset["digest"], "size_bytes": asset["size"]
+                    })
+                })
+        })
+        .collect();
     for (name, url) in download_urls {
-        download::download_and_extract(
+        let size = if release_data["rune_registry"].as_bool() == Some(true) {
+            Some(
+                assets
+                    .iter()
+                    .find(|a| a["name"].as_str() == Some(&name))
+                    .and_then(|a| a["size"].as_u64())
+                    .ok_or("Registry artifact size missing")?,
+            )
+        } else {
+            None
+        };
+        download::download_and_extract_sized(
             client,
             &url,
             &base_dir,
             &name,
             "[LlamaServerEngine]",
             &download::asset_sha256(assets, &name)?,
+            size,
         )?;
     }
 
@@ -223,6 +249,23 @@ pub(crate) fn install_release(
             base_dir.display()
         )
         .into());
+    }
+
+    if release_data["rune_registry"].as_bool() == Some(true) {
+        use std::io::Write;
+        let receipt_path = base_dir.join(".rune-engine.json");
+        let mut receipt = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(receipt_path)?;
+        let receipt_data = serde_json::json!({
+            "schema_version": 1,
+            "engine": "llama-server",
+            "version": target_release["tag_name"],
+            "release_number": target_release["rune_registry_release"],
+            "files": receipt_files,
+        });
+        receipt.write_all(&serde_json::to_vec_pretty(&receipt_data)?)?;
     }
 
     Ok(exe_path)

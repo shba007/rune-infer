@@ -5,9 +5,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const GPU_URL: &str = "https://storage.googleapis.com/litert/binaries/2.3.0/windows_x86_64/libLiteRtWebGpuAccelerator.dll";
-const DXC_URL: &str = "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.8.2505.1/dxc_2025_07_14.zip";
-const DXC_ZIP_SHA: &str = "9ad895a6b039e3a8f8c22a1009f866800b840a74b50db9218d13319e215ea8a4";
 const FILES: [(&str, &str); 4] = [
     ("libLiteRt.dll", super::RUNTIME_SHA),
     (
@@ -60,16 +57,27 @@ pub(super) fn ensure_installed(cpu: &Path) -> Result<PathBuf, Box<dyn Error>> {
     std::fs::create_dir(&stage)?;
     let result = (|| {
         let client = download::create_download_client()?;
+        let files = super::super::registry::litert_files(&client)?;
+        let gpu = files.get("gpu").ok_or("LiteRT GPU component missing")?;
+        let dxc = files.get("dxc").ok_or("LiteRT DXC component missing")?;
         std::fs::copy(cpu, stage.join("libLiteRt.dll"))?;
-        download::download_verified(
+        download::download_verified_sized(
             &client,
-            GPU_URL,
+            &gpu.url,
             &stage.join(FILES[1].0),
             "[LiteRT GPU]",
-            FILES[1].1,
+            &gpu.sha256,
+            gpu.size_bytes,
         )?;
         let archive = stage.join("dxc.zip");
-        download::download_verified(&client, DXC_URL, &archive, "[LiteRT DXC]", DXC_ZIP_SHA)?;
+        download::download_verified_sized(
+            &client,
+            &dxc.url,
+            &archive,
+            "[LiteRT DXC]",
+            &dxc.sha256,
+            dxc.size_bytes,
+        )?;
         let extracted = stage.join("dxc");
         std::fs::create_dir(&extracted)?;
         download::extract_archive(&archive, &extracted, "[LiteRT DXC]")?;
