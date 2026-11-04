@@ -1,5 +1,5 @@
 $kind: http-request
-name: Audio Speech (VoxCPM2 audio.cpp)
+name: Audio Speech (Default Voice Alternative)
 description: |-
   Generate WAV speech using the separate local voxcpm2-audiocpp GGUF entry.
   The existing voxcpm2 CrispASR configuration is preserved. This request uses

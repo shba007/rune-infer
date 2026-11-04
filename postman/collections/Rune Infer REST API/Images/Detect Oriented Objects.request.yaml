@@ -1,5 +1,5 @@
 $kind: http-request
-name: Detect Oriented Objects with YOLO26
+name: Detect Oriented Objects
 description: |-
   Detect objects in aerial images using the 15 DOTA classes. Each detection
   includes an axis-aligned box and oriented_box with four image-pixel corners

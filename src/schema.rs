@@ -292,6 +292,7 @@ pub(crate) fn valid_task(task: &str) -> bool {
                     | "moderation"
                     | "depth"
                     | "segmentation"
+                    | "matting"
             ) && seen.insert(kind)
         })
     })

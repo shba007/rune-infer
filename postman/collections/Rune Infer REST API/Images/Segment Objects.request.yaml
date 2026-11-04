@@ -1,5 +1,5 @@
 $kind: http-request
-name: Segment Objects with YOLO26
+name: Segment Objects
 description: |-
   Detect objects and return each instance mask as a base64 PNG data URI.
   Masks are binary grayscale images at the original image dimensions.

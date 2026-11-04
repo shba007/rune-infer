@@ -21,6 +21,8 @@ struct Registry {
 #[serde(deny_unknown_fields)]
 pub struct LocalModel {
     pub id: String,
+    #[serde(default)]
+    pub install_dir: Option<String>,
     pub name: String,
     pub description: String,
     pub license: String,
@@ -146,13 +148,23 @@ fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
             matches!(
                 model.engine.as_str(),
                 "llama-server" | "llama-server-prism" | "nemo-speech" | "audio-cpp" | "sd-server"
-            ) && model.format == "gguf",
+            ) && model.format == "gguf"
+                || (model.engine == "onnx"
+                    && model.format == "onnx"
+                    && model.capabilities == ["Portrait Matting"]),
             "Unsupported model format or engine"
         );
         let latest = model
             .versions
             .get(&model.latest)
             .context("Missing selected model version")?;
+        if let Some(dir) = &model.install_dir {
+            validate_install_path(&format!("{dir}/model.gguf"), "model.gguf")?;
+            ensure!(
+                dir.split('/').count() == 2,
+                "Model install directory must contain creator and family"
+            );
+        }
         if let Some(path) = model
             .catalog
             .as_ref()
@@ -179,7 +191,8 @@ fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
                     !file.filename.is_empty()
                         && (file.filename.ends_with(".gguf")
                             || file.filename.ends_with(".safetensors")
-                            || file.filename.ends_with(".json"))
+                            || file.filename.ends_with(".json")
+                            || file.filename.ends_with(".onnx"))
                         && file
                             .filename
                             .bytes()
@@ -315,8 +328,10 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     let vision = model.capabilities == ["Chat", "Vision"]
         || model.capabilities == ["Chat", "Vision", "Audio", "Video"];
     let image = model.capabilities == ["Image Generation"];
+    let matting = model.capabilities == ["Portrait Matting"];
     ensure!(
-        vision
+        matting
+            || vision
             || image
             || model.capabilities == ["Chat"]
             || model.capabilities == ["Decision"]
@@ -324,7 +339,8 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
             || model.capabilities == ["Speech Generation"],
         "Unsupported model capabilities"
     );
-    if image
+    if matting
+        || image
         || model.capabilities == ["Decision"]
         || model.capabilities == ["Transcription"]
         || model.capabilities == ["Speech Generation"]
@@ -343,7 +359,12 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
         },
         "Model has missing or unsupported companion files"
     );
-    if image {
+    if matting {
+        ensure!(
+            model.engine == "onnx" && model.format == "onnx" && version.files.len() == 1,
+            "Unsupported portrait matting bundle"
+        );
+    } else if image {
         ensure!(model.engine == "sd-server", "Unsupported image engine");
     } else if model.capabilities == ["Transcription"] || model.capabilities == ["Speech Generation"]
     {
@@ -388,6 +409,7 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
                         file.filename.ends_with(".safetensors"),
                     "text_encoder" =>
                         file.filename.ends_with(".safetensors") || file.filename.ends_with(".gguf"),
+                    _ if matting => file.filename.ends_with(".onnx"),
                     _ => file.filename.ends_with(".gguf"),
                 })
                 && file
@@ -513,7 +535,7 @@ fn verify_file(path: &Path, file: &File) -> Result<()> {
         let mut first = [0; 1];
         input.read_exact(&mut first)?;
         ensure!(first[0] == b'{', "Invalid safetensors header");
-    } else {
+    } else if !file.filename.ends_with(".onnx") {
         let mut magic = [0; 4];
         input.read_exact(&mut magic)?;
         ensure!(&magic == b"GGUF", "Downloaded file is not GGUF");
@@ -549,7 +571,10 @@ fn install_with(
         matches!(
             model.engine.as_str(),
             "llama-server" | "llama-server-prism" | "nemo-speech" | "audio-cpp" | "sd-server"
-        ) && model.format == "gguf",
+        ) && model.format == "gguf"
+            || (model.engine == "onnx"
+                && model.format == "onnx"
+                && model.capabilities == ["Portrait Matting"]),
         "Unsupported model entry"
     );
     validate_bundle(model, version)?;
@@ -565,7 +590,41 @@ fn install_with(
     let models = root.join("models");
     regular_dir(&models)?;
     let mut model_dir = models.clone();
-    if let Some(path) = model
+    let catalog_before = read_regular(catalog_path)?;
+    let legacy_dir = models.join(&model.id);
+    let legacy_dest = legacy_dir.join(&file.filename);
+    let registered = catalog_before
+        .as_ref()
+        .and_then(|raw| serde_json::from_slice::<crate::schema::CatalogFile>(raw).ok())
+        .and_then(|catalog| {
+            catalog
+                .models
+                .into_iter()
+                .find(|entry| entry.id == model.id)
+        });
+    let registered_legacy = registered
+        .as_ref()
+        .and_then(|entry| entry.local.as_ref())
+        .is_some_and(|local| Path::new(&local.path) == legacy_dest);
+    let interrupted_legacy = registered.is_none()
+        && (legacy_dest.exists()
+            || version.files.iter().any(|file| {
+                let target = bundle_path(&legacy_dir, file);
+                target.parent().is_some_and(|parent| {
+                    parent
+                        .join(format!(
+                            ".rune-model-download-{}-{}.part",
+                            file.id,
+                            file.sha256.to_ascii_lowercase()
+                        ))
+                        .exists()
+                })
+            }));
+    let use_legacy = registered_legacy || interrupted_legacy;
+    if use_legacy {
+        model_dir = legacy_dir;
+        regular_dir(&model_dir)?;
+    } else if let Some(path) = model
         .catalog
         .as_ref()
         .and_then(|catalog| catalog.local.path.as_deref())
@@ -576,8 +635,20 @@ fn install_with(
             regular_dir(&model_dir)?;
         }
     } else {
-        model_dir.push(&model.id);
-        regular_dir(&model_dir)?;
+        let dir = model
+            .install_dir
+            .as_deref()
+            .context("Registry model has no creator and family install directory")?;
+        let path = format!("{dir}/{}", file.filename);
+        let parts = validate_install_path(&path, &file.filename)?;
+        ensure!(
+            parts.len() == 3,
+            "Model install directory must contain creator and family"
+        );
+        for part in &parts[..2] {
+            model_dir.push(part);
+            regular_dir(&model_dir)?;
+        }
     }
     let encoder_dir = model_dir.join("text_encoder");
     if version.files.iter().any(encoder_directory_file) {
@@ -602,7 +673,6 @@ fn install_with(
     })?;
     let dest = model_dir.join(&file.filename);
     let server_before = read_regular(server_path)?;
-    let catalog_before = read_regular(catalog_path)?;
     if server_before.is_none() && catalog_before.is_none() {
         ensure!(
             !root.join("config/models.json").exists(),
@@ -705,6 +775,10 @@ fn install_with(
             [a] if a == "Decision" => defaults.tasks == ["text-to-decision"],
             [a] if a == "Transcription" => defaults.tasks == ["audio-to-text"],
             [a] if a == "Speech Generation" => defaults.tasks == ["text-to-audio"],
+            [a] if a == "Portrait Matting" => {
+                defaults.tasks == ["image-to-matting"]
+                    && defaults.capabilities == ["Portrait Matting"]
+            }
             [a, b, c, d] if a == "Chat" && b == "Vision" && c == "Audio" && d == "Video" => {
                 projector.is_some()
                     && defaults.tasks
@@ -1014,6 +1088,39 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_legacy_download_resumes_in_place() {
+        let (root, model, bytes) = fixture();
+        let file = &model.versions[&model.latest].files[0];
+        let legacy = root.join("models").join(&model.id);
+        std::fs::create_dir_all(&legacy).unwrap();
+        let partial = legacy.join(format!(
+            ".rune-model-download-{}-{}.part",
+            file.id, file.sha256
+        ));
+        std::fs::write(&partial, &bytes[..5]).unwrap();
+        let installed = install_with(
+            &model,
+            &root,
+            &root.join("config/server.json"),
+            &root.join("config/catalog.json"),
+            |_, path| {
+                assert_eq!(std::fs::read(path)?, &bytes[..5]);
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(path)?
+                    .write_all(&bytes[5..])?;
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            installed,
+            std::fs::canonicalize(&legacy).unwrap().join(&file.filename)
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn concurrent_model_install_is_refused_without_touching_partial() {
         let (root, model, bytes) = fixture();
         let server = root.join("config/server.json");
@@ -1149,9 +1256,159 @@ mod tests {
     }
 
     #[test]
+    fn omni_installs_in_liquidai_family_directory_with_projector() {
+        let mut model = parse(include_bytes!("../registry/models.json"))
+            .unwrap()
+            .into_iter()
+            .find(|model| model.id == "lfm3-omni-2b")
+            .unwrap();
+        for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
+            let bytes = fixture_bytes(file);
+            file.sha256 = hex::encode(Sha256::digest(bytes));
+            file.size_bytes = bytes.len() as u64;
+        }
+        let (root, _, _) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let path = install_with(&model, &root, &server, &catalog, |file, dest| {
+            std::fs::write(dest, fixture_bytes(file))?;
+            Ok(())
+        })
+        .unwrap();
+        let dir = std::fs::canonicalize(&root)
+            .unwrap()
+            .join("models/liquidai/lfm3-omni-2b");
+        assert_eq!(path, dir.join("LFM3-Omni-2B-Q8_0.gguf"));
+        assert!(dir.join("mmproj-LFM3-Omni-2B-F16.gguf").exists());
+        let old_dir = root.join("models").join(&model.id);
+        std::fs::create_dir_all(&old_dir).unwrap();
+        let file = &model.versions[&model.latest].files[0];
+        std::fs::write(
+            old_dir.join(format!(
+                ".rune-model-download-{}-{}.part",
+                file.id, file.sha256
+            )),
+            b"stale",
+        )
+        .unwrap();
+        assert_eq!(
+            install_with(&model, &root, &server, &catalog, |_, _| panic!(
+                "installed model should be reused"
+            ))
+            .unwrap(),
+            path
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reviewed_matting_entry_installs_and_registers_its_capability() {
+        let mut model = parse(include_bytes!("../registry/models.json"))
+            .unwrap()
+            .into_iter()
+            .find(|model| model.id == "birefnet-matting")
+            .unwrap();
+        let onnx_fixture = b"fixture ONNX bytes";
+        let file = &mut model.versions.get_mut(&model.latest).unwrap().files[0];
+        file.sha256 = hex::encode(Sha256::digest(onnx_fixture));
+        file.size_bytes = onnx_fixture.len() as u64;
+        let (root, _, _) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let installed = install_with(&model, &root, &server, &catalog, |_, dest| {
+            std::fs::write(dest, onnx_fixture)?;
+            Ok(())
+        })
+        .unwrap();
+        assert!(
+            installed
+                .ends_with("models/zhengpeng7/birefnet-matting/BiRefNet-matting-epoch_100.onnx")
+        );
+        let config = crate::config::ModelRegistry::from_files(&server, &catalog).unwrap();
+        let entry = config
+            .models
+            .iter()
+            .find(|entry| entry.id == model.id)
+            .unwrap();
+        assert_eq!(entry.tasks, ["image-to-matting"]);
+        assert!(
+            entry
+                .resolved_capabilities()
+                .contains(&"Portrait Matting".to_string())
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn registered_legacy_directory_remains_in_use() {
+        let (root, model) = vision_fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        install_with(&model, &root, &server, &catalog, |file, dest| {
+            let bytes = if file.id == "model" {
+                b"GGUF model".as_slice()
+            } else {
+                b"GGUF projector".as_slice()
+            };
+            std::fs::write(dest, bytes)?;
+            Ok(())
+        })
+        .unwrap();
+        let new_dir = root
+            .join("models")
+            .join(model.install_dir.as_deref().unwrap());
+        let legacy = root.join("models").join(&model.id);
+        std::fs::rename(&new_dir, &legacy).unwrap();
+        let legacy = std::fs::canonicalize(legacy).unwrap();
+        let mut data: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&catalog).unwrap()).unwrap();
+        let entry = data["models"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["id"] == model.id)
+            .unwrap();
+        for (role, key) in [("model", "local"), ("projector", "mmproj_path")] {
+            let file = model.versions[&model.latest]
+                .files
+                .iter()
+                .find(|file| file.id == role)
+                .unwrap();
+            let path = legacy.join(&file.filename).to_str().unwrap().to_owned();
+            if key == "local" {
+                entry["local"]["path"] = path.into();
+            } else {
+                entry["extra"][key] = path.into();
+            }
+        }
+        std::fs::write(&catalog, serde_json::to_vec(&data).unwrap()).unwrap();
+        let installed = install_with(&model, &root, &server, &catalog, |_, _| {
+            panic!("legacy files should be reused")
+        })
+        .unwrap();
+        assert!(installed.starts_with(&legacy));
+        assert!(!new_dir.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn registry_install_path_rejects_escape_and_conflicting_filenames() {
         let value: serde_json::Value =
             serde_json::from_slice(include_bytes!("../registry/models.json")).unwrap();
+        for dir in [
+            "../escape",
+            "creator/../escape",
+            "creator",
+            "creator/family/extra",
+            "/creator/family",
+        ] {
+            let mut candidate = value.clone();
+            candidate["local_models"][0]["install_dir"] = dir.into();
+            assert!(
+                parse(&serde_json::to_vec(&candidate).unwrap()).is_err(),
+                "{dir}"
+            );
+        }
         for invalid in [
             "../LFM3-1.7B-Q4_K_M.gguf",
             "/LFM3-1.7B-Q4_K_M.gguf",
@@ -1258,14 +1515,17 @@ mod tests {
             panic!("verified pair must be reused")
         })
         .unwrap();
-        let projector = root.join("models").join(&model.id).join(
-            &model.versions[&model.latest]
-                .files
-                .iter()
-                .find(|file| file.id == "projector")
-                .unwrap()
-                .filename,
-        );
+        let projector = root
+            .join("models")
+            .join(model.install_dir.as_deref().unwrap())
+            .join(
+                &model.versions[&model.latest]
+                    .files
+                    .iter()
+                    .find(|file| file.id == "projector")
+                    .unwrap()
+                    .filename,
+            );
         std::fs::write(&projector, b"conflicting data").unwrap();
         let saved_catalog = std::fs::read(&catalog).unwrap();
         assert!(
@@ -1301,7 +1561,7 @@ mod tests {
             assert!(
                 !root
                     .join("models")
-                    .join(&model.id)
+                    .join(model.install_dir.as_deref().unwrap())
                     .join(&file.filename)
                     .exists()
             );
@@ -1353,7 +1613,7 @@ mod tests {
             assert!(
                 !root
                     .join("models")
-                    .join(&model.id)
+                    .join(model.install_dir.as_deref().unwrap())
                     .join(&file.filename)
                     .exists()
             );
@@ -1381,7 +1641,7 @@ mod tests {
                 std::fs::canonicalize(&root)
                     .unwrap()
                     .join("models")
-                    .join(&model.id)
+                    .join(model.install_dir.as_deref().unwrap())
                     .join(&file.filename)
                     .to_str()
                     .unwrap()
@@ -1396,7 +1656,10 @@ mod tests {
             .iter()
             .find(|file| file.id == "vae")
             .unwrap();
-        let path = root.join("models").join(&model.id).join(&vae.filename);
+        let path = root
+            .join("models")
+            .join(model.install_dir.as_deref().unwrap())
+            .join(&vae.filename);
         std::fs::write(&path, b"conflicting file").unwrap();
         let original = std::fs::read(&catalog).unwrap();
         assert!(
@@ -1540,7 +1803,15 @@ mod tests {
         );
         assert!(!catalog.exists());
         for file in &model.versions[&model.latest].files {
-            assert!(!bundle_path(&root.join("models").join(&model.id), file).exists());
+            assert!(
+                !bundle_path(
+                    &root
+                        .join("models")
+                        .join(model.install_dir.as_deref().unwrap()),
+                    file
+                )
+                .exists()
+            );
         }
         install_with(&model, &root, &server, &catalog, |file, path| {
             std::fs::write(path, fixture_bytes(file))?;
@@ -1703,7 +1974,7 @@ mod tests {
         assert!(!server.exists() && !catalog.exists());
         let target = root
             .join("models")
-            .join(&model.id)
+            .join(model.install_dir.as_deref().unwrap())
             .join(&model.versions[&model.latest].files[0].filename);
         std::fs::write(&target, b"keep this").unwrap();
         assert!(

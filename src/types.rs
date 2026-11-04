@@ -595,6 +595,8 @@ pub struct ModelInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_image_edge_px: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub portrait_matting: Option<PortraitMattingInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_image_references: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_masked_image_references: Option<usize>,
@@ -658,6 +660,7 @@ impl ModelInfo {
             tool_calls: None,
             thinking_control: None,
             max_image_edge_px: None,
+            portrait_matting: None,
             max_image_references: None,
             max_masked_image_references: None,
             context_tokens: None,
@@ -767,6 +770,20 @@ impl ModelInfo {
         self.aliases = aliases;
         self
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortraitMattingInfo {
+    pub status: String,
+    pub input_width: u32,
+    pub input_height: u32,
+    pub max_source_edge: u32,
+    pub max_source_pixels: u64,
+    pub device: String,
+    pub platforms: Vec<String>,
+    pub min_available_ram_bytes: u64,
+    pub min_free_vram_bytes: u64,
+    pub output: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1475,6 +1492,21 @@ pub struct DetectObjectsRequest {
 pub struct ImageSegmentationRequest {
     pub model: String,
     pub image: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortraitMattingResponse {
+    pub model: String,
+    pub execution_provider: String,
+    pub width: u32,
+    pub height: u32,
+    pub exif_orientation_applied: bool,
+    pub inference_width: u32,
+    pub inference_height: u32,
+    pub max_source_edge: u32,
+    pub max_source_pixels: u64,
+    /// Grayscale PNG data URI: 0 is transparent and 255 is opaque.
+    pub alpha_matte: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

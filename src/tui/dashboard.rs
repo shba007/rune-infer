@@ -3128,7 +3128,9 @@ mod tests {
         let bytes = b"GGUF fixture dashboard";
         file.sha256 = hex::encode(Sha256::digest(bytes));
         file.size_bytes = bytes.len() as u64;
-        let directory = root.join("models").join(&model.id);
+        let directory = root
+            .join("models")
+            .join(model.install_dir.as_deref().unwrap());
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(directory.join(&file.filename), bytes).unwrap();
         app.model_registry_models = vec![model.clone()];

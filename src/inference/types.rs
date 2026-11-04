@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum InferenceTaskRequest {
+    PortraitMatting {
+        model: Option<String>,
+        image_bytes: Vec<u8>,
+    },
     ImageSegmentation {
         model: Option<String>,
         image_bytes: Vec<u8>,
@@ -193,6 +197,7 @@ pub enum InferenceTaskRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum InferenceTaskResponse {
+    PortraitMatting(crate::types::PortraitMattingResponse),
     Segmentation(crate::types::ImageSegmentationResponse),
     Depth(crate::types::ImageDepthResponse),
     ToolCall {

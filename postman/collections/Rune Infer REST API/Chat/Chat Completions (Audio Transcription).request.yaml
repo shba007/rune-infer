@@ -1,5 +1,5 @@
 $kind: http-request
-name: Chat Completions (LFM3 Audio ASR)
+name: Chat Completions (Audio Transcription)
 description: |-
   Transcribe English speech with the exact local model ID lfm3-omni-2b.
   This uses the chat API; the standalone audio transcription and speech-output

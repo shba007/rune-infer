@@ -26,6 +26,28 @@ const POSE_MODEL_SHA: &str = "f9fa35b3181b72328414649cad937bf752c15ad0bf5131d91d
 const SEG_MODEL_SHA: &str = "c815dd6377a436a3c453c435a8da6b88c5136135148304750aa9d8c2300eb25d";
 const OBB_MODEL_SHA: &str = "565c3c7f1611027b509d6df2b81a8abbb2d3f3b004f84c17607545394458bfec";
 const SEM_MODEL_SHA: &str = "3740e49cd9150fac97a6b6fdb610b66e6d522b816c37c3fbb1a7642fe51efef0";
+const MATTING_MODEL_SHA: &str = "6065d27c615ea27308f5b88598dd8db116eb07436c7a323ca40d13b2866c309e";
+pub(crate) const MATTING_SIDE: u32 = 1024;
+pub(crate) const MATTING_MAX_EDGE: u32 = 8192;
+pub(crate) const MATTING_MAX_PIXELS: u64 = 40_000_000;
+const MATTING_GPU_ARENA_BYTES: usize = 10 * 1024 * 1024 * 1024;
+
+#[cfg(windows)]
+fn available_system_memory() -> Option<u64> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    // SAFETY: MEMORYSTATUSEX is zero initialized and its length field is set as required.
+    let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+    status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    if unsafe { GlobalMemoryStatusEx(&mut status) } == 0 {
+        None
+    } else {
+        Some(status.ullAvailPhys)
+    }
+}
+#[cfg(not(windows))]
+fn available_system_memory() -> Option<u64> {
+    None
+}
 const RUNTIME_SHA: &str = "51c002601f22ecb7089931565b8908cd7c155d7bf8f8cffe21336835da861d07";
 const PROVIDER_SHARED_SHA: &str =
     "05c836c1f75858ffa034823cf227335014f02a7297fd273dbd5d487f5262c87b";
@@ -61,6 +83,7 @@ enum Profile {
     Segmentation,
     Oriented,
     Semantic,
+    Matting,
 }
 impl Profile {
     fn from_model(path: &Path) -> Result<Self, Box<dyn Error>> {
@@ -70,6 +93,7 @@ impl Profile {
             SEG_MODEL_SHA => Ok(Self::Segmentation),
             OBB_MODEL_SHA => Ok(Self::Oriented),
             SEM_MODEL_SHA => Ok(Self::Semantic),
+            MATTING_MODEL_SHA => Ok(Self::Matting),
             _ => Err(
                 "ONNX model is not a reviewed YOLO26x detection, pose, segmentation or oriented-box export"
                     .into(),
@@ -77,7 +101,9 @@ impl Profile {
         }
     }
     fn height(self) -> u32 {
-        if matches!(self, Self::Pose | Self::Segmentation | Self::Oriented) {
+        if self == Self::Matting {
+            MATTING_SIDE
+        } else if matches!(self, Self::Pose | Self::Segmentation | Self::Oriented) {
             POSE_HEIGHT
         } else {
             SIDE
@@ -90,8 +116,16 @@ impl Profile {
             Self::Segmentation => 116 * POSE_ANCHORS + 32 * 120 * 160,
             Self::Oriented => 20 * POSE_ANCHORS,
             Self::Semantic => (SIDE * SIDE) as usize,
+            Self::Matting => (MATTING_SIDE * MATTING_SIDE) as usize,
         }
     }
+}
+
+fn declares_matting(model: &ModelConfig) -> bool {
+    model
+        .capabilities
+        .as_ref()
+        .is_some_and(|v| v.iter().any(|c| c.eq_ignore_ascii_case("Portrait Matting")))
 }
 
 pub(crate) fn declares_pose(model: &ModelConfig) -> bool {
@@ -227,6 +261,11 @@ impl OnnxEngine {
         }
         let model_path = std::fs::canonicalize(&model.model_path)?;
         let profile = Profile::from_model(&model_path)?;
+        if (profile == Profile::Matting) != declares_matting(model) {
+            return Err(
+                "ONNX model profile conflicts with its declared portrait matting capability".into(),
+            );
+        }
         if (profile == Profile::Pose) != declares_pose(model) {
             return Err("ONNX model profile conflicts with its declared pose capability".into());
         }
@@ -372,7 +411,11 @@ impl OnnxEngine {
             .and_then(|()| {
                 active
                     .response
-                    .recv_timeout(Duration::from_secs(120))
+                    .recv_timeout(Duration::from_secs(if self.profile == Profile::Matting {
+                        600
+                    } else {
+                        120
+                    }))
                     .map_err(|e| e.to_string())
             })
             .and_then(|v| v);
@@ -410,10 +453,35 @@ impl OnnxEngine {
     }
 
     fn infer_preprocessed(&self, input: &[u8]) -> Result<(Vec<f32>, &'static str), Box<dyn Error>> {
+        if self.profile == Profile::Matting
+            && (self.cpu_only || self.cuda_bundle_invalid || self.cuda_directory.is_none())
+        {
+            return Err("Portrait matting requires the verified ONNX CUDA runtime; CPU execution is not enabled for this model".into());
+        }
         let mut worker = self
             .worker
             .lock()
             .map_err(|_| "ONNX inference lock poisoned")?;
+        if self.profile == Profile::Matting {
+            let available = available_system_memory()
+                .ok_or("Cannot determine available system memory for portrait matting")?;
+            if available < 12 * 1024 * 1024 * 1024 {
+                return Err(
+                    "Portrait matting requires at least 12 GiB of available system memory".into(),
+                );
+            }
+            if worker.is_none() {
+                let total = super::super::budget::detect_total_gpu_vram()
+                    .ok_or("Cannot determine GPU memory for portrait matting")?;
+                let used = super::super::budget::detect_used_gpu_vram()
+                    .ok_or("Cannot determine free GPU memory for portrait matting")?;
+                if total.saturating_sub(used) < 12 * 1024 * 1024 * 1024 {
+                    return Err(
+                        "Portrait matting requires at least 12 GiB of free GPU memory".into(),
+                    );
+                }
+            }
+        }
         if self.cpu_only
             || self.cuda_bundle_invalid
             || self.cuda_directory.is_none()
@@ -427,6 +495,9 @@ impl OnnxEngine {
             match self.run_worker(&mut worker, input, false) {
                 Ok(values) => Ok((values, "cuda_registered_cpu_fallback")),
                 Err(error) => {
+                    if self.profile == Profile::Matting {
+                        return Err(format!("Portrait matting failed on CUDA; automatic CPU retry is disabled: {error}").into());
+                    }
                     tracing::warn!("ONNX CUDA failed; retrying on CPU: {error}");
                     Ok((self.run_worker(&mut worker, input, true)?, "cpu"))
                 }
@@ -458,6 +529,82 @@ fn verify_runtime(runtime: &Path, cuda: bool) -> Result<(), Box<dyn Error>> {
 }
 
 type Preprocessed = (Vec<u8>, u32, u32, f32, u32, u32);
+type PreprocessedMatting = (Vec<u8>, u32, u32, bool);
+
+pub(crate) fn validate_matting_image(bytes: &[u8]) -> Result<(u32, u32), Box<dyn Error>> {
+    let reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
+    let (w, h) = reader.into_dimensions()?;
+    if w == 0
+        || h == 0
+        || w > MATTING_MAX_EDGE
+        || h > MATTING_MAX_EDGE
+        || u64::from(w) * u64::from(h) > MATTING_MAX_PIXELS
+    {
+        return Err("Portrait image exceeds the 8192-pixel edge or 40-million-pixel limit".into());
+    }
+    Ok((w, h))
+}
+
+fn preprocess_matting(bytes: &[u8]) -> Result<PreprocessedMatting, Box<dyn Error>> {
+    use image::ImageDecoder;
+    validate_matting_image(bytes)?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MATTING_MAX_EDGE);
+    limits.max_image_height = Some(MATTING_MAX_EDGE);
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    let mut decoder = reader.into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let applied = orientation != image::metadata::Orientation::NoTransforms;
+    let mut image = image::DynamicImage::from_decoder(decoder)?;
+    image.apply_orientation(orientation);
+    let image = image.to_rgb8();
+    let (w, h) = image.dimensions();
+    let resized = image::imageops::resize(
+        &image,
+        MATTING_SIDE,
+        MATTING_SIDE,
+        image::imageops::FilterType::Triangle,
+    );
+    let mean = [0.485f32, 0.456, 0.406];
+    let std = [0.229f32, 0.224, 0.225];
+    let mut input = Vec::with_capacity((MATTING_SIDE * MATTING_SIDE * 3 * 4) as usize);
+    for c in 0..3 {
+        for pixel in resized.pixels() {
+            input.extend_from_slice(&((pixel[c] as f32 / 255.0 - mean[c]) / std[c]).to_le_bytes());
+        }
+    }
+    Ok((input, w, h, applied))
+}
+
+fn decode_matte(values: &[f32], w: u32, h: u32) -> Result<String, Box<dyn Error>> {
+    use base64::Engine as _;
+    if values.len() != (MATTING_SIDE * MATTING_SIDE) as usize
+        || !values.iter().all(|v| v.is_finite())
+    {
+        return Err("Matting model returned an invalid alpha tensor".into());
+    }
+    let mut matte = image::GrayImage::new(MATTING_SIDE, MATTING_SIDE);
+    let mut max_alpha = 0u8;
+    let mut min_alpha = u8::MAX;
+    for (pixel, value) in matte.pixels_mut().zip(values) {
+        let alpha = (255.0 / (1.0 + (-value).exp())).round() as u8;
+        pixel.0[0] = alpha;
+        max_alpha = max_alpha.max(alpha);
+        min_alpha = min_alpha.min(alpha);
+    }
+    if max_alpha == min_alpha {
+        return Err("Matting model produced a uniform alpha matte without a usable subject".into());
+    }
+    let matte = image::imageops::resize(&matte, w, h, image::imageops::FilterType::CatmullRom);
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageLuma8(matte).write_to(&mut png, image::ImageFormat::Png)?;
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png.into_inner())
+    ))
+}
 
 pub(crate) fn validate_task(task: &InferenceTaskRequest, pose: bool) -> Result<(), &'static str> {
     let InferenceTaskRequest::DetectObjects {
@@ -1126,6 +1273,34 @@ impl InferenceEngine for OnnxEngine {
         task: &InferenceTaskRequest,
         _on_token: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<InferenceOutput, Box<dyn Error>> {
+        if let InferenceTaskRequest::PortraitMatting { image_bytes, .. } = task {
+            if self.profile != Profile::Matting {
+                return Err("ONNX model does not support portrait matting".into());
+            }
+            let (input, w, h, orientation_applied) = preprocess_matting(image_bytes)?;
+            let (values, provider) = self.infer_preprocessed(&input)?;
+            let alpha_matte = decode_matte(&values, w, h)?;
+            return Ok(InferenceOutput {
+                response: InferenceTaskResponse::PortraitMatting(
+                    crate::types::PortraitMattingResponse {
+                        model: self.id.clone(),
+                        execution_provider: provider.into(),
+                        width: w,
+                        height: h,
+                        exif_orientation_applied: orientation_applied,
+                        inference_width: MATTING_SIDE,
+                        inference_height: MATTING_SIDE,
+                        max_source_edge: MATTING_MAX_EDGE,
+                        max_source_pixels: MATTING_MAX_PIXELS,
+                        alpha_matte,
+                    },
+                ),
+                usage: Usage::new(0, 0),
+            });
+        }
+        if self.profile == Profile::Matting {
+            return Err("Portrait matting model requires a matting request".into());
+        }
         if let InferenceTaskRequest::ImageSegmentation { image_bytes, .. } = task {
             if self.profile != Profile::Semantic {
                 return Err("ONNX model does not support semantic segmentation".into());
@@ -1198,6 +1373,7 @@ impl InferenceEngine for OnnxEngine {
             Profile::Semantic => {
                 return Err("Semantic segmentation model requires a segmentation request".into());
             }
+            Profile::Matting => unreachable!(),
         };
         let created = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -1230,15 +1406,28 @@ pub fn worker(runtime: &Path, model: &Path, cpu: bool) -> anyhow::Result<()> {
     let environment = ort::init_from(runtime)?.build()?;
     let mut builder = Session::builder(&environment)?;
     if !cpu {
+        let mut cuda = ort::ep::CUDA::default();
+        if profile == Profile::Matting {
+            cuda = cuda
+                .with_memory_limit(MATTING_GPU_ARENA_BYTES)
+                .with_arena_extend_strategy(ort::ep::ArenaExtendStrategy::SameAsRequested)
+                .with_conv_algorithm_search(ort::ep::cuda::ConvAlgorithmSearch::Heuristic)
+                .with_conv_max_workspace(false);
+        }
         builder = builder
-            .with_execution_providers([ort::ep::CUDA::default().build().error_on_failure()])
+            .with_execution_providers([cuda.build().error_on_failure()])
             .map_err(|e| anyhow::anyhow!("{e}"))?;
     }
     let mut session = builder.commit_from_file(model)?;
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
     loop {
-        let mut bytes = vec![0; (SIDE * profile.height() * 3 * 4) as usize];
+        let width = if profile == Profile::Matting {
+            MATTING_SIDE
+        } else {
+            SIDE
+        };
+        let mut bytes = vec![0; (width * profile.height() * 3 * 4) as usize];
         if stdin.read(&mut bytes[..1])? == 0 {
             break;
         }
@@ -1250,7 +1439,7 @@ pub fn worker(runtime: &Path, model: &Path, cpu: bool) -> anyhow::Result<()> {
             .map(|x| f32::from_le_bytes([x[0], x[1], x[2], x[3]]))
             .collect();
         let outputs = session.run(ort::inputs![Tensor::from_array((
-            [1usize, 3, profile.height() as usize, SIDE as usize],
+            [1usize, 3, profile.height() as usize, width as usize],
             input
         ))?])?;
         if profile == Profile::Semantic {
@@ -1267,21 +1456,29 @@ pub fn worker(runtime: &Path, model: &Path, cpu: bool) -> anyhow::Result<()> {
             stdout.flush()?;
             continue;
         }
-        let (shape, values) = outputs[0].try_extract_tensor::<f32>()?;
+        let index = if profile == Profile::Matting {
+            outputs.len() - 1
+        } else {
+            0
+        };
+        let (shape, values) = outputs[index].try_extract_tensor::<f32>()?;
         let expected: &[i64] = match profile {
             Profile::Detection => &[1, 300, 6],
             Profile::Pose => &[1, POSE_CHANNELS as i64, POSE_ANCHORS as i64],
             Profile::Segmentation => &[1, 116, 6300],
             Profile::Oriented => &[1, 20, 6300],
             Profile::Semantic => unreachable!(),
+            Profile::Matting => &[1, 1, 1024, 1024],
         };
         anyhow::ensure!(
             shape.as_ref() == expected,
             "unsupported YOLO output shape: {shape:?}"
         );
+        let mut encoded = Vec::with_capacity(values.len() * 4);
         for value in values {
-            stdout.write_all(&value.to_le_bytes())?;
+            encoded.extend_from_slice(&value.to_le_bytes());
         }
+        stdout.write_all(&encoded)?;
         if profile == Profile::Segmentation {
             let (shape, values) = outputs[1].try_extract_tensor::<f32>()?;
             anyhow::ensure!(
@@ -1304,6 +1501,59 @@ pub fn worker(_runtime: &Path, _model: &Path, _cpu: bool) -> anyhow::Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn portrait_matte_is_soft_and_matches_source_dimensions() {
+        use base64::Engine as _;
+        let mut values = vec![-4.0; (MATTING_SIDE * MATTING_SIDE) as usize];
+        for y in 0..MATTING_SIDE as usize {
+            for x in MATTING_SIDE as usize / 2..MATTING_SIDE as usize {
+                values[y * MATTING_SIDE as usize + x] = 1.0;
+            }
+        }
+        let uri = decode_matte(&values, 400, 300).unwrap();
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(uri.strip_prefix("data:image/png;base64,").unwrap())
+            .unwrap();
+        let image = image::load_from_memory(&png).unwrap().to_luma8();
+        assert_eq!(image.dimensions(), (400, 300));
+        assert!((1..128).contains(&image.get_pixel(10, 150)[0]));
+        assert!((128..255).contains(&image.get_pixel(390, 150)[0]));
+        values[0] = f32::NAN;
+        assert!(decode_matte(&values, 400, 300).is_err());
+    }
+
+    #[test]
+    fn portrait_preprocessing_keeps_original_dimensions_and_rejects_invalid_images() {
+        let image = image::RgbImage::from_pixel(120, 80, image::Rgb([128, 128, 128]));
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let (tensor, width, height, applied) = preprocess_matting(png.get_ref()).unwrap();
+        assert_eq!((width, height), (120, 80));
+        assert!(!applied);
+        assert_eq!(tensor.len(), (MATTING_SIDE * MATTING_SIDE * 3 * 4) as usize);
+        assert!(preprocess_matting(b"invalid image").is_err());
+    }
+
+    #[test]
+    fn portrait_preprocessing_applies_exif_orientation() {
+        let image = image::RgbImage::from_pixel(120, 80, image::Rgb([128, 128, 128]));
+        let mut jpeg = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image)
+            .write_to(&mut jpeg, image::ImageFormat::Jpeg)
+            .unwrap();
+        let payload: &[u8] =
+            b"Exif\0\0MM\0\x2a\0\0\0\x08\0\x01\x01\x12\0\x03\0\0\0\x01\0\x06\0\0\0\0\0\0";
+        let mut oriented = vec![0xff, 0xd8, 0xff, 0xe1];
+        oriented.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
+        oriented.extend_from_slice(payload);
+        oriented.extend_from_slice(&jpeg.get_ref()[2..]);
+        let (_, width, height, applied) = preprocess_matting(&oriented).unwrap();
+        assert_eq!((width, height), (80, 120));
+        assert!(applied);
+    }
 
     #[test]
     fn semantic_map_removes_padding_and_preserves_class_ids() {

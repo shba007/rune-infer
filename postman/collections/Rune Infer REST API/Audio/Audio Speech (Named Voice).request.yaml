@@ -1,5 +1,5 @@
 $kind: http-request
-name: Audio Speech (LFM3)
+name: Audio Speech (Named Voice)
 description: |-
   Generate WAV speech with the exact model ID lfm3-omni-2b.
   Start with a short English sentence. Choose female or male; normal speed

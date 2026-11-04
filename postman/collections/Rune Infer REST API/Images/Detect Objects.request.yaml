@@ -1,5 +1,5 @@
 $kind: http-request
-name: Detect Objects with YOLO26
+name: Detect Objects
 description: |-
   Detect objects using a configured YOLO26 ONNX model. Set the model ID to the
   ID in the Infer catalog and replace the image URL or use a base64 data URI.

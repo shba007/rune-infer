@@ -1,5 +1,5 @@
 $kind: http-request
-name: Chat Completions (LFM3 Video)
+name: Chat Completions (Video and Audio)
 description: |-
   Ask about both the picture and soundtrack of a short video with the exact
   local model ID lfm3-omni-2b. FFmpeg must be available to Infer.

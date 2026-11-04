@@ -1,5 +1,5 @@
 $kind: http-request
-name: Estimate Human Pose with YOLO26
+name: Estimate Human Pose
 description: |-
   Detect people and estimate their 17 COCO keypoints using the configured
   YOLO26x pose model. Each pose point's x and y coordinates are normalized

@@ -106,6 +106,7 @@ impl Requirements {
         let mut requirements = match task {
             ImageDepth { .. } => Self::new(&["image"], "depth", "depth"),
             ImageSegmentation { .. } => Self::new(&["image"], "segmentation", "segmentation"),
+            PortraitMatting { .. } => Self::new(&["image"], "matting", "matting"),
             ToolCall {
                 prompt,
                 images,
@@ -305,7 +306,7 @@ impl Requirements {
                 }
                 Encoder => false,
                 Onnx => {
-                    matches!(self.operation, "detection" | "segmentation")
+                    matches!(self.operation, "detection" | "segmentation" | "matting")
                         && self.inputs == ["image"]
                 }
                 Litert => self.operation == "depth",

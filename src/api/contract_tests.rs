@@ -760,6 +760,71 @@ fn image_reference_counts_are_model_engine_and_mask_specific() {
 }
 
 #[tokio::test]
+async fn portrait_matting_rejects_bad_image_and_unsupported_model() {
+    let (router, _) = app(None);
+    for (image, code) in [
+        (
+            "data:image/png;base64,bm90YW5pbWFnZQ==".to_string(),
+            "invalid_image",
+        ),
+        (
+            format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD
+                    .encode(include_bytes!("../../tests/fixtures/studio/off-center.png"))
+            ),
+            "model_task_unsupported",
+        ),
+    ] {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/images/portrait-mattings")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({"model":"fixture","image":image}).to_string(),
+            ))
+            .unwrap();
+        let response = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
+        assert_eq!(body["error"]["code"], code);
+    }
+}
+
+#[test]
+fn portrait_matting_discovery_is_specific_to_reviewed_model_and_engine() {
+    let model = serde_json::json!({
+        "id": "birefnet-matting", "name": "BiRefNet Matting",
+        "engine": ["onnx"], "tasks": ["image-to-matting"],
+        "capabilities": ["Portrait Matting"], "local": {"path":"Cargo.toml"}
+    });
+    let entry: crate::schema::ModelEntry = serde_json::from_value(model).unwrap();
+    let config = crate::config::ModelConfig::try_from(entry).unwrap();
+    let info = super::model_config_to_info(
+        &config,
+        &[],
+        &[],
+        None,
+        Some(crate::config::EngineKind::Onnx),
+    );
+    let matting = info.portrait_matting.unwrap();
+    assert_eq!((matting.input_width, matting.input_height), (1024, 1024));
+    assert_eq!(matting.max_source_pixels, 40_000_000);
+    assert!(
+        super::model_config_to_info(
+            &config,
+            &[],
+            &[],
+            None,
+            Some(crate::config::EngineKind::LlamaServer)
+        )
+        .portrait_matting
+        .is_none()
+    );
+}
+
+#[tokio::test]
 async fn models_filter_matches_explicit_metadata_and_rejects_invalid_bounds() {
     let (router, state) = app(None);
     let mut model = state.config().models[0].clone();

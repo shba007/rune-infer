@@ -1,5 +1,5 @@
 $kind: http-request
-name: Audio Transcription (LFM3)
+name: Audio Transcription (Multipart)
 description: |-
   Transcribe a local audio file with the exact model ID lfm3-omni-2b.
   Choose your audio file in Body. Leaving language disabled requests a

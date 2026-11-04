@@ -119,6 +119,10 @@ pub fn create_router(state: AppState) -> Router {
             "/images/segmentations",
             post(images::image_segmentation_handler),
         )
+        .route(
+            "/images/portrait-mattings",
+            post(images::portrait_matting_handler),
+        )
         .route("/images/embeddings", post(images::image_embeddings_handler))
         .route("/images/recognize", post(images::recognize_objects_handler))
         .route("/images/upscales", post(images::image_upscale_handler))
@@ -399,7 +403,7 @@ fn model_config_to_info(
     };
 
     let (max_w, max_h) = m.max_dimensions();
-    let max_edge = if max_w > 0 || max_h > 0 {
+    let mut max_edge = if max_w > 0 || max_h > 0 {
         max_w.max(max_h)
     } else {
         4096
@@ -414,6 +418,27 @@ fn model_config_to_info(
 
     let mut info = ModelInfo::new(&m.id);
     info.tasks = m.tasks.clone();
+    if m.id == "birefnet-matting"
+        && engine == Some(crate::config::EngineKind::Onnx)
+        && m.tasks.iter().any(|task| task == "image-to-matting")
+        && m.capabilities
+            .as_ref()
+            .is_some_and(|caps| caps.iter().any(|cap| cap == "Portrait Matting"))
+    {
+        max_edge = crate::inference::engines::onnx::MATTING_MAX_EDGE;
+        info.portrait_matting = Some(crate::types::PortraitMattingInfo {
+            status: "verified".into(),
+            input_width: crate::inference::engines::onnx::MATTING_SIDE,
+            input_height: crate::inference::engines::onnx::MATTING_SIDE,
+            max_source_edge: crate::inference::engines::onnx::MATTING_MAX_EDGE,
+            max_source_pixels: crate::inference::engines::onnx::MATTING_MAX_PIXELS,
+            device: "cuda".into(),
+            platforms: vec!["windows-x86_64".into()],
+            min_available_ram_bytes: 12 * 1024 * 1024 * 1024,
+            min_free_vram_bytes: 12 * 1024 * 1024 * 1024,
+            output: "grayscale-alpha-png".into(),
+        });
+    }
     info.audio_operations = m.resolved_audio_operations(engine);
     if m.tasks.iter().any(|task| task == "text-image-to-image")
         && engine == Some(crate::config::EngineKind::SdServer)

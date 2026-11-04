@@ -1,5 +1,5 @@
 $kind: http-request
-name: Audio Speech (Fish S2 Pro)
+name: Audio Speech (Default Voice)
 description: |-
   Generate WAV speech using the exact local fish-audio-s2-pro model ID.
   This request uses the native default voice at normal speed. Named voices,

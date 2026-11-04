@@ -181,6 +181,7 @@
   "local_models": [
     {
       "id": "smollm2-135m-instruct-q4-k-m",
+      "install_dir": "huggingface/smollm2-135m",
       "name": "SmolLM2 135M Instruct Q4_K_M",
       "description": "Small text chat model in GGUF format",
       "license": "Apache-2.0",
@@ -206,6 +207,7 @@
     },
     {
       "id": "smolvlm-256m-instruct-q8-0",
+      "install_dir": "huggingface/smolvlm-256m",
       "name": "SmolVLM 256M Instruct Q8_0",
       "description": "Small vision and text chat model in GGUF format",
       "license": "Apache-2.0",
@@ -238,6 +240,7 @@
     },
     {
       "id": "qwen3.5-0.8b",
+      "install_dir": "qwen/qwen3.5-0.8b",
       "name": "Qwen3.5 0.8B",
       "description": "Qwen3.5 0.8B reasoning model",
       "license": "Apache-2.0",
@@ -270,6 +273,7 @@
     },
     {
       "id": "huihui-qwen3.8-27b-abliterated",
+      "install_dir": "huihui-ai/qwen3.8-27b-abliterated",
       "name": "Huihui Qwen3.8 27B Abliterated",
       "description": "Huihui-AI abliterated uncensored Qwen3.8 27B instruction and reasoning model",
       "license": "Apache-2.0",
@@ -338,6 +342,7 @@
     },
     {
       "id": "qwen3.8-27b",
+      "install_dir": "qwen/qwen3.8-27b",
       "name": "Qwen3.8 27B",
       "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
       "license": "Apache-2.0",
@@ -408,6 +413,7 @@
     },
     {
       "id": "ornith-1.5-9b",
+      "install_dir": "ornith-ai/ornith-1.5-9b",
       "name": "Ornith 1.5 9B",
       "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
       "license": "MIT",
@@ -474,6 +480,7 @@
     },
     {
       "id": "oxcoder-9b",
+      "install_dir": "orionllm/oxcoder-9b",
       "name": "OxCoder 9B",
       "description": "Code generation and instruction following",
       "license": "Apache-2.0",
@@ -533,6 +540,7 @@
     },
     {
       "id": "lfm3-omni-2b",
+      "install_dir": "liquidai/lfm3-omni-2b",
       "name": "LiquidAI LFM3 Omni 2B",
       "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
       "license": "LFM Open License v1.0 (commercial restrictions)",
@@ -635,6 +643,7 @@
     },
     {
       "id": "liquid-d1-3b",
+      "install_dir": "liquidai/d1-3b",
       "name": "Liquid AI d1-3B",
       "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",
       "license": "LFM Open License v1.0 (commercial restrictions)",
@@ -691,6 +700,7 @@
     },
     {
       "id": "parakeet-tdt-0.6b-v3",
+      "install_dir": "nvidia/parakeet-tdt-0.6b-v3",
       "name": "NVIDIA Parakeet TDT 0.6B v3",
       "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
       "license": "CC-BY-4.0",
@@ -755,6 +765,7 @@
     },
     {
       "id": "voxcpm2-audiocpp",
+      "install_dir": "openbmb/voxcpm2",
       "name": "VoxCPM2 (audio.cpp)",
       "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
       "license": "Apache-2.0",
@@ -800,6 +811,7 @@
     },
     {
       "id": "qwen-image-2.1",
+      "install_dir": "qwen/qwen-image-2.1",
       "name": "Qwen-Image-2.1 7B",
       "description": "Qwen-Image-2.1 7B with native 2K rendering, RGBA transparency, live-verified instruction edits and image variations, up to ten unmasked references and two references with alpha masks",
       "license": "Qwen Research License",
@@ -830,6 +842,7 @@
     },
     {
       "id": "qwen-image-2.1-uncensored",
+      "install_dir": "qwen/qwen-image-2.1-uncensored",
       "name": "Qwen-Image-2.1 7B Uncensored",
       "description": "Qwen-Image-2.1 7B Uncensored variant with bypassed alignment filtering",
       "license": "Qwen Research License",
@@ -859,6 +872,7 @@
     },
     {
       "id": "moss-image-sft",
+      "install_dir": "openmoss/moss-image-sft",
       "name": "MOSS Image SFT",
       "description": "OpenMOSS MOSS-Image-SFT text-to-image model using the local Qwen3.5 encoder, tokenizer and VAE",
       "license": "Apache-2.0",
@@ -889,6 +903,7 @@
     },
     {
       "id": "z-image-turbo-q8-0",
+      "install_dir": "tongyi-mai/z-image-turbo",
       "name": "Z-Image Turbo 6B Q8_0",
       "description": "Z-Image Turbo text-to-image generation using the local Qwen3 text encoder and VAE.",
       "license": "Apache-2.0",
@@ -921,6 +936,7 @@
     },
     {
       "id": "qwen-image-edit-2511",
+      "install_dir": "qwen/qwen-image-edit-2511",
       "name": "Qwen Image Edit 2511",
       "description": "Qwen-Image-Edit 2511 with live-verified instruction edits, one or two reference images and alpha masks preserving protected pixels",
       "license": "Apache-2.0",
@@ -954,6 +970,7 @@
     },
     {
       "id": "z-image",
+      "install_dir": "tongyi-mai/z-image",
       "name": "Z-Image 6B",
       "description": "Z-Image 6B Single-Stream Diffusion Transformer for high-fidelity photorealistic text-to-image generation",
       "license": "Apache-2.0",
@@ -988,6 +1005,7 @@
     },
     {
       "id": "qwen-image-2512",
+      "install_dir": "qwen/qwen-image-2512",
       "name": "Qwen Image 2512 7B",
       "description": "Qwen-Image 2512 7B DiT foundation model for high-fidelity text-to-image synthesis and image editing",
       "license": "Apache-2.0",
@@ -1017,6 +1035,7 @@
     },
     {
       "id": "gemma-4-12b-it",
+      "install_dir": "google/gemma-4-12b-it",
       "name": "Gemma 4 12B IT",
       "description": "Google DeepMind Gemma 4 12B Instruction-Tuned omni multimodal foundation model for text, image, audio, and video",
       "license": "Apache-2.0",
@@ -1045,6 +1064,7 @@
     },
     {
       "id": "qwen3.5-4b-q4",
+      "install_dir": "qwen/qwen3.5-4b",
       "name": "Qwen3.5 4B Q4",
       "description": "Local image and text model; basic tool calls tested. Screen coordinate accuracy is not established.",
       "license": "Apache-2.0",
@@ -1075,6 +1095,7 @@
     },
     {
       "id": "minicpm-o-4-5-q8-0",
+      "install_dir": "openbmb/minicpm-o-4-5",
       "name": "MiniCPM-o 4.5 Q8_0",
       "description": "OpenBMB MiniCPM-o 4.5 (an omni model). Wired up for text and image input via the vision encoder in extra.mmproj_path; llama-server loads a single mmproj, so audio input and speech output are not available",
       "license": "Apache-2.0",
@@ -1103,6 +1124,7 @@
     },
     {
       "id": "lfm3-1.7b-q4-k-m",
+      "install_dir": "liquidai/lfm3-1.7b",
       "name": "LiquidAI LFM3 1.7B Q4_K_M",
       "description": "Liquid AI's 1.7B text model in the official Q4_K_M GGUF format.",
       "license": "LFM Open License v1.0",
@@ -1137,6 +1159,7 @@
     },
     {
       "id": "fish-audio-s2-pro",
+      "install_dir": "fish-audio/s2-pro",
       "name": "Fish Audio S2 Pro",
       "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
       "license": "Fish Audio Research License",
@@ -1192,6 +1215,7 @@
     },
     {
       "id": "ternary-bonsai-2-27b-pq2-0",
+      "install_dir": "prism-ml/ternary-bonsai-2-27b",
       "name": "Ternary Bonsai-2 27B",
       "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
       "license": "Apache-2.0",
@@ -1251,6 +1275,53 @@
               "url": "https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf/resolve/8b7157531df3859ce2a415c60754e9152554e25d/Ternary-Bonsai-2-27B-mmproj-BF16.gguf",
               "sha256": "e287342d92332fa3577ed1d42e921dac9370c08da58ba9337fa450f6cc76cfd7",
               "size_bytes": 931145856
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "birefnet-matting",
+      "install_dir": "zhengpeng7/birefnet-matting",
+      "name": "BiRefNet Matting",
+      "description": "Portrait and high-resolution matting with a soft alpha matte; inference uses a fixed 1024 by 1024 input.",
+      "license": "MIT",
+      "source_url": "https://huggingface.co/ZhengPeng7/BiRefNet-matting",
+      "engine": "onnx",
+      "format": "onnx",
+      "capabilities": [
+        "Portrait Matting"
+      ],
+      "catalog": {
+        "tasks": [
+          "image-to-matting"
+        ],
+        "capabilities": [
+          "Portrait Matting"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "onnx"
+        ]
+      },
+      "latest": "v1",
+      "versions": {
+        "v1": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "BiRefNet-matting-epoch_100.onnx",
+              "url": "https://github.com/ZhengPeng7/BiRefNet/releases/download/v1/BiRefNet-matting-epoch_100.onnx",
+              "sha256": "6065d27c615ea27308f5b88598dd8db116eb07436c7a323ca40d13b2866c309e",
+              "size_bytes": 972667742
             }
           ]
         }

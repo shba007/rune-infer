@@ -12,6 +12,92 @@ use crate::types::{
     RecognizeObjectsRequest,
 };
 
+/// Accept only an image data URI so the exact source raster reaches the model.
+#[axum::debug_handler]
+pub async fn portrait_matting_handler(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<crate::types::ImageSegmentationRequest>,
+) -> Response {
+    use base64::Engine as _;
+    let invalid = |code, message: String| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new(message)
+                    .with_type("invalid_request_error")
+                    .with_code(code),
+            }),
+        )
+            .into_response()
+    };
+    let model_id = request.model.trim().to_owned();
+    if model_id.is_empty() {
+        return invalid(
+            "missing_model",
+            "A portrait matting model is required".into(),
+        );
+    }
+    let image = request.image.trim();
+    let Some((header, data)) = image.split_once(',') else {
+        return invalid(
+            "invalid_image",
+            "Provide an image as a base64 data URI".into(),
+        );
+    };
+    if !matches!(
+        header.to_ascii_lowercase().as_str(),
+        "data:image/png;base64" | "data:image/jpeg;base64" | "data:image/webp;base64"
+    ) || data.len() > 32 * 1024 * 1024 * 4 / 3 + 4
+    {
+        return invalid(
+            "invalid_image",
+            "Expected a PNG, JPEG or WebP data URI up to 32 MiB".into(),
+        );
+    }
+    let bytes = match base64::engine::general_purpose::STANDARD.decode(data) {
+        Ok(bytes) if bytes.len() <= 32 * 1024 * 1024 => bytes,
+        _ => return invalid("invalid_image", "Invalid or oversized base64 image".into()),
+    };
+    if let Err(error) = crate::inference::engines::onnx::validate_matting_image(&bytes) {
+        return invalid(
+            "invalid_image",
+            format!("Cannot process portrait image: {error}"),
+        );
+    }
+    let task = InferenceTaskRequest::PortraitMatting {
+        model: Some(model_id.clone()),
+        image_bytes: bytes,
+    };
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
+            InferenceTaskResponse::PortraitMatting(result) => Json(result).into_response(),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: ApiError::new("Model did not produce an alpha matte")
+                        .with_type("server_error")
+                        .with_code("invalid_matte"),
+                }),
+            )
+                .into_response(),
+        },
+    )
+}
+
 #[axum::debug_handler]
 pub async fn image_segmentation_handler(
     State(state): State<Arc<AppState>>,

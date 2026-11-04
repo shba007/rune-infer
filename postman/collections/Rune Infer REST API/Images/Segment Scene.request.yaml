@@ -1,5 +1,5 @@
 $kind: http-request
-name: Segment Scene with YOLO26
+name: Segment Scene
 description: |-
   Produces a semantic class map for the 150 ADE20K scene classes. class_map is
   a grayscale PNG data URI whose pixel values are class IDs; classes maps each

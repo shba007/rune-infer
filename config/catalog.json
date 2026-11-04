@@ -464,77 +464,6 @@
       }
     },
     {
-      "audio_operations": {
-        "speech_generation": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "llama-server",
-              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-            }
-          ]
-        },
-        "transcription": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "llama-server",
-              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-            }
-          ]
-        }
-      },
-      "capabilities": [],
-      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
-      "engine": [
-        "llama-server"
-      ],
-      "extra": {
-        "mmproj_path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/mmproj-LFM3-Omni-2B-F16.gguf"
-      },
-      "id": "lfm3-omni-2b",
-      "local": {
-        "args": "",
-        "bits_per_weight": 8.54,
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "params": 1728801600,
-        "path": "D:/Models/huggingface/hub/models--LiquidAI--LFM3-Omni-2B-GGUF/snapshots/3d29af2ad166f8299c2d820937e47dc0add20ffc/LFM3-Omni-2B-Q8_0.gguf"
-      },
-      "max_context_length": 128000,
-      "name": "LiquidAI LFM3 Omni 2B",
-      "sampling": {
-        "max_tokens": 256,
-        "temperature": 0.0,
-        "top_k": 1
-      },
-      "structured_output_support": {
-        "status": "supported",
-        "verified_with": [
-          {
-            "engine": "llama-server",
-            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-          }
-        ]
-      },
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-audio-to-text",
-        "text-video-to-text",
-        "text-to-audio"
-      ],
-      "tool_call_support": {
-        "status": "supported",
-        "verified_with": [
-          {
-            "engine": "llama-server",
-            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-          }
-        ]
-      }
-    },
-    {
       "capabilities": [
         "Classification",
         "Scoring"
@@ -1718,6 +1647,103 @@
       },
       "tasks": [
         "text-to-text"
+      ]
+    },
+    {
+      "audio_operations": {
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "llama-server",
+              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+            }
+          ]
+        },
+        "speech_translation": {
+          "status": "unverified"
+        },
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "llama-server",
+              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+            }
+          ]
+        }
+      },
+      "capabilities": [],
+      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
+      "engine": [
+        "llama-server"
+      ],
+      "extra": {
+        "mmproj_path": "D:\\Models\\rune\\liquidai\\lfm3-omni-2b\\mmproj-LFM3-Omni-2B-F16.gguf"
+      },
+      "id": "lfm3-omni-2b",
+      "local": {
+        "args": "",
+        "bits_per_weight": 8.54,
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "params": 1728801600,
+        "path": "D:\\Models\\rune\\liquidai\\lfm3-omni-2b\\LFM3-Omni-2B-Q8_0.gguf"
+      },
+      "max_context_length": 128000,
+      "name": "LiquidAI LFM3 Omni 2B",
+      "sampling": {
+        "max_tokens": 256,
+        "temperature": 0,
+        "top_k": 1
+      },
+      "structured_output_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
+      },
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-audio-to-text",
+        "text-video-to-text",
+        "text-to-audio"
+      ],
+      "tool_call_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
+      }
+    },
+    {
+      "capabilities": [
+        "Portrait Matting"
+      ],
+      "description": "Portrait and high-resolution matting with a soft alpha matte; inference uses a fixed 1024 by 1024 input.",
+      "engine": [
+        "onnx"
+      ],
+      "id": "birefnet-matting",
+      "local": {
+        "args": "",
+        "bits_per_weight": null,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "params": null,
+        "path": "D:\\Models\\rune\\zhengpeng7\\birefnet-matting\\BiRefNet-matting-epoch_100.onnx"
+      },
+      "max_context_length": null,
+      "name": "BiRefNet Matting",
+      "tasks": [
+        "image-to-matting"
       ]
     }
   ],
