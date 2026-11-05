@@ -118,20 +118,37 @@ pub fn configure_death_signal(_cmd: &mut Command) {
 }
 
 pub fn attach_to_supervisor(child: &Child) {
+    let _ = try_attach_to_supervisor(child);
+}
+
+fn try_attach_to_supervisor(child: &Child) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         if let Some(job) = get_job_object() {
             unsafe {
                 use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
                 let handle = child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
-                AssignProcessToJobObject(job, handle);
+                if AssignProcessToJobObject(job, handle) == 0 && crate::embedding::root().is_some()
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
             }
+        } else if crate::embedding::root().is_some() {
+            return Err(std::io::Error::other(
+                "Cannot create Infer engine job object",
+            ));
         }
     }
     register_pid(child.id());
+    Ok(())
 }
 
 pub fn register_pid(pid: u32) {
+    // Embedded Windows hosts use the job object and ProcessGuard. Never write
+    // the standalone CLI's CWD-relative registry from the host process.
+    if crate::embedding::root().is_some() {
+        return;
+    }
     let _lock = PID_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let _ = fs::create_dir_all("logs");
     if let Ok(mut file) = fs::OpenOptions::new()
@@ -144,6 +161,9 @@ pub fn register_pid(pid: u32) {
 }
 
 pub fn unregister_pid(pid: u32) {
+    if crate::embedding::root().is_some() {
+        return;
+    }
     let _lock = PID_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path = Path::new("logs/.active_pids");
     if !path.exists() {
@@ -164,6 +184,9 @@ pub fn unregister_pid(pid: u32) {
 }
 
 pub fn cleanup_orphaned_pids() {
+    if crate::embedding::root().is_some() {
+        return;
+    }
     let _lock = PID_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let path = Path::new("logs/.active_pids");
     if !path.exists() {
@@ -205,14 +228,25 @@ pub struct ProcessGuard {
 
 impl ProcessGuard {
     pub fn new(child: Child, label: impl Into<String>) -> Arc<Mutex<Self>> {
+        Self::try_new(child, label).expect("Cannot supervise engine process")
+    }
+
+    pub fn try_new(
+        mut child: Child,
+        label: impl Into<String>,
+    ) -> std::io::Result<Arc<Mutex<Self>>> {
         let label = label.into();
-        attach_to_supervisor(&child);
+        if let Err(error) = try_attach_to_supervisor(&child) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
         tracing::info!(
             "[Supervisor] Registered managed process '{}' (PID: {})",
             label,
             child.id()
         );
-        Arc::new(Mutex::new(Self { child, label }))
+        Ok(Arc::new(Mutex::new(Self { child, label })))
     }
 
     pub fn id(&self) -> u32 {

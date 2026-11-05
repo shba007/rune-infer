@@ -186,7 +186,7 @@ impl NemoSpeechEngine {
             });
         }
 
-        let guard = ProcessGuard::new(child, format!("nemo-speech-{}", model.id));
+        let guard = ProcessGuard::try_new(child, format!("nemo-speech-{}", model.id))?;
         Self::wait_for_server(port, &guard, &last_output_lines)?;
 
         let client = reqwest::blocking::Client::builder()

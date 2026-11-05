@@ -289,7 +289,8 @@ impl LiteRtEngine {
             .stderr
             .take()
             .ok_or("Missing worker diagnostic pipe")?;
-        let guard = super::super::process::ProcessGuard::new(child, format!("litert-{}", self.id));
+        let guard =
+            super::super::process::ProcessGuard::try_new(child, format!("litert-{}", self.id))?;
         let writer = std::thread::spawn(move || stdin.write_all(&input));
         let output = std::thread::spawn(move || {
             let mut bytes = Vec::new();

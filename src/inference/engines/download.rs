@@ -49,7 +49,6 @@ fn download_display_name(dest_path: &Path) -> String {
         })
 }
 
-#[cfg(any(feature = "tui", test))]
 pub(crate) fn with_cancellation<T>(
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     work: impl FnOnce() -> T,
@@ -88,9 +87,11 @@ pub(crate) fn engine_unavailable(name: &str) -> String {
 
 pub(crate) fn engine_bin() -> PathBuf {
     INSTALL_BIN.with(|root| {
-        root.borrow()
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("bin"))
+        root.borrow().clone().unwrap_or_else(|| {
+            crate::embedding::root()
+                .map(|root| root.join("bin"))
+                .unwrap_or_else(|| PathBuf::from("bin"))
+        })
     })
 }
 

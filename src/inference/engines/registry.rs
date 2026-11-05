@@ -58,7 +58,21 @@ pub(crate) struct File {
 pub(crate) fn llama_release(
     client: &reqwest::blocking::Client,
 ) -> Result<serde_json::Value, Box<dyn Error>> {
+    llama_release_for_host(client, crate::embedding::root().is_some())
+}
+
+fn llama_release_for_host(
+    client: &reqwest::blocking::Client,
+    embedded: bool,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    if embedded {
+        return bundled_llama_release();
+    }
     parse_llama(&fetch_document(client)?)
+}
+
+fn bundled_llama_release() -> Result<serde_json::Value, Box<dyn Error>> {
+    parse_llama(include_bytes!("../../../registry/engines.json"))
 }
 
 pub(crate) fn prism_release(
@@ -928,6 +942,18 @@ pub(crate) fn compare_llama_build(
 mod tests {
     use super::*;
     const SEED: &[u8] = include_bytes!("../../../registry/engines.json");
+    #[test]
+    fn embedded_llama_uses_the_reviewed_bundled_registry() {
+        let client = reqwest::blocking::Client::new();
+        let actual = llama_release_for_host(&client, true).unwrap();
+        let expected = parse_llama(SEED).unwrap();
+        assert_eq!(actual, expected);
+        assert!(
+            actual["assets"]
+                .as_array()
+                .is_some_and(|assets| !assets.is_empty())
+        );
+    }
     #[test]
     fn prism_registry_orders_only_matching_build_and_commit() {
         let release = parse_llama_engine(SEED, "llama-server-prism").unwrap();

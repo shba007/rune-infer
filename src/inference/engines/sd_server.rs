@@ -324,7 +324,7 @@ impl SdServerEngine {
         let stdout_pipe = child.stdout.take();
         let last_stderr_lines = Arc::new(Mutex::new(Vec::new()));
         let diagnostics = Arc::new(Mutex::new(SdDiagnostics::default()));
-        let guard = ProcessGuard::new(child, format!("sd-server-{}", model.id));
+        let guard = ProcessGuard::try_new(child, format!("sd-server-{}", model.id))?;
         if let Some(pipe) = stdout_pipe {
             let diagnostics = diagnostics.clone();
             std::thread::spawn(move || {

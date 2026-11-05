@@ -152,7 +152,7 @@ impl LlamaServerEngine {
             });
         }
 
-        let guard = ProcessGuard::new(child, format!("llama-server-{}", id));
+        let guard = ProcessGuard::try_new(child, format!("llama-server-{}", id))?;
         Self::wait_for_server(port, &guard, &last_stderr_lines)?;
 
         let client = reqwest::blocking::Client::builder()

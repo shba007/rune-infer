@@ -166,7 +166,7 @@ impl CrispAsrEngine {
             });
         }
 
-        let guard = ProcessGuard::new(child, format!("crispasr-{}", model.id));
+        let guard = ProcessGuard::try_new(child, format!("crispasr-{}", model.id))?;
         Self::wait_for_server(port, &guard, &last_stderr_lines)?;
 
         let client = reqwest::blocking::Client::builder()

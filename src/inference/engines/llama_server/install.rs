@@ -19,6 +19,9 @@ pub(super) fn resolve_binary(
 
     if let Ok(custom) = std::env::var("LLAMA_SERVER_PATH") {
         let p = PathBuf::from(custom);
+        if crate::embedding::root().is_some() && !p.is_absolute() {
+            return Err("LLAMA_SERVER_PATH must be absolute when Infer is embedded".into());
+        }
         if p.exists() {
             return Ok(p);
         }
@@ -45,7 +48,9 @@ pub(super) fn resolve_binary(
         return Ok(exe_path);
     }
 
-    if let Ok(path_var) = std::env::var("PATH") {
+    if crate::embedding::root().is_none()
+        && let Ok(path_var) = std::env::var("PATH")
+    {
         for dir in std::env::split_paths(&path_var) {
             let candidate = dir.join(exe_name);
             if candidate.exists() {

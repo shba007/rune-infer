@@ -88,6 +88,12 @@ pub fn fetch() -> Result<Vec<LocalModel>> {
     parse(&fetch_document()?)
 }
 
+/// The registry reviewed and shipped with this Infer build. Hosts can use this
+/// when model selection must match the exact Infer version they have bundled.
+pub fn bundled() -> Result<Vec<LocalModel>> {
+    parse(include_bytes!("../registry/models.json")).context("Invalid bundled model registry")
+}
+
 /// Load model metadata from an explicitly selected local registry file.
 pub fn load_from_path(path: &Path) -> Result<Vec<LocalModel>> {
     let file = std::fs::File::open(path)
@@ -466,6 +472,23 @@ pub fn install(model: &LocalModel, root: &Path, server: &Path, catalog: &Path) -
     })
 }
 
+/// Install through the same verified, resumable path used by the dashboard,
+/// while exposing progress and cancellation to an embedding host.
+pub fn install_observed(
+    model: &LocalModel,
+    root: &Path,
+    server: &Path,
+    catalog: &Path,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    progress: impl FnMut(crate::inference::engines::download::DownloadProgress) + 'static,
+) -> Result<PathBuf> {
+    crate::inference::engines::download::with_cancellation(cancel, || {
+        crate::inference::engines::download::with_progress(progress, || {
+            install(model, root, server, catalog)
+        })
+    })
+}
+
 fn regular_dir(path: &Path) -> Result<()> {
     std::fs::create_dir_all(path)?;
     let meta = std::fs::symlink_metadata(path)?;
@@ -687,7 +710,10 @@ fn install_with(
         Some(raw) => serde_json::from_slice(raw).context("Invalid server configuration")?,
         None => serde_json::to_value(crate::schema::ServerFile {
             schema_version: crate::schema::SCHEMA_VERSION,
-            server: crate::config::ServerConfig::default(),
+            server: crate::config::ServerConfig {
+                host: "127.0.0.1".into(),
+                ..crate::config::ServerConfig::default()
+            },
         })?,
     };
     let mut catalog_value: serde_json::Value = match &catalog_before {
@@ -1501,6 +1527,7 @@ mod tests {
         .unwrap();
         assert_eq!(std::fs::read(installed).unwrap(), b"GGUF model");
         let registry = crate::config::ModelRegistry::from_files(&server, &catalog).unwrap();
+        assert_eq!(registry.server.host, "127.0.0.1");
         let entry = registry
             .models
             .iter()
@@ -1956,6 +1983,19 @@ mod tests {
         })
         .unwrap();
         assert_eq!(again, path);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn observed_install_honors_cancellation_before_downloading() {
+        let (root, model, _) = fixture();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let error = install_observed(&model, &root, &server, &catalog, cancel, |_| {}).unwrap_err();
+        assert!(format!("{error:#}").to_lowercase().contains("cancel"));
+        assert!(!server.exists());
+        assert!(!catalog.exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 

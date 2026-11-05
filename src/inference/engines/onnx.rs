@@ -345,7 +345,8 @@ impl OnnxEngine {
         let mut stdin = child.stdin.take().ok_or("missing worker input")?;
         let stdout = child.stdout.take().ok_or("missing worker output")?;
         let stderr = child.stderr.take().ok_or("missing worker diagnostics")?;
-        let guard = super::super::process::ProcessGuard::new(child, format!("onnx-{}", self.id));
+        let guard =
+            super::super::process::ProcessGuard::try_new(child, format!("onnx-{}", self.id))?;
         let output_bytes = self.profile.output_len() * 4;
         let (request, requests) = mpsc::channel::<Vec<u8>>();
         let (responses, response) = mpsc::channel();

@@ -4,6 +4,7 @@ pub mod api;
 pub mod audio_operations;
 pub mod config;
 pub mod detect;
+pub mod embedding;
 pub mod home;
 pub mod inference;
 pub mod media;
