@@ -671,14 +671,12 @@ fn parse_litert(body: &[u8]) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
     Ok(files)
 }
 
-#[cfg(any(windows, test))]
 pub(crate) fn onnx_files(
     client: &reqwest::blocking::Client,
 ) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
     parse_onnx(&fetch_document(client)?)
 }
 
-#[cfg(any(windows, test))]
 fn parse_onnx(body: &[u8]) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
     if registry.schema_version != 1 {
