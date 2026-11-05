@@ -3,6 +3,26 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.18.0](https://github.com/shba007/rune-infer/compare/v0.17.0..v0.18.0) - 2026-11-05
+
+#### 🚀 Features
+- Add audio transcription and speech capabilities to LlamaServer and CrispAsr engines - ([85013c4](https://github.com/shba007/rune-infer/commit/85013c4cdfc600551a2d70ef30c7de0fd2caba6e)) - Shirsendu Bairagi
+- add audio operations support for speech transcription and translation - ([9984166](https://github.com/shba007/rune-infer/commit/9984166fb4d6d807cd16b63791291218ff8af4be)) - Shirsendu Bairagi
+- add support for tool calls and structured output in model configuration - ([11cdd5f](https://github.com/shba007/rune-infer/commit/11cdd5f86bf6756dea71aed1d660439ed5712435)) - Shirsendu Bairagi
+- enhance image reference handling in model configuration and API requests - ([52b67df](https://github.com/shba007/rune-infer/commit/52b67dfa095d333d8a16c0869ab2049545f634eb)) - Shirsendu Bairagi
+- add audio operations support for transcription in audio upload test - ([69ed6a8](https://github.com/shba007/rune-infer/commit/69ed6a8199ae8dc9fe36234f7c0b59652938b2fe)) - Shirsendu Bairagi
+- add ONNX runtime support with image segmentation capabilities - ([4f974d1](https://github.com/shba007/rune-infer/commit/4f974d1a44369e02626b5239924a2a5637e6d7e4)) - Shirsendu Bairagi
+- add model registry functionality to dashboard - ([1b7bdd6](https://github.com/shba007/rune-infer/commit/1b7bdd65c4db596c35492b1e5c581cf395be386e)) - Shirsendu Bairagi
+- add support for portrait matting in ONNX inference engine - ([853b937](https://github.com/shba007/rune-infer/commit/853b937fc7a04ed330fbecfec1cddb3e6fb44d1a)) - Shirsendu Bairagi
+- implement embedding host configuration and model installation for Windows - ([d83272e](https://github.com/shba007/rune-infer/commit/d83272e423ee68dc3cc0dccb57ed6e589622845f)) - Shirsendu Bairagi
+- add conditional compilation for MATTING_GPU_ARENA_BYTES on Windows - ([ca10669](https://github.com/shba007/rune-infer/commit/ca10669903404dfb64054eb56a8da65d86f37a6b)) - Shirsendu Bairagi
+
+#### 🚜 Refactoring
+- cloud registry handling and improve setup functions - ([64e175f](https://github.com/shba007/rune-infer/commit/64e175f462ff2fbea52aea4580ddfa38771c5e8f)) - Shirsendu Bairagi
+- remove unnecessary cfg attributes from ONNX file parsing functions - ([7790947](https://github.com/shba007/rune-infer/commit/7790947dbc0297d4a4ade356c5c459f4613a5cbc)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.17.0](https://github.com/shba007/rune-infer/compare/v0.16.0..v0.17.0) - 2026-10-31
 
 #### 🚀 Features
