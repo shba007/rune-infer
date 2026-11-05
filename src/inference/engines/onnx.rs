@@ -30,6 +30,7 @@ const MATTING_MODEL_SHA: &str = "6065d27c615ea27308f5b88598dd8db116eb07436c7a323
 pub(crate) const MATTING_SIDE: u32 = 1024;
 pub(crate) const MATTING_MAX_EDGE: u32 = 8192;
 pub(crate) const MATTING_MAX_PIXELS: u64 = 40_000_000;
+#[cfg(windows)]
 const MATTING_GPU_ARENA_BYTES: usize = 10 * 1024 * 1024 * 1024;
 
 #[cfg(windows)]
