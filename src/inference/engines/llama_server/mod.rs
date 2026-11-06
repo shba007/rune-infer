@@ -45,8 +45,23 @@ fn upstream_usage(value: &serde_json::Value) -> Option<Usage> {
 fn tool_diagnostic(result: &serde_json::Value) -> serde_json::Value {
     let choice = &result["choices"][0];
     let message = &choice["message"];
-    let content = message["content"].as_str().unwrap_or_default();
-    let finish = match choice["finish_reason"].as_str() {
+    tool_diagnostic_fields(
+        choice["finish_reason"].as_str(),
+        message["tool_calls"].as_array().map_or(0, Vec::len),
+        message["content"].as_str().unwrap_or_default(),
+        message["reasoning_content"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()),
+    )
+}
+
+fn tool_diagnostic_fields(
+    finish_reason: Option<&str>,
+    native_tool_calls: usize,
+    content: &str,
+    has_reasoning: bool,
+) -> serde_json::Value {
+    let finish = match finish_reason {
         Some("stop") => "stop",
         Some("tool_calls") => "tool_calls",
         Some("length") => "length",
@@ -54,14 +69,14 @@ fn tool_diagnostic(result: &serde_json::Value) -> serde_json::Value {
     };
     serde_json::json!({
         "finish_reason": finish,
-        "native_tool_calls": message["tool_calls"].as_array().map_or(0, Vec::len),
+        "native_tool_calls": native_tool_calls,
         "has_content": !content.is_empty(),
         "has_tool_call_marker": content.contains("<tool_call>"),
-        "has_reasoning": message["reasoning_content"].as_str().is_some_and(|s| !s.is_empty()),
+        "has_reasoning": has_reasoning,
     })
 }
 
-fn record_tool_diagnostic(result: &serde_json::Value) {
+fn record_tool_diagnostic(diagnostic: &serde_json::Value) {
     use std::io::Write;
 
     let Some(path) = std::env::var_os("RUNE_INFER_TOOL_DIAGNOSTICS") else {
@@ -75,7 +90,7 @@ fn record_tool_diagnostic(result: &serde_json::Value) {
         .append(true)
         .open(path)
     {
-        let _ = writeln!(file, "{}", tool_diagnostic(result));
+        let _ = writeln!(file, "{diagnostic}");
     }
 }
 
@@ -531,6 +546,8 @@ impl InferenceEngine for LlamaServerEngine {
                     let mut full_output = String::new();
                     let mut structured_content = String::new();
                     let mut in_reasoning = false;
+                    let mut has_reasoning = false;
+                    let mut finish_reason: Option<String> = None;
                     let mut tool_accumulators: Vec<ToolCallAccumulator> = Vec::new();
                     let mut stream_usage: Option<Usage> = None;
                     let reader = std::io::BufReader::new(resp);
@@ -545,13 +562,18 @@ impl InferenceEngine for LlamaServerEngine {
                                     stream_usage = Some(usage);
                                 }
 
-                                let delta = &v["choices"][0]["delta"];
+                                let choice = &v["choices"][0];
+                                if let Some(reason) = choice["finish_reason"].as_str() {
+                                    finish_reason = Some(reason.to_string());
+                                }
+                                let delta = &choice["delta"];
 
                                 // 1. Forward reasoning content if emitted by llama-server (e.g. Qwen thinking mode)
                                 if let Some(reasoning) =
                                     delta.get("reasoning_content").and_then(|r| r.as_str())
                                 {
                                     if !reasoning.is_empty() {
+                                        has_reasoning = true;
                                         if !in_reasoning {
                                             in_reasoning = true;
                                             full_output.push_str("<think>\n");
@@ -657,6 +679,15 @@ impl InferenceEngine for LlamaServerEngine {
                         })
                         .collect();
 
+                    if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
+                        record_tool_diagnostic(&tool_diagnostic_fields(
+                            finish_reason.as_deref(),
+                            valid_accumulated.len(),
+                            &structured_content,
+                            has_reasoning,
+                        ));
+                    }
+
                     // An absent usage chunk is unknown, not a fabricated one-token
                     // response. Zero counts are displayed as unavailable by the TUI.
                     let mut final_usage = stream_usage.unwrap_or_default();
@@ -711,7 +742,7 @@ impl InferenceEngine for LlamaServerEngine {
 
                 let result: serde_json::Value = resp.json()?;
                 if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
-                    record_tool_diagnostic(&result);
+                    record_tool_diagnostic(&tool_diagnostic(&result));
                 }
                 let choice = &result["choices"][0];
 
@@ -1451,7 +1482,7 @@ mod grounding_tests {
 
 #[cfg(test)]
 mod usage_tests {
-    use super::{tool_diagnostic, upstream_usage};
+    use super::{tool_diagnostic, tool_diagnostic_fields, upstream_usage};
     use serde_json::json;
 
     #[test]
@@ -1464,6 +1495,15 @@ mod usage_tests {
         let serialized = diagnostic.to_string();
         assert!(!serialized.contains("private"));
         assert!(!serialized.contains("secret"));
+    }
+
+    #[test]
+    fn streamed_tool_diagnostic_reports_metadata_without_content() {
+        let diagnostic = tool_diagnostic_fields(Some("tool_calls"), 1, "private text", true);
+        assert_eq!(diagnostic["finish_reason"], "tool_calls");
+        assert_eq!(diagnostic["native_tool_calls"], 1);
+        assert_eq!(diagnostic["has_content"], true);
+        assert!(!diagnostic.to_string().contains("private text"));
     }
 
     #[test]
@@ -1522,6 +1562,88 @@ mod structured_transport_tests {
     use super::*;
     use serde_json::json;
     use std::io::{Read, Write};
+
+    #[test]
+    fn streamed_tool_call_records_diagnostic() {
+        const CHILD: &str = "RUNE_TOOL_DIAGNOSTIC_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let path = std::env::temp_dir().join(format!(
+                "rune-tool-diagnostic-test-{}-{}.jsonl",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let status = Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "inference::engines::llama_server::structured_transport_tests::streamed_tool_call_records_diagnostic"])
+                .env(CHILD, "1")
+                .env("RUNE_INFER_TOOL_DIAGNOSTICS", &path)
+                .status()
+                .unwrap();
+            assert!(status.success());
+            let diagnostic: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            std::fs::remove_file(path).unwrap();
+            assert_eq!(diagnostic["finish_reason"], "stop");
+            assert_eq!(diagnostic["native_tool_calls"], 0);
+            assert_eq!(diagnostic["has_content"], true);
+            assert!(!diagnostic.to_string().contains("private"));
+            return;
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let mut reader = std::io::BufReader::new(socket.try_clone().unwrap());
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse().unwrap();
+                }
+            }
+            let mut bytes = vec![0; length];
+            reader.read_exact(&mut bytes).unwrap();
+            let body = format!(
+                "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+                json!({"choices":[{"delta":{"content":"private text"}}]}),
+                json!({"choices":[{"delta":{},"finish_reason":"stop"}]})
+            );
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+        let child = Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let engine = LlamaServerEngine {
+            id: "fixture".into(),
+            port,
+            client: crate::inference::process::SafeBlockingClient::new(
+                reqwest::blocking::Client::new(),
+            ),
+            _process: ProcessGuard::new(child, "tool-diagnostic-test"),
+        };
+        let task: InferenceTaskRequest = serde_json::from_value(json!({"type":"tool_call","prompt":"test","schema":[{"type":"function","function":{"name":"act","parameters":{"type":"object"}}}]})).unwrap();
+        let mut callback = |_: &str| true;
+        engine.execute(&task, Some(&mut callback)).unwrap();
+        server.join().unwrap();
+    }
 
     #[test]
     fn sends_full_schema_and_preserves_json_content_in_both_backend_modes() {
