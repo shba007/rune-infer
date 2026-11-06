@@ -29,6 +29,62 @@ pub(crate) fn root() -> Option<&'static Path> {
     ROOT.get().map(PathBuf::as_path)
 }
 
+pub struct LocalServer {
+    pub base_url: String,
+    pub api_key: String,
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<Result<(), String>>,
+}
+
+impl LocalServer {
+    pub async fn start(root: &Path, model: &str) -> Result<Self, String> {
+        let mut config = load_local_model(root, model)
+            .map_err(|error| format!("Cannot load the local Infer model: {error:#}"))?;
+        let api_key = crate::setup::generate_api_key();
+        config.server.api_key = Some(api_key.clone());
+        config.server.host = "127.0.0.1".into();
+        config.server.port = 0;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|error| format!("Cannot start local Infer: {error}"))?;
+        let address = listener.local_addr().map_err(|error| error.to_string())?;
+        initialize(root).map_err(str::to_owned)?;
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            crate::server::serve(config, listener, async {
+                let _ = stopped.await;
+            })
+            .await
+            .map_err(|error| format!("Local Infer stopped: {error:#}"))
+        });
+        Ok(Self {
+            base_url: format!("http://{address}"),
+            api_key,
+            stop: Some(stop),
+            task,
+        })
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.task.is_finished()
+    }
+
+    pub async fn shutdown(mut self) -> Result<(), String> {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+        match tokio::time::timeout(std::time::Duration::from_secs(10), &mut self.task).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => Err(format!("Local Infer stopped unexpectedly: {error}")),
+            Err(_) => {
+                self.task.abort();
+                let _ = self.task.await;
+                Err("Local Infer did not stop in time".into())
+            }
+        }
+    }
+}
+
 /// Prepare the upstream llama engine using the embedding host's home.
 pub fn install_llama_observed(
     root: &Path,
