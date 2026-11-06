@@ -42,6 +42,43 @@ fn upstream_usage(value: &serde_json::Value) -> Option<Usage> {
     Some(result)
 }
 
+fn tool_diagnostic(result: &serde_json::Value) -> serde_json::Value {
+    let choice = &result["choices"][0];
+    let message = &choice["message"];
+    let content = message["content"].as_str().unwrap_or_default();
+    let finish = match choice["finish_reason"].as_str() {
+        Some("stop") => "stop",
+        Some("tool_calls") => "tool_calls",
+        Some("length") => "length",
+        _ => "other",
+    };
+    serde_json::json!({
+        "finish_reason": finish,
+        "native_tool_calls": message["tool_calls"].as_array().map_or(0, Vec::len),
+        "has_content": !content.is_empty(),
+        "has_tool_call_marker": content.contains("<tool_call>"),
+        "has_reasoning": message["reasoning_content"].as_str().is_some_and(|s| !s.is_empty()),
+    })
+}
+
+fn record_tool_diagnostic(result: &serde_json::Value) {
+    use std::io::Write;
+
+    let Some(path) = std::env::var_os("RUNE_INFER_TOOL_DIAGNOSTICS") else {
+        return;
+    };
+    if !std::path::Path::new(&path).is_absolute() {
+        return;
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{}", tool_diagnostic(result));
+    }
+}
+
 pub struct LlamaServerEngine {
     id: String,
     port: u16,
@@ -673,6 +710,9 @@ impl InferenceEngine for LlamaServerEngine {
                 }
 
                 let result: serde_json::Value = resp.json()?;
+                if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
+                    record_tool_diagnostic(&result);
+                }
                 let choice = &result["choices"][0];
 
                 let reasoning = choice["message"]
@@ -1411,8 +1451,20 @@ mod grounding_tests {
 
 #[cfg(test)]
 mod usage_tests {
-    use super::upstream_usage;
+    use super::{tool_diagnostic, upstream_usage};
     use serde_json::json;
+
+    #[test]
+    fn tool_diagnostic_contains_metadata_without_response_text() {
+        let result = json!({"choices":[{"finish_reason":"stop","message":{"content":"private text <tool_call>","reasoning_content":"private reasoning","tool_calls":[{"function":{"name":"private tool","arguments":"secret"}}]}}]});
+        let diagnostic = tool_diagnostic(&result);
+        assert_eq!(diagnostic["native_tool_calls"], 1);
+        assert_eq!(diagnostic["has_tool_call_marker"], true);
+        assert_eq!(diagnostic["has_reasoning"], true);
+        let serialized = diagnostic.to_string();
+        assert!(!serialized.contains("private"));
+        assert!(!serialized.contains("secret"));
+    }
 
     #[test]
     fn final_usage_counts_tool_output_even_without_text() {
