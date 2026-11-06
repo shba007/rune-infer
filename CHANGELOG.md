@@ -3,6 +3,16 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.19.0](https://github.com/shba007/rune-infer/compare/v0.18.0..v0.19.0) - 2026-11-06
+
+#### 🚀 Features
+- add local server management and model candidate selection - ([72472c4](https://github.com/shba007/rune-infer/commit/72472c4fbaeac276c028479c99cf687188229811)) - Shirsendu Bairagi
+- enhance prompt preparation with validation schema support and update tests - ([745e863](https://github.com/shba007/rune-infer/commit/745e86380427a9d1bbf6399be7fe8f620724093e)) - Shirsendu Bairagi
+- add tool diagnostic functions for enhanced result analysis and logging - ([507c7a9](https://github.com/shba007/rune-infer/commit/507c7a94708898a0e72de2ce6e0ddd21ab03f1a0)) - Shirsendu Bairagi
+- enhance tool diagnostic functions to include detailed metadata and reasoning support - ([04337e0](https://github.com/shba007/rune-infer/commit/04337e029a0c2fb0737b67f968cae17f98e77ebe)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.18.0](https://github.com/shba007/rune-infer/compare/v0.17.0..v0.18.0) - 2026-11-05
 
 #### 🚀 Features
