@@ -1563,21 +1563,23 @@ impl InferenceEngine for StructuredEngine {
 
 #[tokio::test]
 async fn structured_chat_preserves_root_and_rejects_invalid_completions() {
-    for (content, expected) in [
-        (r#"{"answer":"ok","findings":[]}"#, StatusCode::OK),
+    for (content, expected, advertised) in [
+        (r#"{"answer":"ok","findings":[]}"#, StatusCode::OK, true),
+        (r#"{"answer":"ok","findings":[]}"#, StatusCode::OK, false),
         (
             r#"[{"answer":"ok","findings":[]}]"#,
             StatusCode::BAD_GATEWAY,
+            false,
         ),
-        (r#"{"findings":[]}"#, StatusCode::BAD_GATEWAY),
-        ("{", StatusCode::BAD_GATEWAY),
+        (r#"{"findings":[]}"#, StatusCode::BAD_GATEWAY, false),
+        ("{", StatusCode::BAD_GATEWAY, false),
     ] {
         let (router, state) = app(Some(Arc::new(StructuredEngine(content))));
-        state.config.write().unwrap().models[0].capabilities = Some(vec![
-            "Chat".into(),
-            "Vision".into(),
-            "Structured Output".into(),
-        ]);
+        state.config.write().unwrap().models[0].capabilities = Some(if advertised {
+            vec!["Chat".into(), "Vision".into(), "Structured Output".into()]
+        } else {
+            vec!["Chat".into(), "Vision".into()]
+        });
         let body = serde_json::json!({"model":"fixture","messages":[{"role":"user","content":"describe"}],
             "response_format":{"type":"json_schema","json_schema":{"name":"report","strict":true,
                 "schema":{"type":"object","additionalProperties":false,"required":["answer","findings"],
@@ -1603,6 +1605,40 @@ async fn structured_chat_preserves_root_and_rejects_invalid_completions() {
         } else {
             assert_eq!(value["error"]["code"], "structured_output_invalid");
         }
+    }
+}
+
+#[tokio::test]
+async fn unverified_structured_trial_does_not_override_explicit_unsupported_or_non_strict() {
+    for explicit_unsupported in [false, true] {
+        let (router, state) = app(Some(Arc::new(StructuredEngine(r#"{"answer":"ok"}"#))));
+        {
+            let mut config = state.config.write().unwrap();
+            let model = &mut config.models[0];
+            model.capabilities = Some(vec!["Chat".into()]);
+            if explicit_unsupported {
+                model.structured_output_support = Some(crate::audio_operations::OperationSupport {
+                    status: crate::audio_operations::SupportStatus::Unsupported,
+                    reason: Some("unsupported".into()),
+                    verified_with: vec![],
+                });
+            }
+        }
+        let body = serde_json::json!({"model":"fixture","messages":[{"role":"user","content":"test"}],
+            "response_format":{"type":"json_schema","json_schema":{"name":"report","strict":explicit_unsupported,
+                "schema":{"type":"object","additionalProperties":false,"properties":{"answer":{"type":"string"}}}}}});
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/chat/completions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
 

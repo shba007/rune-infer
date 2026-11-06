@@ -20,6 +20,14 @@ pub fn prepare_prompt(
     request: &ChatCompletionRequest,
     model_config: &ModelConfig,
 ) -> Result<PreparedPrompt, (StatusCode, Json<ErrorResponse>)> {
+    prepare_validated_prompt(request, model_config, false)
+}
+
+pub(super) fn prepare_validated_prompt(
+    request: &ChatCompletionRequest,
+    model_config: &ModelConfig,
+    validated_schema: bool,
+) -> Result<PreparedPrompt, (StatusCode, Json<ErrorResponse>)> {
     let mut has_video = false;
     let mut has_image = false;
     let mut has_audio = false;
@@ -108,7 +116,18 @@ pub fn prepare_prompt(
         }
     }
 
-    if is_structured_mode && !model_config.supports_structured_output() {
+    let try_unverified_schema = validated_schema
+        && model_config.is_local()
+        && model_config.structured_output_support.is_none()
+        && !request.stream
+        && request.response_format.as_ref().is_some_and(|format| {
+            format.r#type == "json_schema"
+                && format
+                    .json_schema
+                    .as_ref()
+                    .is_some_and(|schema| schema.strict == Some(true))
+        });
+    if is_structured_mode && !model_config.supports_structured_output() && !try_unverified_schema {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {

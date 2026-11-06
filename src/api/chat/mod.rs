@@ -312,8 +312,9 @@ pub async fn chat_completions_handler(
 
     let req_for_prep = request.clone();
     let cfg_for_prep = model_config.clone();
+    let validated_schema = structured_validator.is_some();
     let prepared = match tokio::task::spawn_blocking(move || {
-        prompt::prepare_prompt(&req_for_prep, &cfg_for_prep)
+        prompt::prepare_validated_prompt(&req_for_prep, &cfg_for_prep, validated_schema)
     })
     .await
     {
