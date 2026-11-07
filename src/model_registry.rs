@@ -500,7 +500,7 @@ fn regular_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_regular(path: &Path) -> Result<Option<Vec<u8>>> {
+pub(crate) fn read_regular(path: &Path) -> Result<Option<Vec<u8>>> {
     match std::fs::symlink_metadata(path) {
         Ok(meta) => {
             ensure!(
@@ -1030,7 +1030,7 @@ fn install_with(
     Ok(dest)
 }
 
-fn move_no_replace(source: &Path, target: &Path) -> Result<()> {
+pub(crate) fn move_no_replace(source: &Path, target: &Path) -> Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::OsStrExt;

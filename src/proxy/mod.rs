@@ -13,10 +13,18 @@ use crate::config::{ModelConfig, ModelRegistry};
 use crate::types::{ApiError, ChatCompletionRequest, ErrorResponse};
 use controller::RemoteModelController;
 
+type ControllerRegistry = HashMap<
+    String,
+    (
+        Option<crate::config::RateLimitConfig>,
+        Arc<RemoteModelController>,
+    ),
+>;
+
 #[derive(Clone)]
 pub struct ProxyService {
     client: reqwest::Client,
-    controllers: HashMap<String, Arc<RemoteModelController>>,
+    controllers: Arc<std::sync::RwLock<ControllerRegistry>>,
 }
 
 fn is_retryable_error(err: &ApiError) -> bool {
@@ -53,13 +61,13 @@ impl ProxyService {
                     model.id.clone(),
                     model.rate_limit.as_ref(),
                 ));
-                controllers.insert(model.id.clone(), controller);
+                controllers.insert(model.id.clone(), (model.rate_limit.clone(), controller));
             }
         }
 
         Self {
             client,
-            controllers,
+            controllers: Arc::new(std::sync::RwLock::new(controllers)),
         }
     }
 
@@ -68,7 +76,11 @@ impl ProxyService {
     }
 
     pub fn get_controller(&self, model_id: &str) -> Option<Arc<RemoteModelController>> {
-        self.controllers.get(model_id).cloned()
+        self.controllers
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(model_id)
+            .map(|(_, controller)| controller.clone())
     }
 
     /// Asynchronously executes a chat completion request through the cloud provider proxy.
@@ -80,7 +92,31 @@ impl ProxyService {
         request: &ChatCompletionRequest,
     ) -> Response {
         crate::telemetry::set_request_model(&config.id);
-        let controller = self.get_controller(&config.id);
+        let controller = {
+            let mut controllers = self.controllers.write().unwrap_or_else(|e| e.into_inner());
+            let (limits, controller) = controllers.entry(config.id.clone()).or_insert_with(|| {
+                (
+                    config.rate_limit.clone(),
+                    Arc::new(RemoteModelController::new(
+                        config.id.clone(),
+                        config.rate_limit.as_ref(),
+                    )),
+                )
+            });
+            if *limits != config.rate_limit {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(ErrorResponse {
+                        error: ApiError::new(
+                            "Restart Infer to apply updated remote model rate limits",
+                        )
+                        .with_code("restart_required"),
+                    }),
+                )
+                    .into_response();
+            }
+            Some(controller.clone())
+        };
 
         // Fill unset sampling parameters from the model's configured defaults.
         let layered = config.effective_sampling(&crate::config::SamplingConfig {
@@ -235,5 +271,31 @@ impl ProxyService {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod catalog_reload_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn changed_rate_limits_require_restart_before_requests() {
+        let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+            "id":"remote", "name":"Remote", "modality":"Text",
+            "remote":{"provider":"openai","upstream_model":"example","api_key":"key"}
+        }))
+        .unwrap();
+        let model: ModelConfig = entry.try_into().unwrap();
+        let mut registry = ModelRegistry::new();
+        registry.models.push(model.clone());
+        let proxy = ProxyService::new(&registry);
+        let mut changed = model;
+        changed.rate_limit = Some(crate::config::RateLimitConfig::default());
+        let request: ChatCompletionRequest =
+            serde_json::from_value(serde_json::json!({"model":"remote","messages":[]})).unwrap();
+        assert_eq!(
+            proxy.execute_chat(&changed, &request).await.status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 }

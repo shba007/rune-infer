@@ -49,11 +49,19 @@ impl LocalServer {
             .map_err(|error| format!("Cannot start local Infer: {error}"))?;
         let address = listener.local_addr().map_err(|error| error.to_string())?;
         initialize(root).map_err(str::to_owned)?;
+        let server_path = root.join("config/server.json");
+        let catalog_path = root.join("config/catalog.json");
         let (stop, stopped) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
-            crate::server::serve(config, listener, async {
-                let _ = stopped.await;
-            })
+            crate::server::serve_embedded_with_management(
+                config,
+                server_path,
+                catalog_path,
+                listener,
+                async {
+                    let _ = stopped.await;
+                },
+            )
             .await
             .map_err(|error| format!("Local Infer stopped: {error:#}"))
         });

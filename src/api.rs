@@ -6,6 +6,7 @@ pub mod embeddings;
 pub mod gate;
 pub mod images;
 mod local_execution;
+pub(crate) mod management;
 pub mod moderation;
 pub mod nlu;
 pub mod ocr;
@@ -69,6 +70,7 @@ pub struct AppState {
     pub proxy: Arc<ProxyService>,
     pub config: Arc<std::sync::RwLock<ModelRegistry>>,
     pub concurrency: Arc<RequestConcurrencyState>,
+    pub(crate) management: Option<Arc<management::CatalogStore>>,
 }
 
 impl AppState {
@@ -82,6 +84,7 @@ impl AppState {
             proxy,
             config: Arc::new(std::sync::RwLock::new(config)),
             concurrency: Arc::new(RequestConcurrencyState::default()),
+            management: None,
         }
     }
 
@@ -156,6 +159,12 @@ pub fn create_router(state: AppState) -> Router {
         // Text & NLU & OCR
         .route("/inference", post(inference_handler))
         .route("/models", get(models_handler))
+        .route(
+            "/management/catalog",
+            get(management::read)
+                .put(management::write)
+                .layer(DefaultBodyLimit::max(1_100_000)),
+        )
         .route("/capabilities", get(local_execution::capabilities))
         .route("/models/{model}", get(retrieve_model_handler))
         .route("/embeddings", post(embeddings::embeddings_handler))

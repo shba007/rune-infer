@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod audio_operations;
+pub mod catalog_management;
 pub mod config;
 pub mod detect;
 pub mod embedding;

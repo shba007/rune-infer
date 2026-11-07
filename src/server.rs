@@ -38,6 +38,34 @@ pub async fn serve(
     serve_with_paths(config, None, None, listener, shutdown).await
 }
 
+/// Serve an embedded snapshot with catalog management. Changes take effect on restart.
+pub async fn serve_embedded_with_management(
+    config: ModelRegistry,
+    server_path: PathBuf,
+    catalog_path: PathBuf,
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    let inference = Arc::new(InferenceAppState::new(&config));
+    let reaper = spawn_idle_reaper(inference.clone(), config.server.idle_unload_seconds);
+    let mut state = AppState::new(inference, Arc::new(ProxyService::new(&config)), config);
+    state.management = Some(Arc::new(crate::api::management::CatalogStore::new(
+        server_path,
+        catalog_path,
+    )));
+    let app = create_router(state)
+        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(tower::ServiceBuilder::new().layer(tower_http::cors::CorsLayer::permissive()));
+    let result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await
+        .context("HTTP server error");
+    if let Some(handle) = reaper {
+        handle.abort();
+    }
+    result
+}
+
 /// Serve the API with optional configuration paths to watch for live catalog hot-reloading.
 pub async fn serve_with_paths(
     config: ModelRegistry,
@@ -68,7 +96,13 @@ pub async fn serve_with_inference(
     inference: Arc<InferenceAppState>,
 ) -> Result<()> {
     let reaper = spawn_idle_reaper(inference.clone(), config.server.idle_unload_seconds);
-    let state = AppState::new(inference, Arc::new(ProxyService::new(&config)), config);
+    let mut state = AppState::new(inference, Arc::new(ProxyService::new(&config)), config);
+    if let (Some(server), Some(catalog)) = (&server_path, &catalog_path) {
+        state.management = Some(Arc::new(crate::api::management::CatalogStore::new(
+            server.clone(),
+            catalog.clone(),
+        )));
+    }
 
     let watcher = match (server_path, catalog_path) {
         (Some(srv), Some(cat)) => Some(spawn_config_watcher(state.clone(), srv, cat)),
@@ -163,4 +197,61 @@ fn spawn_idle_reaper(
             }
         }
     }))
+}
+
+#[cfg(test)]
+mod management_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn embedded_management_uses_ephemeral_server_credential() {
+        let root = std::env::temp_dir().join(format!(
+            "infer-embedded-management-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let server_path = root.join("server.json");
+        let catalog_path = root.join("catalog.json");
+        std::fs::write(&server_path, r#"{"schema_version":3,"server":{"host":"127.0.0.1","port":8080,"api_key":null,"max_loaded_models":1,"idle_unload_seconds":300}}"#).unwrap();
+        std::fs::write(&catalog_path, r#"{"schema_version":3,"models":[]}"#).unwrap();
+        let mut config = ModelRegistry::new();
+        config.server.api_key = Some("ephemeral-key".into());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(serve_embedded_with_management(
+            config,
+            server_path.clone(),
+            catalog_path.clone(),
+            listener,
+            async {
+                let _ = stopped.await;
+            },
+        ));
+        let url = format!("http://{address}/v1/management/catalog");
+        let client = reqwest::Client::new();
+        assert_eq!(
+            client.get(&url).send().await.unwrap().status(),
+            reqwest::StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            client
+                .get(&url)
+                .bearer_auth("ephemeral-key")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::OK
+        );
+        let _ = stop.send(());
+        task.await.unwrap().unwrap();
+        std::fs::remove_file(server_path).unwrap();
+        std::fs::remove_file(catalog_path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
 }

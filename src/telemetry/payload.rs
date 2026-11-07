@@ -140,6 +140,10 @@ impl Drop for Capture {
 }
 
 pub(crate) async fn middleware(request: Request, next: Next) -> Response {
+    // Catalog edits can contain secrets even when validation later rejects them.
+    if request.uri().path() == "/v1/management/catalog" {
+        return next.run(request).await;
+    }
     match LOG.get() {
         Some(log) => capture(log.clone(), request, next).await,
         None => next.run(request).await,
