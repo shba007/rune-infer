@@ -28,8 +28,9 @@ fn embedded_guard_owns_only_its_child_and_does_not_use_cwd_pid_registry() {
     std::fs::create_dir(root.join("models")).unwrap();
     std::fs::write(root.join("models/model.gguf"), b"fixture").unwrap();
     std::fs::write(root.join("models/projector.gguf"), b"fixture").unwrap();
+    std::fs::write(root.join(".env"), "TEST_AGENT_ROLE=fixture\n").unwrap();
     std::fs::write(root.join("config/server.json"), r#"{"schema_version":3,"server":{"host":"127.0.0.1","port":8080,"max_loaded_models":1,"idle_unload_seconds":300,"api_key":null}}"#).unwrap();
-    std::fs::write(root.join("config/catalog.json"), r#"{"schema_version":3,"models":[{"id":"fixture","name":"Fixture","modality":"VisionText","engine":{"supported":["llama-server"]},"local":{"path":"models/model.gguf"},"extra":{"mmproj_path":"models/projector.gguf"}},{"id":"cloud","name":"Cloud","modality":"Text","remote":{"provider":"openai","upstream_model":"fixture","api_key":"test-key"}}],"roles":{"agent":"fixture","voice":"cloud"}}"#).unwrap();
+    std::fs::write(root.join("config/catalog.json"), r#"{"schema_version":3,"models":[{"id":"fixture","name":"Fixture","modality":"VisionText","engine":{"supported":["llama-server"]},"local":{"path":"models/model.gguf"},"extra":{"mmproj_path":"models/projector.gguf"}},{"id":"cloud","name":"Cloud","modality":"Text","remote":{"provider":"openai","upstream_model":"fixture","api_key":"test-key"}}],"roles":{"agent":"{{TEST_AGENT_ROLE}}","voice":"cloud"}}"#).unwrap();
     let config = rune_infer::embedding::load_local_model(&root, "fixture").unwrap();
     assert_eq!(
         std::path::Path::new(&config.models[0].model_path),
@@ -98,6 +99,22 @@ fn embedded_guard_owns_only_its_child_and_does_not_use_cwd_pid_registry() {
             .await
             .unwrap();
         assert_eq!(selected["id"], "cloud");
+        std::fs::write(
+            root.join("config/catalog.json"),
+            r#"{"schema_version":3,"models":[],"roles":{}}"#,
+        )
+        .unwrap();
+        let roles: serde_json::Value = client
+            .get(format!("{}/v1/management/roles", embedded.base_url))
+            .bearer_auth(&embedded.api_key)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(roles["roles"]["agent"], "fixture");
+        assert_eq!(roles["roles"]["voice"], "cloud");
         embedded.shutdown().await.unwrap();
     });
 

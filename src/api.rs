@@ -165,6 +165,7 @@ pub fn create_router(state: AppState) -> Router {
                 .put(management::write)
                 .layer(DefaultBodyLimit::max(1_100_000)),
         )
+        .route("/management/roles", get(management::roles))
         .route("/capabilities", get(local_execution::capabilities))
         .route("/models/{model}", get(retrieve_model_handler))
         .route("/embeddings", post(embeddings::embeddings_handler))

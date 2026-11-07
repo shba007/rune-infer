@@ -29,6 +29,30 @@ pub(super) struct CatalogDocument {
 }
 type Reply<T> = Result<T, (StatusCode, &'static str)>;
 
+#[derive(Serialize)]
+pub(super) struct EffectiveRoles {
+    roles: std::collections::BTreeMap<String, String>,
+}
+
+pub(super) async fn roles(State(state): State<Arc<AppState>>) -> Reply<Json<EffectiveRoles>> {
+    store(&state)?;
+    let config = state.config();
+    let mut roles = std::collections::BTreeMap::new();
+    for model in &config.models {
+        for role in &model.roles {
+            roles
+                .entry(role.to_ascii_lowercase())
+                .or_insert_with(|| model.id.clone());
+        }
+    }
+    for (role, id) in &config.roles {
+        if config.models.iter().any(|model| model.id == *id) {
+            roles.insert(role.clone(), id.clone());
+        }
+    }
+    Ok(Json(EffectiveRoles { roles }))
+}
+
 fn store(state: &AppState) -> Reply<&CatalogStore> {
     let configured = state
         .config()
@@ -253,6 +277,65 @@ mod tests {
         assert!(!references_only(
             r#"{"models":[{"remote":{"api_key":"{{KEY}}suffix"}}]}"#
         ));
+    }
+
+    #[tokio::test]
+    async fn effective_roles_use_running_config_and_require_authentication() {
+        let mut config = crate::config::ModelRegistry::new();
+        config.server.api_key = Some("test-key".into());
+        for (id, roles) in [("first", vec!["voice"]), ("second", vec!["VOICE"])] {
+            let entry: crate::schema::ModelEntry = serde_json::from_value(serde_json::json!({
+                "id": id, "name": id, "modality": "Text", "roles": roles,
+                "engine": {"supported": ["llama-server"]}, "local": {"path": "model.gguf"}
+            }))
+            .unwrap();
+            config.models.push(entry.try_into().unwrap());
+        }
+        config.roles.insert("agent".into(), "second".into());
+        config.roles.insert("voice".into(), "second".into());
+        let mut state = AppState::new(
+            Arc::new(crate::inference::AppState::new(&config)),
+            Arc::new(crate::proxy::ProxyService::new(&config)),
+            config.clone(),
+        );
+        state.management = Some(Arc::new(CatalogStore::new(
+            "unused-server".into(),
+            "unused-catalog".into(),
+        )));
+        let router = crate::api::create_router(state.clone());
+        let request = |authorized| {
+            let builder = Request::builder().uri("/v1/management/roles");
+            let builder = if authorized {
+                builder.header("authorization", "Bearer test-key")
+            } else {
+                builder
+            };
+            builder.body(Body::empty()).unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request(false))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let response = router.clone().oneshot(request(true)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({"roles":{"agent":"second","voice":"second"}})
+        );
+        config.roles.remove("voice");
+        config.roles.remove("agent");
+        state.reload_catalog(config);
+        let response = router.oneshot(request(true)).await.unwrap();
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
+        assert_eq!(body, serde_json::json!({"roles":{"voice":"first"}}));
     }
 
     #[tokio::test]
