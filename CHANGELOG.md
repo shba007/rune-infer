@@ -3,6 +3,15 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.20.0](https://github.com/shba007/rune-infer/compare/v0.19.0..v0.20.0) - 2026-11-07
+
+#### 🚀 Features
+- add catalog management functionality with API endpoints for reading and writing catalog data - ([6b61e9e](https://github.com/shba007/rune-infer/commit/6b61e9e56bc8847d1bfe1d4af7b6d2a159db2977)) - Shirsendu Bairagi
+- enhance embedding functionality with worker contract and catalog management support - ([5334525](https://github.com/shba007/rune-infer/commit/5334525fffa176fcda317a8bf9058bae9c736fb0)) - Shirsendu Bairagi
+- add roles endpoint for management and implement role retrieval logic - ([d5bd979](https://github.com/shba007/rune-infer/commit/d5bd9796fce1f74d04b397de967c31252eecc31c)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.19.0](https://github.com/shba007/rune-infer/compare/v0.18.0..v0.19.0) - 2026-11-06
 
 #### 🚀 Features
