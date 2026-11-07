@@ -44,6 +44,9 @@ pub(super) fn resolve_binary(
     }
 
     if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
+        if crate::embedding::root().is_some() {
+            return Ok(nested);
+        }
         let _ = std::fs::copy(&nested, &exe_path);
         return Ok(exe_path);
     }

@@ -263,6 +263,7 @@ impl SdServerEngine {
         );
 
         let mut cmd = Command::new(&bin_path);
+        crate::embedding::configure_child(&mut cmd, &bin_path);
         configure_death_signal(&mut cmd);
 
         cmd.arg("--diffusion-model")
@@ -398,6 +399,9 @@ impl SdServerEngine {
 
         if let Ok(custom) = std::env::var("SD_SERVER_PATH") {
             let p = PathBuf::from(custom);
+            if crate::embedding::root().is_some() && !p.is_absolute() {
+                return Err("SD_SERVER_PATH must be absolute when Infer is embedded".into());
+            }
             if p.exists() {
                 return Ok(p);
             }
@@ -418,7 +422,9 @@ impl SdServerEngine {
             return Ok(root_bin);
         }
 
-        if let Ok(path_var) = std::env::var("PATH") {
+        if crate::embedding::root().is_none()
+            && let Ok(path_var) = std::env::var("PATH")
+        {
             for dir in std::env::split_paths(&path_var) {
                 let candidate = dir.join(exe_name);
                 if candidate.exists() {

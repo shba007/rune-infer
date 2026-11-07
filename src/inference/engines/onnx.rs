@@ -289,6 +289,9 @@ impl OnnxEngine {
         let runtime = std::env::var_os("ONNX_RUNTIME_LIBRARY_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|| super::download::engine_bin().join("onnxruntime/onnxruntime.dll"));
+        if crate::embedding::root().is_some() && !runtime.is_absolute() {
+            return Err("ONNX_RUNTIME_LIBRARY_PATH must be absolute when Infer is embedded".into());
+        }
         let runtime = std::fs::canonicalize(runtime).map_err(|_| "ONNX Runtime is missing; set ONNX_RUNTIME_LIBRARY_PATH to the verified runtime DLL")?;
         verify_runtime(&runtime, false)?;
         let (cuda_directory, cuda_bundle_invalid) = match runtime::managed_gpu_directory(&runtime) {
@@ -298,8 +301,14 @@ impl OnnxEngine {
                 (None, true)
             }
         };
-        let helper = std::env::current_exe()?;
-        if !helper.file_stem().is_some_and(|v| v == "rune-infer") {
+        let helper = if crate::embedding::root().is_some() {
+            crate::embedding::worker_executable("ONNX_HELPER_PATH")?
+        } else {
+            std::env::current_exe()?
+        };
+        if crate::embedding::root().is_none()
+            && !helper.file_stem().is_some_and(|v| v == "rune-infer")
+        {
             return Err("ONNX detection requires the rune-infer worker executable".into());
         }
         Ok(Self {
@@ -316,6 +325,7 @@ impl OnnxEngine {
     }
     fn start_worker(&self, cpu: bool) -> Result<ResidentWorker, Box<dyn Error>> {
         let mut cmd = Command::new(&self.helper);
+        crate::embedding::configure_child(&mut cmd, &self.helper);
         super::super::process::configure_death_signal(&mut cmd);
         cmd.arg("onnx-worker")
             .arg("--runtime")
@@ -330,7 +340,10 @@ impl OnnxEngine {
                 .ok_or("ONNX CUDA bundle is no longer available")?;
             let mut paths = vec![directory.clone()];
             if let Some(existing) = std::env::var_os("PATH") {
-                paths.extend(std::env::split_paths(&existing));
+                paths.extend(
+                    std::env::split_paths(&existing)
+                        .filter(|path| crate::embedding::root().is_none() || path.is_absolute()),
+                );
             }
             cmd.env("PATH", std::env::join_paths(paths)?);
         }

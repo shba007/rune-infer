@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 static ROOT: OnceLock<PathBuf> = OnceLock::new();
+pub const WORKER_CONTRACT: &str = concat!("rune-infer-worker-v1 ", env!("CARGO_PKG_VERSION"));
 
 /// Configure engine storage for an embedded Windows host before starting Infer.
 /// An embedding host owns the process lifetime and must drain its server on exit.
@@ -29,6 +30,104 @@ pub(crate) fn root() -> Option<&'static Path> {
     ROOT.get().map(PathBuf::as_path)
 }
 
+pub(crate) fn configure_child(command: &mut std::process::Command, executable: &Path) {
+    if root().is_none() {
+        return;
+    }
+    if let Some(parent) = executable.parent().filter(|path| path.is_absolute()) {
+        command.current_dir(parent);
+    }
+    if let Some(paths) = std::env::var_os("PATH") {
+        let safe = std::env::split_paths(&paths).filter(|path| path.is_absolute());
+        if let Ok(paths) = std::env::join_paths(safe) {
+            command.env("PATH", paths);
+        }
+    }
+}
+
+pub(crate) fn system_tool(name: &str) -> std::io::Result<PathBuf> {
+    if root().is_none() {
+        return Ok(PathBuf::from(name));
+    }
+    let executable = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    };
+    std::env::var_os("PATH")
+        .and_then(|paths| find_absolute_tool(&paths, &executable))
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("{name} was not found in an absolute PATH directory"),
+            )
+        })
+}
+
+fn find_absolute_tool(paths: &std::ffi::OsStr, executable: &str) -> Option<PathBuf> {
+    std::env::split_paths(paths)
+        .filter(|path| path.is_absolute())
+        .map(|path| path.join(executable))
+        .find(|path| path.is_file())
+}
+
+pub(crate) fn system_command(name: &str) -> std::io::Result<std::process::Command> {
+    let path = system_tool(name)?;
+    let mut command = std::process::Command::new(&path);
+    configure_child(&mut command, &path);
+    Ok(command)
+}
+
+pub(crate) fn worker_executable(
+    override_name: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let path = match std::env::var_os(override_name) {
+        Some(path) => PathBuf::from(path),
+        None => crate::home::installed_infer_binary()?,
+    };
+    if !path.is_absolute() {
+        return Err(
+            format!("{override_name} must be an absolute path when Infer is embedded").into(),
+        );
+    }
+    let path = std::fs::canonicalize(path)
+        .map_err(|_| "Install the matching rune-infer executable to use this engine")?;
+    let mut command = std::process::Command::new(&path);
+    configure_child(&mut command, &path);
+    command.arg("worker-contract");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let mut child = command.spawn()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        if child.try_wait()?.is_some() {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(
+                "The installed rune-infer worker did not respond to the compatibility check".into(),
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let output = child.wait_with_output()?;
+    let version = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() || version.trim() != WORKER_CONTRACT {
+        return Err(
+            "The installed rune-infer worker version does not match the embedded library".into(),
+        );
+    }
+    Ok(path)
+}
+
 pub struct LocalServer {
     pub base_url: String,
     pub api_key: String,
@@ -38,8 +137,22 @@ pub struct LocalServer {
 
 impl LocalServer {
     pub async fn start(root: &Path, model: &str) -> Result<Self, String> {
-        let mut config = load_local_model(root, model)
+        let config = load_local_model(root, model)
             .map_err(|error| format!("Cannot load the local Infer model: {error:#}"))?;
+        Self::start_with_config(root, config).await
+    }
+
+    /// Start the complete configured catalog, including local and remote models.
+    pub async fn start_catalog(root: &Path) -> Result<Self, String> {
+        let config = load_catalog(root)
+            .map_err(|error| format!("Cannot load the Infer catalog: {error:#}"))?;
+        Self::start_with_config(root, config).await
+    }
+
+    async fn start_with_config(
+        root: &Path,
+        mut config: crate::config::ModelRegistry,
+    ) -> Result<Self, String> {
         let api_key = crate::setup::generate_api_key();
         config.server.api_key = Some(api_key.clone());
         config.server.host = "127.0.0.1".into();
@@ -93,6 +206,63 @@ impl LocalServer {
     }
 }
 
+fn read_catalog(root: &Path) -> anyhow::Result<crate::config::ModelRegistry> {
+    use anyhow::{Context, ensure};
+    ensure!(root.is_absolute(), "Infer home must be absolute");
+    let env_path = root.join(".env");
+    let mut overrides = Vec::new();
+    if env_path.exists() {
+        for entry in dotenvy::from_path_iter(&env_path).context("Cannot read Infer environment")? {
+            let (key, value) = entry.context("Invalid Infer environment")?;
+            if std::env::var_os(&key).is_none() {
+                overrides.push((key, value));
+            }
+        }
+    }
+    crate::config::ModelRegistry::from_files_with_env(
+        root.join("config/server.json"),
+        root.join("config/catalog.json"),
+        &overrides,
+    )
+}
+
+fn absolute_local_paths(root: &Path, model: &mut crate::config::ModelConfig) {
+    fn absolute(root: &Path, value: &mut String) {
+        if !Path::new(value).is_absolute() {
+            *value = root.join(&*value).to_string_lossy().into_owned();
+        }
+    }
+    if !model.is_local() {
+        return;
+    }
+    absolute(root, &mut model.model_path);
+    for path in [
+        &mut model.mmproj_path,
+        &mut model.mtp_path,
+        &mut model.vae_path,
+        &mut model.text_encoder_path,
+        &mut model.tokenizer_path,
+        &mut model.llm_vision_path,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        absolute(root, path);
+    }
+    for lora in &mut model.lora {
+        absolute(root, &mut lora.path);
+    }
+}
+
+/// Load the configured catalog without changing the host's current directory or environment.
+pub fn load_catalog(root: &Path) -> anyhow::Result<crate::config::ModelRegistry> {
+    let mut config = read_catalog(root)?;
+    for model in &mut config.models {
+        absolute_local_paths(root, model);
+    }
+    Ok(config)
+}
+
 /// Prepare the upstream llama engine using the embedding host's home.
 pub fn install_llama_observed(
     root: &Path,
@@ -118,21 +288,7 @@ pub fn load_local_model(
     use anyhow::{Context, ensure};
 
     ensure!(root.is_absolute(), "Infer home must be absolute");
-    let env_path = root.join(".env");
-    let mut overrides = Vec::new();
-    if env_path.exists() {
-        for entry in dotenvy::from_path_iter(&env_path).context("Cannot read Infer environment")? {
-            let (key, value) = entry.context("Invalid Infer environment")?;
-            if std::env::var_os(&key).is_none() {
-                overrides.push((key, value));
-            }
-        }
-    }
-    let mut config = crate::config::ModelRegistry::from_files_with_env(
-        root.join("config/server.json"),
-        root.join("config/catalog.json"),
-        &overrides,
-    )?;
+    let mut config = read_catalog(root)?;
     config.models.retain(|model| model.id == model_id);
     let model = config
         .models
@@ -151,20 +307,7 @@ pub fn load_local_model(
             )),
         "Embedded computer use currently supports only llama-server engines"
     );
-    fn absolute(root: &Path, value: &mut String) {
-        if !Path::new(value).is_absolute() {
-            *value = root.join(&*value).to_string_lossy().into_owned();
-        }
-    }
-    absolute(root, &mut model.model_path);
-    for path in [&mut model.mmproj_path, &mut model.mtp_path] {
-        if let Some(path) = path.as_mut() {
-            absolute(root, path);
-        }
-    }
-    for lora in &mut model.lora {
-        absolute(root, &mut lora.path);
-    }
+    absolute_local_paths(root, model);
     ensure!(
         Path::new(&model.model_path).is_file(),
         "Configured local model file is missing"
@@ -178,4 +321,70 @@ pub fn load_local_model(
     config.roles.clear();
     config.aliases.clear();
     Ok(config)
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::*;
+
+    #[test]
+    fn embedded_system_tool_lookup_ignores_relative_path_entries() {
+        let relative = std::env::join_paths([Path::new(".")]).unwrap();
+        assert!(find_absolute_tool(&relative, "Cargo.toml").is_none());
+        let absolute = std::env::join_paths([std::env::current_dir().unwrap()]).unwrap();
+        assert!(find_absolute_tool(&absolute, "Cargo.toml").is_some());
+    }
+
+    #[test]
+    fn complete_catalog_preserves_roles_and_anchors_only_local_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "infer-embedded-catalog-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let config_dir = root.join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let variable = format!("INFER_EMBED_TEST_KEY_{}", std::process::id());
+        std::fs::write(root.join(".env"), format!("{variable}=fixture-key\n")).unwrap();
+        std::fs::write(config_dir.join("server.json"), r#"{"schema_version":3,"server":{"host":"127.0.0.1","port":8080,"api_key":null,"max_loaded_models":1,"idle_unload_seconds":300}}"#).unwrap();
+        let catalog = serde_json::json!({"schema_version":3,"models":[
+            {"id":"local","name":"Local","modality":"Text","engine":{"supported":["llama-server"]},"local":{"path":"models/local.gguf"},"extra":{"mmproj_path":"models/projector.gguf"}},
+            {"id":"remote","name":"Remote","modality":"Text","remote":{"provider":"openai","upstream_model":"cloud","api_key":format!("{{{{{variable}}}}}")}}
+        ],"roles":{"agent":"local","voice":"remote"},"aliases":{"primary":"local"}});
+        std::fs::write(
+            config_dir.join("catalog.json"),
+            serde_json::to_vec(&catalog).unwrap(),
+        )
+        .unwrap();
+        let cwd = std::env::current_dir().unwrap();
+        let config = load_catalog(&root).unwrap();
+        assert_eq!(std::env::current_dir().unwrap(), cwd);
+        assert_eq!(config.models.len(), 2);
+        assert_eq!(
+            Path::new(&config.models[0].model_path),
+            root.join("models/local.gguf")
+        );
+        assert_eq!(
+            Path::new(config.models[0].mmproj_path.as_deref().unwrap()),
+            root.join("models/projector.gguf")
+        );
+        assert_eq!(config.models[1].upstream_model.as_deref(), Some("cloud"));
+        assert_eq!(
+            config.roles.get("voice").map(String::as_str),
+            Some("remote")
+        );
+        assert_eq!(
+            config.aliases.get("primary").map(String::as_str),
+            Some("local")
+        );
+        assert!(load_catalog(Path::new("relative")).is_err());
+        std::fs::remove_file(config_dir.join("server.json")).unwrap();
+        std::fs::remove_file(config_dir.join("catalog.json")).unwrap();
+        std::fs::remove_file(root.join(".env")).unwrap();
+        std::fs::remove_dir(config_dir).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
 }

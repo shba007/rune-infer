@@ -100,6 +100,10 @@ pub fn runtime_path() -> anyhow::Result<PathBuf> {
         .map(PathBuf::from)
         .unwrap_or_else(managed_runtime_path);
     anyhow::ensure!(
+        crate::embedding::root().is_none() || path.is_absolute(),
+        "LITERT_LIBRARY_PATH must be absolute when Infer is embedded"
+    );
+    anyhow::ensure!(
         path.is_file(),
         "LiteRT runtime is missing; install it from Engines (e, then u), or configure LITERT_LIBRARY_PATH with the reviewed Windows x64 2.3.0 libLiteRt.dll"
     );
@@ -132,6 +136,9 @@ pub(crate) fn ensure_runtime_installed() -> Result<PathBuf, Box<dyn Error>> {
     }
     if let Some(path) = std::env::var_os("LITERT_LIBRARY_PATH") {
         let path = PathBuf::from(path);
+        if crate::embedding::root().is_some() && !path.is_absolute() {
+            return Err("LITERT_LIBRARY_PATH must be absolute when Infer is embedded".into());
+        }
         validate_runtime(&path).map_err(|e| format!(
             "LITERT_LIBRARY_PATH must point to the pinned runtime; fix or remove this override before installing: {e}"
         ))?;
@@ -176,6 +183,9 @@ pub(crate) fn runtime_version(path: &Path) -> Option<String> {
 }
 
 pub(crate) fn helper_path() -> Result<PathBuf, Box<dyn Error>> {
+    if crate::embedding::root().is_some() {
+        return crate::embedding::worker_executable("LITERT_HELPER_PATH");
+    }
     let helper = if let Some(path) = std::env::var_os("LITERT_HELPER_PATH") {
         PathBuf::from(path)
     } else {
@@ -263,6 +273,7 @@ impl LiteRtEngine {
         gpu: bool,
     ) -> Result<Vec<f32>, Box<dyn Error>> {
         let mut command = Command::new(&self.helper);
+        crate::embedding::configure_child(&mut command, &self.helper);
         super::super::process::configure_death_signal(&mut command);
         command
             .arg(if gpu {

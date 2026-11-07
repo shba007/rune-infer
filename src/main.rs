@@ -58,6 +58,8 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Command {
     #[command(hide = true)]
+    WorkerContract,
+    #[command(hide = true)]
     OnnxWorker {
         #[arg(long)]
         runtime: std::path::PathBuf,
@@ -104,6 +106,10 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    if matches!(&args.command, Some(Command::WorkerContract)) {
+        println!("{}", rune_infer::embedding::WORKER_CONTRACT);
+        return Ok(());
+    }
     if let Some(Command::OnnxWorker {
         runtime,
         model,

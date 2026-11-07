@@ -273,7 +273,10 @@ impl AudioEngine {
         let mut search_paths = vec![bin_dir.to_path_buf()];
 
         if let Ok(sys_path) = std::env::var("PATH") {
-            search_paths.extend(std::env::split_paths(&sys_path));
+            search_paths.extend(
+                std::env::split_paths(&sys_path)
+                    .filter(|path| crate::embedding::root().is_none() || path.is_absolute()),
+            );
         }
         if let Ok(path_env) = std::env::join_paths(search_paths) {
             cmd.env("PATH", &path_env);
@@ -296,6 +299,9 @@ impl AudioEngine {
         if let Ok(custom) = std::env::var("AUDIOCPP_PATH").or_else(|_| std::env::var("AUDIO8_PATH"))
         {
             let p = PathBuf::from(custom);
+            if crate::embedding::root().is_some() && !p.is_absolute() {
+                return Err("AUDIOCPP_PATH must be absolute when Infer is embedded".into());
+            }
             if p.exists() {
                 return Ok(p);
             }
@@ -322,7 +328,9 @@ impl AudioEngine {
             return Ok(root_bin);
         }
 
-        if let Ok(path_var) = std::env::var("PATH") {
+        if crate::embedding::root().is_none()
+            && let Ok(path_var) = std::env::var("PATH")
+        {
             for dir in std::env::split_paths(&path_var) {
                 let candidate = dir.join(exe_name);
                 if candidate.exists() {
@@ -479,13 +487,15 @@ impl AudioEngine {
 
         let out_wav = temp_dir.join(format!("converted_16k_{}.wav", req_id));
 
-        let ffmpeg_status = Command::new("ffmpeg")
-            .arg("-y")
-            .arg("-i")
-            .arg(&raw_input)
-            .args(["-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le"])
-            .arg(&out_wav)
-            .output();
+        let ffmpeg_status = crate::embedding::system_command("ffmpeg").and_then(|mut command| {
+            command
+                .arg("-y")
+                .arg("-i")
+                .arg(&raw_input)
+                .args(["-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le"])
+                .arg(&out_wav)
+                .output()
+        });
 
         let _ = std::fs::remove_file(&raw_input);
 

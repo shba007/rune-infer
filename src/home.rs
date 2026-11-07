@@ -46,6 +46,14 @@ fn user_home() -> std::io::Result<PathBuf> {
         })
 }
 
+pub(crate) fn installed_infer_binary() -> std::io::Result<PathBuf> {
+    Ok(user_home()?.join(".rune").join(if cfg!(windows) {
+        "rune-infer.exe"
+    } else {
+        "rune-infer"
+    }))
+}
+
 /// Where the process should treat as its working root.
 #[derive(Debug, Clone)]
 pub struct Workspace {

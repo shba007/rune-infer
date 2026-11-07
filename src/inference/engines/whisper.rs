@@ -255,6 +255,9 @@ impl WhisperCppEngine {
     fn resolve_binary(install: bool) -> Result<PathBuf, Box<dyn Error>> {
         if let Ok(path) = std::env::var("WHISPER_CPP_PATH") {
             let path = PathBuf::from(path);
+            if crate::embedding::root().is_some() && !path.is_absolute() {
+                return Err("WHISPER_CPP_PATH must be absolute when Infer is embedded".into());
+            }
             if path.is_file() {
                 return Ok(path);
             }
@@ -272,11 +275,13 @@ impl WhisperCppEngine {
         if let Some(path) = download::find_executable_recursive(&base, executable) {
             return Ok(path);
         }
-        if let Some(path) = std::env::var_os("PATH").and_then(|paths| {
-            std::env::split_paths(&paths)
-                .map(|p| p.join(executable))
-                .find(|p| p.is_file())
-        }) {
+        if crate::embedding::root().is_none()
+            && let Some(path) = std::env::var_os("PATH").and_then(|paths| {
+                std::env::split_paths(&paths)
+                    .map(|p| p.join(executable))
+                    .find(|p| p.is_file())
+            })
+        {
             return Ok(path);
         }
         if !install {
@@ -412,6 +417,7 @@ impl InferenceEngine for WhisperCppEngine {
         let output = temp.0.join("transcript");
         std::fs::write(&input, bytes)?;
         let mut command = Command::new(&self.binary);
+        crate::embedding::configure_child(&mut command, &self.binary);
         configure_death_signal(&mut command);
         command
             .arg("--model")

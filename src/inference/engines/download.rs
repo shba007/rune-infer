@@ -2,7 +2,6 @@ use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -907,7 +906,10 @@ pub fn make_executable(path: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn detect_host_cuda_version() -> Option<(u32, u32)> {
-    let output = Command::new("nvidia-smi").output().ok()?;
+    let output = crate::embedding::system_command("nvidia-smi")
+        .ok()?
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }

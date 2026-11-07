@@ -436,6 +436,9 @@ pub fn extract_video_frames(
     video_path: &Path,
     max_dims: (u32, u32),
 ) -> Result<Vec<(Vec<u8>, u32, u32)>, String> {
+    if crate::embedding::root().is_some() && !video_path.is_absolute() {
+        return Err("Video paths must be absolute when Infer is embedded".into());
+    }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -448,16 +451,18 @@ pub fn extract_video_frames(
     std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
 
     let out_pattern = temp_dir.join("frame_%04d.jpg");
-    let output = std::process::Command::new("ffmpeg")
-        .arg("-y")
-        .arg("-i")
-        .arg(video_path)
-        .arg("-vf")
-        .arg("fps=2,scale='min(768,iw)':-2")
-        .arg("-vframes")
-        .arg("16")
-        .arg(&out_pattern)
-        .output();
+    let output = crate::embedding::system_command("ffmpeg").and_then(|mut command| {
+        command
+            .arg("-y")
+            .arg("-i")
+            .arg(video_path)
+            .arg("-vf")
+            .arg("fps=2,scale='min(768,iw)':-2")
+            .arg("-vframes")
+            .arg("16")
+            .arg(&out_pattern)
+            .output()
+    });
 
     match output {
         Ok(out) if out.status.success() => {

@@ -117,7 +117,10 @@ impl CrispAsrEngine {
         let mut search_paths = vec![bin_dir.to_path_buf()];
 
         if let Ok(sys_path) = std::env::var("PATH") {
-            search_paths.extend(std::env::split_paths(&sys_path));
+            search_paths.extend(
+                std::env::split_paths(&sys_path)
+                    .filter(|path| crate::embedding::root().is_none() || path.is_absolute()),
+            );
         }
         if let Ok(path_env) = std::env::join_paths(search_paths) {
             cmd.env("PATH", &path_env);
@@ -201,6 +204,9 @@ impl CrispAsrEngine {
 
         if let Ok(custom) = std::env::var("CRISPASR_PATH") {
             let p = PathBuf::from(custom);
+            if crate::embedding::root().is_some() && !p.is_absolute() {
+                return Err("CRISPASR_PATH must be absolute when Infer is embedded".into());
+            }
             if p.exists() {
                 return Ok(p);
             }
@@ -221,7 +227,9 @@ impl CrispAsrEngine {
             return Ok(root_bin);
         }
 
-        if let Ok(path_var) = std::env::var("PATH") {
+        if crate::embedding::root().is_none()
+            && let Ok(path_var) = std::env::var("PATH")
+        {
             for dir in std::env::split_paths(&path_var) {
                 let candidate = dir.join(exe_name);
                 if candidate.exists() {

@@ -94,7 +94,9 @@ impl NemoSpeechEngine {
             .unwrap_or_else(|| Path::new("bin/nemo-speech"));
 
         // Inspect PE imports and auto-resolve any missing runtime DLLs
-        Self::repair_dependencies(&bin_path, bin_dir);
+        if crate::embedding::root().is_none() {
+            Self::repair_dependencies(&bin_path, bin_dir);
+        }
 
         tracing::info!(
             "[NemoSpeechEngine] Launching managed nemo-speech for '{}' on port {}...",
@@ -118,7 +120,10 @@ impl NemoSpeechEngine {
         let mut search_paths = vec![bin_dir.to_path_buf()];
 
         if let Ok(sys_path) = std::env::var("PATH") {
-            search_paths.extend(std::env::split_paths(&sys_path));
+            search_paths.extend(
+                std::env::split_paths(&sys_path)
+                    .filter(|path| crate::embedding::root().is_none() || path.is_absolute()),
+            );
         }
         if let Ok(path_env) = std::env::join_paths(search_paths) {
             cmd.env("PATH", &path_env);
@@ -221,6 +226,9 @@ impl NemoSpeechEngine {
 
         if let Ok(custom) = std::env::var("NEMO_SPEECH_PATH") {
             let p = PathBuf::from(custom);
+            if crate::embedding::root().is_some() && !p.is_absolute() {
+                return Err("NEMO_SPEECH_PATH must be absolute when Infer is embedded".into());
+            }
             if p.exists() {
                 return Ok(p);
             }
@@ -228,6 +236,20 @@ impl NemoSpeechEngine {
 
         let base_dir = download::engine_bin().join("nemo-speech");
         let exe_path = base_dir.join(exe_name);
+
+        if crate::embedding::root().is_some() {
+            if exe_path.is_file() {
+                return Ok(exe_path);
+            }
+            if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
+                return Ok(nested);
+            }
+            let root_bin = download::engine_bin().join(exe_name);
+            if root_bin.is_file() {
+                return Ok(root_bin);
+            }
+            return Err(download::engine_unavailable("nemo-speech").into());
+        }
 
         // If binary is in a nested archive directory, promote it to base_dir
         if !exe_path.exists() {

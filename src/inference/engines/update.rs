@@ -1542,10 +1542,14 @@ fn crispasr_asset_name(version: &str) -> UpdateResult<&'static str> {
 
 fn crispasr_hardware_asset() -> &'static str {
     let cuda = download::detect_host_cuda_version();
-    let capability = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
-        .output()
+    let capability = crate::embedding::system_command("nvidia-smi")
         .ok()
+        .and_then(|mut command| {
+            command
+                .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
+                .output()
+                .ok()
+        })
         .filter(|output| output.status.success())
         .and_then(|output| String::from_utf8(output.stdout).ok())
         .and_then(|text| {

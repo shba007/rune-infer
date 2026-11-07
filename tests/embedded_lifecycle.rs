@@ -7,6 +7,17 @@ fn embedded_guard_owns_only_its_child_and_does_not_use_cwd_pid_registry() {
     use rune_infer::inference::process::{ProcessGuard, cleanup_orphaned_pids};
     use std::os::windows::process::CommandExt;
 
+    let contract = Command::new(env!("CARGO_BIN_EXE_rune-infer"))
+        .arg("worker-contract")
+        .creation_flags(0x08000000)
+        .output()
+        .unwrap();
+    assert!(contract.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&contract.stdout).trim(),
+        rune_infer::embedding::WORKER_CONTRACT
+    );
+
     let root = std::env::temp_dir().join(format!("rune-embedded-test-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     let cwd = std::env::current_dir().unwrap();
@@ -18,7 +29,7 @@ fn embedded_guard_owns_only_its_child_and_does_not_use_cwd_pid_registry() {
     std::fs::write(root.join("models/model.gguf"), b"fixture").unwrap();
     std::fs::write(root.join("models/projector.gguf"), b"fixture").unwrap();
     std::fs::write(root.join("config/server.json"), r#"{"schema_version":3,"server":{"host":"127.0.0.1","port":8080,"max_loaded_models":1,"idle_unload_seconds":300,"api_key":null}}"#).unwrap();
-    std::fs::write(root.join("config/catalog.json"), r#"{"schema_version":3,"models":[{"id":"fixture","name":"Fixture","modality":"VisionText","engine":{"supported":["llama-server"]},"local":{"path":"models/model.gguf"},"extra":{"mmproj_path":"models/projector.gguf"}}]}"#).unwrap();
+    std::fs::write(root.join("config/catalog.json"), r#"{"schema_version":3,"models":[{"id":"fixture","name":"Fixture","modality":"VisionText","engine":{"supported":["llama-server"]},"local":{"path":"models/model.gguf"},"extra":{"mmproj_path":"models/projector.gguf"}},{"id":"cloud","name":"Cloud","modality":"Text","remote":{"provider":"openai","upstream_model":"fixture","api_key":"test-key"}}],"roles":{"agent":"fixture","voice":"cloud"}}"#).unwrap();
     let config = rune_infer::embedding::load_local_model(&root, "fixture").unwrap();
     assert_eq!(
         std::path::Path::new(&config.models[0].model_path),
@@ -62,6 +73,32 @@ fn embedded_guard_owns_only_its_child_and_does_not_use_cwd_pid_registry() {
             .unwrap()
             .unwrap()
             .unwrap();
+
+        let embedded = rune_infer::embedding::LocalServer::start_catalog(&root)
+            .await
+            .unwrap();
+        let client = reqwest::Client::new();
+        let models: serde_json::Value = client
+            .get(format!("{}/v1/models", embedded.base_url))
+            .bearer_auth(&embedded.api_key)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(models["data"].as_array().unwrap().len(), 2);
+        let selected: serde_json::Value = client
+            .get(format!("{}/v1/models/voice", embedded.base_url))
+            .bearer_auth(&embedded.api_key)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(selected["id"], "cloud");
+        embedded.shutdown().await.unwrap();
     });
 
     let spawn = || {

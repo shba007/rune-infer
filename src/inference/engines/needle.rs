@@ -234,6 +234,7 @@ impl InferenceEngine for NeedleEngine {
                 std::fs::write(&temp_tools_path, &schema_str)?;
 
                 let mut cmd = Command::new(&self.bin_path);
+                crate::embedding::configure_child(&mut cmd, &self.bin_path);
                 configure_death_signal(&mut cmd);
                 cmd.arg("--model")
                     .arg(&self.model_path)

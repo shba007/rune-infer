@@ -124,6 +124,7 @@ impl LlamaServerEngine {
         );
 
         let mut cmd = Command::new(&bin_path);
+        crate::embedding::configure_child(&mut cmd, &bin_path);
         configure_death_signal(&mut cmd);
 
         cmd.arg("-m")
