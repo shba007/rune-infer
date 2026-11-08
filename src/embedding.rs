@@ -71,10 +71,20 @@ fn find_absolute_tool(paths: &std::ffi::OsStr, executable: &str) -> Option<PathB
         .find(|path| path.is_file())
 }
 
+pub(crate) fn no_window(command: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command
+}
+
 pub(crate) fn system_command(name: &str) -> std::io::Result<std::process::Command> {
     let path = system_tool(name)?;
     let mut command = std::process::Command::new(&path);
     configure_child(&mut command, &path);
+    no_window(&mut command);
     Ok(command)
 }
 

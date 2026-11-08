@@ -61,13 +61,12 @@ pub fn detect_prerequisites(home: &Path) -> Prerequisites {
 }
 
 fn detect_gpu() -> Option<GpuInfo> {
-    let out = std::process::Command::new("nvidia-smi")
-        .args([
-            "--query-gpu=name,memory.total",
-            "--format=csv,noheader,nounits",
-        ])
-        .output()
-        .ok()?;
+    let out = crate::embedding::no_window(std::process::Command::new("nvidia-smi").args([
+        "--query-gpu=name,memory.total",
+        "--format=csv,noheader,nounits",
+    ]))
+    .output()
+    .ok()?;
     if !out.status.success() {
         return None;
     }

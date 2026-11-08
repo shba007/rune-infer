@@ -102,9 +102,11 @@ pub fn detect_total_gpu_vram() -> Option<u64> {
 }
 
 fn query_total_gpu_vram_uncached() -> Option<u64> {
-    if let Ok(output) = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
-        .output()
+    if let Ok(output) = crate::embedding::no_window(
+        std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"]),
+    )
+    .output()
     {
         if output.status.success() {
             let text = String::from_utf8_lossy(&output.stdout);
@@ -152,10 +154,12 @@ fn query_total_gpu_vram_uncached() -> Option<u64> {
 
 /// Detects currently used GPU VRAM via nvidia-smi.
 pub fn detect_used_gpu_vram() -> Option<u64> {
-    let output = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
-        .output()
-        .ok()?;
+    let output = crate::embedding::no_window(
+        std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"]),
+    )
+    .output()
+    .ok()?;
     if !output.status.success() {
         return None;
     }
