@@ -225,7 +225,7 @@ fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
     Ok(registry.local_models)
 }
 
-fn valid_model_id(id: &str) -> bool {
+pub(crate) fn valid_model_id(id: &str) -> bool {
     !id.is_empty()
         && id
             .bytes()
@@ -299,7 +299,7 @@ fn encoder_directory_file(file: &File) -> bool {
         .is_some_and(|n| n.len() == 3 && n.bytes().all(|b| b.is_ascii_digit()) && n != "000")
 }
 
-fn bundle_path(model_dir: &Path, file: &File) -> PathBuf {
+pub(crate) fn bundle_path(model_dir: &Path, file: &File) -> PathBuf {
     if encoder_directory_file(file) {
         model_dir.join("text_encoder").join(&file.filename)
     } else {

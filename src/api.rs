@@ -4,6 +4,7 @@ pub mod chat;
 pub mod decisions;
 pub mod embeddings;
 pub mod gate;
+pub(crate) mod icons;
 pub mod images;
 mod local_execution;
 pub(crate) mod management;
@@ -166,6 +167,11 @@ pub fn create_router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(1_100_000)),
         )
         .route("/management/roles", get(management::roles))
+        .route(
+            "/management/models/{id}",
+            axum::routing::delete(management::remove_model),
+        )
+        .route("/management/model-icon/{model}", get(icons::model_icon))
         .route("/capabilities", get(local_execution::capabilities))
         .route("/models/{model}", get(retrieve_model_handler))
         .route("/embeddings", post(embeddings::embeddings_handler))

@@ -123,16 +123,16 @@
       ],
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",
-        "mmproj_path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/mmproj-BF16.gguf"
+        "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/mmproj-BF16.gguf"
       },
       "id": "qwen3.8-27b",
       "local": {
         "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256",
         "bits_per_weight": 3.44,
-        "context_length": 49152,
+        "context_length": 32768,
         "gpu_layers": 99,
         "params": 27000000000,
-        "path": "D:/Models/huggingface/hub/models--unsloth--Qwen3.8-27B-GGUF/snapshots/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-IQ3_S.gguf"
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-IQ3_S.gguf"
       },
       "max_context_length": 262144,
       "name": "Qwen3.8 27B",
