@@ -425,6 +425,47 @@ fn remove_with(
     }))
 }
 
+#[derive(Serialize)]
+pub(super) struct Residency {
+    changed: bool,
+}
+
+fn residency_error(message: &str) -> (StatusCode, &'static str) {
+    if message.contains("exact local model") {
+        (StatusCode::UNPROCESSABLE_ENTITY, "Select a local model")
+    } else if message.contains("still loading") || message.contains("in use") {
+        (StatusCode::CONFLICT, "Model is busy; retry shortly")
+    } else {
+        (StatusCode::BAD_GATEWAY, "Model could not be changed")
+    }
+}
+
+pub(super) async fn load_model(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Reply<Json<Residency>> {
+    store(&state)?;
+    let inference = state.inference.clone();
+    tokio::task::spawn_blocking(move || inference.load_model(&id))
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Load was interrupted"))?
+        .map_err(|message| residency_error(&message))?;
+    Ok(Json(Residency { changed: true }))
+}
+
+pub(super) async fn unload_model(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Reply<Json<Residency>> {
+    store(&state)?;
+    let inference = state.inference.clone();
+    let changed = tokio::task::spawn_blocking(move || inference.unload_model(&id))
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Unload was interrupted"))?
+        .map_err(|message| residency_error(&message))?;
+    Ok(Json(Residency { changed }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -672,5 +713,49 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&catalog).unwrap()).unwrap();
         assert!(after["models"].as_array().unwrap().is_empty());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn loading_requires_auth_and_an_exact_local_model() {
+        let mut config = crate::config::ModelRegistry::new();
+        config.server.api_key = Some("test-key".into());
+        let mut state = AppState::new(
+            Arc::new(crate::inference::AppState::new(&config)),
+            Arc::new(crate::proxy::ProxyService::new(&config)),
+            config,
+        );
+        state.management = Some(Arc::new(CatalogStore::new("s".into(), "c".into())));
+        let router = crate::api::create_router(state);
+        let post = |action: &str, key: bool| {
+            let builder = Request::builder()
+                .method("POST")
+                .uri(format!("/v1/management/models/missing/{action}"));
+            let builder = if key {
+                builder.header("authorization", "Bearer test-key")
+            } else {
+                builder
+            };
+            builder.body(Body::empty()).unwrap()
+        };
+        for action in ["load", "unload"] {
+            assert_eq!(
+                router
+                    .clone()
+                    .oneshot(post(action, false))
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                router
+                    .clone()
+                    .oneshot(post(action, true))
+                    .await
+                    .unwrap()
+                    .status(),
+                StatusCode::UNPROCESSABLE_ENTITY
+            );
+        }
     }
 }

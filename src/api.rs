@@ -171,6 +171,11 @@ pub fn create_router(state: AppState) -> Router {
             "/management/models/{id}",
             axum::routing::delete(management::remove_model),
         )
+        .route("/management/models/{id}/load", post(management::load_model))
+        .route(
+            "/management/models/{id}/unload",
+            post(management::unload_model),
+        )
         .route("/management/model-icon/{model}", get(icons::model_icon))
         .route("/capabilities", get(local_execution::capabilities))
         .route("/models/{model}", get(retrieve_model_handler))
