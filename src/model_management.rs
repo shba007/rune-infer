@@ -322,16 +322,10 @@ mod tests {
     use super::*;
     #[test]
     fn lists_only_requested_models_and_recommends_one_that_fits() {
-        let ids = [
-            "holo3.1-0.8b-q4",
-            "holo3.1-4b-q4",
-            "holo3.1-9b-q4",
-            "holo4-27b-q4",
-        ]
-        .map(str::to_owned);
+        let ids = ["holo3.1-4b-q4", "holo3.1-9b-q4", "holo4-27b-q4"].map(str::to_owned);
         let gib = 1024 * 1024 * 1024;
         let models = candidates(&ids, Some(8 * gib), true, Some(20 * gib)).unwrap();
-        assert_eq!(models.len(), 4);
+        assert_eq!(models.len(), 3);
         assert_eq!(
             models.iter().find(|model| model.recommended).unwrap().id,
             "holo3.1-4b-q4"

@@ -1303,7 +1303,7 @@ mod tests {
         .unwrap();
         let dir = std::fs::canonicalize(&root)
             .unwrap()
-            .join("models/liquidai/lfm3-omni-2b");
+            .join("models/LiquidAI/LFM3-Omni-2B-GGUF");
         assert_eq!(path, dir.join("LFM3-Omni-2B-Q8_0.gguf"));
         assert!(dir.join("mmproj-LFM3-Omni-2B-F16.gguf").exists());
         let old_dir = root.join("models").join(&model.id);
@@ -1348,7 +1348,7 @@ mod tests {
         .unwrap();
         assert!(
             installed
-                .ends_with("models/zhengpeng7/birefnet-matting/BiRefNet-matting-epoch_100.onnx")
+                .ends_with("models/ZhengPeng7/BiRefNet-matting/BiRefNet-matting-epoch_100.onnx")
         );
         let config = crate::config::ModelRegistry::from_files(&server, &catalog).unwrap();
         let entry = config
@@ -1496,7 +1496,7 @@ mod tests {
         let mut model = parse(include_bytes!("../registry/models.json"))
             .unwrap()
             .into_iter()
-            .find(|model| model.id == "smolvlm-256m-instruct-q8-0")
+            .find(|model| model.id == "holo3.1-4b-q4")
             .unwrap();
         for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
             let bytes = if file.id == "model" {
@@ -2124,7 +2124,7 @@ mod tests {
     #[test]
     fn bundled_local_entries_are_valid() {
         let models = parse(include_bytes!("../registry/models.json")).unwrap();
-        assert_eq!(models[0].id, "smollm2-135m-instruct-q4-k-m");
+        assert_eq!(models[0].id, "qwen3.5-0.8b");
     }
     #[test]
     fn bad_integrity_and_release_order_are_rejected() {

@@ -3122,7 +3122,7 @@ mod tests {
         )
         .unwrap()
         .into_iter()
-        .find(|model| model.id == "smollm2-135m-instruct-q4-k-m")
+        .find(|model| model.id == "qwen3.5-0.8b")
         .unwrap();
         let file = &mut model.versions.get_mut(&model.latest).unwrap().files[0];
         let bytes = b"GGUF fixture dashboard";
