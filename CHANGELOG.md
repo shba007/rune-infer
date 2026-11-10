@@ -3,6 +3,21 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.20.0](https://github.com/shba007/rune-infer/compare/v0.19.0..v0.20.0) - 2026-11-10
+
+#### 🚀 Features
+- add catalog management functionality with API endpoints for reading and writing catalog data - ([6b61e9e](https://github.com/shba007/rune-infer/commit/6b61e9e56bc8847d1bfe1d4af7b6d2a159db2977)) - Shirsendu Bairagi
+- enhance embedding functionality with worker contract and catalog management support - ([5334525](https://github.com/shba007/rune-infer/commit/5334525fffa176fcda317a8bf9058bae9c736fb0)) - Shirsendu Bairagi
+- add roles endpoint for management and implement role retrieval logic - ([d5bd979](https://github.com/shba007/rune-infer/commit/d5bd9796fce1f74d04b397de967c31252eecc31c)) - Shirsendu Bairagi
+- integrate no_window function to suppress window creation for nvidia-smi commands - ([1c381fb](https://github.com/shba007/rune-infer/commit/1c381fb58b5797bf9ee89cf8c75a5a11917ed4f9)) - Shirsendu Bairagi
+- (**api**) add model icon retrieval and management model removal endpoint - ([b4c804f](https://github.com/shba007/rune-infer/commit/b4c804f6a4461548ad702e42b7b0f4864e92e935)) - Shirsendu Bairagi
+- (**api**) add load and unload model endpoints with residency handling - ([5a05a60](https://github.com/shba007/rune-infer/commit/5a05a605be8102350ff8cd7f26852ea1dc311b95)) - Shirsendu Bairagi
+
+#### 🚜 Refactoring
+- model IDs and paths in tests for consistency - ([1ebdad6](https://github.com/shba007/rune-infer/commit/1ebdad6e94813b9980584e0797aa9bee48f9459e)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.19.0](https://github.com/shba007/rune-infer/compare/v0.18.0..v0.19.0) - 2026-11-06
 
 #### 🚀 Features
