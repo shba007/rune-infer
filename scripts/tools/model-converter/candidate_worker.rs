@@ -4,7 +4,7 @@
 //! The native ABI implementation is shared with production to prevent drift.
 use std::{io::Read, path::Path};
 
-#[path = "../../src/inference/engines/litert/native.rs"]
+#[path = "../../../src/inference/engines/litert/native.rs"]
 mod native;
 
 const PIXELS: usize = 518 * 686;

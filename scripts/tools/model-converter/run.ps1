@@ -7,7 +7,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 # The container installs the pinned environment with uv and executes via uv run.
-$taskRepository = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$taskRepository = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $taskInputs = @($Images | ForEach-Object {
     $taskImage = (Resolve-Path -LiteralPath $_).Path
     if (-not (Test-Path -LiteralPath $taskImage -PathType Leaf)) {

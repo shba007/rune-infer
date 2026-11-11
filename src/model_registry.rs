@@ -12,10 +12,10 @@ const REGISTRY_URL: &str =
 const LIMIT: u64 = 4 * 1024 * 1024;
 
 #[derive(Deserialize)]
-struct Registry {
+struct RawRegistry {
     schema_version: u32,
     #[serde(default)]
-    local_models: Vec<LocalModel>,
+    local_models: Vec<serde_json::Value>,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -130,99 +130,148 @@ pub(crate) fn fetch_document() -> Result<Vec<u8>> {
     Ok(body)
 }
 
-fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
-    let registry: Registry = serde_json::from_slice(bytes).context("Invalid model registry")?;
+struct Parsed {
+    models: Vec<LocalModel>,
+    skipped: Vec<(String, String)>,
+}
+
+fn parse_entries(bytes: &[u8]) -> Result<Parsed> {
+    let registry: RawRegistry = serde_json::from_slice(bytes).context("Invalid model registry")?;
     ensure!(
         registry.schema_version == 1,
         "Unsupported model registry schema"
     );
     let mut ids = HashSet::new();
-    for model in &registry.local_models {
+    for entry in &registry.local_models {
+        let id = entry.get("id").and_then(serde_json::Value::as_str);
         ensure!(
-            valid_model_id(&model.id) && ids.insert(&model.id),
+            id.is_some_and(|id| ids.insert(id)),
             "Invalid or duplicate local model ID"
         );
-        ensure!(
-            !model.name.trim().is_empty() && !model.license.trim().is_empty(),
-            "Missing model name or license"
-        );
-        ensure!(
-            reqwest::Url::parse(&model.source_url)?.scheme() == "https",
-            "Model source must use HTTPS"
-        );
-        ensure!(
-            matches!(
-                model.engine.as_str(),
-                "llama-server" | "llama-server-prism" | "nemo-speech" | "audio-cpp" | "sd-server"
-            ) && model.format == "gguf"
-                || (model.engine == "onnx"
-                    && model.format == "onnx"
-                    && model.capabilities == ["Portrait Matting"]),
-            "Unsupported model format or engine"
-        );
-        let latest = model
-            .versions
-            .get(&model.latest)
-            .context("Missing selected model version")?;
-        if let Some(dir) = &model.install_dir {
-            validate_install_path(&format!("{dir}/model.gguf"), "model.gguf")?;
-            ensure!(
-                dir.split('/').count() == 2,
-                "Model install directory must contain creator and family"
-            );
-        }
-        if let Some(path) = model
-            .catalog
-            .as_ref()
-            .and_then(|catalog| catalog.local.path.as_deref())
+    }
+    let mut parsed = Parsed {
+        models: Vec::new(),
+        skipped: Vec::new(),
+    };
+    for entry in registry.local_models {
+        let id = entry
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        match serde_json::from_value::<LocalModel>(entry)
+            .map_err(anyhow::Error::from)
+            .and_then(|model| validate_model(&model).map(|()| model))
         {
-            let main = latest
-                .files
-                .iter()
-                .find(|file| file.id == "model")
-                .context("Model file missing")?;
-            validate_install_path(path, &main.filename)?;
-        }
-        let mut order = HashSet::new();
-        for version in model.versions.values() {
-            ensure!(
-                version.release_number > 0
-                    && order.insert(version.release_number)
-                    && version.release_number <= latest.release_number,
-                "Invalid model release order"
-            );
-            validate_bundle(model, version)?;
-            for file in &version.files {
-                ensure!(
-                    !file.filename.is_empty()
-                        && (file.filename.ends_with(".gguf")
-                            || file.filename.ends_with(".safetensors")
-                            || file.filename.ends_with(".json")
-                            || file.filename.ends_with(".onnx"))
-                        && file
-                            .filename
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)),
-                    "Invalid model filename"
-                );
-                let url = reqwest::Url::parse(&file.url)?;
-                ensure!(
-                    url.scheme() == "https"
-                        && url.username().is_empty()
-                        && url.password().is_none()
-                        && url.fragment().is_none(),
-                    "Invalid model download URL"
-                );
-                ensure!(
-                    file.size_bytes > 0
-                        && file.sha256.len() == 64
-                        && file.sha256.bytes().all(|b| b.is_ascii_hexdigit()),
-                    "Invalid model integrity metadata"
-                );
-            }
+            Ok(model) => parsed.models.push(model),
+            Err(error) => parsed.skipped.push((id, format!("{error:#}"))),
         }
     }
-    Ok(registry.local_models)
+    Ok(parsed)
+}
+
+/// Loads every entry that passes validation. Entries this Infer build cannot
+/// install yet are skipped and logged, so they can stay in the file without
+/// making the rest of the registry unusable.
+fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
+    let parsed = parse_entries(bytes)?;
+    for (id, reason) in &parsed.skipped {
+        tracing::warn!(model = %id, "Skipping unsupported registry model: {reason}");
+    }
+    Ok(parsed.models)
+}
+
+#[cfg(test)]
+fn parse_strict(bytes: &[u8]) -> Result<Vec<LocalModel>> {
+    let parsed = parse_entries(bytes)?;
+    if let Some((id, reason)) = parsed.skipped.first() {
+        anyhow::bail!("Registry model {id} is invalid: {reason}");
+    }
+    Ok(parsed.models)
+}
+
+fn validate_model(model: &LocalModel) -> Result<()> {
+    ensure!(valid_model_id(&model.id), "Invalid local model ID");
+    ensure!(
+        !model.name.trim().is_empty() && !model.license.trim().is_empty(),
+        "Missing model name or license"
+    );
+    ensure!(
+        reqwest::Url::parse(&model.source_url)?.scheme() == "https",
+        "Model source must use HTTPS"
+    );
+    ensure!(
+        matches!(
+            model.engine.as_str(),
+            "llama-server" | "llama-server-prism" | "nemo-speech" | "audio-cpp" | "sd-server"
+        ) && model.format == "gguf"
+            || (model.engine == "onnx"
+                && model.format == "onnx"
+                && model.capabilities == ["Portrait Matting"]),
+        "Unsupported model format or engine"
+    );
+    let latest = model
+        .versions
+        .get(&model.latest)
+        .context("Missing selected model version")?;
+    if let Some(dir) = &model.install_dir {
+        validate_install_path(&format!("{dir}/model.gguf"), "model.gguf")?;
+        ensure!(
+            dir.split('/').count() == 2,
+            "Model install directory must contain creator and family"
+        );
+    }
+    if let Some(path) = model
+        .catalog
+        .as_ref()
+        .and_then(|catalog| catalog.local.path.as_deref())
+    {
+        let main = latest
+            .files
+            .iter()
+            .find(|file| file.id == "model")
+            .context("Model file missing")?;
+        validate_install_path(path, &main.filename)?;
+    }
+    let mut order = HashSet::new();
+    for version in model.versions.values() {
+        ensure!(
+            version.release_number > 0
+                && order.insert(version.release_number)
+                && version.release_number <= latest.release_number,
+            "Invalid model release order"
+        );
+        validate_bundle(model, version)?;
+        for file in &version.files {
+            ensure!(
+                !file.filename.is_empty()
+                    && (file.filename.ends_with(".gguf")
+                        || file.filename.ends_with(".safetensors")
+                        || file.filename.ends_with(".json")
+                        || file.filename.ends_with(".onnx"))
+                    && file
+                        .filename
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)),
+                "Invalid model filename"
+            );
+            let url = reqwest::Url::parse(&file.url)?;
+            ensure!(
+                url.scheme() == "https"
+                    && url.username().is_empty()
+                    && url.password().is_none()
+                    && url.fragment().is_none(),
+                "Invalid model download URL"
+            );
+            ensure!(
+                file.size_bytes > 0
+                    && file.sha256.len() == 64
+                    && file.sha256.bytes().all(|b| b.is_ascii_hexdigit()),
+                "Invalid model integrity metadata"
+            );
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn valid_model_id(id: &str) -> bool {
@@ -1431,7 +1480,7 @@ mod tests {
             let mut candidate = value.clone();
             candidate["local_models"][0]["install_dir"] = dir.into();
             assert!(
-                parse(&serde_json::to_vec(&candidate).unwrap()).is_err(),
+                parse_strict(&serde_json::to_vec(&candidate).unwrap()).is_err(),
                 "{dir}"
             );
         }
@@ -1453,7 +1502,7 @@ mod tests {
                 .unwrap();
             model["catalog"]["local"]["path"] = invalid.into();
             assert!(
-                parse(&serde_json::to_vec(&candidate).unwrap()).is_err(),
+                parse_strict(&serde_json::to_vec(&candidate).unwrap()).is_err(),
                 "{invalid}"
             );
         }
@@ -1603,7 +1652,7 @@ mod tests {
         let model = &mut value["local_models"][1];
         let latest = model["latest"].as_str().unwrap().to_owned();
         model["versions"][&latest]["files"][1]["id"] = "model".into();
-        assert!(parse(&serde_json::to_vec(&value).unwrap()).is_err());
+        assert!(parse_strict(&serde_json::to_vec(&value).unwrap()).is_err());
     }
 
     #[test]
@@ -1722,7 +1771,7 @@ mod tests {
                 _ => files[2]["filename"] = "vae.gguf".into(),
             }
             assert!(
-                parse(&serde_json::to_vec(&registry).unwrap()).is_err(),
+                parse_strict(&serde_json::to_vec(&registry).unwrap()).is_err(),
                 "{change}"
             );
         }
@@ -1792,7 +1841,7 @@ mod tests {
         let mut model = parse(include_bytes!("../registry/models.json"))
             .unwrap()
             .into_iter()
-            .find(|model| model.id == "z-image-turbo-q8-0")
+            .find(|model| model.id == "qwen-image-edit-2511")
             .unwrap();
         for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
             let bytes = fixture_bytes(file);
@@ -1853,7 +1902,7 @@ mod tests {
             .unwrap();
         let encoder = Path::new(installed.text_encoder_path.as_ref().unwrap());
         assert!(encoder.join("model.safetensors.index.json").is_file());
-        assert!(encoder.join("model-00003-of-00003.safetensors").is_file());
+        assert!(encoder.join("model-00004-of-00004.safetensors").is_file());
         install_with(&model, &root, &server, &catalog, |_, _| {
             panic!("verified bundle should be reused")
         })
@@ -2133,7 +2182,7 @@ mod tests {
         let model = &mut value["local_models"][0];
         let latest = model["latest"].as_str().unwrap().to_owned();
         model["versions"][&latest]["files"][0]["sha256"] = "bad".into();
-        assert!(parse(&serde_json::to_vec(&value).unwrap()).is_err());
+        assert!(parse_strict(&serde_json::to_vec(&value).unwrap()).is_err());
     }
     #[test]
     fn model_identifiers_allow_catalog_dots_but_not_path_components() {
@@ -2149,5 +2198,26 @@ mod tests {
         ] {
             assert!(!valid_model_id(invalid), "{invalid}");
         }
+    }
+    #[test]
+    fn unsupported_entries_are_skipped_without_losing_the_rest() {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../registry/models.json")).unwrap();
+        let total = value["local_models"].as_array().unwrap().len();
+        let mut broken = value["local_models"][0].clone();
+        broken["id"] = "broken-entry".into();
+        broken["format"] = "unsupported".into();
+        value["local_models"].as_array_mut().unwrap().push(broken);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        let loaded = parse(&bytes).unwrap();
+        assert!(loaded.iter().all(|model| model.id != "broken-entry"));
+        assert_eq!(
+            loaded.len() + parse_entries(&bytes).unwrap().skipped.len(),
+            total + 1
+        );
+        assert!(parse_strict(&bytes).is_err());
+        let first = value["local_models"][0].clone();
+        value["local_models"].as_array_mut().unwrap().push(first);
+        assert!(parse(&serde_json::to_vec(&value).unwrap()).is_err());
     }
 }

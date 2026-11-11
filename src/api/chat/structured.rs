@@ -50,6 +50,44 @@ pub(super) fn validate_output(
     })
 }
 
+pub(super) async fn validate_remote(
+    validator: &jsonschema::Validator,
+    response: Response,
+) -> Response {
+    let (parts, body) = response.into_parts();
+    let Ok(bytes) = axum::body::to_bytes(body, 32 * 1024 * 1024).await else {
+        return error(
+            StatusCode::BAD_GATEWAY,
+            "structured_output_invalid",
+            "The provider reply could not be read for schema validation.".into(),
+        );
+    };
+    let content = serde_json::from_slice::<Value>(&bytes)
+        .ok()
+        .and_then(|reply| {
+            reply
+                .pointer("/choices/0/message/content")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    let Some(content) = content else {
+        return error(
+            StatusCode::BAD_GATEWAY,
+            "structured_output_invalid",
+            "The provider reply has no text content to validate against the requested schema."
+                .into(),
+        );
+    };
+    match validate_output(validator, &InferenceTaskResponse::Text(content)) {
+        Ok(()) => Response::from_parts(parts, axum::body::Body::from(bytes)),
+        Err(message) => error(
+            StatusCode::BAD_GATEWAY,
+            "structured_output_invalid",
+            message,
+        ),
+    }
+}
+
 pub(super) fn error(status: StatusCode, code: &str, message: String) -> Response {
     (
         status,
@@ -140,5 +178,37 @@ mod tests {
         ] {
             assert!(super::validator(&request(schema)).is_err());
         }
+    }
+    fn reply(content: &str) -> Response {
+        Json(json!({"choices":[{"message":{"role":"assistant","content":content}}]}))
+            .into_response()
+    }
+    async fn status_of(content: &str) -> StatusCode {
+        let validator = jsonschema::options()
+            .build(&json!({"type":"object","required":["score"],"properties":{"score":{"type":"integer"}}}))
+            .unwrap();
+        validate_remote(&validator, reply(content)).await.status()
+    }
+    #[tokio::test]
+    async fn remote_replies_are_validated_against_the_requested_schema() {
+        assert_eq!(status_of(r#"{"score":3}"#).await, StatusCode::OK);
+        for bad in [
+            r#"{"score":"x"}"#,
+            "{}",
+            "```json
+{\"score\":3}
+```",
+            "plain",
+        ] {
+            assert_eq!(status_of(bad).await, StatusCode::BAD_GATEWAY);
+        }
+        let validator = jsonschema::options()
+            .build(&json!({"type":"object"}))
+            .unwrap();
+        let empty = Json(json!({"choices":[]})).into_response();
+        assert_eq!(
+            validate_remote(&validator, empty).await.status(),
+            StatusCode::BAD_GATEWAY
+        );
     }
 }

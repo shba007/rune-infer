@@ -4,7 +4,7 @@ param(
     [string] $Runtime
 )
 $ErrorActionPreference = 'Stop'
-$taskRepository = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$taskRepository = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $taskReportPath = (Resolve-Path -LiteralPath $Report).Path
 $taskProof = Get-Content -LiteralPath $taskReportPath -Raw | ConvertFrom-Json
 if ($taskProof.status -ne 'linux_cpu_parity_passed' -or $taskProof.checks.Count -lt 1 -or

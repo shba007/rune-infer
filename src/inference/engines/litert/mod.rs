@@ -44,7 +44,7 @@ const MODEL_PROFILES: [ModelProfile; 3] = [
         sha256: "6f03564f13abfae18185581a809cb5c0ee5c0a425dc5f85102194b2b321eba3d",
         architecture: "depth-anything-v2-large",
         name: "Depth Anything V2 Large FP32",
-        source: "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/tree/7581137eff8d4e94f6e796d3baea0e9fa79b22d2 (local export using tools/model-converter; CC-BY-NC-4.0)",
+        source: "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/tree/7581137eff8d4e94f6e796d3baea0e9fa79b22d2 (local export using scripts/tools/model-converter; CC-BY-NC-4.0)",
         reference_resize: true,
         gpu_verified: false,
     },

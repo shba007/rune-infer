@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn registry_fixture_is_valid_unique_and_exactly_scoped() {
         let models = parse_registry(include_str!("../../registry/models.json")).unwrap();
-        assert_eq!(models.len(), 6);
+        assert_eq!(models.len(), 7);
         for m in models {
             assert!(fixture_model(&m.provider, &m.id).unwrap().is_some());
             assert!(fixture_model("other-provider", &m.id).unwrap().is_none());

@@ -273,11 +273,11 @@ pub async fn chat_completions_handler(
             return structured::error(StatusCode::BAD_REQUEST, "invalid_json_schema", message);
         }
     };
-    if structured_validator.is_some() && (request.stream || !model_config.is_local()) {
+    if structured_validator.is_some() && request.stream {
         return structured::error(
             StatusCode::BAD_REQUEST,
             "unsupported_response_format",
-            "Validated structured output currently requires a local, non-streaming request.".into(),
+            "Validated structured output requires a non-streaming request.".into(),
         );
     }
 
@@ -295,6 +295,11 @@ pub async fn chat_completions_handler(
                 .into_response();
         }
         let mut proxy_resp = state.proxy.execute_chat(&model_config, &request).await;
+        if let Some(validator) = &structured_validator {
+            if proxy_resp.status().is_success() {
+                proxy_resp = structured::validate_remote(validator, proxy_resp).await;
+            }
+        }
         let hdrs = proxy_resp.headers_mut();
         if let Ok(val) = axum::http::HeaderValue::from_str(&model_config.id) {
             hdrs.insert("x-model-served", val);

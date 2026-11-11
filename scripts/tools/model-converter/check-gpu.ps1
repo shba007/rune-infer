@@ -7,7 +7,7 @@ param(
     [switch] $IrGraph
 )
 $ErrorActionPreference = 'Stop'
-$taskRepository = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$taskRepository = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $taskModel = (Resolve-Path -LiteralPath $Model).Path
 $taskRuntime = (Resolve-Path -LiteralPath (Join-Path $RuntimeDirectory 'libLiteRt.dll')).Path
 $taskShaders = (Resolve-Path -LiteralPath $ShaderDirectory).Path
