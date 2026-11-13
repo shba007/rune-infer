@@ -2,114 +2,117 @@
   "schema_version": 3,
   "models": [
     {
+      "id": "gemma-4-12b-it",
+      "name": "Gemma 4 12B IT",
+      "description": "Google DeepMind Gemma 4 12B Instruction-Tuned omni multimodal foundation model for text, image, audio, and video",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
-      "description": "Google DeepMind Gemma 4 12B Instruction-Tuned omni multimodal foundation model for text, image, audio, and video",
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ],
       "engine": [
         "llama-server",
         "encoder"
       ],
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/gemma-4-12b-it-GGUF/mmproj-BF16.gguf"
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_tokens": 4096
       },
-      "id": "gemma-4-12b-it",
       "local": {
-        "args": "-fa on",
+        "path": "D:/Projects/Public/rune/code-model/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-UD-Q6_K_XL.gguf",
+        "params": 12000000000,
         "bits_per_weight": 4.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 12000000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-UD-Q6_K_XL.gguf"
+        "args": "-fa on"
       },
-      "max_context_length": 262144,
-      "name": "Gemma 4 12B IT",
-      "sampling": {
-        "max_tokens": 4096,
-        "temperature": 0.6,
-        "top_k": 40,
-        "top_p": 0.95
-      },
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ]
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/gemma-4-12b-it-GGUF/mmproj-BF16.gguf"
+      }
     },
     {
+      "id": "minicpm-o-4-5-q8-0",
+      "name": "MiniCPM-o 4.5 Q8_0",
+      "description": "OpenBMB MiniCPM-o 4.5 (an omni model). Wired up for text and image input via the vision encoder in extra.mmproj_path; llama-server loads a single mmproj, so audio input and speech output are not available",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
-      "description": "OpenBMB MiniCPM-o 4.5 (an omni model). Wired up for text and image input via the vision encoder in extra.mmproj_path; llama-server loads a single mmproj, so audio input and speech output are not available",
-      "engine": [
-        "llama-server"
-      ],
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/openbmb/MiniCPM-o-4_5-gguf/vision/MiniCPM-o-4_5-vision-F16.gguf"
-      },
-      "id": "minicpm-o-4-5-q8-0",
-      "local": {
-        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0",
-        "bits_per_weight": 8.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": null,
-        "path": "D:/Projects/Public/rune/code-model/openbmb/MiniCPM-o-4_5-gguf/MiniCPM-o-4_5-Q8_0.gguf"
-      },
-      "max_context_length": 40960,
-      "name": "MiniCPM-o 4.5 Q8_0",
-      "sampling": {
-        "max_tokens": 4096,
-        "min_p": 0.05,
-        "temperature": 0.7,
-        "top_k": 40,
-        "top_p": 0.9
-      },
       "tasks": [
         "text-to-text",
         "text-image-to-text"
-      ]
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 40960,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 40,
+        "min_p": 0.05,
+        "max_tokens": 4096
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/openbmb/MiniCPM-o-4_5-gguf/MiniCPM-o-4_5-Q8_0.gguf",
+        "params": null,
+        "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0"
+      },
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/openbmb/MiniCPM-o-4_5-gguf/vision/MiniCPM-o-4_5-vision-F16.gguf"
+      }
     },
     {
+      "id": "huihui-qwen3.8-27b-abliterated",
+      "name": "Huihui Qwen3.8 27B Abliterated",
+      "description": "Huihui-AI abliterated uncensored Qwen3.8 27B instruction and reasoning model",
       "capabilities": [
         "Reasoning",
         "Tool Call",
         "Structured Output",
         "Uncensored"
       ],
-      "description": "Huihui-AI abliterated uncensored Qwen3.8 27B instruction and reasoning model",
-      "engine": [
-        "llama-server"
-      ],
-      "extra": {
-        "max_resolution": "4096×4096 (Dynamic 4K)",
-        "mmproj_path": "D:/Projects/Public/rune/code-model/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF/mmproj-model-bf16.gguf"
-      },
-      "id": "huihui-qwen3.8-27b-abliterated",
-      "local": {
-        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1",
-        "bits_per_weight": 4.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 27000000000,
-        "path": "D:/Projects/Public/rune/code-model/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF/Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_S-mtp.gguf"
-      },
-      "max_context_length": 262144,
-      "name": "Huihui Qwen3.8 27B Abliterated",
-      "sampling": {
-        "max_tokens": 4096,
-        "min_p": 0.05,
-        "temperature": 0.7,
-        "top_k": 40,
-        "top_p": 0.95
-      },
       "tasks": [
         "text-to-text",
         "text-image-to-text"
-      ]
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "top_k": 40,
+        "min_p": 0.05,
+        "max_tokens": 4096
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF/Huihui-Qwen3.8-27B-abliterated-GSQ-RCO-IQ3_S-mtp.gguf",
+        "params": 27000000000,
+        "bits_per_weight": 4.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
+      },
+      "extra": {
+        "max_resolution": "4096×4096 (Dynamic 4K)",
+        "mmproj_path": "D:/Projects/Public/rune/code-model/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF/mmproj-model-bf16.gguf"
+      }
     },
     {
+      "id": "qwen3.8-27b",
+      "name": "Qwen3.8 27B",
+      "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
       "capabilities": [
         "Reasoning",
         "Agentic Tasks",
@@ -118,181 +121,181 @@
         "Person Identification",
         "MTP"
       ],
-      "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ],
       "engine": [
         "llama-server"
       ],
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0.3,
+        "top_p": 0.9,
+        "top_k": 40,
+        "min_p": 0.05,
+        "max_tokens": 1024
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-IQ3_S.gguf",
+        "params": 27000000000,
+        "bits_per_weight": 3.44,
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
+      },
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",
         "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/mmproj-BF16.gguf",
         "mtp_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/mtp-Qwen3.8-27B-Q4_0.gguf"
-      },
-      "id": "qwen3.8-27b",
-      "local": {
-        "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256",
-        "bits_per_weight": 3.44,
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "params": 27000000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-IQ3_S.gguf"
-      },
-      "max_context_length": 262144,
-      "name": "Qwen3.8 27B",
-      "sampling": {
-        "max_tokens": 1024,
-        "min_p": 0.05,
-        "temperature": 0.3,
-        "top_k": 40,
-        "top_p": 0.9
-      },
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ]
+      }
     },
     {
+      "id": "ternary-bonsai-2-27b-pq2-0",
+      "name": "Ternary Bonsai-2 27B",
+      "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
       "capabilities": [
         "Reasoning",
         "Structured Output",
         "Tool Call"
       ],
-      "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
+      "tasks": [
+        "text-to-text"
+      ],
       "engine": [
         "llama-server-prism"
       ],
-      "extra": {
-        "max_resolution": "4096×4096 (Dynamic 4K)",
-        "mmproj_path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-mmproj-BF16.gguf"
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "min_p": 0.05,
+        "max_tokens": 4096
       },
-      "id": "ternary-bonsai-2-27b-pq2-0",
       "local": {
-        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1",
+        "path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PQ2_0.gguf",
+        "params": 27000000000,
         "bits_per_weight": 2.13,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 27000000000,
-        "path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PQ2_0.gguf"
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
       },
-      "max_context_length": 262144,
-      "name": "Ternary Bonsai-2 27B",
-      "sampling": {
-        "max_tokens": 4096,
-        "min_p": 0.05,
-        "temperature": 0.7,
-        "top_k": 50,
-        "top_p": 0.9
-      },
-      "tasks": [
-        "text-to-text"
-      ]
+      "extra": {
+        "max_resolution": "4096×4096 (Dynamic 4K)",
+        "mmproj_path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-mmproj-BF16.gguf"
+      }
     },
     {
+      "id": "ornith-1.5-9b",
+      "name": "Ornith 1.5 9B",
+      "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
       "capabilities": [
         "Reasoning",
         "Agentic Coding",
         "Structured Output",
         "Tool Call"
       ],
-      "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
+      "tasks": [
+        "text-to-text"
+      ],
       "engine": [
         "llama-server"
       ],
-      "extra": {
-        "max_resolution": "3840×2160 (4K UHD)",
-        "mmproj_path": "D:/Projects/Public/rune/code-model/ornith-ai/Ornith-1.5-9B-GGUF/mmproj-Ornith-1.5-9B-BF16.gguf"
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.01,
+        "max_tokens": 4096
       },
-      "id": "ornith-1.5-9b",
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/ornith-ai/Ornith-1.5-9B-GGUF/Ornith-1.5-9B-Q8_0.gguf",
+        "params": 9400000000,
         "bits_per_weight": 8.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 9400000000,
-        "path": "D:/Projects/Public/rune/code-model/ornith-ai/Ornith-1.5-9B-GGUF/Ornith-1.5-9B-Q8_0.gguf"
+        "args": ""
       },
-      "max_context_length": 262144,
-      "name": "Ornith 1.5 9B",
-      "sampling": {
-        "max_tokens": 4096,
-        "min_p": 0.01,
-        "temperature": 0.6,
-        "top_k": 20,
-        "top_p": 0.95
-      },
-      "tasks": [
-        "text-to-text"
-      ]
+      "extra": {
+        "max_resolution": "3840×2160 (4K UHD)",
+        "mmproj_path": "D:/Projects/Public/rune/code-model/ornith-ai/Ornith-1.5-9B-GGUF/mmproj-Ornith-1.5-9B-BF16.gguf"
+      }
     },
     {
+      "id": "dinov2-giant",
+      "name": "DINOv2 Giant",
+      "description": "Self-supervised vision transformer foundation backbone for dense feature representation, depth, and semantics",
+      "modality": "Text",
       "capabilities": [
         "Vision Features",
         "Semantic Search",
         "Depth Estimation"
       ],
-      "description": "Self-supervised vision transformer foundation backbone for dense feature representation, depth, and semantics",
       "engine": [
         "encoder"
       ],
-      "id": "dinov2-giant",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/facebook/dinov2-giant/dinov2-giant.gguf",
+        "params": 1100000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 1100000000,
-        "path": "D:/Projects/Public/rune/code-model/facebook/dinov2-giant/dinov2-giant.gguf"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "DINOv2 Giant"
+        "args": ""
+      }
     },
     {
+      "id": "sam2.1-hiera-large",
+      "name": "SAM 2.1 Hiera Large",
+      "description": "Meta Segment Anything Model 2.1 for visual segmentation and promptable mask extraction in images and video",
+      "modality": "Text",
       "capabilities": [
         "Visual Segmentation",
         "Object Masking",
         "Video Tracking"
       ],
-      "description": "Meta Segment Anything Model 2.1 for visual segmentation and promptable mask extraction in images and video",
       "engine": [
         "encoder"
       ],
-      "id": "sam2.1-hiera-large",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/facebook/sam2.1-hiera-large/model.safetensors",
+        "params": 224000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 224000000,
-        "path": "D:/Projects/Public/rune/code-model/facebook/sam2.1-hiera-large/model.safetensors"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "SAM 2.1 Hiera Large"
+        "args": ""
+      }
     },
     {
+      "id": "grounding-dino-base",
+      "name": "Grounding DINO Base",
+      "description": "Open-world zero-shot object detection model conditioned on language text queries",
+      "modality": "Text",
       "capabilities": [
         "Zero-Shot Detection",
         "Grounding",
         "Bounding Boxes"
       ],
-      "description": "Open-world zero-shot object detection model conditioned on language text queries",
       "engine": [
         "encoder"
       ],
-      "id": "grounding-dino-base",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/IDEA-Research/grounding-dino-base/model.safetensors",
+        "params": 172000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 172000000,
-        "path": "D:/Projects/Public/rune/code-model/IDEA-Research/grounding-dino-base/model.safetensors"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "Grounding DINO Base"
+        "args": ""
+      }
     },
     {
+      "id": "oxcoder-9b",
+      "name": "OxCoder 9B",
+      "description": "Code generation and instruction following",
       "capabilities": [
         "Agentic Coding",
         "Terminal Automation",
@@ -301,84 +304,85 @@
         "Structured Output",
         "Error Recovery"
       ],
-      "description": "Code generation and instruction following",
+      "tasks": [
+        "text-to-text"
+      ],
       "engine": [
         "llama-server"
       ],
-      "id": "oxcoder-9b",
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.01,
+        "max_tokens": 4096
+      },
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/mradermacher/OxCoder-9B-i1-GGUF/OxCoder-9B.i1-Q6_K.gguf",
+        "params": 9000000000,
         "bits_per_weight": 6.56,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 9000000000,
-        "path": "D:/Projects/Public/rune/code-model/mradermacher/OxCoder-9B-i1-GGUF/OxCoder-9B.i1-Q6_K.gguf"
-      },
-      "max_context_length": 262144,
-      "name": "OxCoder 9B",
-      "sampling": {
-        "max_tokens": 4096,
-        "min_p": 0.01,
-        "temperature": 0.2,
-        "top_k": 20,
-        "top_p": 0.95
-      },
-      "tasks": [
-        "text-to-text"
-      ]
+        "args": ""
+      }
     },
     {
+      "id": "qwen3-embedding-4b",
+      "name": "Qwen3 Embedding 4B",
+      "description": "Dense dense text and code embeddings foundation model for semantic retrieval and RAG",
+      "modality": "Text",
       "capabilities": [
         "Semantic Search",
         "Code Retrieval"
       ],
-      "description": "Dense dense text and code embeddings foundation model for semantic retrieval and RAG",
       "engine": [
         "encoder"
       ],
-      "id": "qwen3-embedding-4b",
+      "max_context_length": null,
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1,
+        "top_k": 1,
+        "min_p": 0,
+        "max_tokens": 1
+      },
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3-Embedding-4B/Qwen3-Embedding-4B-Q4_K_M.gguf",
+        "params": 4000000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 4000000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3-Embedding-4B/Qwen3-Embedding-4B-Q4_K_M.gguf"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "Qwen3 Embedding 4B",
-      "sampling": {
-        "max_tokens": 1,
-        "min_p": 0,
-        "temperature": 0,
-        "top_k": 1,
-        "top_p": 1
+        "args": ""
       }
     },
     {
-      "capabilities": [],
+      "id": "qwen3.5-4b-q4",
+      "name": "Qwen3.5 4B Q4",
       "description": "Local image and text model; basic tool calls tested. Screen coordinate accuracy is not established.",
+      "capabilities": [],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ],
       "engine": [
         "llama-server"
       ],
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/SoAIHQ/Qwen3.5-4B-GGUF/mmproj-Qwen3.5-4B-f16.gguf"
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0,
+        "max_tokens": 512
       },
-      "id": "qwen3.5-4b-q4",
       "local": {
-        "args": "-fa on",
+        "path": "D:/Projects/Public/rune/code-model/SoAIHQ/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf",
+        "params": 4000000000,
         "bits_per_weight": 5.6,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 4000000000,
-        "path": "D:/Projects/Public/rune/code-model/SoAIHQ/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf"
+        "args": "-fa on"
       },
-      "max_context_length": 262144,
-      "name": "Qwen3.5 4B Q4",
-      "sampling": {
-        "max_tokens": 512,
-        "temperature": 0
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/SoAIHQ/Qwen3.5-4B-GGUF/mmproj-Qwen3.5-4B-f16.gguf"
       },
       "structured_output_support": {
         "status": "supported",
@@ -389,10 +393,6 @@
           }
         ]
       },
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
       "tool_call_support": {
         "status": "supported",
         "verified_with": [
@@ -404,103 +404,119 @@
       }
     },
     {
+      "id": "qwen3.5-0.8b",
+      "name": "Qwen3.5 0.8B",
+      "description": "Qwen3.5 0.8B reasoning model",
       "capabilities": [
         "Reasoning",
         "Tool Call",
         "Structured Output",
         "Code Generation"
       ],
-      "description": "Qwen3.5 0.8B reasoning model",
+      "tasks": [
+        "text-to-text"
+      ],
       "engine": [
         "llama-server"
       ],
-      "id": "qwen3.5-0.8b",
+      "max_context_length": 262144,
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "top_k": 20,
+        "min_p": 0.05,
+        "max_tokens": 4096
+      },
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-BF16.gguf",
+        "params": 873000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 873000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-BF16.gguf"
-      },
-      "max_context_length": 262144,
-      "name": "Qwen3.5 0.8B",
-      "sampling": {
-        "max_tokens": 4096,
-        "min_p": 0.05,
-        "temperature": 0.6,
-        "top_k": 20,
-        "top_p": 0.9
-      },
-      "tasks": [
-        "text-to-text"
-      ]
+        "args": ""
+      }
     },
     {
+      "id": "cactus-needle-3",
+      "name": "Cactus Needle 3",
+      "description": "Cactus Needle 3 tool-calling and structured extraction engine",
+      "modality": "Text",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
-      "description": "Cactus Needle 3 tool-calling and structured extraction engine",
       "engine": [
         "needle"
       ],
-      "id": "cactus-needle-3",
+      "max_context_length": 8192,
+      "sampling": {
+        "temperature": 0.1,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.01,
+        "max_tokens": 2048
+      },
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/Cactus-Compute/needle3/needle3.cact",
+        "params": 121000000,
         "bits_per_weight": 2,
         "context_length": -1,
         "gpu_layers": 0,
-        "params": 121000000,
-        "path": "D:/Projects/Public/rune/code-model/Cactus-Compute/needle3/needle3.cact"
-      },
-      "max_context_length": 8192,
-      "modality": "Text",
-      "name": "Cactus Needle 3",
-      "sampling": {
-        "max_tokens": 2048,
-        "min_p": 0.01,
-        "temperature": 0.1,
-        "top_k": 20,
-        "top_p": 0.95
+        "args": ""
       }
     },
     {
+      "id": "liquid-d1-3b",
+      "name": "Liquid AI d1-3B",
+      "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",
       "capabilities": [
         "Classification",
         "Scoring"
       ],
-      "description": "Multimodal System 1 zero-token decision model for instant classification, routing, and scoring",
+      "tasks": [
+        "text-to-decision"
+      ],
       "engine": [
         "llama-server",
         "encoder"
       ],
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/LiquidAI/d1-3B-GGUF/mmproj-d1-3B-F16.gguf"
-      },
-      "id": "liquid-d1-3b",
+      "max_context_length": 32768,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/LiquidAI/d1-3B-GGUF/d1-3B-Q8_0.gguf",
+        "params": 3120000000,
         "bits_per_weight": 4.5,
         "context_length": 32768,
         "gpu_layers": 99,
-        "params": 3120000000,
-        "path": "D:/Projects/Public/rune/code-model/LiquidAI/d1-3B-GGUF/d1-3B-Q8_0.gguf"
+        "args": ""
       },
-      "max_context_length": 32768,
-      "name": "Liquid AI d1-3B",
-      "tasks": [
-        "text-to-decision"
-      ]
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/LiquidAI/d1-3B-GGUF/mmproj-d1-3B-F16.gguf"
+      }
     },
     {
+      "id": "qwen-image-2.1",
+      "name": "Qwen-Image-2.1 7B",
+      "description": "Qwen-Image-2.1 7B with native 2K rendering, RGBA transparency, live-verified instruction edits and image variations, up to ten unmasked references and two references with alpha masks",
       "capabilities": [
         "Transparency (RGBA)"
       ],
-      "description": "Qwen-Image-2.1 7B with native 2K rendering, RGBA transparency, live-verified instruction edits and image variations, up to ten unmasked references and two references with alpha masks",
+      "tasks": [
+        "text-to-image",
+        "text-image-to-image",
+        "image-to-image"
+      ],
       "engine": [
         "sd-server"
       ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/qwen-image-2.1-Q4_K_M.gguf",
+        "params": 7000000000,
+        "bits_per_weight": 4.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --params-backend disk"
+      },
       "extra": {
         "default_cfg_scale": 4,
         "default_sample_method": "euler",
@@ -509,7 +525,6 @@
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
       },
-      "id": "qwen-image-2.1",
       "image_reference_checks": [
         {
           "counts": [
@@ -525,32 +540,33 @@
           "engine": "sd-server",
           "version": "stable-diffusion.cpp version unknown, commit c6dfa9d"
         }
-      ],
-      "local": {
-        "args": "--diffusion-fa --params-backend disk",
-        "bits_per_weight": 4.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 7000000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/qwen-image-2.1-Q4_K_M.gguf"
-      },
-      "max_context_length": null,
-      "name": "Qwen-Image-2.1 7B",
-      "tasks": [
-        "text-to-image",
-        "text-image-to-image",
-        "image-to-image"
       ]
     },
     {
+      "id": "qwen-image-2.1-uncensored",
+      "name": "Qwen-Image-2.1 7B Uncensored",
+      "description": "Qwen-Image-2.1 7B Uncensored variant with bypassed alignment filtering",
       "capabilities": [
         "Uncensored",
         "Transparency (RGBA)"
       ],
-      "description": "Qwen-Image-2.1 7B Uncensored variant with bypassed alignment filtering",
+      "tasks": [
+        "text-to-image",
+        "text-image-to-image",
+        "image-to-image"
+      ],
       "engine": [
         "sd-server"
       ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/abenzerps/Qwen-Image-2.1-Uncensored-GGUF/qwen-image-2.1-Q8_0.gguf",
+        "params": 7000000000,
+        "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --params-backend disk"
+      },
       "extra": {
         "default_cfg_scale": 4,
         "default_sample_method": "euler",
@@ -558,200 +574,208 @@
         "max_resolution": "2048×2048 (Native DiT)",
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
-      },
-      "id": "qwen-image-2.1-uncensored",
-      "local": {
-        "args": "--diffusion-fa --params-backend disk",
-        "bits_per_weight": 8.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 7000000000,
-        "path": "D:/Projects/Public/rune/code-model/abenzerps/Qwen-Image-2.1-Uncensored-GGUF/qwen-image-2.1-Q8_0.gguf"
-      },
-      "max_context_length": null,
-      "name": "Qwen-Image-2.1 7B Uncensored",
-      "tasks": [
-        "text-to-image",
-        "text-image-to-image",
-        "image-to-image"
-      ]
+      }
     },
     {
-      "capabilities": [],
+      "id": "qwen-image-edit-2511",
+      "name": "Qwen Image Edit 2511",
       "description": "Qwen-Image-Edit 2511 with live-verified instruction edits, one or two reference images and alpha masks preserving protected pixels",
+      "modality": "ImageGeneration",
+      "capabilities": [],
+      "tasks": [
+        "text-image-to-image",
+        "image-to-image"
+      ],
       "engine": [
         "sd-server"
       ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-Edit-2511-GGUF/qwen-image-edit-2511-Q3_K_L.gguf",
+        "params": 20430401088,
+        "bits_per_weight": 4.14,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --params-backend disk --model-args qwen_image_zero_cond_t=true"
+      },
       "extra": {
         "default_cfg_scale": 5,
         "default_sample_method": "euler",
         "default_steps": 30,
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
-      },
-      "id": "qwen-image-edit-2511",
-      "local": {
-        "args": "--diffusion-fa --params-backend disk --model-args qwen_image_zero_cond_t=true",
-        "bits_per_weight": 4.14,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 20430401088,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-Edit-2511-GGUF/qwen-image-edit-2511-Q3_K_L.gguf"
-      },
-      "max_context_length": null,
-      "modality": "ImageGeneration",
-      "name": "Qwen Image Edit 2511",
-      "tasks": [
-        "text-image-to-image",
-        "image-to-image"
-      ]
+      }
     },
     {
-      "capabilities": [],
+      "id": "moss-image-sft",
+      "name": "MOSS Image SFT",
       "description": "OpenMOSS MOSS-Image-SFT text-to-image model using the local Qwen3.5 encoder, tokenizer and VAE",
+      "capabilities": [],
+      "tasks": [
+        "text-to-image"
+      ],
       "engine": [
         "sd-server"
       ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/MOSS-Image-SFT-GGUF/MOSS-Image-SFT-Q8_0.gguf",
+        "params": 5082308624,
+        "bits_per_weight": 8.63,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --params-backend disk --flow-shift 5 --tokenizer D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/tokenizer/tokenizer.json"
+      },
       "extra": {
         "default_cfg_scale": 3,
         "default_sample_method": "euler",
         "default_steps": 50,
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
-      },
-      "id": "moss-image-sft",
-      "local": {
-        "args": "--diffusion-fa --params-backend disk --flow-shift 5 --tokenizer D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/tokenizer/tokenizer.json",
-        "bits_per_weight": 8.63,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 5082308624,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/MOSS-Image-SFT-GGUF/MOSS-Image-SFT-Q8_0.gguf"
-      },
-      "max_context_length": null,
-      "name": "MOSS Image SFT",
-      "tasks": [
-        "text-to-image"
-      ]
+      }
     },
     {
-      "capabilities": [],
+      "id": "yolo26x",
+      "name": "YOLO26x Object Detection",
       "description": "YOLO26x COCO object detection, reviewed ONNX export with embedded non-maximum suppression (AGPL-3.0).",
+      "capabilities": [],
+      "tasks": [
+        "image-to-detection"
+      ],
       "engine": [
         "onnx"
       ],
-      "id": "yolo26x",
       "local": {
-        "gpu_layers": 99,
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x_detect.onnx"
-      },
-      "name": "YOLO26x Object Detection",
-      "tasks": [
-        "image-to-detection"
-      ]
+        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x_detect.onnx",
+        "gpu_layers": 99
+      }
     },
     {
+      "id": "yolo26x-pose",
+      "name": "YOLO26x Pose Estimation",
+      "description": "YOLO26x COCO human pose estimation with 17 keypoints; reviewed ONNX export (AGPL-3.0).",
       "capabilities": [
         "Pose Estimation"
       ],
-      "description": "YOLO26x COCO human pose estimation with 17 keypoints; reviewed ONNX export (AGPL-3.0).",
+      "tasks": [
+        "image-to-detection"
+      ],
       "engine": [
         "onnx"
       ],
-      "id": "yolo26x-pose",
       "local": {
-        "gpu_layers": 99,
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-pose.onnx"
-      },
-      "name": "YOLO26x Pose Estimation",
-      "tasks": [
-        "image-to-detection"
-      ]
+        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-pose.onnx",
+        "gpu_layers": 99
+      }
     },
     {
+      "id": "yolo26x-seg",
+      "name": "YOLO26x Instance Segmentation",
+      "description": "YOLO26x COCO instance segmentation with per-object masks; reviewed ONNX export (AGPL-3.0).",
       "capabilities": [
         "Instance Segmentation"
       ],
-      "description": "YOLO26x COCO instance segmentation with per-object masks; reviewed ONNX export (AGPL-3.0).",
+      "tasks": [
+        "image-to-detection"
+      ],
       "engine": [
         "onnx"
       ],
-      "id": "yolo26x-seg",
       "local": {
-        "gpu_layers": 99,
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-seg.onnx"
-      },
-      "name": "YOLO26x Instance Segmentation",
-      "tasks": [
-        "image-to-detection"
-      ]
+        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-seg.onnx",
+        "gpu_layers": 99
+      }
     },
     {
+      "id": "yolo26x-obb",
+      "name": "YOLO26x Oriented Bounding Boxes",
+      "description": "YOLO26x oriented detection for 15 DOTA aerial-image classes; reviewed ONNX export (AGPL-3.0).",
       "capabilities": [
         "Oriented Bounding Boxes"
       ],
-      "description": "YOLO26x oriented detection for 15 DOTA aerial-image classes; reviewed ONNX export (AGPL-3.0).",
+      "tasks": [
+        "image-to-detection"
+      ],
       "engine": [
         "onnx"
       ],
-      "id": "yolo26x-obb",
       "local": {
-        "gpu_layers": 99,
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-obb.onnx"
-      },
-      "name": "YOLO26x Oriented Bounding Boxes",
-      "tasks": [
-        "image-to-detection"
-      ]
+        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-obb.onnx",
+        "gpu_layers": 99
+      }
     },
     {
+      "id": "yolo26x-sem-ade20k",
+      "name": "YOLO26x Semantic Segmentation ADE20K",
+      "description": "YOLO26x semantic segmentation for 150 ADE20K scene classes; locally exported ONNX model (AGPL-3.0).",
       "capabilities": [
         "Semantic Segmentation"
       ],
-      "description": "YOLO26x semantic segmentation for 150 ADE20K scene classes; locally exported ONNX model (AGPL-3.0).",
+      "tasks": [
+        "image-to-segmentation"
+      ],
       "engine": [
         "onnx"
       ],
-      "id": "yolo26x-sem-ade20k",
       "local": {
-        "gpu_layers": 99,
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-sem-ade20k.onnx"
-      },
-      "name": "YOLO26x Semantic Segmentation ADE20K",
-      "tasks": [
-        "image-to-segmentation"
-      ]
+        "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-sem-ade20k.onnx",
+        "gpu_layers": 99
+      }
     },
     {
+      "id": "acestep-v1.5-turbo",
+      "name": "AceStep v1.5 Turbo",
+      "description": "AceStep v1.5 Turbo accelerated diffusion model for sub-second generation",
+      "modality": "Text",
       "capabilities": [
         "Turbo Generation",
         "Photorealism"
       ],
-      "description": "AceStep v1.5 Turbo accelerated diffusion model for sub-second generation",
       "engine": [
         "sd-server"
       ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace-step-1.5-turbo-q8_0.gguf",
+        "params": 4500000000,
+        "bits_per_weight": 8,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--vae D:/Models/gguf/ace_1.5_vae.safetensors"
+      },
       "extra": {
         "default_cfg_scale": 2,
         "default_sample_method": "euler",
         "default_steps": 8,
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace_1.5_vae.safetensors"
-      },
-      "id": "acestep-v1.5-turbo",
-      "local": {
-        "args": "--vae D:/Models/gguf/ace_1.5_vae.safetensors",
-        "bits_per_weight": 8,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 4500000000,
-        "path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace-step-1.5-turbo-q8_0.gguf"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "AceStep v1.5 Turbo"
+      }
     },
     {
+      "id": "whisper-large-v3",
+      "name": "Whisper Large v3",
+      "description": "OpenAI Whisper Large v3 Turbo multilingual speech-to-text transcription with Silero VAD; speech translation remains unverified",
+      "capabilities": [
+        "Multilingual",
+        "Bengali",
+        "Timestamps"
+      ],
+      "tasks": [
+        "audio-to-text"
+      ],
+      "engine": [
+        "crispasr",
+        "whisper-cpp"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/openai/whisper-large-v3-turbo/ggml-large-v3-turbo.bin",
+        "params": 809000000,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--vad"
+      },
       "audio_operations": {
         "transcription": {
           "status": "supported",
@@ -762,33 +786,33 @@
             }
           ]
         }
-      },
-      "capabilities": [
-        "Multilingual",
-        "Bengali",
-        "Timestamps"
-      ],
-      "description": "OpenAI Whisper Large v3 Turbo multilingual speech-to-text transcription with Silero VAD; speech translation remains unverified",
-      "engine": [
-        "crispasr",
-        "whisper-cpp"
-      ],
-      "id": "whisper-large-v3",
-      "local": {
-        "args": "--vad",
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 809000000,
-        "path": "D:/Projects/Public/rune/code-model/openai/whisper-large-v3-turbo/ggml-large-v3-turbo.bin"
-      },
-      "max_context_length": null,
-      "name": "Whisper Large v3",
-      "tasks": [
-        "audio-to-text"
-      ]
+      }
     },
     {
+      "id": "parakeet-tdt-0.6b-v3",
+      "name": "NVIDIA Parakeet TDT 0.6B v3",
+      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
+      "capabilities": [
+        "Multilingual",
+        "Timestamps",
+        "Punctuation",
+        "FastConformer-TDT"
+      ],
+      "tasks": [
+        "audio-to-text"
+      ],
+      "engine": [
+        "nemo-speech"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/nvidia/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3.q8_0.gguf",
+        "params": 600000000,
+        "bits_per_weight": 8,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
       "audio_operations": {
         "speech_translation": {
           "reason": "The configured Parakeet ASR model does not translate speech, and no NMT companion is configured.",
@@ -803,33 +827,33 @@
             }
           ]
         }
-      },
-      "capabilities": [
-        "Multilingual",
-        "Timestamps",
-        "Punctuation",
-        "FastConformer-TDT"
-      ],
-      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
-      "engine": [
-        "nemo-speech"
-      ],
-      "id": "parakeet-tdt-0.6b-v3",
-      "local": {
-        "args": "",
-        "bits_per_weight": 8,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 600000000,
-        "path": "D:/Projects/Public/rune/code-model/nvidia/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3.q8_0.gguf"
-      },
-      "max_context_length": null,
-      "name": "NVIDIA Parakeet TDT 0.6B v3",
-      "tasks": [
-        "audio-to-text"
-      ]
+      }
     },
     {
+      "id": "indicwhisper-bengali",
+      "name": "AI4Bharat IndicWhisper Bengali",
+      "description": "Multilingual Whisper model fine-tuned for Indic speech-to-text transcription with Silero VAD",
+      "capabilities": [
+        "Bengali",
+        "Low WER",
+        "Timestamps"
+      ],
+      "tasks": [
+        "audio-to-text"
+      ],
+      "engine": [
+        "crispasr",
+        "whisper-cpp"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/rupind/indic-whisper-medium-gguf/ggml-indic-whisper-medium-q8_0.bin",
+        "params": 244000000,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--vad -vp 250 -vsd 400"
+      },
       "audio_operations": {
         "transcription": {
           "status": "supported",
@@ -840,86 +864,49 @@
             }
           ]
         }
-      },
-      "capabilities": [
-        "Bengali",
-        "Low WER",
-        "Timestamps"
-      ],
-      "description": "Multilingual Whisper model fine-tuned for Indic speech-to-text transcription with Silero VAD",
-      "engine": [
-        "crispasr",
-        "whisper-cpp"
-      ],
-      "id": "indicwhisper-bengali",
-      "local": {
-        "args": "--vad -vp 250 -vsd 400",
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 244000000,
-        "path": "D:/Projects/Public/rune/code-model/rupind/indic-whisper-medium-gguf/ggml-indic-whisper-medium-q8_0.bin"
-      },
-      "max_context_length": null,
-      "name": "AI4Bharat IndicWhisper Bengali",
-      "tasks": [
-        "audio-to-text"
-      ]
+      }
     },
     {
+      "id": "higgs-audio-v3-tts-4b",
+      "name": "Higgs Audio v3 TTS 4B",
+      "description": "Expressive dialogue conversational TTS engine using Higgs tokenizer",
+      "modality": "Text",
       "capabilities": [
         "Conversational Voice",
         "Expressive Synthesis"
       ],
-      "description": "Expressive dialogue conversational TTS engine using Higgs tokenizer",
       "engine": [
         "encoder"
       ],
-      "id": "higgs-audio-v3-tts-4b",
+      "max_context_length": null,
       "local": {
-        "args": "--tokenizer D:/Models/huggingface/hub/models--bosonai--higgs-audio-v2-tokenizer/snapshots/main",
+        "path": "D:/Projects/Public/rune/code-model/multimodalart/higgs-audio-v3-tts-4b-transformers/higgs-audio-v3-tts-4b-q8_0.gguf",
+        "params": 4000000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 4000000000,
-        "path": "D:/Projects/Public/rune/code-model/multimodalart/higgs-audio-v3-tts-4b-transformers/higgs-audio-v3-tts-4b-q8_0.gguf"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "Higgs Audio v3 TTS 4B"
+        "args": "--tokenizer D:/Models/huggingface/hub/models--bosonai--higgs-audio-v2-tokenizer/snapshots/main"
+      }
     },
     {
-      "audio_operations": {
-        "speech_generation": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "audio-cpp",
-              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
-            }
-          ]
-        }
-      },
-      "capabilities": [],
-      "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
-      "engine": [
-        "audio-cpp"
-      ],
       "id": "fish-audio-s2-pro",
-      "local": {
-        "args": "",
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 4954823665,
-        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf"
-      },
       "name": "Fish Audio S2 Pro",
+      "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
+      "capabilities": [],
       "tasks": [
         "text-to-audio"
-      ]
-    },
-    {
+      ],
+      "engine": [
+        "audio-cpp"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf",
+        "params": 4954823665,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
       "audio_operations": {
         "speech_generation": {
           "status": "supported",
@@ -930,427 +917,471 @@
             }
           ]
         }
-      },
-      "capabilities": [],
+      }
+    },
+    {
+      "id": "voxcpm2-audiocpp",
+      "name": "VoxCPM2 (audio.cpp)",
       "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
+      "capabilities": [],
+      "tasks": [
+        "text-to-audio"
+      ],
       "engine": [
         "audio-cpp"
       ],
-      "id": "voxcpm2-audiocpp",
       "local": {
-        "args": "--seed 42",
+        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/VoxCPM2-GGUF/voxcpm2-q8_0.gguf",
+        "params": 2384218498,
         "bits_per_weight": 9.9023,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 2384218498,
-        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/VoxCPM2-GGUF/voxcpm2-q8_0.gguf"
+        "args": "--seed 42"
       },
-      "name": "VoxCPM2 (audio.cpp)",
-      "tasks": [
-        "text-to-audio"
-      ]
+      "audio_operations": {
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }
+          ]
+        }
+      }
     },
     {
+      "id": "qwen3-tts-1.7b-customvoice",
+      "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
+      "description": "Zero-shot voice cloning and custom reference speaker voice synthesis",
+      "modality": "Text",
       "capabilities": [
         "Voice Cloning",
         "Zero-Shot TTS"
       ],
-      "description": "Zero-shot voice cloning and custom reference speaker voice synthesis",
       "engine": [
         "encoder"
       ],
-      "id": "qwen3-tts-1.7b-customvoice",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
+        "params": 1700000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 1700000000,
-        "path": "D:/Projects/Public/rune/code-model/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "Qwen3 TTS 12Hz 1.7B CustomVoice"
+        "args": ""
+      }
     },
     {
+      "id": "omnivoice",
+      "name": "OmniVoice",
+      "description": "K2-FSA zero-shot multilingual voice cloning and speech generation engine",
+      "modality": "Text",
       "capabilities": [
         "Zero-Shot Cloning",
         "Multilingual"
       ],
-      "description": "K2-FSA zero-shot multilingual voice cloning and speech generation engine",
       "engine": [
         "encoder"
       ],
-      "id": "omnivoice",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/k2-fsa/OmniVoice/omnivoice-base-Q4_K_M.gguf",
+        "params": 1500000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 1500000000,
-        "path": "D:/Projects/Public/rune/code-model/k2-fsa/OmniVoice/omnivoice-base-Q4_K_M.gguf"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "OmniVoice"
+        "args": ""
+      }
     },
     {
+      "id": "nemotron-3-diarization",
+      "name": "NVIDIA Nemotron-3 Diarization",
+      "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",
+      "modality": "Text",
       "capabilities": [
         "Speech-Analysis",
         "Speaker-Diarization",
         "Multi-Speaker",
         "Timestamps"
       ],
-      "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",
       "engine": [
         "audio-cpp"
       ],
-      "id": "nemotron-3-diarization",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/nvidia/Nemotron-3-Diarization/nemotron-3-diarization-q8_0.gguf",
+        "params": 100000000,
         "bits_per_weight": 8,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 100000000,
-        "path": "D:/Projects/Public/rune/code-model/nvidia/Nemotron-3-Diarization/nemotron-3-diarization-q8_0.gguf"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "NVIDIA Nemotron-3 Diarization"
+        "args": ""
+      }
     },
     {
+      "id": "google/embeddinggemma-2",
+      "name": "Google EmbeddingGemma 2",
+      "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
       "capabilities": [
         "Semantic Search",
         "Code Retrieval",
         "Matryoshka Representations"
       ],
-      "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
-      "engine": [
-        "llama-server"
-      ],
-      "id": "google/embeddinggemma-2",
-      "local": {
-        "args": "",
-        "bits_per_weight": 8,
-        "context_length": 8192,
-        "gpu_layers": 99,
-        "params": 740000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/embeddinggemma-2-GGUF/embeddinggemma-2-UD-Q6_K_XL.gguf"
-      },
-      "max_context_length": 8192,
-      "name": "Google EmbeddingGemma 2",
       "tasks": [
         "text-to-embedding"
       ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 8192,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/embeddinggemma-2-GGUF/embeddinggemma-2-UD-Q6_K_XL.gguf",
+        "params": 740000000,
+        "bits_per_weight": 8,
+        "context_length": 8192,
+        "gpu_layers": 99,
+        "args": ""
+      },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/embeddinggemma-2-GGUF/mmproj-F16.gguf"
       }
     },
     {
-      "capabilities": [],
-      "description": "IBM Granite 311M Multilingual ModernBERT dense embedding model",
-      "engine": [
-        "encoder"
-      ],
       "id": "granite-embedding-311m-multilingual-r2",
-      "local": {
-        "args": "",
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": null,
-        "path": "D:/Projects/Public/rune/code-model/ibm-granite/granite-embedding-311m-multilingual-r2/granite-embedding-311M-multilingual-r2-Q4_K_M.gguf"
-      },
-      "max_context_length": null,
+      "name": "Granite Embedding 311M Multilingual R2",
+      "description": "IBM Granite 311M Multilingual ModernBERT dense embedding model",
       "modality": "Text",
-      "name": "Granite Embedding 311M Multilingual R2"
-    },
-    {
       "capabilities": [],
-      "description": "Fastino GLiGuard 300M multi-category safety moderation model",
       "engine": [
         "encoder"
       ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/ibm-granite/granite-embedding-311m-multilingual-r2/granite-embedding-311M-multilingual-r2-Q4_K_M.gguf",
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      }
+    },
+    {
       "id": "gliguard-LLMGuardrails-300M",
-      "local": {
-        "args": "",
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": null,
-        "path": "D:/Projects/Public/rune/code-model/fastino/gliguard-LLMGuardrails-300M/model.safetensors"
-      },
-      "max_context_length": null,
+      "name": "GLiGuard LLM Guardrails 300M",
+      "description": "Fastino GLiGuard 300M multi-category safety moderation model",
       "modality": "Text",
-      "name": "GLiGuard LLM Guardrails 300M"
-    },
-    {
       "capabilities": [],
-      "description": "ModernBERT 32K zero-shot intent and entity classifier",
       "engine": [
         "encoder"
       ],
-      "id": "mmbert32k-intent-classifier-merged",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/fastino/gliguard-LLMGuardrails-300M/model.safetensors",
+        "params": null,
         "bits_per_weight": null,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": null,
-        "path": "D:/Projects/Public/rune/code-model/vllm-sr/mmbert32k-intent-classifier-merged/mmBERT-Base-Q4_k_m.gguf"
-      },
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "mmBERT 32K Intent Classifier"
+        "args": ""
+      }
     },
     {
+      "id": "mmbert32k-intent-classifier-merged",
+      "name": "mmBERT 32K Intent Classifier",
+      "description": "ModernBERT 32K zero-shot intent and entity classifier",
+      "modality": "Text",
+      "capabilities": [],
+      "engine": [
+        "encoder"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/vllm-sr/mmbert32k-intent-classifier-merged/mmBERT-Base-Q4_k_m.gguf",
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      }
+    },
+    {
+      "id": "gemini-3.5-flash-lite",
+      "name": "Gemini 3.5 Flash-Lite (Google AI Cloud)",
+      "description": "Google Gemini 3.5 Flash-Lite high-throughput, ultra-low latency model optimized for high-frequency tasks and agentic tool calling",
+      "modality": "Text",
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
-      "description": "Google Gemini 3.5 Flash-Lite high-throughput, ultra-low latency model optimized for high-frequency tasks and agentic tool calling",
-      "id": "gemini-3.5-flash-lite",
+      "tasks": [
+        "text-to-text"
+      ],
       "max_context_length": 1048576,
-      "modality": "Text",
-      "name": "Gemini 3.5 Flash-Lite (Google AI Cloud)",
       "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-3.5-flash-lite",
         "api_key": "{{GEMINI_API_KEY}}",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "provider": "google",
         "rate_limit": {
+          "requests_per_minute": 15,
           "max_concurrent": 5,
+          "retry_delay_ms": 2000,
           "max_retries": 6,
           "queue_timeout_seconds": 30,
           "requests_per_day": 500,
-          "requests_per_minute": 15,
-          "retry_delay_ms": 2000,
           "retry_timeout_seconds": 45,
           "tokens_per_minute": 250000
-        },
-        "upstream_model": "gemini-3.5-flash-lite"
-      },
-      "tasks": [
-        "text-to-text"
-      ]
+        }
+      }
     },
     {
-      "capabilities": [
-        "Tool Call",
-        "Structured Output"
-      ],
-      "description": "Google Gemini 3.7 Flash workhorse model for coding, agentic workflows, and general reasoning",
       "id": "gemini-3.7-flash",
-      "max_context_length": 1048576,
-      "modality": "Text",
       "name": "Gemini 3.7 Flash (Google AI Cloud)",
-      "remote": {
-        "api_key": "{{GEMINI_API_KEY}}",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "provider": "google",
-        "rate_limit": {
-          "max_concurrent": 2,
-          "max_retries": 6,
-          "queue_timeout_seconds": 30,
-          "requests_per_day": 20,
-          "requests_per_minute": 5,
-          "retry_delay_ms": 2000,
-          "retry_timeout_seconds": 45,
-          "tokens_per_minute": 250000
-        },
-        "upstream_model": "gemini-3.7-flash"
-      },
-      "tasks": [
-        "text-to-text"
-      ]
-    },
-    {
-      "capabilities": [
-        "Tool Call",
-        "Structured Output",
-        "Structured JSON",
-        "Reasoning"
-      ],
-      "description": "Stealth Space Bunny Alpha anonymous 1M-token multimodal reasoning model",
-      "id": "space-bunny-alpha",
-      "max_context_length": 1000000,
+      "description": "Google Gemini 3.7 Flash workhorse model for coding, agentic workflows, and general reasoning",
       "modality": "Text",
-      "name": "Space Bunny Alpha (Stealth)",
-      "remote": {
-        "api_key": "{{OPENROUTER_API_KEY}}",
-        "base_url": "https://openrouter.ai/api/v1",
-        "provider": "openrouter",
-        "rate_limit": {
-          "max_concurrent": 2,
-          "max_retries": 5,
-          "queue_timeout_seconds": 60,
-          "requests_per_minute": 20,
-          "retry_delay_ms": 1500,
-          "retry_timeout_seconds": 45
-        },
-        "upstream_model": "stealth/space-bunny-alpha"
-      },
-      "tasks": [
-        "text-to-text"
-      ]
-    },
-    {
-      "capabilities": [
-        "Tool Call",
-        "Structured Output",
-        "Structured JSON",
-        "Reasoning"
-      ],
-      "description": "Dots Studio Dots3-Note Preview 16B/280B MoE multimodal reasoning model with 512K context",
-      "id": "dots-3-note-preview",
-      "max_context_length": 512000,
-      "modality": "Text",
-      "name": "Dots3-Note Preview (Free)",
-      "remote": {
-        "api_key": "{{OPENROUTER_API_KEY}}",
-        "base_url": "https://openrouter.ai/api/v1",
-        "provider": "openrouter",
-        "rate_limit": {
-          "max_concurrent": 2,
-          "max_retries": 5,
-          "queue_timeout_seconds": 60,
-          "requests_per_minute": 20,
-          "retry_delay_ms": 1500,
-          "retry_timeout_seconds": 45
-        },
-        "upstream_model": "dots-studio/dots-3-note-preview:free"
-      },
-      "tasks": [
-        "text-to-text"
-      ]
-    },
-    {
       "capabilities": [
         "Tool Call",
         "Structured Output"
       ],
-      "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",
-      "id": "gemini-3.8-flash",
-      "max_context_length": null,
-      "modality": "Text",
-      "name": "Gemini 3.8 Flash (Google AI Cloud)",
+      "tasks": [
+        "text-to-text"
+      ],
+      "max_context_length": 1048576,
       "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-3.7-flash",
         "api_key": "{{GEMINI_API_KEY}}",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "provider": "google",
         "rate_limit": {
+          "requests_per_minute": 5,
           "max_concurrent": 2,
+          "retry_delay_ms": 2000,
           "max_retries": 6,
           "queue_timeout_seconds": 30,
           "requests_per_day": 20,
-          "requests_per_minute": 5,
-          "retry_delay_ms": 2000,
           "retry_timeout_seconds": 45,
           "tokens_per_minute": 250000
-        },
-        "upstream_model": "gemini-3.8-flash"
-      },
-      "tasks": [
-        "text-to-text"
-      ]
+        }
+      }
     },
     {
+      "id": "space-bunny-alpha",
+      "name": "Space Bunny Alpha (Stealth)",
+      "description": "Stealth Space Bunny Alpha anonymous 1M-token multimodal reasoning model",
+      "modality": "Text",
       "capabilities": [
         "Tool Call",
         "Structured Output",
         "Structured JSON",
         "Reasoning"
       ],
-      "description": "Apodex 1.1 Mini reasoning model hosted on OpenRouter Free Tier",
-      "id": "apodex-1.1-mini",
-      "max_context_length": 262144,
-      "modality": "Text",
-      "name": "Apodex 1.1 Mini (Free)",
-      "remote": {
-        "api_key": "{{OPENROUTER_API_KEY}}",
-        "base_url": "https://openrouter.ai/api/v1",
-        "provider": "openrouter",
-        "rate_limit": {
-          "max_concurrent": 2,
-          "max_retries": 5,
-          "queue_timeout_seconds": 60,
-          "requests_per_minute": 20,
-          "retry_delay_ms": 1500,
-          "retry_timeout_seconds": 45
-        },
-        "upstream_model": "apodex/apodex-1.1-mini:free"
-      },
       "tasks": [
         "text-to-text"
-      ]
+      ],
+      "max_context_length": 1000000,
+      "remote": {
+        "provider": "openrouter",
+        "upstream_model": "stealth/space-bunny-alpha",
+        "api_key": "{{OPENROUTER_API_KEY}}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "rate_limit": {
+          "requests_per_minute": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 1500,
+          "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "retry_timeout_seconds": 45
+        }
+      }
     },
     {
-      "capabilities": [],
+      "id": "dots-3-note-preview",
+      "name": "Dots3-Note Preview (Free)",
+      "description": "Dots Studio Dots3-Note Preview 16B/280B MoE multimodal reasoning model with 512K context",
+      "modality": "Text",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "max_context_length": 512000,
+      "remote": {
+        "provider": "openrouter",
+        "upstream_model": "dots-studio/dots-3-note-preview:free",
+        "api_key": "{{OPENROUTER_API_KEY}}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "rate_limit": {
+          "requests_per_minute": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 1500,
+          "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "retry_timeout_seconds": 45
+        }
+      }
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "name": "Gemini 3.8 Flash (Google AI Cloud)",
+      "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",
+      "modality": "Text",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "max_context_length": null,
+      "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-3.8-flash",
+        "api_key": "{{GEMINI_API_KEY}}",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "rate_limit": {
+          "requests_per_minute": 5,
+          "max_concurrent": 2,
+          "retry_delay_ms": 2000,
+          "max_retries": 6,
+          "queue_timeout_seconds": 30,
+          "requests_per_day": 20,
+          "retry_timeout_seconds": 45,
+          "tokens_per_minute": 250000
+        }
+      }
+    },
+    {
+      "id": "apodex-1.1-mini",
+      "name": "Apodex 1.1 Mini (Free)",
+      "description": "Apodex 1.1 Mini reasoning model hosted on OpenRouter Free Tier",
+      "modality": "Text",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "max_context_length": 262144,
+      "remote": {
+        "provider": "openrouter",
+        "upstream_model": "apodex/apodex-1.1-mini:free",
+        "api_key": "{{OPENROUTER_API_KEY}}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "rate_limit": {
+          "requests_per_minute": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 1500,
+          "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "retry_timeout_seconds": 45
+        }
+      }
+    },
+    {
+      "id": "depth-anything-v2-small",
+      "name": "Depth Anything V2 Small FP32",
       "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-small architecture)",
+      "capabilities": [],
+      "tasks": [
+        "image-to-depth"
+      ],
       "engine": [
         "litert"
       ],
-      "id": "depth-anything-v2-small",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/.misc/litert/depth_anything_v2_small.tflite",
+        "params": null,
         "bits_per_weight": null,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": null,
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/depth_anything_v2_small.tflite"
-      },
-      "max_context_length": null,
-      "name": "Depth Anything V2 Small FP32",
-      "tasks": [
-        "image-to-depth"
-      ]
+        "args": ""
+      }
     },
     {
-      "capabilities": [],
+      "id": "depth-anything-v2-large",
+      "name": "Depth Anything V2 Large FP32",
       "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-large architecture)",
+      "capabilities": [],
+      "tasks": [
+        "image-to-depth"
+      ],
       "engine": [
         "litert"
       ],
-      "id": "depth-anything-v2-large",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/.misc/litert/depth_anything_v2_large_gpu_fp32.tflite",
+        "params": null,
         "bits_per_weight": 32,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": null,
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/depth_anything_v2_large_gpu_fp32.tflite"
-      },
-      "max_context_length": null,
-      "name": "Depth Anything V2 Large FP32",
-      "tasks": [
-        "image-to-depth"
-      ]
+        "args": ""
+      }
     },
     {
-      "capabilities": [],
+      "id": "lfm3-1.7b-q4-k-m",
+      "name": "LiquidAI LFM3 1.7B Q4_K_M",
       "description": "Liquid AI's 1.7B text model in the official Q4_K_M GGUF format.",
+      "capabilities": [],
+      "tasks": [
+        "text-to-text"
+      ],
       "engine": [
         "llama-server"
       ],
-      "id": "lfm3-1.7b-q4-k-m",
-      "local": {
-        "args": "--repeat-penalty 1.1",
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "params": 1700000000,
-        "path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-1.7B-GGUF/LFM3-1.7B-Q4_K_M.gguf"
-      },
       "max_context_length": 262144,
-      "name": "LiquidAI LFM3 1.7B Q4_K_M",
       "sampling": {
         "temperature": 0.1,
         "top_k": 50
       },
-      "tasks": [
-        "text-to-text"
-      ]
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-1.7B-GGUF/LFM3-1.7B-Q4_K_M.gguf",
+        "params": 1700000000,
+        "bits_per_weight": null,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--repeat-penalty 1.1"
+      }
     },
     {
+      "id": "lfm3-omni-2b",
+      "name": "LiquidAI LFM3 Omni 2B",
+      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
+      "capabilities": [],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-audio-to-text",
+        "text-video-to-text",
+        "text-to-audio"
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 128000,
+      "sampling": {
+        "temperature": 0,
+        "top_k": 1,
+        "max_tokens": 256
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-Omni-2B-GGUF/LFM3-Omni-2B-Q8_0.gguf",
+        "params": 1728801600,
+        "bits_per_weight": 8.54,
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf"
+      },
       "audio_operations": {
         "speech_generation": {
           "status": "supported",
@@ -1374,30 +1405,6 @@
           ]
         }
       },
-      "capabilities": [],
-      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
-      "engine": [
-        "llama-server"
-      ],
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf"
-      },
-      "id": "lfm3-omni-2b",
-      "local": {
-        "args": "",
-        "bits_per_weight": 8.54,
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "params": 1728801600,
-        "path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-Omni-2B-GGUF/LFM3-Omni-2B-Q8_0.gguf"
-      },
-      "max_context_length": 128000,
-      "name": "LiquidAI LFM3 Omni 2B",
-      "sampling": {
-        "max_tokens": 256,
-        "temperature": 0,
-        "top_k": 1
-      },
       "structured_output_support": {
         "status": "supported",
         "verified_with": [
@@ -1407,13 +1414,6 @@
           }
         ]
       },
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-audio-to-text",
-        "text-video-to-text",
-        "text-to-audio"
-      ],
       "tool_call_support": {
         "status": "supported",
         "verified_with": [
@@ -1425,27 +1425,27 @@
       }
     },
     {
+      "id": "birefnet-matting",
+      "name": "BiRefNet Matting",
+      "description": "Portrait and high-resolution matting with a soft alpha matte; inference uses a fixed 1024 by 1024 input.",
       "capabilities": [
         "Portrait Matting"
       ],
-      "description": "Portrait and high-resolution matting with a soft alpha matte; inference uses a fixed 1024 by 1024 input.",
+      "tasks": [
+        "image-to-matting"
+      ],
       "engine": [
         "onnx"
       ],
-      "id": "birefnet-matting",
+      "max_context_length": null,
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/ZhengPeng7/BiRefNet-matting/BiRefNet-matting-epoch_100.onnx",
+        "params": null,
         "bits_per_weight": null,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": null,
-        "path": "D:/Projects/Public/rune/code-model/ZhengPeng7/BiRefNet-matting/BiRefNet-matting-epoch_100.onnx"
-      },
-      "max_context_length": null,
-      "name": "BiRefNet Matting",
-      "tasks": [
-        "image-to-matting"
-      ]
+        "args": ""
+      }
     },
     {
       "id": "holo3.1-4b-q4",
@@ -1459,21 +1459,21 @@
         "text-to-text",
         "text-image-to-text"
       ],
+      "engine": [
+        "llama-server"
+      ],
       "max_context_length": 32768,
       "sampling": {
         "temperature": 0,
         "max_tokens": 512
       },
-      "engine": [
-        "llama-server"
-      ],
       "local": {
-        "args": "-fa on",
+        "path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-4B-GGUF/Holo-3.1-4B.Q4_K_M.gguf",
+        "params": 4000000000,
         "bits_per_weight": 5.6,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 4000000000,
-        "path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-4B-GGUF/Holo-3.1-4B.Q4_K_M.gguf"
+        "args": "-fa on"
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-4B-GGUF/Holo-3.1-4B.mmproj-f16.gguf"
@@ -1491,21 +1491,21 @@
         "text-to-text",
         "text-image-to-text"
       ],
+      "engine": [
+        "llama-server"
+      ],
       "max_context_length": 32768,
       "sampling": {
         "temperature": 0,
         "max_tokens": 512
       },
-      "engine": [
-        "llama-server"
-      ],
       "local": {
-        "args": "-fa on",
+        "path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-9B-GGUF/Holo-3.1-9B.Q4_K_M.gguf",
+        "params": 9000000000,
         "bits_per_weight": 5.6,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 9000000000,
-        "path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-9B-GGUF/Holo-3.1-9B.Q4_K_M.gguf"
+        "args": "-fa on"
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-9B-GGUF/Holo-3.1-9B.mmproj-f16.gguf"
@@ -1526,12 +1526,12 @@
         "audio-cpp"
       ],
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Vevo2-GGUF/vevo2-q8_0.gguf",
+        "params": 3000000000,
         "bits_per_weight": 8,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 3000000000,
-        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Vevo2-GGUF/vevo2-q8_0.gguf"
+        "args": ""
       }
     },
     {
@@ -1549,12 +1549,12 @@
         "encoder"
       ],
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/hubertsiuzdak/snac_24khz/snac_24khz_f16.gguf",
+        "params": 50000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 50000000,
-        "path": "D:/Projects/Public/rune/code-model/hubertsiuzdak/snac_24khz/snac_24khz_f16.gguf"
+        "args": ""
       }
     },
     {
@@ -1573,12 +1573,12 @@
         "whisper-cpp"
       ],
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/rupind/indic-whisper-medium-gguf/ggml-indic-whisper-medium-q8_0.bin",
+        "params": 769000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 769000000,
-        "path": "D:/Projects/Public/rune/code-model/rupind/indic-whisper-medium-gguf/ggml-indic-whisper-medium-q8_0.bin"
+        "args": ""
       }
     },
     {
@@ -1595,12 +1595,12 @@
         "encoder"
       ],
       "local": {
-        "args": "",
+        "path": "D:/Projects/Public/rune/code-model/unsloth/bge-small-en-v1.5/bge-small-en-v1.5-q8_0.gguf",
+        "params": 33000000,
         "bits_per_weight": 8,
         "context_length": 512,
         "gpu_layers": 99,
-        "params": 33000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/bge-small-en-v1.5/bge-small-en-v1.5-q8_0.gguf"
+        "args": ""
       }
     },
     {
@@ -1616,50 +1616,55 @@
         "text-to-text",
         "text-image-to-text"
       ],
+      "engine": [
+        "llama-server"
+      ],
       "max_context_length": 131072,
       "sampling": {
         "temperature": 0.7,
         "max_tokens": 4096
       },
-      "engine": [
-        "llama-server"
-      ],
       "local": {
-        "args": "-fa on",
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
+        "params": 7000000000,
         "bits_per_weight": 4.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 7000000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf"
+        "args": "-fa on"
       }
     },
     {
       "id": "qwen3.5-9b-gguf",
       "name": "Qwen3.5 9B GGUF",
-      "description": "Qwen3.5 9B reasoning chat model in GGUF format",
+      "description": "Qwen3.5 9B vision and reasoning model with F16 vision projector",
       "capabilities": [
         "Chat",
+        "Vision",
         "Reasoning",
         "Tool Call"
       ],
       "tasks": [
-        "text-to-text"
+        "text-to-text",
+        "text-image-to-text"
       ],
-      "max_context_length": 131072,
-      "sampling": {
-        "temperature": 0.6,
-        "max_tokens": 4096
-      },
       "engine": [
         "llama-server"
       ],
+      "max_context_length": 131072,
+      "sampling": {
+        "temperature": 0.2,
+        "max_tokens": 4096
+      },
       "local": {
-        "args": "-fa on",
-        "bits_per_weight": 8,
-        "context_length": -1,
-        "gpu_layers": 99,
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf",
         "params": 9000000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf"
+        "bits_per_weight": 8,
+        "context_length": 8192,
+        "gpu_layers": 99,
+        "args": "-fa on"
+      },
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.5-9B-GGUF/mmproj-F16.gguf"
       }
     },
     {
@@ -1677,22 +1682,26 @@
         "sd-server"
       ],
       "local": {
-        "args": "--diffusion-fa",
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-Turbo-GGUF/qwen-image-2.1-turbo-Q8_0.gguf",
+        "params": 7000000000,
         "bits_per_weight": 8,
         "context_length": -1,
         "gpu_layers": 99,
-        "params": 7000000000,
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-Turbo-GGUF/qwen-image-2.1-turbo-Q8_0.gguf"
+        "args": "--diffusion-fa"
       },
       "extra": {
-        "default_steps": 8,
         "default_cfg_scale": 1,
         "default_sample_method": "euler",
-        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors",
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf"
+        "default_steps": 8,
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
       }
     },
     {
+      "id": "nemotron-3.5-super-vl",
+      "name": "Nemotron 3.5 Super-VL (Free)",
+      "description": "NVIDIA Nemotron 3.5 Super-VL 120B MoE multimodal vision-language model hosted on OpenRouter Free Tier",
+      "modality": "VisionText",
       "capabilities": [
         "Tool Call",
         "Structured Output",
@@ -1700,55 +1709,52 @@
         "Reasoning",
         "Vision"
       ],
-      "description": "NVIDIA Nemotron 3.5 Super-VL 120B MoE multimodal vision-language model hosted on OpenRouter Free Tier",
-      "id": "nemotron-3.5-super-vl",
-      "max_context_length": 1000000,
-      "modality": "VisionText",
-      "name": "Nemotron 3.5 Super-VL (Free)",
-      "remote": {
-        "api_key": "{{OPENROUTER_API_KEY}}",
-        "base_url": "https://openrouter.ai/api/v1",
-        "provider": "openrouter",
-        "rate_limit": {
-          "max_concurrent": 2,
-          "max_retries": 5,
-          "queue_timeout_seconds": 60,
-          "requests_per_minute": 20,
-          "retry_delay_ms": 1500,
-          "retry_timeout_seconds": 45
-        },
-        "upstream_model": "nvidia/nemotron-3.5-super-vl:free"
-      },
       "tasks": [
         "text-to-text",
         "text-image-to-text"
-      ]
+      ],
+      "max_context_length": 1000000,
+      "remote": {
+        "provider": "openrouter",
+        "upstream_model": "nvidia/nemotron-3.5-super-vl:free",
+        "api_key": "{{OPENROUTER_API_KEY}}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "rate_limit": {
+          "requests_per_minute": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 1500,
+          "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "retry_timeout_seconds": 45
+        }
+      }
+    },
+    {
+      "id": "scadcoder-qwen3.5-9b-v11-q5-k-m",
+      "name": "SCADcoder Qwen3.5 9B v11 Q5_K_M",
+      "description": "OpenSCAD fine-tune of Qwen3.5 9B v11; text-only CAD generation",
+      "capabilities": [
+        "Chat"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 131072,
+      "sampling": {
+        "temperature": 0.2,
+        "max_tokens": 4096
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/mradermacher/scadcoder-qwen3.5-9b-v11-GGUF/scadcoder-qwen3.5-9b-v11.Q5_K_M.gguf",
+        "params": 9000000000,
+        "bits_per_weight": 5.5,
+        "context_length": 8192,
+        "gpu_layers": 99,
+        "args": "-fa on"
+      }
     }
-  ],
-  "aliases": {
-    "qwen-image-2512": "qwen-image-2.1",
-    "whisper-large-v3-full": "whisper-large-v3",
-    "whisper-large-v3-turbo": "whisper-large-v3",
-    "bangla-asr": "indicwhisper-bengali",
-    "voxcpm2": "voxcpm2-audiocpp",
-    "qwen3-tts-1.7b-base": "qwen3-tts-1.7b-customvoice",
-    "qwen3-tts-12hz-1.7b-customvoice": "qwen3-tts-1.7b-customvoice",
-    "qwen3-1.7b-multilingual-tts-gguf": "qwen3-tts-1.7b-customvoice",
-    "ace-step-1.5": "acestep-v1.5-turbo",
-    "audio8-asr-infinite-compressed": "whisper-large-v3",
-    "needle3": "cactus-needle-3",
-    "embeddinggemma-2-gguf": "google/embeddinggemma-2",
-    "gliguard-llmguardrails-300m": "gliguard-LLMGuardrails-300M",
-    "mmbert32k-intent-classifier": "mmbert32k-intent-classifier-merged",
-    "z-image": "qwen-image-2.1",
-    "z-image-turbo-q8-0": "qwen-image-2.1-turbo",
-    "z-image-turbo": "qwen-image-2.1-turbo",
-    "qwen-image-turbo": "qwen-image-2.1-turbo",
-    "qwen3-tts-1.7b-gguf": "qwen3-tts-1.7b-customvoice",
-    "audio8-asr-infinite": "whisper-large-v3",
-    "audio8-tts-preview-0.6b": "voxcpm2-audiocpp",
-    "higgs-audio-v2-tokenizer": "higgs-audio-v3-tts-4b",
-    "nvidia/nemotron-3.5-super-vl:free": "nemotron-3.5-super-vl",
-    "nemotron-3.5-super-vl:free": "nemotron-3.5-super-vl"
-  }
+  ]
 }
