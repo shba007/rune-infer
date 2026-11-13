@@ -218,6 +218,7 @@ fn convert(m: V1Model, notes: &mut Vec<String>) -> Result<ModelEntry> {
         local: None,
         remote: None,
         extra: Map::new(),
+        benchmarks: None,
     };
 
     if m.provider != ProviderType::Local {

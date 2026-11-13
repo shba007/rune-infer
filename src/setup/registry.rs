@@ -27,6 +27,8 @@ pub struct ModelMetadata {
     pub notes: String,
     pub verified_on: String,
     pub sources: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub benchmarks: Option<crate::schema::BenchmarkMetrics>,
 }
 
 impl ModelMetadata {
@@ -215,7 +217,7 @@ mod tests {
         let registry =
             CloudRegistry::from_fetch(|| Ok(include_bytes!("../../registry/models.json").to_vec()))
                 .unwrap();
-        assert!(registry.get("google", "gemini-3.5-flash-lite").is_some());
+        assert!(registry.get("google", "gemini-3.8-flash").is_some());
     }
 }
 

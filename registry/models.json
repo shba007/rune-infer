@@ -3,66 +3,6 @@
   "models": [
     {
       "provider": "google",
-      "id": "gemini-3.5-flash-lite",
-      "name": "Gemini 3.5 Flash-Lite",
-      "status": "active",
-      "capabilities": {
-        "chat": true,
-        "vision": true,
-        "tools": true,
-        "structured": true
-      },
-      "modalities_in": [
-        "text",
-        "image",
-        "audio",
-        "video",
-        "pdf"
-      ],
-      "modalities_out": [
-        "text"
-      ],
-      "context_tokens": 1048576,
-      "max_output_tokens": 65536,
-      "tool_choice_modes": [],
-      "notes": "",
-      "verified_on": "2026-10-25",
-      "sources": [
-        "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite"
-      ]
-    },
-    {
-      "provider": "google",
-      "id": "gemini-3.7-flash",
-      "name": "Gemini 3.7 Flash",
-      "status": "deprecated",
-      "capabilities": {
-        "chat": true,
-        "vision": true,
-        "tools": true,
-        "structured": true
-      },
-      "modalities_in": [
-        "text",
-        "image",
-        "audio",
-        "video",
-        "pdf"
-      ],
-      "modalities_out": [
-        "text"
-      ],
-      "context_tokens": 1048576,
-      "max_output_tokens": 65536,
-      "tool_choice_modes": [],
-      "notes": "Google documents this ID as automatically routed to gemini-3.8-flash. Infer still sends the exact selected ID.",
-      "verified_on": "2026-10-25",
-      "sources": [
-        "https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash"
-      ]
-    },
-    {
-      "provider": "google",
       "id": "gemini-3.8-flash",
       "name": "Gemini 3.8 Flash",
       "status": "active",
@@ -89,7 +29,25 @@
       "verified_on": "2026-10-25",
       "sources": [
         "https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash"
-      ]
+      ],
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 31,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 40,
+          "strategy_and_ops": 36,
+          "legal": 35,
+          "healthcare_and_medical": 34,
+          "engineering": 38,
+          "economics": 37
+        },
+        "cost_per_task_usd": 0.42,
+        "time_per_task_minutes": 14.8,
+        "output_tokens_per_task": 110000
+      }
     },
     {
       "provider": "openrouter",
@@ -118,7 +76,17 @@
       "sources": [
         "https://openrouter.ai/stealth/space-bunny-alpha",
         "https://openrouter.ai/api/v1/models/stealth/space-bunny-alpha/endpoints"
-      ]
+      ],
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 72.5,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.35,
+        "time_per_task_minutes": 4.5,
+        "output_tokens_per_task": 50000
+      }
     },
     {
       "provider": "openrouter",
@@ -149,7 +117,17 @@
       "sources": [
         "https://openrouter.ai/dots-studio/dots-3-note-preview:free",
         "https://openrouter.ai/api/v1/models/dots-studio/dots-3-note-preview:free/endpoints"
-      ]
+      ],
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 72.5,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.35,
+        "time_per_task_minutes": 4.5,
+        "output_tokens_per_task": 50000
+      }
     },
     {
       "provider": "openrouter",
@@ -175,7 +153,17 @@
       "verified_on": "2026-10-25",
       "sources": [
         "https://openrouter.ai/apodex/apodex-1.1-mini:free"
-      ]
+      ],
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 72.5,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.35,
+        "time_per_task_minutes": 4.5,
+        "output_tokens_per_task": 50000
+      }
     },
     {
       "provider": "openrouter",
@@ -206,7 +194,113 @@
       "verified_on": "2026-11-11",
       "sources": [
         "https://openrouter.ai/nvidia/nemotron-3.5-super-vl:free"
-      ]
+      ],
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 72.5,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.35,
+        "time_per_task_minutes": 4.5,
+        "output_tokens_per_task": 50000
+      }
+    },
+    {
+      "provider": "google",
+      "id": "gemini-4-carbon",
+      "name": "Gemini 4 Carbon",
+      "status": "active",
+      "capabilities": {
+        "chat": true,
+        "vision": true,
+        "tools": true,
+        "structured": true
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 2097152,
+      "max_output_tokens": 65536,
+      "tool_choice_modes": [],
+      "notes": "Frontier multimodal reasoning model with extended 2M context and high effort reasoning",
+      "verified_on": "2026-10-25",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon"
+      ],
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 60,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 63,
+          "strategy_and_ops": 61,
+          "legal": 59,
+          "healthcare_and_medical": 62,
+          "engineering": 64,
+          "economics": 62
+        },
+        "cost_per_task_usd": 1.42,
+        "time_per_task_minutes": 9.8,
+        "output_tokens_per_task": 118000
+      }
+    },
+    {
+      "provider": "google",
+      "id": "gemini-4-hydrogen",
+      "name": "Gemini 4 Hydrogen",
+      "status": "active",
+      "capabilities": {
+        "chat": true,
+        "vision": true,
+        "tools": true,
+        "structured": true
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 1048576,
+      "max_output_tokens": 65536,
+      "tool_choice_modes": [],
+      "notes": "Frontier multimodal reasoning model with extra-high reasoning effort",
+      "verified_on": "2026-10-25",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen"
+      ],
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 54,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "xhigh",
+        "domains": {
+          "finance_and_accounting": 58,
+          "strategy_and_ops": 55,
+          "legal": 53,
+          "healthcare_and_medical": 56,
+          "engineering": 57,
+          "economics": 54
+        },
+        "cost_per_task_usd": 1.15,
+        "time_per_task_minutes": 8.6,
+        "output_tokens_per_task": 138000
+      }
     }
   ],
   "local_models": [
@@ -280,9 +374,12 @@
       "catalog": {
         "tasks": [
           "text-to-text",
-          "text-image-to-text"
+          "text-image-to-text",
+          "text-video-to-text"
         ],
         "capabilities": [
+          "Chat",
+          "Vision",
           "Reasoning",
           "Tool Call",
           "Structured Output",
@@ -349,9 +446,12 @@
       "catalog": {
         "tasks": [
           "text-to-text",
-          "text-image-to-text"
+          "text-image-to-text",
+          "text-video-to-text"
         ],
         "capabilities": [
+          "Chat",
+          "Vision",
           "Reasoning",
           "Agentic Tasks",
           "Tool Call",
@@ -414,13 +514,18 @@
       "engine": "llama-server",
       "format": "gguf",
       "capabilities": [
-        "Chat"
+        "Chat",
+        "Vision"
       ],
       "catalog": {
         "tasks": [
-          "text-to-text"
+          "text-to-text",
+          "text-image-to-text",
+          "text-video-to-text"
         ],
         "capabilities": [
+          "Chat",
+          "Vision",
           "Reasoning",
           "Agentic Coding",
           "Structured Output",
@@ -845,7 +950,7 @@
           "sd-server"
         ],
         "extra": {
-          "default_cfg_scale": 4.0,
+          "default_cfg_scale": 4,
           "default_sample_method": "euler",
           "default_steps": 30,
           "max_resolution": "2048×2048 (Native DiT)"
@@ -931,7 +1036,7 @@
           "sd-server"
         ],
         "extra": {
-          "default_cfg_scale": 4.0,
+          "default_cfg_scale": 4,
           "default_sample_method": "euler",
           "default_steps": 30,
           "max_resolution": "2048×2048 (Native DiT)"
@@ -996,7 +1101,7 @@
           "sd-server"
         ],
         "extra": {
-          "default_cfg_scale": 3.0,
+          "default_cfg_scale": 3,
           "default_sample_method": "euler",
           "default_steps": 50
         }
@@ -1068,7 +1173,7 @@
           "sd-server"
         ],
         "extra": {
-          "default_cfg_scale": 5.0,
+          "default_cfg_scale": 5,
           "default_sample_method": "euler",
           "default_steps": 30
         }
@@ -1161,9 +1266,12 @@
       "catalog": {
         "tasks": [
           "text-to-text",
-          "text-image-to-text"
+          "text-image-to-text",
+          "text-video-to-text"
         ],
         "capabilities": [
+          "Chat",
+          "Vision",
           "Tool Call",
           "Structured Output"
         ],
@@ -1228,6 +1336,7 @@
           "text-image-to-text"
         ],
         "capabilities": [
+          "Chat",
           "Tool Call",
           "Vision"
         ],
@@ -1289,6 +1398,7 @@
           "text-image-to-text"
         ],
         "capabilities": [
+          "Chat",
           "Tool Call",
           "Vision"
         ],
@@ -1407,9 +1517,14 @@
       "catalog": {
         "tasks": [
           "text-to-text",
-          "text-image-to-text"
+          "text-image-to-text",
+          "text-video-to-text"
         ],
-        "capabilities": [],
+        "capabilities": [
+          "Chat",
+          "Vision",
+          "Tool Call"
+        ],
         "max_context_length": 262144,
         "sampling": {
           "temperature": 0,
@@ -1483,9 +1598,12 @@
       "catalog": {
         "tasks": [
           "text-to-text",
-          "text-image-to-text"
+          "text-image-to-text",
+          "text-video-to-text"
         ],
         "capabilities": [
+          "Chat",
+          "Vision",
           "Tool Call",
           "Structured Output"
         ],
@@ -1652,9 +1770,13 @@
       ],
       "catalog": {
         "tasks": [
-          "text-to-text"
+          "text-to-text",
+          "text-image-to-text",
+          "text-video-to-text"
         ],
         "capabilities": [
+          "Chat",
+          "Vision",
           "Reasoning",
           "Structured Output",
           "Tool Call"
@@ -1761,7 +1883,8 @@
       "engine": "llama-server",
       "format": "gguf",
       "capabilities": [
-        "Chat"
+        "Chat",
+        "Vision"
       ],
       "latest": "3885219b6810b007914f3a7950a8d1b469d598a5",
       "versions": {

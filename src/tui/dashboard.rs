@@ -32,6 +32,16 @@ pub struct ModelRow {
     pub engine: Option<String>,
     pub locality: String,
     pub capabilities: Vec<String>,
+    pub benchmarks: Option<crate::schema::BenchmarkMetrics>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelSort {
+    Default,
+    IntelligenceIndex,
+    FinanceIndex,
+    Cost,
+    Latency,
 }
 
 #[derive(Debug, Clone)]
@@ -64,9 +74,10 @@ struct ModelState {
     tps_sum: f64,
     tps_n: u64,
     last_used: Option<Instant>,
+    original_index: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Dashboard,
     Models,
@@ -82,6 +93,8 @@ struct App {
     info: DashboardInfo,
     models: Vec<ModelState>,
     model_selected: usize,
+    model_sort: ModelSort,
+    benchmark_view: bool,
     model_action: Option<ModelAction>,
     model_action_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     model_action_status: Option<String>,
@@ -165,7 +178,8 @@ impl App {
             .models
             .iter()
             .cloned()
-            .map(|row| ModelState {
+            .enumerate()
+            .map(|(original_index, row)| ModelState {
                 row,
                 status: Status::Idle,
                 requests: 0,
@@ -173,6 +187,7 @@ impl App {
                 tps_sum: 0.0,
                 tps_n: 0,
                 last_used: None,
+                original_index,
             })
             .collect();
         let index = models
@@ -184,6 +199,8 @@ impl App {
             info,
             models,
             model_selected: 0,
+            model_sort: ModelSort::Default,
+            benchmark_view: false,
             model_action: None,
             model_action_rx: None,
             model_action_status: None,
@@ -267,7 +284,9 @@ impl App {
                     "CLOUD".into()
                 },
                 capabilities: model.capabilities.clone().unwrap_or_default(),
+                benchmarks: model.benchmarks.clone(),
             };
+            let original_index = self.models.len();
             self.index.insert(row.id.clone(), self.models.len());
             self.models.push(ModelState {
                 row,
@@ -277,7 +296,116 @@ impl App {
                 tps_sum: 0.0,
                 tps_n: 0,
                 last_used: None,
+                original_index,
             });
+        }
+    }
+
+    fn cycle_model_sort(&mut self) {
+        self.model_sort = match self.model_sort {
+            ModelSort::Default => ModelSort::IntelligenceIndex,
+            ModelSort::IntelligenceIndex => ModelSort::FinanceIndex,
+            ModelSort::FinanceIndex => ModelSort::Cost,
+            ModelSort::Cost => ModelSort::Latency,
+            ModelSort::Latency => ModelSort::Default,
+        };
+        self.apply_model_sort();
+    }
+
+    fn apply_model_sort(&mut self) {
+        let selected_id = self
+            .models
+            .get(self.model_selected)
+            .map(|m| m.row.id.clone());
+        match self.model_sort {
+            ModelSort::Default => {
+                self.models.sort_by_key(|m| m.original_index);
+            }
+            ModelSort::IntelligenceIndex => {
+                self.models.sort_by(|a, b| {
+                    let score_a = a
+                        .row
+                        .benchmarks
+                        .as_ref()
+                        .and_then(|bm| bm.score)
+                        .unwrap_or(0.0);
+                    let score_b = b
+                        .row
+                        .benchmarks
+                        .as_ref()
+                        .and_then(|bm| bm.score)
+                        .unwrap_or(0.0);
+                    score_b
+                        .partial_cmp(&score_a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            }
+            ModelSort::FinanceIndex => {
+                self.models.sort_by(|a, b| {
+                    let score_a = a
+                        .row
+                        .benchmarks
+                        .as_ref()
+                        .and_then(|bm| bm.domains.as_ref().and_then(|d| d.finance_and_accounting))
+                        .unwrap_or(0.0);
+                    let score_b = b
+                        .row
+                        .benchmarks
+                        .as_ref()
+                        .and_then(|bm| bm.domains.as_ref().and_then(|d| d.finance_and_accounting))
+                        .unwrap_or(0.0);
+                    score_b
+                        .partial_cmp(&score_a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            }
+            ModelSort::Cost => {
+                self.models.sort_by(|a, b| {
+                    let cost_a = a
+                        .row
+                        .benchmarks
+                        .as_ref()
+                        .and_then(|bm| bm.cost_per_task_usd)
+                        .unwrap_or(999.0);
+                    let cost_b = b
+                        .row
+                        .benchmarks
+                        .as_ref()
+                        .and_then(|bm| bm.cost_per_task_usd)
+                        .unwrap_or(999.0);
+                    cost_a
+                        .partial_cmp(&cost_b)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            }
+            ModelSort::Latency => {
+                self.models.sort_by(|a, b| {
+                    let time_a = a
+                        .row
+                        .benchmarks
+                        .as_ref()
+                        .and_then(|bm| bm.time_per_task_minutes)
+                        .unwrap_or(999.0);
+                    let time_b = b
+                        .row
+                        .benchmarks
+                        .as_ref()
+                        .and_then(|bm| bm.time_per_task_minutes)
+                        .unwrap_or(999.0);
+                    time_a
+                        .partial_cmp(&time_b)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            }
+        }
+        self.index.clear();
+        for (i, m) in self.models.iter().enumerate() {
+            self.index.insert(m.row.id.clone(), i);
+        }
+        if let Some(id) = selected_id {
+            if let Some(&new_pos) = self.index.get(&id) {
+                self.model_selected = new_pos;
+            }
         }
     }
 
@@ -627,6 +755,12 @@ impl App {
             KeyCode::Char('i') if self.tab == Tab::Models => {
                 self.model_registry_open = true;
                 self.model_registry_refresh = true;
+            }
+            KeyCode::Char('s') if self.tab == Tab::Models => {
+                self.cycle_model_sort();
+            }
+            KeyCode::Char('b') if self.tab == Tab::Models => {
+                self.benchmark_view = !self.benchmark_view;
             }
             KeyCode::Enter if self.tab == Tab::Models && self.model_action_rx.is_none() => {
                 self.model_action = self.selected_model_action();
@@ -2505,21 +2639,50 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
         return;
     }
     let [table_area, details] =
-        Layout::vertical([Constraint::Min(4), Constraint::Length(6)]).areas(area);
+        Layout::vertical([Constraint::Min(4), Constraint::Length(7)]).areas(area);
+    let sort_label = match app.model_sort {
+        ModelSort::Default => "Default",
+        ModelSort::IntelligenceIndex => "Intel Index ↓",
+        ModelSort::FinanceIndex => "Finance Index ↓",
+        ModelSort::Cost => "Cost / Task ↑",
+        ModelSort::Latency => "Time / Task ↑",
+    };
+    let view_label = if app.benchmark_view {
+        "Benchmarks"
+    } else {
+        "Capabilities"
+    };
     let block = panel(format!(
-        " Models Catalog · {} configured ",
-        app.models.len()
+        " Models Catalog · {} configured · [s] Sort: {} · [b] View: {} ",
+        app.models.len(),
+        sort_label,
+        view_label
     ));
-    let header = Row::new([
-        "",
-        "Model ID / Name",
-        "Locality",
-        "Capabilities",
-        "Provider / Engine",
-        "Reqs",
-        "Status",
-    ])
-    .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD));
+
+    let header = if app.benchmark_view {
+        Row::new([
+            "",
+            "Model ID / Name",
+            "Locality",
+            "Benchmark Index",
+            "Mode (Effort)",
+            "Cost / Task",
+            "Time / Task",
+            "Status",
+        ])
+        .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD))
+    } else {
+        Row::new([
+            "",
+            "Model ID / Name",
+            "Locality",
+            "Capabilities",
+            "Provider / Engine",
+            "Reqs",
+            "Status",
+        ])
+        .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD))
+    };
 
     let visible = table_area.height.saturating_sub(3) as usize;
     let start = app.model_selected.saturating_add(1).saturating_sub(visible);
@@ -2537,68 +2700,148 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
                 Status::Failed(_) => ("×", ERR, "FAILED"),
             };
 
-            let has_cap = |prefix: &str| {
-                m.row
-                    .capabilities
-                    .iter()
-                    .any(|c| c.to_lowercase().contains(prefix))
-            };
-            let chat_dot = if has_cap("chat") || has_cap("text") {
-                "●"
-            } else {
-                "○"
-            };
-            let vision_dot = if has_cap("vision") { "●" } else { "○" };
-            let tools_dot = if has_cap("tool") { "●" } else { "○" };
-            let audio_dot = if has_cap("audio") || has_cap("speech") {
-                "●"
-            } else {
-                "○"
-            };
-            let image_dot = if has_cap("image") { "●" } else { "○" };
-            let cap_str =
-                format!("C:{chat_dot} V:{vision_dot} T:{tools_dot} A:{audio_dot} I:{image_dot}");
-
             let locality_style = if m.row.locality == "LOCAL" {
                 Style::new().fg(OK)
             } else {
                 Style::new().fg(ACCENT)
             };
 
-            Row::new([
-                Cell::from(if index == app.model_selected {
-                    ">"
+            let indicator = if index == app.model_selected {
+                ">"
+            } else {
+                icon
+            };
+
+            if app.benchmark_view {
+                let bench_str = if let Some(b) = &m.row.benchmarks {
+                    if let Some(score) = b.score {
+                        let unit = b.unit.as_deref().unwrap_or("");
+                        let name = b.index_name.as_deref().unwrap_or("Index");
+                        if unit.is_empty() {
+                            format!("{score:.1} ({name})")
+                        } else {
+                            format!("{score:.1} {unit}")
+                        }
+                    } else {
+                        "-".into()
+                    }
                 } else {
-                    icon
-                })
-                .style(Style::new().fg(color)),
-                Cell::from(format!("{} ({})", m.row.id, m.row.name)),
-                Cell::from(m.row.locality.clone()).style(locality_style),
-                Cell::from(cap_str).style(Style::new().fg(DIM)),
-                Cell::from(
+                    "-".into()
+                };
+
+                let mode_str = if let Some(b) = &m.row.benchmarks {
+                    let m_str = b.mode.as_deref().unwrap_or("-");
+                    let eff = b.reasoning_effort.as_deref().unwrap_or("-");
+                    if eff != "-" && eff != "none" {
+                        format!("{m_str} ({eff})")
+                    } else {
+                        m_str.into()
+                    }
+                } else {
+                    "-".into()
+                };
+
+                let cost_str = if let Some(b) = &m.row.benchmarks {
+                    if let Some(c) = b.cost_per_task_usd {
+                        if c == 0.0 {
+                            "$0.00".into()
+                        } else {
+                            format!("${:.2}", c)
+                        }
+                    } else {
+                        "-".into()
+                    }
+                } else {
+                    "-".into()
+                };
+
+                let time_str = if let Some(b) = &m.row.benchmarks {
+                    if let Some(t) = b.time_per_task_minutes {
+                        format!("{:.2}m", t)
+                    } else {
+                        "-".into()
+                    }
+                } else {
+                    "-".into()
+                };
+
+                Row::new([
+                    Cell::from(indicator).style(Style::new().fg(color)),
+                    Cell::from(format!("{} ({})", m.row.id, m.row.name)),
+                    Cell::from(m.row.locality.clone()).style(locality_style),
+                    Cell::from(bench_str).style(Style::new().fg(ACCENT)),
+                    Cell::from(mode_str).style(Style::new().fg(DIM)),
+                    Cell::from(cost_str),
+                    Cell::from(time_str),
+                    Cell::from(status_text).style(Style::new().fg(color)),
+                ])
+            } else {
+                let has_cap = |prefix: &str| {
                     m.row
-                        .provider
-                        .clone()
-                        .or_else(|| m.row.engine.clone())
-                        .unwrap_or_else(|| "local".into()),
-                )
-                .style(Style::new().fg(DIM)),
-                Cell::from(m.requests.to_string()),
-                Cell::from(status_text).style(Style::new().fg(color)),
-            ])
+                        .capabilities
+                        .iter()
+                        .any(|c| c.to_lowercase().contains(prefix))
+                };
+                let chat_dot = if has_cap("chat") || has_cap("text") {
+                    "●"
+                } else {
+                    "○"
+                };
+                let vision_dot = if has_cap("vision") { "●" } else { "○" };
+                let tools_dot = if has_cap("tool") { "●" } else { "○" };
+                let audio_dot = if has_cap("audio") || has_cap("speech") {
+                    "●"
+                } else {
+                    "○"
+                };
+                let image_dot = if has_cap("image") { "●" } else { "○" };
+                let cap_str = format!(
+                    "C:{chat_dot} V:{vision_dot} T:{tools_dot} A:{audio_dot} I:{image_dot}"
+                );
+
+                Row::new([
+                    Cell::from(indicator).style(Style::new().fg(color)),
+                    Cell::from(format!("{} ({})", m.row.id, m.row.name)),
+                    Cell::from(m.row.locality.clone()).style(locality_style),
+                    Cell::from(cap_str).style(Style::new().fg(DIM)),
+                    Cell::from(
+                        m.row
+                            .provider
+                            .clone()
+                            .or_else(|| m.row.engine.clone())
+                            .unwrap_or_else(|| "local".into()),
+                    )
+                    .style(Style::new().fg(DIM)),
+                    Cell::from(m.requests.to_string()),
+                    Cell::from(status_text).style(Style::new().fg(color)),
+                ])
+            }
         });
 
     let table = Table::new(
         rows,
-        [
-            Constraint::Length(2),
-            Constraint::Min(24),
-            Constraint::Length(8),
-            Constraint::Length(22),
-            Constraint::Length(18),
-            Constraint::Length(6),
-            Constraint::Length(9),
-        ],
+        if app.benchmark_view {
+            vec![
+                Constraint::Length(2),
+                Constraint::Min(24),
+                Constraint::Length(8),
+                Constraint::Length(22),
+                Constraint::Length(16),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Length(8),
+            ]
+        } else {
+            vec![
+                Constraint::Length(2),
+                Constraint::Min(24),
+                Constraint::Length(8),
+                Constraint::Length(22),
+                Constraint::Length(18),
+                Constraint::Length(6),
+                Constraint::Length(9),
+            ]
+        },
     )
     .header(header)
     .block(block);
@@ -2607,18 +2850,53 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
     let detail = selected
         .map(|model| {
             let status = match &model.status {
-                Status::Failed(error) => error.clone(),
-                Status::Loaded { detail, .. } => detail.clone(),
+                Status::Failed(error) => format!("Failed: {error}"),
+                Status::Loaded { detail, .. } => format!("Loaded: {detail}"),
                 _ => String::new(),
             };
-            format!(
-                "{}\n{}\n{}\nManual loads still follow idle timeout and memory eviction.",
-                model.row.id,
-                app.model_action_status
-                    .as_deref()
-                    .unwrap_or("Enter: toggle load/unload · in-use models cannot be unloaded"),
-                status
-            )
+            let bench_str = if let Some(b) = &model.row.benchmarks {
+                let primary = if let Some(score) = b.score {
+                    let name = b.index_name.as_deref().unwrap_or("Index");
+                    let unit = b.unit.as_deref().unwrap_or("");
+                    if unit.is_empty() {
+                        format!("{name}: {score:.1}")
+                    } else {
+                        format!("{name}: {score:.1} {unit}")
+                    }
+                } else {
+                    "No benchmark score".into()
+                };
+                let domains = b.domains.as_ref().map(|d| {
+                    format!(
+                        " | Domains: Fin: {:.0}, Ops: {:.0}, Legal: {:.0}, Eng: {:.0}, Med: {:.0}",
+                        d.finance_and_accounting.unwrap_or(0.0),
+                        d.strategy_and_ops.unwrap_or(0.0),
+                        d.legal.unwrap_or(0.0),
+                        d.engineering.unwrap_or(0.0),
+                        d.healthcare_and_medical.unwrap_or(0.0)
+                    )
+                }).unwrap_or_default();
+                format!(
+                    "{} · Mode: {} ({}) · Cost: ${:.2} · Latency: {:.2}m · Tokens: {}{}",
+                    primary,
+                    b.mode.as_deref().unwrap_or("default"),
+                    b.reasoning_effort.as_deref().unwrap_or("none"),
+                    b.cost_per_task_usd.unwrap_or(0.0),
+                    b.time_per_task_minutes.unwrap_or(0.0),
+                    b.output_tokens_per_task.unwrap_or(0),
+                    domains
+                )
+            } else {
+                "No benchmark metrics recorded".into()
+            };
+            let action_status = app.model_action_status.as_deref().unwrap_or(
+                "[s: Sort (Default/Intel/Fin/Cost/Time) | b: Toggle Benchmarks | Enter: Load/Unload | i: Registry]"
+            );
+            if status.is_empty() {
+                format!("{}\n{}\n{}", model.row.id, bench_str, action_status)
+            } else {
+                format!("{} ({})\n{}\n{}", model.row.id, status, bench_str, action_status)
+            }
         })
         .unwrap_or_else(|| "No models configured".into());
     f.render_widget(
@@ -3030,6 +3308,7 @@ mod tests {
                     engine: Some("llama-server".into()),
                     locality: "LOCAL".into(),
                     capabilities: vec!["Chat".into()],
+                    benchmarks: None,
                 },
                 ModelRow {
                     id: "g".into(),
@@ -3039,6 +3318,7 @@ mod tests {
                     engine: None,
                     locality: "CLOUD".into(),
                     capabilities: vec!["Chat".into(), "Vision".into()],
+                    benchmarks: None,
                 },
             ],
         };
@@ -3099,6 +3379,35 @@ mod tests {
         assert!(app.model_install_requested);
         app.on_key(KeyCode::Esc, KeyModifiers::NONE);
         assert!(!app.model_registry_open);
+    }
+
+    #[test]
+    fn model_catalog_benchmark_view_and_sorting() {
+        let mut app = app();
+        app.on_key(KeyCode::Char('m'), KeyModifiers::NONE);
+        assert_eq!(app.tab, Tab::Models);
+        assert!(!app.benchmark_view);
+        assert_eq!(app.model_sort, ModelSort::Default);
+
+        // Toggle benchmark view
+        app.on_key(KeyCode::Char('b'), KeyModifiers::NONE);
+        assert!(app.benchmark_view);
+
+        // Cycle sorting
+        app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(app.model_sort, ModelSort::IntelligenceIndex);
+
+        app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(app.model_sort, ModelSort::FinanceIndex);
+
+        app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(app.model_sort, ModelSort::Cost);
+
+        app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(app.model_sort, ModelSort::Latency);
+
+        app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(app.model_sort, ModelSort::Default);
     }
 
     #[test]

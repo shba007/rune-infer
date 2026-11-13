@@ -810,6 +810,7 @@ pub struct ModelConfig {
     pub runtime: Option<RuntimeConfig>,
     pub aliases: Vec<String>,
     pub roles: Vec<String>,
+    pub benchmarks: Option<crate::schema::BenchmarkMetrics>,
 }
 
 impl ModelConfig {

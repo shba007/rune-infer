@@ -102,7 +102,62 @@ pub struct ModelEntry {
     /// Engine-specific settings; see [`allowed_extra_keys`].
     #[serde(default)]
     pub extra: Map<String, Value>,
+    /// Benchmark and evaluation metrics (e.g. Artificial Analysis Intelligence Index).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub benchmarks: Option<BenchmarkMetrics>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BenchmarkMetrics {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_name: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "intelligence_index"
+    )]
+    pub score: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "domain_indexes"
+    )]
+    pub domains: Option<DomainScores>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_per_task_usd: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_per_task_minutes: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens_per_task: Option<u64>,
+}
+
+impl Eq for BenchmarkMetrics {}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DomainScores {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finance_and_accounting: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strategy_and_ops: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legal: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub healthcare_and_medical: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engineering: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub economics: Option<f64>,
+}
+
+impl Eq for DomainScores {}
 
 impl Serialize for ModelEntry {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -151,6 +206,9 @@ impl Serialize for ModelEntry {
         }
         if !self.extra.is_empty() {
             map.serialize_entry("extra", &self.extra)?;
+        }
+        if let Some(benchmarks) = &self.benchmarks {
+            map.serialize_entry("benchmarks", benchmarks)?;
         }
         map.end()
     }
@@ -481,6 +539,7 @@ impl TryFrom<ModelEntry> for ModelConfig {
             runtime,
             aliases: e.aliases,
             roles: e.roles,
+            benchmarks: e.benchmarks,
         };
         model.validate()?;
         model.validate_tool_call_support()?;

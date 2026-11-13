@@ -2033,7 +2033,7 @@ mod tests {
         w.on_key(key(KeyCode::Char('r')));
         assert!(matches!(w.validation, Validation::Idle) && w.cloud_done.is_empty());
         w.key_input = Input::new("fixture-key".into());
-        let metadata = setup::fixture_model("google", "gemini-3.5-flash-lite")
+        let metadata = setup::fixture_model("google", "gemini-4-carbon")
             .unwrap()
             .unwrap();
         let model = CloudModel {
@@ -2076,7 +2076,7 @@ mod tests {
         w.cloud_phase = CloudPhase::Models;
         w.cloud_queue = vec![0];
         w.key_input = Input::new("fixture-secret".into());
-        for id in ["gemini-3.5-flash-lite", "gemini-3.8-flash"] {
+        for id in ["gemini-4-carbon", "gemini-3.8-flash"] {
             let metadata = setup::fixture_model("google", id).unwrap().unwrap();
             w.cloud_models.push(CloudModel {
                 id: id.into(),
@@ -2098,11 +2098,11 @@ mod tests {
         w.cloud_model_picks = vec![false; 3];
         w.on_key(key(KeyCode::Enter));
         assert!(w.cloud_model_error.is_some() && w.cloud_done.is_empty());
-        type_str(&mut w, "3.5");
+        type_str(&mut w, "carbon");
         w.on_key(key(KeyCode::Char(' ')));
         assert_eq!(w.cloud_model_picks, [true, false, false]);
         render_all_sizes(&w);
-        for _ in 0..3 {
+        for _ in 0..6 {
             w.on_key(key(KeyCode::Backspace));
         }
         type_str(&mut w, "3.8");
@@ -2257,7 +2257,7 @@ mod tests {
         w.cloud_done.push(CloudChoice {
             preset: PROVIDERS[0],
             api_key: "fixture-key".into(),
-            model: setup::fixture_model("google", "gemini-3.5-flash-lite")
+            model: setup::fixture_model("google", "gemini-4-carbon")
                 .unwrap()
                 .unwrap(),
         });

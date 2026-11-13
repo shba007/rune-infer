@@ -421,6 +421,7 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
         }),
         remote: None,
         extra: c.extra.clone(),
+        benchmarks: None,
     }
 }
 
@@ -454,6 +455,7 @@ fn cloud_entry(c: &CloudChoice) -> ModelEntry {
             rate_limit: None,
         }),
         extra: serde_json::Map::new(),
+        benchmarks: c.model.benchmarks.clone(),
     }
 }
 
@@ -809,7 +811,7 @@ mod tests {
             cloud: vec![CloudChoice {
                 preset: PROVIDERS[0],
                 api_key: "secret".into(),
-                model: fixture_model("google", "gemini-3.5-flash-lite")
+                model: fixture_model("google", "gemini-3.8-flash")
                     .unwrap()
                     .unwrap(),
             }],
@@ -957,7 +959,7 @@ mod tests {
     #[test]
     fn cloud_save_requires_current_registry_and_does_not_write_on_mismatch() {
         let dir = std::env::temp_dir().join(format!("rune-cloud-registry-{}", generate_api_key()));
-        let mut metadata = fixture_model("google", "gemini-3.5-flash-lite")
+        let mut metadata = fixture_model("google", "gemini-3.8-flash")
             .unwrap()
             .unwrap();
         let plan = SetupPlan {

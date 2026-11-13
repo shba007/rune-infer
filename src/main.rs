@@ -363,6 +363,7 @@ async fn run(
                     "CLOUD".to_string()
                 },
                 capabilities: m.capabilities.clone().unwrap_or_default(),
+                benchmarks: m.benchmarks.clone(),
             })
             .collect(),
     };

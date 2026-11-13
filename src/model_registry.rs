@@ -868,7 +868,9 @@ fn install_with(
             _ => {
                 defaults.tasks == ["text-to-text"]
                     || (projector.is_some()
-                        && defaults.tasks == ["text-to-text", "text-image-to-text"])
+                        && (defaults.tasks == ["text-to-text", "text-image-to-text"]
+                            || defaults.tasks
+                                == ["text-to-text", "text-image-to-text", "text-video-to-text"]))
             }
         };
         ensure!(

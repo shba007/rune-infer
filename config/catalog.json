@@ -6,12 +6,15 @@
       "name": "Gemma 4 12B IT",
       "description": "Google DeepMind Gemma 4 12B Instruction-Tuned omni multimodal foundation model for text, image, audio, and video",
       "capabilities": [
+        "Chat",
+        "Vision",
         "Tool Call",
         "Structured Output"
       ],
       "tasks": [
         "text-to-text",
-        "text-image-to-text"
+        "text-image-to-text",
+        "text-video-to-text"
       ],
       "engine": [
         "llama-server",
@@ -34,19 +37,41 @@
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/gemma-4-12b-it-GGUF/mmproj-BF16.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 24.5,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 38,
+          "strategy_and_ops": 34,
+          "legal": 33,
+          "healthcare_and_medical": 32,
+          "engineering": 39,
+          "economics": 35
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 5.5,
+        "output_tokens_per_task": 72000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "minicpm-o-4-5-q8-0",
       "name": "MiniCPM-o 4.5 Q8_0",
       "description": "OpenBMB MiniCPM-o 4.5 (an omni model). Wired up for text and image input via the vision encoder in extra.mmproj_path; llama-server loads a single mmproj, so audio input and speech output are not available",
       "capabilities": [
+        "Chat",
+        "Vision",
         "Tool Call",
         "Structured Output"
       ],
       "tasks": [
         "text-to-text",
-        "text-image-to-text"
+        "text-image-to-text",
+        "text-video-to-text"
       ],
       "engine": [
         "llama-server"
@@ -69,13 +94,34 @@
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/openbmb/MiniCPM-o-4_5-gguf/vision/MiniCPM-o-4_5-vision-F16.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 22,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 34,
+          "strategy_and_ops": 30,
+          "legal": 29,
+          "healthcare_and_medical": 28,
+          "engineering": 33,
+          "economics": 31
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 6.2,
+        "output_tokens_per_task": 68000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "huihui-qwen3.8-27b-abliterated",
       "name": "Huihui Qwen3.8 27B Abliterated",
       "description": "Huihui-AI abliterated uncensored Qwen3.8 27B instruction and reasoning model",
       "capabilities": [
+        "Chat",
+        "Vision",
         "Reasoning",
         "Tool Call",
         "Structured Output",
@@ -83,7 +129,8 @@
       ],
       "tasks": [
         "text-to-text",
-        "text-image-to-text"
+        "text-image-to-text",
+        "text-video-to-text"
       ],
       "engine": [
         "llama-server"
@@ -107,13 +154,34 @@
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",
         "mmproj_path": "D:/Projects/Public/rune/code-model/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF/mmproj-model-bf16.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 20,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "xhigh",
+        "domains": {
+          "finance_and_accounting": 36,
+          "strategy_and_ops": 32,
+          "legal": 31,
+          "healthcare_and_medical": 30,
+          "engineering": 35,
+          "economics": 33
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 8.5,
+        "output_tokens_per_task": 105000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "qwen3.8-27b",
       "name": "Qwen3.8 27B",
       "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
       "capabilities": [
+        "Chat",
+        "Vision",
         "Reasoning",
         "Agentic Tasks",
         "Tool Call",
@@ -123,7 +191,8 @@
       ],
       "tasks": [
         "text-to-text",
-        "text-image-to-text"
+        "text-image-to-text",
+        "text-video-to-text"
       ],
       "engine": [
         "llama-server"
@@ -148,19 +217,42 @@
         "max_resolution": "4096×4096 (Dynamic 4K)",
         "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/mmproj-BF16.gguf",
         "mtp_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/mtp-Qwen3.8-27B-Q4_0.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 20,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "xhigh",
+        "domains": {
+          "finance_and_accounting": 36,
+          "strategy_and_ops": 32,
+          "legal": 31,
+          "healthcare_and_medical": 30,
+          "engineering": 35,
+          "economics": 33
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 8.5,
+        "output_tokens_per_task": 105000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "ternary-bonsai-2-27b-pq2-0",
       "name": "Ternary Bonsai-2 27B",
       "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
       "capabilities": [
+        "Chat",
+        "Vision",
         "Reasoning",
         "Structured Output",
         "Tool Call"
       ],
       "tasks": [
-        "text-to-text"
+        "text-to-text",
+        "text-image-to-text",
+        "text-video-to-text"
       ],
       "engine": [
         "llama-server-prism"
@@ -184,20 +276,43 @@
       "extra": {
         "max_resolution": "4096×4096 (Dynamic 4K)",
         "mmproj_path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-mmproj-BF16.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 18.5,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 33,
+          "strategy_and_ops": 29,
+          "legal": 28,
+          "healthcare_and_medical": 27,
+          "engineering": 32,
+          "economics": 30
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 4.8,
+        "output_tokens_per_task": 62000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "ornith-1.5-9b",
       "name": "Ornith 1.5 9B",
       "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
       "capabilities": [
+        "Chat",
+        "Vision",
         "Reasoning",
         "Agentic Coding",
         "Structured Output",
         "Tool Call"
       ],
       "tasks": [
-        "text-to-text"
+        "text-to-text",
+        "text-image-to-text",
+        "text-video-to-text"
       ],
       "engine": [
         "llama-server"
@@ -221,7 +336,26 @@
       "extra": {
         "max_resolution": "3840×2160 (4K UHD)",
         "mmproj_path": "D:/Projects/Public/rune/code-model/ornith-ai/Ornith-1.5-9B-GGUF/mmproj-Ornith-1.5-9B-BF16.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 16,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 29,
+          "strategy_and_ops": 26,
+          "legal": 25,
+          "healthcare_and_medical": 24,
+          "engineering": 29,
+          "economics": 27
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 3.5,
+        "output_tokens_per_task": 52000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "dinov2-giant",
@@ -244,6 +378,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Visual Representation Linear Probe (Top-1 Acc)",
+        "score": 86.5,
+        "unit": "% Top-1",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.08,
+        "output_tokens_per_task": 1536
       }
     },
     {
@@ -267,6 +409,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "SA-1B / DAVIS Video Segmentation (J&F Index)",
+        "score": 78.4,
+        "unit": "J&F Index",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.12,
+        "output_tokens_per_task": 1
       }
     },
     {
@@ -290,6 +440,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "MS-COCO val2017 mAP50-95 (Zero-Shot)",
+        "score": 52.5,
+        "unit": "% mAP",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.05,
+        "output_tokens_per_task": 80
       }
     },
     {
@@ -325,6 +483,24 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 17.5,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 28,
+          "strategy_and_ops": 27,
+          "legal": 24,
+          "healthcare_and_medical": 22,
+          "engineering": 38,
+          "economics": 26
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 3.2,
+        "output_tokens_per_task": 48000
       }
     },
     {
@@ -354,16 +530,29 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
+        "score": 71.2,
+        "unit": "NDCG@10",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.06,
+        "output_tokens_per_task": 8192
       }
     },
     {
       "id": "qwen3.5-4b-q4",
       "name": "Qwen3.5 4B Q4",
       "description": "Local image and text model; basic tool calls tested. Screen coordinate accuracy is not established.",
-      "capabilities": [],
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Tool Call"
+      ],
       "tasks": [
         "text-to-text",
-        "text-image-to-text"
+        "text-image-to-text",
+        "text-video-to-text"
       ],
       "engine": [
         "llama-server"
@@ -401,7 +590,26 @@
             "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
           }
         ]
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 11.5,
+        "unit": "index",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "domains": {
+          "finance_and_accounting": 21,
+          "strategy_and_ops": 19,
+          "legal": 18,
+          "healthcare_and_medical": 17,
+          "engineering": 22,
+          "economics": 20
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 1.6,
+        "output_tokens_per_task": 28000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "qwen3.5-0.8b",
@@ -434,6 +642,24 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 4.5,
+        "unit": "index",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "domains": {
+          "finance_and_accounting": 9,
+          "strategy_and_ops": 7,
+          "legal": 6,
+          "healthcare_and_medical": 6,
+          "engineering": 8,
+          "economics": 7
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.6,
+        "output_tokens_per_task": 10000
       }
     },
     {
@@ -463,6 +689,24 @@
         "context_length": -1,
         "gpu_layers": 0,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 6,
+        "unit": "index",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "domains": {
+          "finance_and_accounting": 11,
+          "strategy_and_ops": 10,
+          "legal": 9,
+          "healthcare_and_medical": 8,
+          "engineering": 12,
+          "economics": 10
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.8,
+        "output_tokens_per_task": 14000
       }
     },
     {
@@ -491,6 +735,24 @@
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/LiquidAI/d1-3B-GGUF/mmproj-d1-3B-F16.gguf"
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 9.8,
+        "unit": "index",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "domains": {
+          "finance_and_accounting": 18,
+          "strategy_and_ops": 16,
+          "legal": 15,
+          "healthcare_and_medical": 14,
+          "engineering": 18,
+          "economics": 16
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 1.4,
+        "output_tokens_per_task": 24000
       }
     },
     {
@@ -540,7 +802,15 @@
           "engine": "sd-server",
           "version": "stable-diffusion.cpp version unknown, commit c6dfa9d"
         }
-      ]
+      ],
+      "benchmarks": {
+        "index_name": "LMSYS Image Arena ELO",
+        "score": 1115,
+        "unit": "ELO",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.45,
+        "output_tokens_per_task": 20
+      }
     },
     {
       "id": "qwen-image-2.1-uncensored",
@@ -574,6 +844,14 @@
         "max_resolution": "2048×2048 (Native DiT)",
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "LMSYS Image Arena ELO",
+        "score": 1110,
+        "unit": "ELO",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.45,
+        "output_tokens_per_task": 20
       }
     },
     {
@@ -604,6 +882,14 @@
         "default_steps": 30,
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "LMSYS Image Arena ELO (Edit Benchmark)",
+        "score": 1085,
+        "unit": "ELO",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.35,
+        "output_tokens_per_task": 16
       }
     },
     {
@@ -632,6 +918,14 @@
         "default_steps": 50,
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "LMSYS Image Arena ELO",
+        "score": 1075,
+        "unit": "ELO",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.4,
+        "output_tokens_per_task": 20
       }
     },
     {
@@ -648,6 +942,14 @@
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x_detect.onnx",
         "gpu_layers": 99
+      },
+      "benchmarks": {
+        "index_name": "MS-COCO val2017 mAP50-95",
+        "score": 58.2,
+        "unit": "% mAP",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.02,
+        "output_tokens_per_task": 80
       }
     },
     {
@@ -666,6 +968,14 @@
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-pose.onnx",
         "gpu_layers": 99
+      },
+      "benchmarks": {
+        "index_name": "MS-COCO Keypoints val2017 mAP",
+        "score": 74.1,
+        "unit": "% mAP",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.02,
+        "output_tokens_per_task": 17
       }
     },
     {
@@ -684,6 +994,14 @@
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-seg.onnx",
         "gpu_layers": 99
+      },
+      "benchmarks": {
+        "index_name": "MS-COCO val2017 Mask mAP",
+        "score": 48.6,
+        "unit": "% Mask mAP",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.025,
+        "output_tokens_per_task": 80
       }
     },
     {
@@ -702,6 +1020,14 @@
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-obb.onnx",
         "gpu_layers": 99
+      },
+      "benchmarks": {
+        "index_name": "DOTA-v1.5 Oriented Bounding Box mAP",
+        "score": 51.3,
+        "unit": "% OBB mAP",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.025,
+        "output_tokens_per_task": 80
       }
     },
     {
@@ -720,6 +1046,14 @@
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-sem-ade20k.onnx",
         "gpu_layers": 99
+      },
+      "benchmarks": {
+        "index_name": "ADE20K Semantic Segmentation mIoU",
+        "score": 44.8,
+        "unit": "% mIoU",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.03,
+        "output_tokens_per_task": 150
       }
     },
     {
@@ -749,6 +1083,14 @@
         "default_steps": 8,
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace_1.5_vae.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "MusicCaps Audio Quality Index",
+        "score": 82.5,
+        "unit": "Score",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.5,
+        "output_tokens_per_task": 1024
       }
     },
     {
@@ -786,6 +1128,14 @@
             }
           ]
         }
+      },
+      "benchmarks": {
+        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
+        "score": 98.2,
+        "unit": "Accuracy %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.4,
+        "output_tokens_per_task": 1200
       }
     },
     {
@@ -827,6 +1177,14 @@
             }
           ]
         }
+      },
+      "benchmarks": {
+        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
+        "score": 97.8,
+        "unit": "Accuracy %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.15,
+        "output_tokens_per_task": 1200
       }
     },
     {
@@ -864,6 +1222,14 @@
             }
           ]
         }
+      },
+      "benchmarks": {
+        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
+        "score": 94.5,
+        "unit": "Accuracy %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.35,
+        "output_tokens_per_task": 1200
       }
     },
     {
@@ -886,6 +1252,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": "--tokenizer D:/Models/huggingface/hub/models--bosonai--higgs-audio-v2-tokenizer/snapshots/main"
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.38,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.2,
+        "output_tokens_per_task": 600
       }
     },
     {
@@ -917,6 +1291,14 @@
             }
           ]
         }
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.65,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.12,
+        "output_tokens_per_task": 800
       }
     },
     {
@@ -948,6 +1330,14 @@
             }
           ]
         }
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.55,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.15,
+        "output_tokens_per_task": 750
       }
     },
     {
@@ -970,6 +1360,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.5,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.14,
+        "output_tokens_per_task": 700
       }
     },
     {
@@ -992,6 +1390,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.3,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.18,
+        "output_tokens_per_task": 550
       }
     },
     {
@@ -1016,6 +1422,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "AMI Diarization Accuracy Index (100 - DER)",
+        "score": 92.4,
+        "unit": "% DER Acc",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.25,
+        "output_tokens_per_task": 1200
       }
     },
     {
@@ -1044,6 +1458,14 @@
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/embeddinggemma-2-GGUF/mmproj-F16.gguf"
+      },
+      "benchmarks": {
+        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
+        "score": 64.5,
+        "unit": "NDCG@10",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.05,
+        "output_tokens_per_task": 8192
       }
     },
     {
@@ -1063,6 +1485,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
+        "score": 63.1,
+        "unit": "NDCG@10",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.03,
+        "output_tokens_per_task": 8192
       }
     },
     {
@@ -1082,6 +1512,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "ToxicChat / BeaverTails Guardrail F1",
+        "score": 89.2,
+        "unit": "F1 Score",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.03,
+        "output_tokens_per_task": 2
       }
     },
     {
@@ -1101,66 +1539,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
-      }
-    },
-    {
-      "id": "gemini-3.5-flash-lite",
-      "name": "Gemini 3.5 Flash-Lite (Google AI Cloud)",
-      "description": "Google Gemini 3.5 Flash-Lite high-throughput, ultra-low latency model optimized for high-frequency tasks and agentic tool calling",
-      "modality": "Text",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output"
-      ],
-      "tasks": [
-        "text-to-text"
-      ],
-      "max_context_length": 1048576,
-      "remote": {
-        "provider": "google",
-        "upstream_model": "gemini-3.5-flash-lite",
-        "api_key": "{{GEMINI_API_KEY}}",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "rate_limit": {
-          "requests_per_minute": 15,
-          "max_concurrent": 5,
-          "retry_delay_ms": 2000,
-          "max_retries": 6,
-          "queue_timeout_seconds": 30,
-          "requests_per_day": 500,
-          "retry_timeout_seconds": 45,
-          "tokens_per_minute": 250000
-        }
-      }
-    },
-    {
-      "id": "gemini-3.7-flash",
-      "name": "Gemini 3.7 Flash (Google AI Cloud)",
-      "description": "Google Gemini 3.7 Flash workhorse model for coding, agentic workflows, and general reasoning",
-      "modality": "Text",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output"
-      ],
-      "tasks": [
-        "text-to-text"
-      ],
-      "max_context_length": 1048576,
-      "remote": {
-        "provider": "google",
-        "upstream_model": "gemini-3.7-flash",
-        "api_key": "{{GEMINI_API_KEY}}",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "rate_limit": {
-          "requests_per_minute": 5,
-          "max_concurrent": 2,
-          "retry_delay_ms": 2000,
-          "max_retries": 6,
-          "queue_timeout_seconds": 30,
-          "requests_per_day": 20,
-          "retry_timeout_seconds": 45,
-          "tokens_per_minute": 250000
-        }
+      },
+      "benchmarks": {
+        "index_name": "Banking77 / CLINC150 Intent Classification Accuracy",
+        "score": 93.6,
+        "unit": "% Acc",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.03,
+        "output_tokens_per_task": 128
       }
     },
     {
@@ -1191,6 +1577,16 @@
           "queue_timeout_seconds": 60,
           "retry_timeout_seconds": 45
         }
+      },
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 74,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.35,
+        "time_per_task_minutes": 4.5,
+        "output_tokens_per_task": 50000
       }
     },
     {
@@ -1221,6 +1617,16 @@
           "queue_timeout_seconds": 60,
           "retry_timeout_seconds": 45
         }
+      },
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 71.5,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.25,
+        "time_per_task_minutes": 3.8,
+        "output_tokens_per_task": 45000
       }
     },
     {
@@ -1251,6 +1657,24 @@
           "retry_timeout_seconds": 45,
           "tokens_per_minute": 250000
         }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 31,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 40,
+          "strategy_and_ops": 36,
+          "legal": 35,
+          "healthcare_and_medical": 34,
+          "engineering": 38,
+          "economics": 37
+        },
+        "cost_per_task_usd": 0.42,
+        "time_per_task_minutes": 14.8,
+        "output_tokens_per_task": 110000
       }
     },
     {
@@ -1281,6 +1705,16 @@
           "queue_timeout_seconds": 60,
           "retry_timeout_seconds": 45
         }
+      },
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 68,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.15,
+        "time_per_task_minutes": 2.8,
+        "output_tokens_per_task": 35000
       }
     },
     {
@@ -1302,6 +1736,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "NYUv2 Relative Depth Accuracy Index (1 - AbsRel)",
+        "score": 91.8,
+        "unit": "Accuracy %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.02,
+        "output_tokens_per_task": 1
       }
     },
     {
@@ -1323,6 +1765,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "NYUv2 Relative Depth Accuracy Index (1 - AbsRel)",
+        "score": 93.5,
+        "unit": "Accuracy %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.05,
+        "output_tokens_per_task": 1
       }
     },
     {
@@ -1348,6 +1798,24 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": "--repeat-penalty 1.1"
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 7.2,
+        "unit": "index",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "domains": {
+          "finance_and_accounting": 14,
+          "strategy_and_ops": 12,
+          "legal": 11,
+          "healthcare_and_medical": 10,
+          "engineering": 13,
+          "economics": 12
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 1,
+        "output_tokens_per_task": 16000
       }
     },
     {
@@ -1422,6 +1890,24 @@
             "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
           }
         ]
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 8.5,
+        "unit": "index",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "domains": {
+          "finance_and_accounting": 16,
+          "strategy_and_ops": 14,
+          "legal": 13,
+          "healthcare_and_medical": 12,
+          "engineering": 15,
+          "economics": 14
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 1.2,
+        "output_tokens_per_task": 20000
       }
     },
     {
@@ -1445,6 +1931,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "DIS5K High-Resolution Matting (F-measure)",
+        "score": 89.5,
+        "unit": "F-measure %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.08,
+        "output_tokens_per_task": 1
       }
     },
     {
@@ -1452,6 +1946,7 @@
       "name": "Holo3.1 4B",
       "description": "Computer-use vision model; integration and hardware compatibility require validation.",
       "capabilities": [
+        "Chat",
         "Tool Call",
         "Vision"
       ],
@@ -1477,13 +1972,33 @@
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-4B-GGUF/Holo-3.1-4B.mmproj-f16.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 12,
+        "unit": "index",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "domains": {
+          "finance_and_accounting": 22,
+          "strategy_and_ops": 20,
+          "legal": 19,
+          "healthcare_and_medical": 18,
+          "engineering": 23,
+          "economics": 21
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 1.8,
+        "output_tokens_per_task": 30000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "holo3.1-9b-q4",
       "name": "Holo3.1 9B",
       "description": "Computer-use vision model; integration and hardware compatibility require validation.",
       "capabilities": [
+        "Chat",
         "Tool Call",
         "Vision"
       ],
@@ -1509,7 +2024,26 @@
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-9B-GGUF/Holo-3.1-9B.mmproj-f16.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 15.5,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 28,
+          "strategy_and_ops": 25,
+          "legal": 24,
+          "healthcare_and_medical": 23,
+          "engineering": 28,
+          "economics": 26
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 3.2,
+        "output_tokens_per_task": 44000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "vevo2-audiocpp",
@@ -1532,6 +2066,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.42,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.08,
+        "output_tokens_per_task": 500
       }
     },
     {
@@ -1555,6 +2097,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Audio Codec ViSQOL Quality Index",
+        "score": 4.65,
+        "unit": "ViSQOL",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.04,
+        "output_tokens_per_task": 512
       }
     },
     {
@@ -1579,6 +2129,14 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
+        "score": 93.2,
+        "unit": "Accuracy %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.3,
+        "output_tokens_per_task": 1200
       }
     },
     {
@@ -1601,6 +2159,14 @@
         "context_length": 512,
         "gpu_layers": 99,
         "args": ""
+      },
+      "benchmarks": {
+        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
+        "score": 62.2,
+        "unit": "NDCG@10",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.02,
+        "output_tokens_per_task": 512
       }
     },
     {
@@ -1631,6 +2197,24 @@
         "context_length": -1,
         "gpu_layers": 99,
         "args": "-fa on"
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 19.5,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 31,
+          "strategy_and_ops": 29,
+          "legal": 28,
+          "healthcare_and_medical": 27,
+          "engineering": 32,
+          "economics": 30
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 4.1,
+        "output_tokens_per_task": 58000
       }
     },
     {
@@ -1645,7 +2229,8 @@
       ],
       "tasks": [
         "text-to-text",
-        "text-image-to-text"
+        "text-image-to-text",
+        "text-video-to-text"
       ],
       "engine": [
         "llama-server"
@@ -1665,7 +2250,26 @@
       },
       "extra": {
         "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.5-9B-GGUF/mmproj-F16.gguf"
-      }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 18,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 31,
+          "strategy_and_ops": 28,
+          "legal": 27,
+          "healthcare_and_medical": 26,
+          "engineering": 31,
+          "economics": 29
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 3.6,
+        "output_tokens_per_task": 54000
+      },
+      "modality": "VisionText"
     },
     {
       "id": "qwen-image-2.1-turbo",
@@ -1695,6 +2299,14 @@
         "default_steps": 8,
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "LMSYS Image Arena ELO",
+        "score": 1100,
+        "unit": "ELO",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.22,
+        "output_tokens_per_task": 8
       }
     },
     {
@@ -1727,6 +2339,24 @@
           "queue_timeout_seconds": 60,
           "retry_timeout_seconds": 45
         }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 15,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 27,
+          "strategy_and_ops": 25,
+          "legal": 24,
+          "healthcare_and_medical": 23,
+          "engineering": 28,
+          "economics": 25
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 3.8,
+        "output_tokens_per_task": 81000
       }
     },
     {
@@ -1754,6 +2384,130 @@
         "context_length": 8192,
         "gpu_layers": 99,
         "args": "-fa on"
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 16.8,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 27,
+          "strategy_and_ops": 26,
+          "legal": 23,
+          "healthcare_and_medical": 21,
+          "engineering": 37,
+          "economics": 25
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 3.4,
+        "output_tokens_per_task": 46000
+      }
+    },
+    {
+      "id": "gemini-4-carbon",
+      "name": "Gemini 4 Carbon",
+      "description": "Google Gemini 4 Carbon frontier multimodal reasoning foundation model with extended context and high-effort reasoning",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-video-to-text",
+        "text-audio-to-text"
+      ],
+      "max_context_length": 2097152,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "max_tokens": 65536
+      },
+      "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-4-carbon",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": "{{GEMINI_API_KEY}}",
+        "rate_limit": {
+          "requests_per_minute": 1000,
+          "max_concurrent": 10,
+          "retry_delay_ms": 1000
+        }
+      },
+      "extra": {},
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 60,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 63,
+          "strategy_and_ops": 61,
+          "legal": 59,
+          "healthcare_and_medical": 62,
+          "engineering": 64,
+          "economics": 62
+        },
+        "cost_per_task_usd": 1.42,
+        "time_per_task_minutes": 9.8,
+        "output_tokens_per_task": 118000
+      }
+    },
+    {
+      "id": "gemini-4-hydrogen",
+      "name": "Gemini 4 Hydrogen",
+      "description": "Google Gemini 4 Hydrogen multimodal reasoning model with extra-high reasoning effort and deep scientific verification",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-video-to-text",
+        "text-audio-to-text"
+      ],
+      "max_context_length": 1048576,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "max_tokens": 65536
+      },
+      "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-4-hydrogen",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": "{{GEMINI_API_KEY}}",
+        "rate_limit": {
+          "requests_per_minute": 1500,
+          "max_concurrent": 15,
+          "retry_delay_ms": 800
+        }
+      },
+      "extra": {},
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 54,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "xhigh",
+        "domains": {
+          "finance_and_accounting": 58,
+          "strategy_and_ops": 55,
+          "legal": 53,
+          "healthcare_and_medical": 56,
+          "engineering": 57,
+          "economics": 54
+        },
+        "cost_per_task_usd": 1.15,
+        "time_per_task_minutes": 8.6,
+        "output_tokens_per_task": 138000
       }
     }
   ]

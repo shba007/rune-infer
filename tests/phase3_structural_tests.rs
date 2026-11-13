@@ -137,6 +137,7 @@ async fn test_runtime_catalog_hot_reloading() {
         }),
         remote: None,
         extra: serde_json::Map::new(),
+        benchmarks: None,
     };
     initial_config
         .models
@@ -181,6 +182,7 @@ async fn test_runtime_catalog_hot_reloading() {
         }),
         remote: None,
         extra: serde_json::Map::new(),
+        benchmarks: None,
     };
     updated_config
         .models
