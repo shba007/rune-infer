@@ -32,7 +32,262 @@ pub struct ModelRow {
     pub engine: Option<String>,
     pub locality: String,
     pub capabilities: Vec<String>,
+    pub tasks: Vec<String>,
+    pub total_params: Option<u64>,
     pub benchmarks: Option<crate::schema::BenchmarkMetrics>,
+}
+
+/// Model size classification per Artificial Analysis (https://artificialanalysis.ai/)
+/// - Tiny: <= 4B parameters
+/// - Small: 4B to 40B parameters
+/// - Medium: 40B to 150B parameters
+/// - Large: > 150B parameters
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SizeCategory {
+    Tiny,
+    Small,
+    Medium,
+    Large,
+    Unknown,
+}
+
+impl SizeCategory {
+    pub fn from_model(id: &str, name: &str, explicit_params: Option<u64>) -> (Self, Option<u64>) {
+        let p = infer_parameter_count(id, name, explicit_params);
+        let cat = match p {
+            Some(v) if v <= 4_000_000_000 => Self::Tiny,
+            Some(v) if v <= 40_000_000_000 => Self::Small,
+            Some(v) if v <= 150_000_000_000 => Self::Medium,
+            Some(_) => Self::Large,
+            None => Self::Unknown,
+        };
+        (cat, p)
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Tiny => "Tiny (≤4B)",
+            Self::Small => "Small (4B–40B)",
+            Self::Medium => "Medium (40B–150B)",
+            Self::Large => "Large (>150B)",
+            Self::Unknown => "Unknown",
+        }
+    }
+
+    pub fn badge(&self) -> &'static str {
+        match self {
+            Self::Tiny => "TINY",
+            Self::Small => "SMALL",
+            Self::Medium => "MEDIUM",
+            Self::Large => "LARGE",
+            Self::Unknown => "-",
+        }
+    }
+}
+
+pub fn infer_parameter_count(id: &str, name: &str, explicit_params: Option<u64>) -> Option<u64> {
+    if let Some(p) = explicit_params {
+        if p > 0 {
+            return Some(p);
+        }
+    }
+    let lower = format!("{} {}", id.to_lowercase(), name.to_lowercase());
+    if lower.contains("gemini-4") {
+        return Some(200_000_000_000);
+    }
+    if lower.contains("gemini-3.8") || lower.contains("flash") {
+        return Some(35_000_000_000);
+    }
+    if lower.contains("nemotron-3.5-super-vl") {
+        return Some(120_000_000_000);
+    }
+    if lower.contains("minicpm-o-4") || lower.contains("minicpm-o-4_5") {
+        return Some(4_500_000_000);
+    }
+    if lower.contains("space-bunny") || lower.contains("dots-3") || lower.contains("apodex") {
+        return Some(8_000_000_000);
+    }
+    for token in lower.split(|c: char| !c.is_alphanumeric() && c != '.') {
+        if let Some(num_str) = token.strip_suffix('b') {
+            if let Ok(val) = num_str.parse::<f64>() {
+                return Some((val * 1_000_000_000.0) as u64);
+            }
+        }
+        if let Some(num_str) = token.strip_suffix('m') {
+            if let Ok(val) = num_str.parse::<f64>() {
+                return Some((val * 1_000_000.0) as u64);
+            }
+        }
+    }
+    if lower.contains("yolo")
+        || lower.contains("depth")
+        || lower.contains("sam2")
+        || lower.contains("dino")
+        || lower.contains("matting")
+        || lower.contains("bert")
+    {
+        return Some(250_000_000);
+    }
+    None
+}
+
+/// Real-life task classification grouping
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealLifeTask {
+    ImageEditing,
+    VideoAndMotion,
+    ThreeDAndDepth,
+    CodeAndCad,
+    ComputerUseAndAgent,
+    AudioAndSpeech,
+    ImageGeneration,
+    VisionAndMultimodal,
+    DetectionAndSegmentation,
+    EmbeddingAndSearch,
+    GeneralText,
+}
+
+impl RealLifeTask {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::ImageEditing => "Image Editing",
+            Self::VideoAndMotion => "Video & Motion",
+            Self::ThreeDAndDepth => "3D Modeling & Depth",
+            Self::CodeAndCad => "Code & CAD",
+            Self::ComputerUseAndAgent => "Computer Use & Tools",
+            Self::AudioAndSpeech => "Audio & Voice",
+            Self::ImageGeneration => "Image Generation",
+            Self::VisionAndMultimodal => "Vision & Multimodal",
+            Self::DetectionAndSegmentation => "Detection & Seg",
+            Self::EmbeddingAndSearch => "Embeddings & Search",
+            Self::GeneralText => "Text & Reasoning",
+        }
+    }
+
+    pub fn short_badge(&self) -> &'static str {
+        match self {
+            Self::ImageEditing => "Image Edit",
+            Self::VideoAndMotion => "Video",
+            Self::ThreeDAndDepth => "3D & Depth",
+            Self::CodeAndCad => "Code",
+            Self::ComputerUseAndAgent => "Agent/Tools",
+            Self::AudioAndSpeech => "Audio",
+            Self::ImageGeneration => "Image Gen",
+            Self::VisionAndMultimodal => "Vision",
+            Self::DetectionAndSegmentation => "Detection",
+            Self::EmbeddingAndSearch => "Embedding",
+            Self::GeneralText => "Reasoning",
+        }
+    }
+
+    pub fn sort_priority(&self) -> usize {
+        match self {
+            Self::ImageEditing => 1,
+            Self::VideoAndMotion => 2,
+            Self::ThreeDAndDepth => 3,
+            Self::CodeAndCad => 4,
+            Self::ComputerUseAndAgent => 5,
+            Self::AudioAndSpeech => 6,
+            Self::ImageGeneration => 7,
+            Self::VisionAndMultimodal => 8,
+            Self::DetectionAndSegmentation => 9,
+            Self::EmbeddingAndSearch => 10,
+            Self::GeneralText => 11,
+        }
+    }
+}
+
+pub fn classify_real_life_tasks(
+    id: &str,
+    tasks: &[String],
+    capabilities: &[String],
+) -> Vec<RealLifeTask> {
+    let lower = format!("{} {} {}", id, tasks.join(" "), capabilities.join(" ")).to_lowercase();
+    let mut list = Vec::new();
+
+    if tasks
+        .iter()
+        .any(|t| t == "text-image-to-image" || t == "image-to-image")
+        || lower.contains("image-edit")
+    {
+        list.push(RealLifeTask::ImageEditing);
+    }
+    if tasks.iter().any(|t| t == "text-video-to-text")
+        || lower.contains("video tracking")
+        || lower.contains("video")
+    {
+        list.push(RealLifeTask::VideoAndMotion);
+    }
+    if lower.contains("3d")
+        || lower.contains("scad")
+        || tasks.iter().any(|t| t == "image-to-depth")
+        || capabilities
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case("depth estimation"))
+    {
+        list.push(RealLifeTask::ThreeDAndDepth);
+    }
+    if lower.contains("code") || lower.contains("coding") || lower.contains("coder") {
+        list.push(RealLifeTask::CodeAndCad);
+    }
+    if lower.contains("agent")
+        || lower.contains("terminal")
+        || lower.contains("computer use")
+        || lower.contains("needle")
+        || (capabilities
+            .iter()
+            .any(|c| c.to_lowercase().contains("tool"))
+            && lower.contains("reasoning"))
+    {
+        list.push(RealLifeTask::ComputerUseAndAgent);
+    }
+    if tasks.iter().any(|t| t.contains("audio"))
+        || capabilities.iter().any(|c| {
+            let cl = c.to_lowercase();
+            cl.contains("audio")
+                || cl.contains("voice")
+                || cl.contains("speech")
+                || cl.contains("diarization")
+        })
+    {
+        list.push(RealLifeTask::AudioAndSpeech);
+    }
+    if tasks.iter().any(|t| t == "text-to-image")
+        || capabilities
+            .iter()
+            .any(|c| c.contains("Photorealism") || c.contains("Turbo Generation"))
+    {
+        list.push(RealLifeTask::ImageGeneration);
+    }
+    if tasks.iter().any(|t| t == "text-image-to-text")
+        || capabilities
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case("vision"))
+    {
+        list.push(RealLifeTask::VisionAndMultimodal);
+    }
+    if tasks
+        .iter()
+        .any(|t| t.contains("detection") || t.contains("segmentation") || t.contains("matting"))
+        || capabilities.iter().any(|c| {
+            let cl = c.to_lowercase();
+            cl.contains("segmentation") || cl.contains("detection") || cl.contains("matting")
+        })
+    {
+        list.push(RealLifeTask::DetectionAndSegmentation);
+    }
+    if tasks.iter().any(|t| t == "text-to-embedding")
+        || capabilities.iter().any(|c| {
+            let cl = c.to_lowercase();
+            cl.contains("search") || cl.contains("retrieval") || cl.contains("embedding")
+        })
+    {
+        list.push(RealLifeTask::EmbeddingAndSearch);
+    }
+    if list.is_empty() {
+        list.push(RealLifeTask::GeneralText);
+    }
+    list
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +297,62 @@ pub enum ModelSort {
     FinanceIndex,
     Cost,
     Latency,
+    TaskGroup,
+    SizeTier,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskFilter {
+    All,
+    ImageEditing,
+    VideoAndMotion,
+    ThreeDAndDepth,
+    CodeAndCad,
+    ComputerUseAndAgent,
+    AudioAndSpeech,
+    ImageGeneration,
+    VisionAndMultimodal,
+    DetectionAndSegmentation,
+    EmbeddingAndSearch,
+}
+
+impl TaskFilter {
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            Self::All => "All Tasks",
+            Self::ImageEditing => "Image Edit",
+            Self::VideoAndMotion => "Video",
+            Self::ThreeDAndDepth => "3D & Depth",
+            Self::CodeAndCad => "Code",
+            Self::ComputerUseAndAgent => "Agent/Tools",
+            Self::AudioAndSpeech => "Audio",
+            Self::ImageGeneration => "Image Gen",
+            Self::VisionAndMultimodal => "Vision",
+            Self::DetectionAndSegmentation => "Detection",
+            Self::EmbeddingAndSearch => "Embedding",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SizeFilter {
+    All,
+    Large,
+    Medium,
+    Small,
+    Tiny,
+}
+
+impl SizeFilter {
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            Self::All => "All Sizes",
+            Self::Large => "Large (>150B)",
+            Self::Medium => "Medium (40B-150B)",
+            Self::Small => "Small (4B-40B)",
+            Self::Tiny => "Tiny (≤4B)",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +406,8 @@ struct App {
     model_selected: usize,
     model_sort: ModelSort,
     benchmark_view: bool,
+    task_filter: TaskFilter,
+    size_filter: SizeFilter,
     model_action: Option<ModelAction>,
     model_action_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     model_action_status: Option<String>,
@@ -201,6 +514,8 @@ impl App {
             model_selected: 0,
             model_sort: ModelSort::Default,
             benchmark_view: false,
+            task_filter: TaskFilter::All,
+            size_filter: SizeFilter::All,
             model_action: None,
             model_action_rx: None,
             model_action_status: None,
@@ -252,7 +567,9 @@ impl App {
         if self.model_action_rx.is_some() {
             return None;
         }
-        match &self.models.get(self.model_selected)?.status {
+        let indices = self.filtered_model_indices();
+        let idx = *indices.get(self.model_selected)?;
+        match &self.models.get(idx)?.status {
             Status::Loaded { .. } => Some(ModelAction::Unload),
             Status::Loading(_) => None,
             Status::Idle | Status::Failed(_) => Some(ModelAction::Load),
@@ -284,6 +601,8 @@ impl App {
                     "CLOUD".into()
                 },
                 capabilities: model.capabilities.clone().unwrap_or_default(),
+                tasks: model.tasks.clone(),
+                total_params: model.total_params,
                 benchmarks: model.benchmarks.clone(),
             };
             let original_index = self.models.len();
@@ -307,9 +626,81 @@ impl App {
             ModelSort::IntelligenceIndex => ModelSort::FinanceIndex,
             ModelSort::FinanceIndex => ModelSort::Cost,
             ModelSort::Cost => ModelSort::Latency,
-            ModelSort::Latency => ModelSort::Default,
+            ModelSort::Latency => ModelSort::TaskGroup,
+            ModelSort::TaskGroup => ModelSort::SizeTier,
+            ModelSort::SizeTier => ModelSort::Default,
         };
         self.apply_model_sort();
+    }
+
+    fn cycle_task_filter(&mut self) {
+        self.task_filter = match self.task_filter {
+            TaskFilter::All => TaskFilter::ImageEditing,
+            TaskFilter::ImageEditing => TaskFilter::VideoAndMotion,
+            TaskFilter::VideoAndMotion => TaskFilter::ThreeDAndDepth,
+            TaskFilter::ThreeDAndDepth => TaskFilter::CodeAndCad,
+            TaskFilter::CodeAndCad => TaskFilter::ComputerUseAndAgent,
+            TaskFilter::ComputerUseAndAgent => TaskFilter::AudioAndSpeech,
+            TaskFilter::AudioAndSpeech => TaskFilter::ImageGeneration,
+            TaskFilter::ImageGeneration => TaskFilter::VisionAndMultimodal,
+            TaskFilter::VisionAndMultimodal => TaskFilter::DetectionAndSegmentation,
+            TaskFilter::DetectionAndSegmentation => TaskFilter::EmbeddingAndSearch,
+            TaskFilter::EmbeddingAndSearch => TaskFilter::All,
+        };
+        self.model_selected = 0;
+    }
+
+    fn cycle_size_filter(&mut self) {
+        self.size_filter = match self.size_filter {
+            SizeFilter::All => SizeFilter::Large,
+            SizeFilter::Large => SizeFilter::Medium,
+            SizeFilter::Medium => SizeFilter::Small,
+            SizeFilter::Small => SizeFilter::Tiny,
+            SizeFilter::Tiny => SizeFilter::All,
+        };
+        self.model_selected = 0;
+    }
+
+    fn filtered_model_indices(&self) -> Vec<usize> {
+        self.models
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| {
+                let (size, _) =
+                    SizeCategory::from_model(&m.row.id, &m.row.name, m.row.total_params);
+                let size_match = match self.size_filter {
+                    SizeFilter::All => true,
+                    SizeFilter::Large => size == SizeCategory::Large,
+                    SizeFilter::Medium => size == SizeCategory::Medium,
+                    SizeFilter::Small => size == SizeCategory::Small,
+                    SizeFilter::Tiny => size == SizeCategory::Tiny,
+                };
+                let tasks = classify_real_life_tasks(&m.row.id, &m.row.tasks, &m.row.capabilities);
+                let task_match = match self.task_filter {
+                    TaskFilter::All => true,
+                    TaskFilter::ImageEditing => tasks.contains(&RealLifeTask::ImageEditing),
+                    TaskFilter::VideoAndMotion => tasks.contains(&RealLifeTask::VideoAndMotion),
+                    TaskFilter::ThreeDAndDepth => tasks.contains(&RealLifeTask::ThreeDAndDepth),
+                    TaskFilter::CodeAndCad => tasks.contains(&RealLifeTask::CodeAndCad),
+                    TaskFilter::ComputerUseAndAgent => {
+                        tasks.contains(&RealLifeTask::ComputerUseAndAgent)
+                    }
+                    TaskFilter::AudioAndSpeech => tasks.contains(&RealLifeTask::AudioAndSpeech),
+                    TaskFilter::ImageGeneration => tasks.contains(&RealLifeTask::ImageGeneration),
+                    TaskFilter::VisionAndMultimodal => {
+                        tasks.contains(&RealLifeTask::VisionAndMultimodal)
+                    }
+                    TaskFilter::DetectionAndSegmentation => {
+                        tasks.contains(&RealLifeTask::DetectionAndSegmentation)
+                    }
+                    TaskFilter::EmbeddingAndSearch => {
+                        tasks.contains(&RealLifeTask::EmbeddingAndSearch)
+                    }
+                };
+                size_match && task_match
+            })
+            .map(|(i, _)| i)
+            .collect()
     }
 
     fn apply_model_sort(&mut self) {
@@ -395,6 +786,38 @@ impl App {
                     time_a
                         .partial_cmp(&time_b)
                         .unwrap_or(std::cmp::Ordering::Equal)
+                });
+            }
+            ModelSort::TaskGroup => {
+                self.models.sort_by(|a, b| {
+                    let tasks_a =
+                        classify_real_life_tasks(&a.row.id, &a.row.tasks, &a.row.capabilities);
+                    let tasks_b =
+                        classify_real_life_tasks(&b.row.id, &b.row.tasks, &b.row.capabilities);
+                    let prio_a = tasks_a
+                        .first()
+                        .copied()
+                        .unwrap_or(RealLifeTask::GeneralText)
+                        .sort_priority();
+                    let prio_b = tasks_b
+                        .first()
+                        .copied()
+                        .unwrap_or(RealLifeTask::GeneralText)
+                        .sort_priority();
+                    prio_a
+                        .cmp(&prio_b)
+                        .then_with(|| a.original_index.cmp(&b.original_index))
+                });
+            }
+            ModelSort::SizeTier => {
+                self.models.sort_by(|a, b| {
+                    let (size_a, p_a) =
+                        SizeCategory::from_model(&a.row.id, &a.row.name, a.row.total_params);
+                    let (size_b, p_b) =
+                        SizeCategory::from_model(&b.row.id, &b.row.name, b.row.total_params);
+                    size_b
+                        .cmp(&size_a)
+                        .then_with(|| p_b.unwrap_or(0).cmp(&p_a.unwrap_or(0)))
                 });
             }
         }
@@ -762,6 +1185,12 @@ impl App {
             KeyCode::Char('b') if self.tab == Tab::Models => {
                 self.benchmark_view = !self.benchmark_view;
             }
+            KeyCode::Char('g') if self.tab == Tab::Models => {
+                self.cycle_task_filter();
+            }
+            KeyCode::Char('z') if self.tab == Tab::Models => {
+                self.cycle_size_filter();
+            }
             KeyCode::Enter if self.tab == Tab::Models && self.model_action_rx.is_none() => {
                 self.model_action = self.selected_model_action();
             }
@@ -769,8 +1198,8 @@ impl App {
                 self.model_selected = self.model_selected.saturating_sub(1);
             }
             KeyCode::Down if self.tab == Tab::Models => {
-                self.model_selected =
-                    (self.model_selected + 1).min(self.models.len().saturating_sub(1));
+                let total = self.filtered_model_indices().len();
+                self.model_selected = (self.model_selected + 1).min(total.saturating_sub(1));
             }
             KeyCode::Char('u') if self.tab == Tab::Engines => self.update_requested = true,
             KeyCode::Char('c') if self.tab == Tab::Engines => {
@@ -2646,17 +3075,48 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
         ModelSort::FinanceIndex => "Finance Index ↓",
         ModelSort::Cost => "Cost / Task ↑",
         ModelSort::Latency => "Time / Task ↑",
+        ModelSort::TaskGroup => "Task Group",
+        ModelSort::SizeTier => "AA Size Tier ↓",
     };
     let view_label = if app.benchmark_view {
         "Benchmarks"
     } else {
         "Capabilities"
     };
+
+    let indices = app.filtered_model_indices();
+    let total_shown = indices.len();
+    let selected_pos = if total_shown == 0 {
+        0
+    } else {
+        app.model_selected.min(total_shown.saturating_sub(1))
+    };
+
+    let filter_info = match (app.task_filter, app.size_filter) {
+        (TaskFilter::All, SizeFilter::All) => format!("{} configured", app.models.len()),
+        (tf, SizeFilter::All) => format!(
+            "{}/{} shown · [g] Task: {}",
+            total_shown,
+            app.models.len(),
+            tf.short_label()
+        ),
+        (TaskFilter::All, sf) => format!(
+            "{}/{} shown · [z] Size: {}",
+            total_shown,
+            app.models.len(),
+            sf.short_label()
+        ),
+        (tf, sf) => format!(
+            "{}/{} shown · [g] {} · [z] {}",
+            total_shown,
+            app.models.len(),
+            tf.short_label(),
+            sf.short_label()
+        ),
+    };
     let block = panel(format!(
-        " Models Catalog · {} configured · [s] Sort: {} · [b] View: {} ",
-        app.models.len(),
-        sort_label,
-        view_label
+        " Models Catalog · {} · [s] Sort: {} · [b] View: {} ",
+        filter_info, sort_label, view_label
     ));
 
     let header = if app.benchmark_view {
@@ -2664,6 +3124,8 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
             "",
             "Model ID / Name",
             "Locality",
+            "AA Size",
+            "Primary Task",
             "Benchmark Index",
             "Mode (Effort)",
             "Cost / Task",
@@ -2676,6 +3138,8 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
             "",
             "Model ID / Name",
             "Locality",
+            "AA Size",
+            "Primary Task",
             "Capabilities",
             "Provider / Engine",
             "Reqs",
@@ -2685,14 +3149,15 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let visible = table_area.height.saturating_sub(3) as usize;
-    let start = app.model_selected.saturating_add(1).saturating_sub(visible);
-    let rows = app
-        .models
+    let start = selected_pos.saturating_add(1).saturating_sub(visible);
+    let rows = indices
         .iter()
+        .copied()
         .enumerate()
         .skip(start)
         .take(visible)
-        .map(|(index, m)| {
+        .map(|(list_idx, model_idx)| {
+            let m = &app.models[model_idx];
             let (icon, color, status_text) = match &m.status {
                 Status::Idle => ("·", DIM, "IDLE"),
                 Status::Loading(_) => (spinner(app.tick), ACCENT, "LOADING"),
@@ -2706,11 +3171,20 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
                 Style::new().fg(ACCENT)
             };
 
-            let indicator = if index == app.model_selected {
-                ">"
-            } else {
-                icon
+            let indicator = if list_idx == selected_pos { ">" } else { icon };
+
+            let (size_cat, _) =
+                SizeCategory::from_model(&m.row.id, &m.row.name, m.row.total_params);
+            let size_style = match size_cat {
+                SizeCategory::Large => Style::new().fg(ERR),
+                SizeCategory::Medium => Style::new().fg(WARN),
+                SizeCategory::Small => Style::new().fg(ACCENT),
+                SizeCategory::Tiny => Style::new().fg(OK),
+                SizeCategory::Unknown => Style::new().fg(DIM),
             };
+            let tasks = classify_real_life_tasks(&m.row.id, &m.row.tasks, &m.row.capabilities);
+            let primary_task = tasks.first().copied().unwrap_or(RealLifeTask::GeneralText);
+            let task_style = Style::new().fg(ACCENT);
 
             if app.benchmark_view {
                 let bench_str = if let Some(b) = &m.row.benchmarks {
@@ -2769,6 +3243,8 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
                     Cell::from(indicator).style(Style::new().fg(color)),
                     Cell::from(format!("{} ({})", m.row.id, m.row.name)),
                     Cell::from(m.row.locality.clone()).style(locality_style),
+                    Cell::from(size_cat.badge()).style(size_style),
+                    Cell::from(primary_task.short_badge()).style(task_style),
                     Cell::from(bench_str).style(Style::new().fg(ACCENT)),
                     Cell::from(mode_str).style(Style::new().fg(DIM)),
                     Cell::from(cost_str),
@@ -2803,6 +3279,8 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
                     Cell::from(indicator).style(Style::new().fg(color)),
                     Cell::from(format!("{} ({})", m.row.id, m.row.name)),
                     Cell::from(m.row.locality.clone()).style(locality_style),
+                    Cell::from(size_cat.badge()).style(size_style),
+                    Cell::from(primary_task.short_badge()).style(task_style),
                     Cell::from(cap_str).style(Style::new().fg(DIM)),
                     Cell::from(
                         m.row
@@ -2823,10 +3301,12 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
         if app.benchmark_view {
             vec![
                 Constraint::Length(2),
-                Constraint::Min(24),
-                Constraint::Length(8),
-                Constraint::Length(22),
+                Constraint::Min(22),
+                Constraint::Length(7),
+                Constraint::Length(7),
+                Constraint::Length(13),
                 Constraint::Length(16),
+                Constraint::Length(14),
                 Constraint::Length(10),
                 Constraint::Length(10),
                 Constraint::Length(8),
@@ -2834,19 +3314,23 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
         } else {
             vec![
                 Constraint::Length(2),
-                Constraint::Min(24),
+                Constraint::Min(22),
+                Constraint::Length(7),
+                Constraint::Length(7),
+                Constraint::Length(13),
+                Constraint::Length(20),
+                Constraint::Length(15),
+                Constraint::Length(5),
                 Constraint::Length(8),
-                Constraint::Length(22),
-                Constraint::Length(18),
-                Constraint::Length(6),
-                Constraint::Length(9),
             ]
         },
     )
     .header(header)
     .block(block);
     f.render_widget(table, table_area);
-    let selected = app.models.get(app.model_selected);
+    let selected = indices
+        .get(selected_pos)
+        .and_then(|&idx| app.models.get(idx));
     let detail = selected
         .map(|model| {
             let status = match &model.status {
@@ -2854,6 +3338,23 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
                 Status::Loaded { detail, .. } => format!("Loaded: {detail}"),
                 _ => String::new(),
             };
+            let (size_cat, inferred_params) =
+                SizeCategory::from_model(&model.row.id, &model.row.name, model.row.total_params);
+            let size_detail = if let Some(p) = inferred_params {
+                let p_str = if p >= 1_000_000_000 {
+                    format!("{:.1}B", p as f64 / 1_000_000_000.0)
+                } else {
+                    format!("{:.0}M", p as f64 / 1_000_000.0)
+                };
+                format!("AA Size Tier: {} ({} params)", size_cat.display_name(), p_str)
+            } else {
+                format!("AA Size Tier: {}", size_cat.display_name())
+            };
+            let all_tasks = classify_real_life_tasks(&model.row.id, &model.row.tasks, &model.row.capabilities);
+            let tasks_str = all_tasks.iter().map(|t| t.display_name()).collect::<Vec<_>>().join(", ");
+            let task_detail = format!("Real-Life Tasks: {}", tasks_str);
+            let meta_line = format!("{} · {}", size_detail, task_detail);
+
             let bench_str = if let Some(b) = &model.row.benchmarks {
                 let primary = if let Some(score) = b.score {
                     let name = b.index_name.as_deref().unwrap_or("Index");
@@ -2890,15 +3391,15 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
                 "No benchmark metrics recorded".into()
             };
             let action_status = app.model_action_status.as_deref().unwrap_or(
-                "[s: Sort (Default/Intel/Fin/Cost/Time) | b: Toggle Benchmarks | Enter: Load/Unload | i: Registry]"
+                "[s: Sort | b: View | g: Filter Task | z: Filter AA Size | Enter: Load/Unload | i: Registry]"
             );
             if status.is_empty() {
-                format!("{}\n{}\n{}", model.row.id, bench_str, action_status)
+                format!("{}\n{}\n{}\n{}", model.row.id, meta_line, bench_str, action_status)
             } else {
-                format!("{} ({})\n{}\n{}", model.row.id, status, bench_str, action_status)
+                format!("{} ({})\n{}\n{}\n{}", model.row.id, status, meta_line, bench_str, action_status)
             }
         })
-        .unwrap_or_else(|| "No models configured".into());
+        .unwrap_or_else(|| "No models matching current filters".into());
     f.render_widget(
         Paragraph::new(detail)
             .wrap(Wrap { trim: false })
@@ -3308,6 +3809,8 @@ mod tests {
                     engine: Some("llama-server".into()),
                     locality: "LOCAL".into(),
                     capabilities: vec!["Chat".into()],
+                    tasks: vec!["text-to-text".into()],
+                    total_params: Some(7_000_000_000),
                     benchmarks: None,
                 },
                 ModelRow {
@@ -3318,6 +3821,8 @@ mod tests {
                     engine: None,
                     locality: "CLOUD".into(),
                     capabilities: vec!["Chat".into(), "Vision".into()],
+                    tasks: vec!["text-image-to-text".into(), "text-video-to-text".into()],
+                    total_params: Some(200_000_000_000),
                     benchmarks: None,
                 },
             ],
@@ -3407,7 +3912,61 @@ mod tests {
         assert_eq!(app.model_sort, ModelSort::Latency);
 
         app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(app.model_sort, ModelSort::TaskGroup);
+
+        app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
+        assert_eq!(app.model_sort, ModelSort::SizeTier);
+
+        app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
         assert_eq!(app.model_sort, ModelSort::Default);
+
+        // Test Task Filter cycling [g]
+        assert_eq!(app.task_filter, TaskFilter::All);
+        app.on_key(KeyCode::Char('g'), KeyModifiers::NONE);
+        assert_eq!(app.task_filter, TaskFilter::ImageEditing);
+
+        // Test Size Filter cycling [z]
+        assert_eq!(app.size_filter, SizeFilter::All);
+        app.on_key(KeyCode::Char('z'), KeyModifiers::NONE);
+        assert_eq!(app.size_filter, SizeFilter::Large);
+
+        // Verify Artificial Analysis size classification
+        let (size_a, p_a) =
+            SizeCategory::from_model("qwen3.8-27b", "Qwen3.8 27B", Some(27_000_000_000));
+        assert_eq!(size_a, SizeCategory::Small);
+        assert_eq!(p_a, Some(27_000_000_000));
+
+        let (size_gemini, _) = SizeCategory::from_model("gemini-4-carbon", "Gemini 4 Carbon", None);
+        assert_eq!(size_gemini, SizeCategory::Large);
+
+        let (size_08b, _) =
+            SizeCategory::from_model("qwen3.5-0.8b", "Qwen3.5 0.8B", Some(873_000_000));
+        assert_eq!(size_08b, SizeCategory::Tiny);
+
+        let (size_nemo, _) =
+            SizeCategory::from_model("nemotron-3.5-super-vl", "Nemotron 3.5 Super-VL", None);
+        assert_eq!(size_nemo, SizeCategory::Medium);
+
+        // Verify Real-Life Task classification
+        let tasks_edit =
+            classify_real_life_tasks("qwen-image-edit-2511", &["image-to-image".into()], &[]);
+        assert!(tasks_edit.contains(&RealLifeTask::ImageEditing));
+
+        let tasks_ox = classify_real_life_tasks(
+            "oxcoder-9b",
+            &["text-to-text".into()],
+            &["Agentic Coding".into()],
+        );
+        assert!(tasks_ox.contains(&RealLifeTask::CodeAndCad));
+        assert!(tasks_ox.contains(&RealLifeTask::ComputerUseAndAgent));
+
+        let tasks_scad = classify_real_life_tasks(
+            "scadcoder-qwen3.5-9b-v11-q5-k-m",
+            &["text-to-text".into()],
+            &["Chat".into()],
+        );
+        assert!(tasks_scad.contains(&RealLifeTask::ThreeDAndDepth));
+        assert!(tasks_scad.contains(&RealLifeTask::CodeAndCad));
     }
 
     #[test]

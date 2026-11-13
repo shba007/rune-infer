@@ -55,8 +55,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 5.5,
         "output_tokens_per_task": 72000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "minicpm-o-4-5-q8-0",
@@ -112,8 +111,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 6.2,
         "output_tokens_per_task": 68000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "huihui-qwen3.8-27b-abliterated",
@@ -172,8 +170,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 8.5,
         "output_tokens_per_task": 105000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "qwen3.8-27b",
@@ -235,8 +232,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 8.5,
         "output_tokens_per_task": 105000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "ternary-bonsai-2-27b-pq2-0",
@@ -294,8 +290,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 4.8,
         "output_tokens_per_task": 62000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "ornith-1.5-9b",
@@ -354,14 +349,12 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 3.5,
         "output_tokens_per_task": 52000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "dinov2-giant",
       "name": "DINOv2 Giant",
       "description": "Self-supervised vision transformer foundation backbone for dense feature representation, depth, and semantics",
-      "modality": "Text",
       "capabilities": [
         "Vision Features",
         "Semantic Search",
@@ -392,7 +385,6 @@
       "id": "sam2.1-hiera-large",
       "name": "SAM 2.1 Hiera Large",
       "description": "Meta Segment Anything Model 2.1 for visual segmentation and promptable mask extraction in images and video",
-      "modality": "Text",
       "capabilities": [
         "Visual Segmentation",
         "Object Masking",
@@ -423,7 +415,6 @@
       "id": "grounding-dino-base",
       "name": "Grounding DINO Base",
       "description": "Open-world zero-shot object detection model conditioned on language text queries",
-      "modality": "Text",
       "capabilities": [
         "Zero-Shot Detection",
         "Grounding",
@@ -507,7 +498,6 @@
       "id": "qwen3-embedding-4b",
       "name": "Qwen3 Embedding 4B",
       "description": "Dense dense text and code embeddings foundation model for semantic retrieval and RAG",
-      "modality": "Text",
       "capabilities": [
         "Semantic Search",
         "Code Retrieval"
@@ -608,8 +598,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 1.6,
         "output_tokens_per_task": 28000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "qwen3.5-0.8b",
@@ -666,7 +655,6 @@
       "id": "cactus-needle-3",
       "name": "Cactus Needle 3",
       "description": "Cactus Needle 3 tool-calling and structured extraction engine",
-      "modality": "Text",
       "capabilities": [
         "Tool Call",
         "Structured Output"
@@ -858,7 +846,6 @@
       "id": "qwen-image-edit-2511",
       "name": "Qwen Image Edit 2511",
       "description": "Qwen-Image-Edit 2511 with live-verified instruction edits, one or two reference images and alpha masks preserving protected pixels",
-      "modality": "ImageGeneration",
       "capabilities": [],
       "tasks": [
         "text-image-to-image",
@@ -1060,7 +1047,6 @@
       "id": "acestep-v1.5-turbo",
       "name": "AceStep v1.5 Turbo",
       "description": "AceStep v1.5 Turbo accelerated diffusion model for sub-second generation",
-      "modality": "Text",
       "capabilities": [
         "Turbo Generation",
         "Photorealism"
@@ -1236,7 +1222,6 @@
       "id": "higgs-audio-v3-tts-4b",
       "name": "Higgs Audio v3 TTS 4B",
       "description": "Expressive dialogue conversational TTS engine using Higgs tokenizer",
-      "modality": "Text",
       "capabilities": [
         "Conversational Voice",
         "Expressive Synthesis"
@@ -1344,7 +1329,6 @@
       "id": "qwen3-tts-1.7b-customvoice",
       "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
       "description": "Zero-shot voice cloning and custom reference speaker voice synthesis",
-      "modality": "Text",
       "capabilities": [
         "Voice Cloning",
         "Zero-Shot TTS"
@@ -1374,7 +1358,6 @@
       "id": "omnivoice",
       "name": "OmniVoice",
       "description": "K2-FSA zero-shot multilingual voice cloning and speech generation engine",
-      "modality": "Text",
       "capabilities": [
         "Zero-Shot Cloning",
         "Multilingual"
@@ -1404,7 +1387,6 @@
       "id": "nemotron-3-diarization",
       "name": "NVIDIA Nemotron-3 Diarization",
       "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",
-      "modality": "Text",
       "capabilities": [
         "Speech-Analysis",
         "Speaker-Diarization",
@@ -1472,7 +1454,6 @@
       "id": "granite-embedding-311m-multilingual-r2",
       "name": "Granite Embedding 311M Multilingual R2",
       "description": "IBM Granite 311M Multilingual ModernBERT dense embedding model",
-      "modality": "Text",
       "capabilities": [],
       "engine": [
         "encoder"
@@ -1499,7 +1480,6 @@
       "id": "gliguard-LLMGuardrails-300M",
       "name": "GLiGuard LLM Guardrails 300M",
       "description": "Fastino GLiGuard 300M multi-category safety moderation model",
-      "modality": "Text",
       "capabilities": [],
       "engine": [
         "encoder"
@@ -1526,7 +1506,6 @@
       "id": "mmbert32k-intent-classifier-merged",
       "name": "mmBERT 32K Intent Classifier",
       "description": "ModernBERT 32K zero-shot intent and entity classifier",
-      "modality": "Text",
       "capabilities": [],
       "engine": [
         "encoder"
@@ -1553,7 +1532,6 @@
       "id": "space-bunny-alpha",
       "name": "Space Bunny Alpha (Stealth)",
       "description": "Stealth Space Bunny Alpha anonymous 1M-token multimodal reasoning model",
-      "modality": "Text",
       "capabilities": [
         "Tool Call",
         "Structured Output",
@@ -1593,7 +1571,6 @@
       "id": "dots-3-note-preview",
       "name": "Dots3-Note Preview (Free)",
       "description": "Dots Studio Dots3-Note Preview 16B/280B MoE multimodal reasoning model with 512K context",
-      "modality": "Text",
       "capabilities": [
         "Tool Call",
         "Structured Output",
@@ -1633,7 +1610,6 @@
       "id": "gemini-3.8-flash",
       "name": "Gemini 3.8 Flash (Google AI Cloud)",
       "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",
-      "modality": "Text",
       "capabilities": [
         "Tool Call",
         "Structured Output"
@@ -1681,7 +1657,6 @@
       "id": "apodex-1.1-mini",
       "name": "Apodex 1.1 Mini (Free)",
       "description": "Apodex 1.1 Mini reasoning model hosted on OpenRouter Free Tier",
-      "modality": "Text",
       "capabilities": [
         "Tool Call",
         "Structured Output",
@@ -1990,8 +1965,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 1.8,
         "output_tokens_per_task": 30000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "holo3.1-9b-q4",
@@ -2042,8 +2016,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 3.2,
         "output_tokens_per_task": 44000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "vevo2-audiocpp",
@@ -2268,8 +2241,7 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 3.6,
         "output_tokens_per_task": 54000
-      },
-      "modality": "VisionText"
+      }
     },
     {
       "id": "qwen-image-2.1-turbo",
@@ -2313,7 +2285,6 @@
       "id": "nemotron-3.5-super-vl",
       "name": "Nemotron 3.5 Super-VL (Free)",
       "description": "NVIDIA Nemotron 3.5 Super-VL 120B MoE multimodal vision-language model hosted on OpenRouter Free Tier",
-      "modality": "VisionText",
       "capabilities": [
         "Tool Call",
         "Structured Output",

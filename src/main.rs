@@ -363,6 +363,8 @@ async fn run(
                     "CLOUD".to_string()
                 },
                 capabilities: m.capabilities.clone().unwrap_or_default(),
+                tasks: m.tasks.clone(),
+                total_params: m.total_params,
                 benchmarks: m.benchmarks.clone(),
             })
             .collect(),
