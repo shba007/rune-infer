@@ -55,6 +55,106 @@ pub(crate) struct File {
     pub(crate) format: String,
 }
 
+pub(crate) struct NeedleRuntime {
+    pub(crate) version: String,
+    pub(crate) revision: String,
+    pub(crate) file: File,
+}
+
+pub(crate) fn needle_runtime() -> Result<NeedleRuntime, Box<dyn Error>> {
+    parse_needle(
+        include_bytes!("../../../registry/engines.json"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    )
+}
+
+fn parse_needle(body: &[u8], os: &str, arch: &str) -> Result<NeedleRuntime, Box<dyn Error>> {
+    let registry: Registry = serde_json::from_slice(body)?;
+    if registry.schema_version != 1 {
+        return Err("Unsupported engine registry schema".into());
+    }
+    let mut entries = registry
+        .engines
+        .iter()
+        .filter(|engine| engine.id == "needle");
+    let engine = entries
+        .next()
+        .ok_or("Needle runtime missing from engine registry")?;
+    if entries.next().is_some() || engine.kind != "managed" || engine.name.trim().is_empty() {
+        return Err("Invalid Needle runtime registry entry".into());
+    }
+    let version = &engine.latest;
+    if version.is_empty() || !version.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return Err("Invalid Needle runtime version".into());
+    }
+    let selected = engine
+        .versions
+        .get(version)
+        .ok_or("Needle runtime version missing")?;
+    let mut numbers = std::collections::HashSet::new();
+    if engine.versions.values().any(|item| {
+        item.release_number == 0
+            || !numbers.insert(item.release_number)
+            || item.release_number > selected.release_number
+    }) {
+        return Err("Invalid Needle runtime release order".into());
+    }
+    let platform = crate::inference::engines::needle::platform_directory(os, arch)?;
+    let mut candidates = selected.artifacts.iter().filter(|item| {
+        item.platform.os == os
+            && item.platform.arch == arch
+            && item.platform.accelerator == "cpu"
+            && item.platform.cuda_version.is_none()
+    });
+    let artifact = candidates
+        .next()
+        .ok_or("Needle runtime is unavailable for this platform")?;
+    if candidates.next().is_some() || artifact.files.len() != 1 {
+        return Err("Invalid Needle runtime platform bundle".into());
+    }
+    let expected_executable = if os == "windows" {
+        "cactus.exe"
+    } else {
+        "cactus"
+    };
+    let file = &artifact.files[0];
+    let url = reqwest::Url::parse(&file.url)?;
+    let segments: Vec<_> = url
+        .path_segments()
+        .ok_or("Invalid Needle runtime URL")?
+        .collect();
+    if artifact.executable != expected_executable
+        || file.id != "engine"
+        || file.format != "binary"
+        || file.size_bytes == 0
+        || file.sha256.len() != 64
+        || !file.sha256.bytes().all(|b| b.is_ascii_hexdigit())
+        || url.scheme() != "https"
+        || url.host_str() != Some("huggingface.co")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || segments.len() != 8
+        || segments[0..3] != ["Cactus-Compute", "cactus", "resolve"]
+        || segments[3].len() != 40
+        || !segments[3].bytes().all(|b| b.is_ascii_hexdigit())
+        || segments[4] != "releases"
+        || segments[5] != version
+        || segments[6] != platform
+        || segments[7] != expected_executable
+    {
+        return Err("Invalid Needle runtime artifact".into());
+    }
+    Ok(NeedleRuntime {
+        version: version.clone(),
+        revision: segments[3].into(),
+        file: file.clone(),
+    })
+}
+
 pub(crate) fn llama_release(
     client: &reqwest::blocking::Client,
 ) -> Result<serde_json::Value, Box<dyn Error>> {
@@ -937,6 +1037,62 @@ pub(crate) fn compare_llama_build(
 mod tests {
     use super::*;
     const SEED: &[u8] = include_bytes!("../../../registry/engines.json");
+
+    #[test]
+    fn needle_registry_validates_reviewed_platform_and_immutable_artifact() {
+        for (os, arch) in [
+            ("windows", "x86_64"),
+            ("windows", "aarch64"),
+            ("linux", "x86_64"),
+            ("linux", "aarch64"),
+            ("linux", "riscv64"),
+            ("android", "aarch64"),
+            ("android", "riscv64"),
+            ("macos", "aarch64"),
+        ] {
+            let runtime = parse_needle(SEED, os, arch).unwrap();
+            assert_eq!(runtime.revision.len(), 40);
+            assert_eq!(runtime.file.sha256.len(), 64);
+        }
+        assert!(parse_needle(SEED, "macos", "x86_64").is_err());
+        let mut changed: serde_json::Value = serde_json::from_slice(SEED).unwrap();
+        let engine = changed["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["id"] == "needle")
+            .unwrap();
+        let old_version = engine["latest"].as_str().unwrap().to_owned();
+        let mut updated = engine["versions"]
+            .as_object_mut()
+            .unwrap()
+            .remove(&old_version)
+            .unwrap();
+        let file = &mut updated["artifacts"][0]["files"][0];
+        let new_revision = "a".repeat(40);
+        file["url"] = serde_json::json!(format!(
+            "https://huggingface.co/Cactus-Compute/cactus/resolve/{new_revision}/releases/9.8.7/windows-x86_64/cactus.exe"
+        ));
+        engine["latest"] = serde_json::json!("9.8.7");
+        engine["versions"]["9.8.7"] = updated;
+        let runtime =
+            parse_needle(&serde_json::to_vec(&changed).unwrap(), "windows", "x86_64").unwrap();
+        assert_eq!(runtime.version, "9.8.7");
+        assert_eq!(runtime.revision, new_revision);
+        let mut registry: serde_json::Value = serde_json::from_slice(SEED).unwrap();
+        let needle = registry["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["id"] == "needle")
+            .unwrap();
+        let version = needle["latest"].as_str().unwrap().to_owned();
+        let file = &mut needle["versions"][&version]["artifacts"][0]["files"][0];
+        file["url"] = serde_json::json!("https://example.com/binary");
+        assert!(
+            parse_needle(&serde_json::to_vec(&registry).unwrap(), "windows", "x86_64").is_err()
+        );
+    }
     #[test]
     fn embedded_llama_uses_the_reviewed_bundled_registry() {
         let client = reqwest::blocking::Client::new();

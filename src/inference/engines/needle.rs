@@ -66,20 +66,28 @@ impl NeedleEngine {
         base_dir: PathBuf,
     ) -> Result<PathBuf, Box<dyn Error>> {
         std::fs::create_dir_all(&base_dir)?;
-        let platform = platform_directory(std::env::consts::OS, std::env::consts::ARCH)?;
+        let runtime = super::registry::needle_runtime()?;
         let exe_name = if cfg!(windows) {
             "needle.exe"
         } else {
             "needle"
         };
         let exe_path = base_dir.join(exe_name);
-        let file = format!("{platform}/{exe_name}");
-        let (revision, sha256) = verified_binary_metadata(metadata, &file)?;
-        let download_url =
-            format!("https://huggingface.co/Cactus-Compute/needle3/resolve/{revision}/{file}");
-        download::download_verified(client, &download_url, &exe_path, "[NeedleEngine]", sha256)?;
+        if metadata["sha"].as_str() != Some(runtime.revision.as_str())
+            || metadata["runtime_version"].as_str() != Some(runtime.version.as_str())
+        {
+            return Err("Needle runtime registry changed; retry installation".into());
+        }
+        download::download_verified_sized(
+            client,
+            &runtime.file.url,
+            &exe_path,
+            "[NeedleEngine]",
+            &runtime.file.sha256,
+            runtime.file.size_bytes,
+        )?;
         download::make_executable(&exe_path)?;
-        let receipt = serde_json::json!({"revision":revision, "sha256":sha256, "file":file});
+        let receipt = serde_json::json!({"revision":runtime.revision, "version":runtime.version, "sha256":runtime.file.sha256});
         let mut receipt_file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -96,13 +104,10 @@ impl NeedleEngine {
 }
 
 pub(crate) fn latest_metadata(
-    client: &reqwest::blocking::Client,
+    _client: &reqwest::blocking::Client,
 ) -> Result<serde_json::Value, Box<dyn Error>> {
-    Ok(client
-        .get("https://huggingface.co/api/models/Cactus-Compute/needle3?blobs=true")
-        .send()?
-        .error_for_status()?
-        .json()?)
+    let runtime = super::registry::needle_runtime()?;
+    Ok(serde_json::json!({"sha":runtime.revision, "runtime_version":runtime.version}))
 }
 
 pub(crate) fn verify_forward_update(
@@ -115,7 +120,7 @@ pub(crate) fn verify_forward_update(
     }
     let history: serde_json::Value = client
         .get(format!(
-            "https://huggingface.co/api/models/Cactus-Compute/needle3/commits/{selected}"
+            "https://huggingface.co/api/models/Cactus-Compute/cactus/commits/{selected}"
         ))
         .send()?
         .error_for_status()?
@@ -171,27 +176,6 @@ pub(crate) fn platform_directory(os: &str, arch: &str) -> Result<&'static str, B
         ("macos", "aarch64") => Ok("macos-arm64"),
         _ => Err(format!("No verified Needle binary is available for {os}/{arch}").into()),
     }
-}
-
-fn verified_binary_metadata<'a>(
-    metadata: &'a serde_json::Value,
-    file: &str,
-) -> Result<(&'a str, &'a str), Box<dyn Error>> {
-    let revision = metadata["sha"]
-        .as_str()
-        .filter(|v| valid_revision(v))
-        .ok_or("Needle metadata has no immutable revision; installation refused")?;
-    let digest = metadata["siblings"]
-        .as_array()
-        .and_then(|items| {
-            items
-                .iter()
-                .find(|item| item["rfilename"].as_str() == Some(file))
-        })
-        .and_then(|item| item["lfs"]["sha256"].as_str())
-        .filter(|v| v.len() == 64 && v.bytes().all(|c| c.is_ascii_hexdigit()))
-        .ok_or("Needle metadata has no valid SHA-256 for this platform; installation refused")?;
-    Ok((revision, digest))
 }
 
 pub(crate) fn installed_revision(binary: &Path) -> Option<String> {
@@ -282,6 +266,41 @@ impl InferenceEngine for NeedleEngine {
 #[cfg(test)]
 mod install_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires an isolated RUNE_HOME, a verified Needle model, and network access"]
+    fn pinned_cactus_runtime_installs_and_calls_a_tool() {
+        let model = std::env::var_os("RUNE_NEEDLE_TEST_MODEL").expect("set RUNE_NEEDLE_TEST_MODEL");
+        let config = crate::config::ModelRegistry::new();
+        let state = std::sync::Arc::new(crate::inference::AppState::new(&config));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (events, receiver) = std::sync::mpsc::channel();
+        drop(receiver);
+        super::super::update::install_engine(
+            state,
+            stop,
+            crate::config::EngineKind::Needle,
+            events,
+        )
+        .unwrap();
+        let engine = NeedleEngine::new("needle-fixture".into(), PathBuf::from(model)).unwrap();
+        let task: InferenceTaskRequest = serde_json::from_value(serde_json::json!({
+            "type": "tool_call", "prompt": "Turn on the kitchen light",
+            "schema": [{"name":"set_light","description":"Turn a room light on or off","parameters":{"type":"object","properties":{"room":{"type":"string"},"on":{"type":"boolean"}},"required":["room","on"]}}]
+        })).unwrap();
+        let output = engine.execute(&task, None).unwrap();
+        match output.response {
+            InferenceTaskResponse::ToolCall { tool_calls, .. } => {
+                assert!(
+                    tool_calls
+                        .as_array()
+                        .is_some_and(|calls| calls.iter().any(|call| call["name"] == "set_light")),
+                    "{tool_calls}"
+                );
+            }
+            other => panic!("Expected a tool call, got {other:?}"),
+        }
+    }
     #[test]
     fn needle_history_requires_selected_revision_and_verified_ancestor() {
         let installed = "a".repeat(40);
@@ -338,18 +357,6 @@ mod install_tests {
         );
         assert!(platform_directory("macos", "x86_64").is_err());
         assert!(platform_directory("unknown", "unknown").is_err());
-    }
-    #[test]
-    fn metadata_requires_matching_platform_immutable_revision_and_sha256() {
-        let file = "windows-x86_64/needle.exe";
-        let mut metadata = serde_json::json!({"sha":"a".repeat(40), "siblings":[{"rfilename":file,"lfs":{"sha256":"b".repeat(64)}}]});
-        assert!(verified_binary_metadata(&metadata, file).is_ok());
-        assert!(verified_binary_metadata(&metadata, "macos-x86_64/needle").is_err());
-        metadata["sha"] = serde_json::json!("main");
-        assert!(verified_binary_metadata(&metadata, file).is_err());
-        metadata["sha"] = serde_json::json!("a".repeat(40));
-        metadata["siblings"][0]["lfs"]["sha256"] = serde_json::json!("invalid");
-        assert!(verified_binary_metadata(&metadata, file).is_err());
     }
     #[test]
     fn installed_revision_is_reported_only_when_binary_matches_receipt() {

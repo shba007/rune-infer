@@ -2,6 +2,155 @@
   "schema_version": 1,
   "engines": [
     {
+      "id": "needle",
+      "name": "Cactus runtime",
+      "kind": "managed",
+      "latest": "4.0.0",
+      "versions": {
+        "4.0.0": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/windows-x86_64/cactus.exe",
+                  "sha256": "3727bc70f4ad4f5dcf3719b90ec01a3a5cbf7a79da9db8424b8ea64c7c4db1b2",
+                  "size_bytes": 1618944,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/windows-arm64/cactus.exe",
+                  "sha256": "94c36bd1f33ffa4cc523a4a5dfef29a766eba46ab208fa2622112e08edb80629",
+                  "size_bytes": 1394688,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus.exe"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/linux-x86_64/cactus",
+                  "sha256": "1233a27b65f2557ade0c965f17ba9de70a47e9f10c139539daca78814f946045",
+                  "size_bytes": 1602448,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/linux-arm64/cactus",
+                  "sha256": "d1646246dca058cf240607d0f5344a910c7fa9de5e3d092ebf6a20e9d2810a45",
+                  "size_bytes": 1482848,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "riscv64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/linux-riscv64/cactus",
+                  "sha256": "5cd9f9577b33170d60b27dc9705ab2b280c41e3060cd70ba7c4db0b9223ffa9e",
+                  "size_bytes": 1230616,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "android",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/android-arm64/cactus",
+                  "sha256": "4bd788304d9344663d95dec70f076a1ddef8a12f7bd968ce95dcb3ad9850204c",
+                  "size_bytes": 1551712,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "android",
+                "arch": "riscv64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/android-riscv64/cactus",
+                  "sha256": "5f1fe96976a1a8433d6e725ea533502c59eeeca53b5166fdef1e067dbc058d12",
+                  "size_bytes": 1668224,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/macos-arm64/cactus",
+                  "sha256": "39bd925a3759ad3dd18056918feffc82be43a92d4eb2ef5f8baf73a707ee3f3b",
+                  "size_bytes": 1139720,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "llama-server",
       "name": "llama-server",
       "kind": "managed",

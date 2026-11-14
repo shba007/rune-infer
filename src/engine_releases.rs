@@ -3,7 +3,6 @@ use std::time::Duration;
 
 fn release_url(name: &str) -> Option<&'static str> {
     match name {
-        "needle" => Some("https://huggingface.co/api/models/Cactus-Compute/needle3"),
         "whisper-cpp" => Some("https://api.github.com/repos/ggml-org/whisper.cpp/releases"),
         _ => None,
     }
@@ -23,6 +22,22 @@ pub(crate) struct AvailableRelease {
 pub(crate) fn check_latest_release(name: &str) -> Result<AvailableRelease, String> {
     use crate::inference::engines::download;
     crate::inference::engines::release_cache::begin_check();
+    if name == "needle" {
+        let runtime = crate::inference::engines::registry::needle_runtime()
+            .map_err(|error| error.to_string())?;
+        return Ok(AvailableRelease {
+            tag: format!("revision {}", runtime.revision),
+            build_tag: None,
+            registry_versions: None,
+            registry_revisions: None,
+            published_at: None,
+            detail: format!(
+                "Reviewed Cactus runtime {} · checksum verified during installation",
+                runtime.version
+            ),
+            whisper_gpu: None,
+        });
+    }
     let url = if matches!(
         name,
         "llama-server"
@@ -43,31 +58,6 @@ pub(crate) fn check_latest_release(name: &str) -> Result<AvailableRelease, Strin
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|_| "Could not create release client")?;
-    if name == "needle" {
-        let value: serde_json::Value = client
-            .get(url)
-            .send()
-            .map_err(|_| "Cannot reach release source; press r to retry")?
-            .error_for_status()
-            .map_err(|e| format!("Needle metadata unavailable: {e}"))?
-            .json()
-            .map_err(|_| "Invalid Needle metadata")?;
-        let revision = value["sha"]
-            .as_str()
-            .filter(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()))
-            .ok_or("No immutable Needle revision found")?;
-        return Ok(AvailableRelease {
-            tag: format!("revision {revision}"),
-            build_tag: None,
-            registry_versions: None,
-            registry_revisions: None,
-            published_at: value["lastModified"].as_str().map(str::to_owned),
-            detail:
-                "Approved Needle distribution · revision and SHA-256 verified during installation"
-                    .into(),
-            whisper_gpu: None,
-        });
-    }
     let value = if name == "llama-server" {
         crate::inference::engines::registry::llama_release(&client)
             .map_err(|e| format!("Registry check failed: {e}; press r to retry"))?
