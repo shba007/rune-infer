@@ -53,7 +53,6 @@ pub(crate) fn begin_check() {
     NOTE.with(|note| *note.borrow_mut() = CheckNote::default());
 }
 
-#[cfg(feature = "tui")]
 pub(crate) fn check_note() -> Option<String> {
     NOTE.with(|note| {
         let note = note.borrow();

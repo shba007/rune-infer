@@ -44,6 +44,7 @@ struct EngineEntry {
     installed: bool,
     managed: bool,
     version: String,
+    release_check_available: bool,
 }
 
 pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<EngineInventory>> {
@@ -62,6 +63,8 @@ pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<En
                 installed: row.installed,
                 managed: row.managed,
                 version: row.version,
+                release_check_available: can_check_engine_release(row.name)
+                    && (!row.installed || row.managed),
             })
             .collect()
     })
@@ -73,6 +76,67 @@ pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<En
         )
     })?;
     Ok(Json(EngineInventory { engines }))
+}
+
+#[derive(Serialize)]
+pub(super) struct EngineRelease {
+    latest: String,
+    detail: String,
+}
+
+fn can_check_engine_release(name: &str) -> bool {
+    matches!(
+        name,
+        "llama-server"
+            | "llama-server-prism"
+            | "nemo-speech"
+            | "audio-cpp"
+            | "crispasr"
+            | "sd-server"
+            | "needle"
+            | "whisper-cpp"
+    )
+}
+
+pub(super) async fn check_engine_release(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Reply<Json<EngineRelease>> {
+    store(&state)?;
+    if !can_check_engine_release(&name) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Release checks are unavailable for this engine",
+        ));
+    }
+    static CHECKS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+    let permit = CHECKS.try_acquire().map_err(|_| {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            "An engine release check is already running",
+        )
+    })?;
+    let release = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        crate::engine_releases::check_latest_release(&name)
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Engine release check failed",
+        )
+    })?
+    .map_err(|_| {
+        (
+            StatusCode::BAD_GATEWAY,
+            "Engine release check failed; retry later",
+        )
+    })?;
+    Ok(Json(EngineRelease {
+        latest: release.tag,
+        detail: release.detail,
+    }))
 }
 
 #[derive(Serialize)]
@@ -620,6 +684,35 @@ mod tests {
                 .unwrap()
                 .status(),
             StatusCode::UNAUTHORIZED
+        );
+        let release_request = |authorized: bool, name: &str| {
+            let builder = Request::builder()
+                .method("POST")
+                .uri(format!("/v1/management/engines/{name}/release-check"));
+            let builder = if authorized {
+                builder.header("authorization", "Bearer test-key")
+            } else {
+                builder
+            };
+            builder.body(Body::empty()).unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(release_request(false, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(release_request(true, "encoder"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
         );
         let response = router.oneshot(request(true)).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);

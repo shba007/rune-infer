@@ -7,6 +7,7 @@ pub mod config;
 pub mod detect;
 pub mod embedding;
 mod engine_inventory;
+mod engine_releases;
 pub mod home;
 pub mod inference;
 pub mod media;

@@ -169,6 +169,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/management/roles", get(management::roles))
         .route("/management/engines", get(management::engines))
         .route(
+            "/management/engines/{name}/release-check",
+            axum::routing::post(management::check_engine_release),
+        )
+        .route(
             "/management/models/{id}",
             axum::routing::delete(management::remove_model),
         )
