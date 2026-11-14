@@ -196,7 +196,6 @@ fn verified_binary_metadata<'a>(
     Ok((revision, digest))
 }
 
-#[cfg(any(feature = "tui", test))]
 pub(crate) fn installed_revision(binary: &Path) -> Option<String> {
     let receipt: serde_json::Value =
         serde_json::from_slice(&std::fs::read(binary.parent()?.join(".needle-install.json")).ok()?)
