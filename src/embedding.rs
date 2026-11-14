@@ -273,6 +273,53 @@ pub fn load_catalog(root: &Path) -> anyhow::Result<crate::config::ModelRegistry>
     Ok(config)
 }
 
+/// Prepare a fresh local Infer configuration without replacing existing files.
+pub fn prepare_config(root: &Path) -> anyhow::Result<()> {
+    use anyhow::{Context, ensure};
+    static SETUP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = SETUP_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Infer setup is unavailable"))?;
+    ensure!(root.is_absolute(), "Infer home must be absolute");
+    crate::model_registry::regular_dir(root)?;
+    let config_dir = root.join("config");
+    crate::model_registry::regular_dir(&config_dir)?;
+    let server = config_dir.join("server.json");
+    let catalog = config_dir.join("catalog.json");
+    let server_exists = crate::model_registry::read_regular(&server)?.is_some();
+    let catalog_exists = crate::model_registry::read_regular(&catalog)?.is_some();
+    if server_exists && catalog_exists {
+        read_catalog(root)?;
+        return Ok(());
+    }
+    ensure!(
+        !server_exists && !catalog_exists,
+        "Infer configuration is incomplete; existing files were preserved"
+    );
+    ensure!(
+        crate::model_registry::read_regular(&config_dir.join("models.json"))?.is_none(),
+        "Legacy Infer configuration exists; existing files were preserved"
+    );
+    let server_bytes = serde_json::to_vec_pretty(&crate::schema::ServerFile {
+        schema_version: crate::schema::SCHEMA_VERSION,
+        server: crate::config::ServerConfig {
+            host: "127.0.0.1".into(),
+            ..Default::default()
+        },
+    })?;
+    let catalog_bytes = serde_json::to_vec_pretty(&crate::schema::CatalogFile {
+        schema_version: crate::schema::SCHEMA_VERSION,
+        models: Vec::new(),
+        roles: Default::default(),
+        aliases: Default::default(),
+    })?;
+    crate::model_registry::write_new(&server, &server_bytes)
+        .context("Cannot create Infer server configuration; existing files were preserved")?;
+    crate::model_registry::write_new(&catalog, &catalog_bytes)
+        .context("Cannot create Infer catalog; any existing configuration was preserved")?;
+    Ok(())
+}
+
 /// Prepare the upstream llama engine using the embedding host's home.
 pub fn install_llama_observed(
     root: &Path,
@@ -336,6 +383,77 @@ pub fn load_local_model(
 #[cfg(test)]
 mod catalog_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "starts an isolated embedded Infer server"]
+    async fn fresh_setup_serves_computer_use_candidates() {
+        let root = std::env::temp_dir().join(format!(
+            "infer-prepare-server-{}",
+            crate::setup::generate_api_key()
+        ));
+        prepare_config(&root).unwrap();
+        let server = LocalServer::start_catalog(&root).await.unwrap();
+        let client = reqwest::Client::new();
+        let url = format!(
+            "{}/v1/management/model-candidates?purpose=computer-use",
+            server.base_url
+        );
+        assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+        let models: serde_json::Value = client
+            .get(&url)
+            .bearer_auth(&server.api_key)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(models.as_array().is_some_and(|items| !items.is_empty()));
+        server.shutdown().await.unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prepare_config_creates_fresh_setup_and_preserves_existing_files() {
+        let root = std::env::temp_dir().join(format!(
+            "infer-prepare-{}",
+            crate::setup::generate_api_key()
+        ));
+        prepare_config(&root).unwrap();
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        let first_server = std::fs::read(&server).unwrap();
+        let first_catalog = std::fs::read(&catalog).unwrap();
+        let config = load_catalog(&root).unwrap();
+        assert_eq!(config.server.host, "127.0.0.1");
+        assert!(config.models.is_empty());
+        prepare_config(&root).unwrap();
+        assert_eq!(std::fs::read(&server).unwrap(), first_server);
+        assert_eq!(std::fs::read(&catalog).unwrap(), first_catalog);
+        std::fs::remove_file(&catalog).unwrap();
+        assert!(prepare_config(&root).is_err());
+        assert_eq!(std::fs::read(&server).unwrap(), first_server);
+        assert!(!catalog.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prepare_config_refuses_legacy_files_without_modifying_them() {
+        let root = std::env::temp_dir().join(format!(
+            "infer-prepare-{}",
+            crate::setup::generate_api_key()
+        ));
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        let legacy = root.join("config/models.json");
+        std::fs::write(&legacy, b"legacy fixture").unwrap();
+        assert!(prepare_config(&root).is_err());
+        assert_eq!(std::fs::read(&legacy).unwrap(), b"legacy fixture");
+        assert!(!root.join("config/server.json").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn embedded_system_tool_lookup_ignores_relative_path_entries() {

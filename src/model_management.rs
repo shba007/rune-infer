@@ -44,6 +44,53 @@ fn manifest(version: &crate::model_registry::Version) -> String {
         .join("|")
 }
 
+/// Models supported by the managed installer, optionally limited to computer use.
+pub fn managed_candidates(
+    computer_use: bool,
+    memory: Option<u64>,
+    gpu: bool,
+    disk: Option<u64>,
+) -> anyhow::Result<Vec<Candidate>> {
+    let ids = crate::model_registry::bundled()?
+        .into_iter()
+        .filter(|model| {
+            model.engine == "llama-server"
+                && (!computer_use || model.catalog.as_ref().is_some_and(supports_computer_use))
+        })
+        .map(|model| model.id)
+        .collect::<Vec<_>>();
+    candidates(&ids, memory, gpu, disk)
+}
+
+fn supports_computer_use(catalog: &crate::model_registry::CatalogDefaults) -> bool {
+    let vision = if catalog.tasks.is_empty() {
+        catalog
+            .capabilities
+            .iter()
+            .any(|cap| cap.eq_ignore_ascii_case("vision"))
+    } else {
+        catalog
+            .tasks
+            .iter()
+            .any(|task| task == "text-image-to-text")
+    };
+    let tools = if let Some(support) = &catalog.tool_call_support {
+        support.status == crate::audio_operations::SupportStatus::Supported
+            && catalog.tasks.iter().any(|task| task == "text-to-text")
+            && support
+                .verified_with
+                .iter()
+                .any(|proof| proof.engine == crate::config::EngineKind::LlamaServer)
+    } else {
+        catalog.capabilities.iter().any(|cap| {
+            ["tool call", "tool_calls", "tools"]
+                .iter()
+                .any(|alias| cap.eq_ignore_ascii_case(alias))
+        })
+    };
+    vision && tools
+}
+
 pub fn candidates(
     ids: &[String],
     memory: Option<u64>,
@@ -320,6 +367,49 @@ impl Downloads {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn managed_candidates_come_from_the_registry_and_computer_use_requires_capabilities() {
+        let memory = Some(32 * 1024 * 1024 * 1024);
+        let all = managed_candidates(false, memory, true, None).unwrap();
+        let computer = managed_candidates(true, memory, true, None).unwrap();
+        let registry = crate::model_registry::bundled().unwrap();
+        assert!(!all.is_empty() && !computer.is_empty());
+        assert!(all.iter().all(|candidate| {
+            registry
+                .iter()
+                .any(|model| model.id == candidate.id && model.engine == "llama-server")
+        }));
+        assert!(computer.iter().all(|candidate| {
+            registry.iter().any(|model| {
+                model.id == candidate.id
+                    && model.catalog.as_ref().is_some_and(supports_computer_use)
+            })
+        }));
+        assert!(
+            computer
+                .iter()
+                .all(|candidate| all.iter().any(|model| model.id == candidate.id))
+        );
+        assert!(all.iter().filter(|model| model.recommended).count() <= 1);
+        assert!(computer.iter().filter(|model| model.recommended).count() <= 1);
+    }
+
+    #[test]
+    fn computer_use_respects_explicit_tool_support_over_legacy_capabilities() {
+        let mut model = crate::model_registry::bundled()
+            .unwrap()
+            .into_iter()
+            .find(|model| model.id == "holo3.1-4b-q4")
+            .unwrap();
+        let catalog = model.catalog.as_mut().unwrap();
+        assert!(supports_computer_use(catalog));
+        catalog.tool_call_support = Some(crate::audio_operations::OperationSupport {
+            status: crate::audio_operations::SupportStatus::Unsupported,
+            ..Default::default()
+        });
+        assert!(!supports_computer_use(catalog));
+    }
     #[test]
     fn lists_only_requested_models_and_recommends_one_that_fits() {
         let ids = ["holo3.1-4b-q4", "holo3.1-9b-q4", "holo4-27b-q4"].map(str::to_owned);

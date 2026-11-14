@@ -559,7 +559,7 @@ pub fn install_observed(
     })
 }
 
-fn regular_dir(path: &Path) -> Result<()> {
+pub(crate) fn regular_dir(path: &Path) -> Result<()> {
     std::fs::create_dir_all(path)?;
     let meta = std::fs::symlink_metadata(path)?;
     ensure!(
@@ -593,7 +593,7 @@ fn unique_path(dir: &Path, label: &str) -> PathBuf {
     ))
 }
 
-fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

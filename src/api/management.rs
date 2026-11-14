@@ -2,7 +2,7 @@
 use super::AppState;
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,49 @@ pub(super) struct CatalogDocument {
     catalog: String,
 }
 type Reply<T> = Result<T, (StatusCode, &'static str)>;
+
+#[derive(Deserialize)]
+pub(super) struct CandidateQuery {
+    #[serde(default)]
+    purpose: Option<String>,
+}
+
+pub(super) async fn model_candidates(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<CandidateQuery>,
+) -> Reply<Json<Vec<crate::model_management::Candidate>>> {
+    store(&state)?;
+    let computer_use = match query.purpose.as_deref() {
+        None | Some("all") => false,
+        Some("computer-use") => true,
+        _ => return Err((StatusCode::BAD_REQUEST, "Unknown candidate purpose")),
+    };
+    let root = crate::engine_inventory::managed_root().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Cannot resolve Infer model storage",
+        )
+    })?;
+    let candidates = tokio::task::spawn_blocking(move || {
+        let (memory, gpu) = crate::model_management::detected_memory();
+        let disk = crate::model_management::available_disk(&root);
+        crate::model_management::managed_candidates(computer_use, memory, gpu, disk)
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Model candidates unavailable",
+        )
+    })?
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Model candidates unavailable",
+        )
+    })?;
+    Ok(Json(candidates))
+}
 
 #[derive(Serialize)]
 pub(super) struct EngineInventory {
@@ -927,6 +970,61 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
         assert_eq!(body, serde_json::json!({"roles":{"voice":"first"}}));
+    }
+
+    #[tokio::test]
+    async fn model_candidates_require_auth_and_validate_purpose() {
+        let mut config = crate::config::ModelRegistry::new();
+        config.server.api_key = Some("test-key".into());
+        let mut state = AppState::new(
+            Arc::new(crate::inference::AppState::new(&config)),
+            Arc::new(crate::proxy::ProxyService::new(&config)),
+            config,
+        );
+        state.management = Some(Arc::new(CatalogStore::new(
+            "unused-server".into(),
+            "unused-catalog".into(),
+        )));
+        let router = crate::api::create_router(state);
+        let request = |query: &str, authorized: bool| {
+            let builder = Request::builder().uri(format!("/v1/management/model-candidates{query}"));
+            let builder = if authorized {
+                builder.header("authorization", "Bearer test-key")
+            } else {
+                builder
+            };
+            builder.body(Body::empty()).unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request("", false))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request("?purpose=unknown", true))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+        let response = router
+            .oneshot(request("?purpose=computer-use", true))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 1_000_000).await.unwrap())
+                .unwrap();
+        assert!(
+            body.as_array()
+                .is_some_and(|candidates| !candidates.is_empty())
+        );
     }
 
     #[tokio::test]
