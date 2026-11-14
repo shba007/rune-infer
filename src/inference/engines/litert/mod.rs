@@ -168,7 +168,6 @@ pub(crate) fn ensure_runtime_installed() -> Result<PathBuf, Box<dyn Error>> {
     Ok(std::fs::canonicalize(path)?)
 }
 
-#[cfg(feature = "tui")]
 pub(crate) fn runtime_version(path: &Path) -> Option<String> {
     super::download::file_sha256(path)
         .ok()

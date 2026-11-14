@@ -2480,6 +2480,61 @@
         "time_per_task_minutes": 8.6,
         "output_tokens_per_task": 138000
       }
+    },
+    {
+      "id": "deepseek-r1-distill-qwen-32b",
+      "name": "DeepSeek-R1-Distill-Qwen-32B",
+      "description": "DeepSeek R1 reasoning model distilled onto Qwen 32B dense architecture; 44.0 Intelligence Index (+80% over Gemma 4) with ~22 tok/s generation",
+      "capabilities": [
+        "Reasoning",
+        "Code Generation",
+        "Agentic Tasks",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 131072,
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "max_tokens": 16384
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF/DeepSeek-R1-Distill-Qwen-32B-Q3_K_M.gguf",
+        "params": 32800000000,
+        "bits_per_weight": 3.5,
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 44,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 46,
+          "strategy_and_ops": 44,
+          "legal": 42,
+          "healthcare_and_medical": 43,
+          "engineering": 48,
+          "economics": 45
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 5.2,
+        "output_tokens_per_task": 65000
+      }
     }
-  ]
+  ],
+  "aliases": {
+    "deepseek-r1-distill-qwen-32b": "deepseek-r1-distill-qwen-32b",
+    "deepseek-r1-32b": "deepseek-r1-distill-qwen-32b",
+    "deepseek-r1-qwen-32b": "deepseek-r1-distill-qwen-32b"
+  }
 }

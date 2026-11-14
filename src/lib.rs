@@ -6,6 +6,7 @@ pub mod catalog_management;
 pub mod config;
 pub mod detect;
 pub mod embedding;
+mod engine_inventory;
 pub mod home;
 pub mod inference;
 pub mod media;

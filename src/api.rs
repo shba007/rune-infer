@@ -167,6 +167,7 @@ pub fn create_router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(1_100_000)),
         )
         .route("/management/roles", get(management::roles))
+        .route("/management/engines", get(management::engines))
         .route(
             "/management/models/{id}",
             axum::routing::delete(management::remove_model),

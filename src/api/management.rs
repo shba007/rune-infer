@@ -34,6 +34,48 @@ pub(super) struct CatalogDocument {
 type Reply<T> = Result<T, (StatusCode, &'static str)>;
 
 #[derive(Serialize)]
+pub(super) struct EngineInventory {
+    engines: Vec<EngineEntry>,
+}
+
+#[derive(Serialize)]
+struct EngineEntry {
+    name: &'static str,
+    installed: bool,
+    managed: bool,
+    version: String,
+}
+
+pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<EngineInventory>> {
+    store(&state)?;
+    let root = crate::engine_inventory::managed_root().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Cannot resolve Infer engine storage",
+        )
+    })?;
+    let engines = tokio::task::spawn_blocking(move || {
+        crate::engine_inventory::discover_engines(&root)
+            .into_iter()
+            .map(|row| EngineEntry {
+                name: row.name,
+                installed: row.installed,
+                managed: row.managed,
+                version: row.version,
+            })
+            .collect()
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Engine inventory unavailable",
+        )
+    })?;
+    Ok(Json(EngineInventory { engines }))
+}
+
+#[derive(Serialize)]
 pub(super) struct EffectiveRoles {
     roles: std::collections::BTreeMap<String, String>,
 }
@@ -545,6 +587,51 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
         assert_eq!(body, serde_json::json!({"roles":{"voice":"first"}}));
+    }
+
+    #[tokio::test]
+    async fn engine_inventory_requires_authentication_and_reports_entries() {
+        let mut config = crate::config::ModelRegistry::new();
+        config.server.api_key = Some("test-key".into());
+        let mut state = AppState::new(
+            Arc::new(crate::inference::AppState::new(&config)),
+            Arc::new(crate::proxy::ProxyService::new(&config)),
+            config,
+        );
+        state.management = Some(Arc::new(CatalogStore::new(
+            "unused-server".into(),
+            "unused-catalog".into(),
+        )));
+        let router = crate::api::create_router(state);
+        let request = |authorized| {
+            let builder = Request::builder().uri("/v1/management/engines");
+            let builder = if authorized {
+                builder.header("authorization", "Bearer test-key")
+            } else {
+                builder
+            };
+            builder.body(Body::empty()).unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request(false))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let response = router.oneshot(request(true)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 32768).await.unwrap()).unwrap();
+        assert!(
+            body["engines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["name"] == "encoder" && item["installed"] == true)
+        );
     }
 
     #[tokio::test]

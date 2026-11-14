@@ -19,6 +19,9 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::Level;
 
 use super::theme::*;
+#[cfg(test)]
+use crate::engine_inventory::parse_engine_version;
+use crate::engine_inventory::{EngineRow, discover_engines};
 use crate::telemetry::{LogLine, ModelEvent, ModelEventKind, RequestPhase, RequestRecord, UiEvent};
 
 #[derive(Debug, Clone)]
@@ -1698,172 +1701,14 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-#[derive(Clone, Debug)]
-struct EngineRow {
-    name: &'static str,
-    path: PathBuf,
-    managed: bool,
-    installed: bool,
-    version: String,
-    latest: String,
-    build_tag: Option<String>,
-    registry_versions: Option<std::collections::BTreeMap<u64, u64>>,
-    registry_revisions: Option<std::collections::BTreeMap<String, u64>>,
-    published_at: Option<String>,
-    gpu_upgrade: bool,
-    check_detail: Option<String>,
-}
-
-fn discover_engines() -> Vec<EngineRow> {
-    let suffix = if cfg!(windows) { ".exe" } else { "" };
-    let definitions = [
-        ("llama-server", "llama-upstream", "llama-server", true),
-        ("llama-server-prism", "llama-prism", "llama-server", true),
-        ("audio-cpp", "audiocpp", "audiocpp_cli", true),
-        ("sd-server", "sd-server", "sd-server", true),
-        ("crispasr", "crispasr", "crispasr", true),
-        ("nemo-speech", "nemo-speech", "nemo-speech", true),
-        ("needle", "needle", "needle", false),
-        ("whisper-cpp", "whisper-cpp", "whisper-cli", true),
-        ("litert", "litert", "libLiteRt", false),
-        ("onnx", "onnxruntime", "onnxruntime", false),
-    ];
-    let mut rows: Vec<EngineRow> = definitions
-        .into_iter()
-        .map(|(name, directory, executable, version_supported)| {
-            let filename = if name == "onnx" {
-                "onnxruntime.dll".into()
-            } else if name == "litert" {
-                "libLiteRt.dll".into()
-            } else {
-                format!("{executable}{suffix}")
-            };
-            let custom_vars: &[&str] = match name {
-                "llama-server" | "llama-server-prism" => &["LLAMA_SERVER_PATH"],
-                "audio-cpp" => &["AUDIOCPP_PATH", "AUDIO8_PATH"],
-                "sd-server" => &["SD_SERVER_PATH"],
-                "crispasr" => &["CRISPASR_PATH"],
-                "nemo-speech" => &["NEMO_SPEECH_PATH"],
-                "whisper-cpp" => &["WHISPER_CPP_PATH"],
-                "litert" => &["LITERT_LIBRARY_PATH"],
-                "onnx" => &["ONNX_RUNTIME_LIBRARY_PATH"],
-                _ => &[],
-            };
-            let custom = custom_vars
-                .iter()
-                .find_map(std::env::var_os)
-                .map(PathBuf::from)
-                .filter(|p| matches!(name, "litert" | "onnx") || p.is_file());
-            let base = PathBuf::from("bin").join(directory);
-            let direct = base.join(&filename);
-            let managed = direct.is_file().then_some(direct).or_else(|| {
-                crate::inference::engines::download::find_executable_recursive(&base, &filename)
-            });
-            let root = PathBuf::from("bin").join(&filename);
-            let root = root.is_file().then_some(root);
-            let on_path = || {
-                std::env::var_os("PATH").and_then(|paths| {
-                    std::env::split_paths(&paths)
-                        .map(|dir| dir.join(&filename))
-                        .find(|p| p.is_file())
-                })
-            };
-            let candidate = if let Some(path) = custom {
-                Some((path, false))
-            } else if name == "llama-server" || name == "llama-server-prism" {
-                root.map(|p| (p, false))
-                    .or_else(|| managed.map(|p| (p, true)))
-                    .or_else(|| on_path().map(|p| (p, false)))
-            } else {
-                managed.map(|p| (p, true)).or_else(|| {
-                    if matches!(name, "needle" | "litert" | "onnx") {
-                        None
-                    } else {
-                        root.map(|p| (p, false))
-                            .or_else(|| on_path().map(|p| (p, false)))
-                    }
-                })
-            };
-            let (path, managed, installed) = match candidate {
-                Some((path, managed)) => {
-                    let installed = path.is_file();
-                    (path, managed, installed)
-                }
-                None => (base.join(&filename), matches!(name, "litert" | "onnx"), false),
-            };
-            let version = if name == "onnx" && installed {
-                crate::inference::engines::onnx::runtime::runtime_version(&path)
-            } else if name == "litert" && installed {
-                crate::inference::engines::litert::runtime_version(&path)
-            } else if name == "needle" && installed && managed {
-                crate::inference::engines::needle::installed_revision(&path)
-            } else if version_supported && managed {
-                probe_engine_version(&path).and_then(|version| {
-                    if name == "sd-server" {
-                        crate::inference::engines::sd_server::reported_version(&version)
-                    } else {
-                        Some(version)
-                    }
-                })
-            } else {
-                None
-            }
-            .unwrap_or_else(|| {
-                if installed {
-                    "Unknown".into()
-                } else {
-                    "Not installed".into()
-                }
-            });
-            EngineRow {
-                name,
-                path,
-                managed,
-                installed,
-                version,
-                latest: if name == "onnx" {
-                    "1.31.1 · pinned".into()
-                } else if name == "litert" {
-                    "2.3.0 · pinned".into()
-                } else if managed || !installed {
-                    "Checking…".into()
-                } else {
-                    "External".into()
-                },
-                build_tag: None,
-                registry_versions: None,
-registry_revisions: None,
-                published_at: None,
-                gpu_upgrade: false,
-                check_detail: match name {
-                    "litert" => Some("Pinned Windows x64 CPU + WebGPU/DXC runtime · GPU requires a parity-verified model export".into()),
-                    "onnx" => Some("Pinned Windows x64 ONNX Runtime + CUDA 12/cuDNN · approximately 1.7 GB download".into()),
-                    _ => None,
-                },
-            }
-        })
-        .collect();
-    rows.push(EngineRow {
-        name: "encoder",
-        path: "Built into Rune Infer".into(),
-        managed: false,
-        installed: true,
-        version: "Built in".into(),
-        latest: "Built in".into(),
-        build_tag: None,
-        registry_versions: None,
-        registry_revisions: None,
-        published_at: None,
-        gpu_upgrade: false,
-        check_detail: Some("Built-in encoder uses synthetic outputs".into()),
-    });
-    rows
-}
-
 fn start_engine_inventory() -> std::sync::mpsc::Receiver<Vec<EngineRow>> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let mut rows = discover_engines();
+        let mut rows = crate::engine_inventory::managed_root()
+            .ok()
+            .filter(|root| root.is_absolute())
+            .map(|root| discover_engines(&root))
+            .unwrap_or_default();
         if tx.send(rows.clone()).is_err() {
             return;
         }
@@ -2249,72 +2094,6 @@ fn latest_release_tag(value: &serde_json::Value) -> Option<String> {
     crate::inference::engines::download::preferred_release(value).ok()?["tag_name"]
         .as_str()
         .map(str::to_owned)
-}
-
-fn probe_engine_version(path: &std::path::Path) -> Option<String> {
-    use std::process::{Command, Stdio};
-    let mut command = Command::new(path);
-    command
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
-    let mut child = command.spawn().ok()?;
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => {
-                use std::io::Read;
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                child
-                    .stdout
-                    .take()?
-                    .take(4096)
-                    .read_to_string(&mut stdout)
-                    .ok()?;
-                child
-                    .stderr
-                    .take()?
-                    .take(4096)
-                    .read_to_string(&mut stderr)
-                    .ok()?;
-                return parse_engine_version(&stdout, &stderr);
-            }
-            Ok(Some(_)) | Err(_) => return None,
-            Ok(None) if start.elapsed() >= Duration::from_secs(3) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
-        }
-    }
-}
-
-fn parse_engine_version(stdout: &str, stderr: &str) -> Option<String> {
-    let lines: Vec<_> = stdout
-        .lines()
-        .chain(stderr.lines())
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect();
-    lines
-        .iter()
-        .find_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            if key.trim().eq_ignore_ascii_case("version") && !value.trim().is_empty() {
-                Some(value.trim().to_owned())
-            } else {
-                None
-            }
-        })
-        .or_else(|| lines.first().map(|line| (*line).to_owned()))
 }
 
 fn release_status(engine: &EngineRow) -> &'static str {
