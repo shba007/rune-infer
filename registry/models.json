@@ -303,8 +303,8 @@
       }
     }
   ],
-  "local_models": {
-    "0": {
+  "local_models": [
+    {
       "id": "qwen3.5-0.8b",
       "install_dir": "unsloth/Qwen3.5-0.8B-GGUF",
       "name": "Qwen3.5 0.8B",
@@ -358,7 +358,7 @@
         }
       }
     },
-    "1": {
+    {
       "id": "huihui-qwen3.8-27b-abliterated",
       "install_dir": "huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
       "name": "Huihui Qwen3.8 27B Abliterated",
@@ -430,7 +430,7 @@
         }
       }
     },
-    "2": {
+    {
       "id": "qwen3.8-27b",
       "install_dir": "qwen/qwen3.8-27b",
       "name": "Qwen3.8 27B",
@@ -504,7 +504,7 @@
         }
       }
     },
-    "3": {
+    {
       "id": "ornith-1.5-9b",
       "install_dir": "ornith-ai/ornith-1.5-9b",
       "name": "Ornith 1.5 9B",
@@ -576,7 +576,7 @@
         }
       }
     },
-    "4": {
+    {
       "id": "oxcoder-9b",
       "install_dir": "orionllm/oxcoder-9b",
       "name": "OxCoder 9B",
@@ -636,7 +636,7 @@
         }
       }
     },
-    "5": {
+    {
       "id": "lfm3-omni-2b",
       "install_dir": "LiquidAI/LFM3-Omni-2B-GGUF",
       "name": "LiquidAI LFM3 Omni 2B",
@@ -739,7 +739,7 @@
         }
       }
     },
-    "6": {
+    {
       "id": "liquid-d1-3b",
       "install_dir": "LiquidAI/d1-3B-GGUF",
       "name": "Liquid AI d1-3B",
@@ -796,7 +796,7 @@
         }
       }
     },
-    "7": {
+    {
       "id": "parakeet-tdt-0.6b-v3",
       "install_dir": "nvidia/parakeet-tdt-0.6b-v3",
       "name": "NVIDIA Parakeet TDT 0.6B v3",
@@ -861,7 +861,7 @@
         }
       }
     },
-    "8": {
+    {
       "id": "voxcpm2-audiocpp",
       "install_dir": "openbmb/voxcpm2",
       "name": "VoxCPM2 (audio.cpp)",
@@ -917,7 +917,7 @@
         }
       }
     },
-    "9": {
+    {
       "id": "qwen-image-2.1",
       "install_dir": "qwen/qwen-image-2.1",
       "name": "Qwen-Image-2.1 7B",
@@ -1002,7 +1002,7 @@
         }
       }
     },
-    "10": {
+    {
       "id": "qwen-image-2.1-uncensored",
       "install_dir": "qwen/qwen-image-2.1-uncensored",
       "name": "Qwen-Image-2.1 7B Uncensored",
@@ -1072,7 +1072,7 @@
         }
       }
     },
-    "11": {
+    {
       "id": "moss-image-sft",
       "install_dir": "openmoss/moss-image-sft",
       "name": "MOSS Image SFT",
@@ -1143,7 +1143,7 @@
         }
       }
     },
-    "12": {
+    {
       "id": "qwen-image-edit-2511",
       "install_dir": "qwen/qwen-image-edit-2511",
       "name": "Qwen Image Edit 2511",
@@ -1250,7 +1250,7 @@
         }
       }
     },
-    "13": {
+    {
       "id": "gemma-4-12b-it",
       "install_dir": "google/gemma-4-12b-it",
       "name": "Gemma 4 12B IT",
@@ -1317,7 +1317,7 @@
         }
       }
     },
-    "14": {
+    {
       "id": "holo3.1-4b-q4",
       "install_dir": "prithivMLmods/Holo-3.1-4B-GGUF",
       "name": "Holo3.1 4B",
@@ -1379,7 +1379,7 @@
         }
       }
     },
-    "15": {
+    {
       "id": "holo3.1-9b-q4",
       "install_dir": "prithivMLmods/Holo-3.1-9B-GGUF",
       "name": "Holo3.1 9B",
@@ -1441,7 +1441,7 @@
         }
       }
     },
-    "16": {
+    {
       "id": "holo4-27b-q4",
       "install_dir": "hcompany/holo4-27b-q4",
       "name": "Holo4 27B",
@@ -1501,7 +1501,7 @@
         }
       }
     },
-    "17": {
+    {
       "id": "qwen3.5-4b-q4",
       "install_dir": "SoAIHQ/Qwen3.5-4B-GGUF",
       "name": "Qwen3.5 4B Q4",
@@ -1582,7 +1582,7 @@
         }
       }
     },
-    "18": {
+    {
       "id": "minicpm-o-4-5-q8-0",
       "install_dir": "openbmb/minicpm-o-4-5",
       "name": "MiniCPM-o 4.5 Q8_0",
@@ -1649,7 +1649,7 @@
         }
       }
     },
-    "19": {
+    {
       "id": "lfm3-1.7b-q4-k-m",
       "install_dir": "LiquidAI/LFM3-1.7B-GGUF",
       "name": "LiquidAI LFM3 1.7B Q4_K_M",
@@ -1699,7 +1699,7 @@
         }
       }
     },
-    "20": {
+    {
       "id": "fish-audio-s2-pro",
       "install_dir": "fish-audio/s2-pro",
       "name": "Fish Audio S2 Pro",
@@ -1755,7 +1755,7 @@
         }
       }
     },
-    "21": {
+    {
       "id": "ternary-bonsai-2-27b-pq2-0",
       "install_dir": "prism-ml/Ternary-Bonsai-2-27B-gguf",
       "name": "Ternary Bonsai-2 27B",
@@ -1826,7 +1826,7 @@
         }
       }
     },
-    "22": {
+    {
       "id": "birefnet-matting",
       "install_dir": "ZhengPeng7/BiRefNet-matting",
       "name": "BiRefNet Matting",
@@ -1873,7 +1873,7 @@
         }
       }
     },
-    "23": {
+    {
       "id": "qwen3.5-9b-gguf",
       "install_dir": "unsloth/Qwen3.5-9B-GGUF",
       "name": "Qwen3.5 9B GGUF",
@@ -1902,7 +1902,7 @@
         }
       }
     },
-    "24": {
+    {
       "id": "ace-step-1.5",
       "install_dir": "ACE-Step/Ace-Step1.5",
       "name": "ACE-Step 1.5 Turbo",
@@ -1938,7 +1938,7 @@
         }
       }
     },
-    "25": {
+    {
       "id": "vevo2-audiocpp",
       "install_dir": "audio-cpp/audio.cpp-gguf/Vevo2-GGUF",
       "name": "Vevo2 (audio.cpp)",
@@ -1967,7 +1967,7 @@
         }
       }
     },
-    "26": {
+    {
       "id": "needle3",
       "install_dir": "Cactus-Compute/needle3",
       "name": "Needle 3",
@@ -1995,7 +1995,7 @@
         }
       }
     },
-    "27": {
+    {
       "id": "dinov2-giant",
       "install_dir": "facebook/dinov2-giant",
       "name": "DINOv2 Giant",
@@ -2038,7 +2038,7 @@
         }
       }
     },
-    "28": {
+    {
       "id": "sam2.1-hiera-large",
       "install_dir": "facebook/sam2.1-hiera-large",
       "name": "Segment Anything Model 2.1 Hiera Large",
@@ -2087,7 +2087,7 @@
         }
       }
     },
-    "29": {
+    {
       "id": "gliguard-llmguardrails-300m",
       "install_dir": "fastino/gliguard-LLMGuardrails-300M",
       "name": "GLiGuard LLM Guardrails 300M",
@@ -2143,7 +2143,7 @@
         }
       }
     },
-    "30": {
+    {
       "id": "snac-24khz",
       "install_dir": "hubertsiuzdak/snac_24khz",
       "name": "SNAC 24kHz Tokenizer",
@@ -2178,7 +2178,7 @@
         }
       }
     },
-    "31": {
+    {
       "id": "granite-embedding-311m-multilingual-r2",
       "install_dir": "ibm-granite/granite-embedding-311m-multilingual-r2",
       "name": "IBM Granite Embedding 311M Multilingual R2",
@@ -2262,7 +2262,7 @@
         }
       }
     },
-    "32": {
+    {
       "id": "grounding-dino-base",
       "install_dir": "IDEA-Research/grounding-dino-base",
       "name": "Grounding DINO Base",
@@ -2333,7 +2333,7 @@
         }
       }
     },
-    "33": {
+    {
       "id": "omnivoice",
       "install_dir": "k2-fsa/OmniVoice",
       "name": "OmniVoice",
@@ -2411,7 +2411,7 @@
         }
       }
     },
-    "34": {
+    {
       "id": "higgs-audio-v3-tts-4b",
       "install_dir": "multimodalart/higgs-audio-v3-tts-4b-transformers",
       "name": "Higgs Audio v3 TTS 4B",
@@ -2482,7 +2482,7 @@
         }
       }
     },
-    "35": {
+    {
       "id": "nemotron-3-diarization",
       "install_dir": "nvidia/Nemotron-3-Diarization",
       "name": "NVIDIA Nemotron-3 Diarization",
@@ -2510,7 +2510,7 @@
         }
       }
     },
-    "36": {
+    {
       "id": "whisper-large-v3-turbo",
       "install_dir": "openai/whisper-large-v3-turbo",
       "name": "OpenAI Whisper Large v3 Turbo (GGML)",
@@ -2539,7 +2539,7 @@
         }
       }
     },
-    "37": {
+    {
       "id": "qwen3-tts-12hz-1.7b-customvoice",
       "install_dir": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
       "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
@@ -2638,7 +2638,7 @@
         }
       }
     },
-    "38": {
+    {
       "id": "indic-whisper-medium-gguf",
       "install_dir": "rupind/indic-whisper-medium-gguf",
       "name": "Indic Whisper Medium GGUF",
@@ -2667,7 +2667,7 @@
         }
       }
     },
-    "39": {
+    {
       "id": "bge-small-en-v1.5",
       "install_dir": "unsloth/bge-small-en-v1.5",
       "name": "BGE Small EN v1.5",
@@ -2758,7 +2758,7 @@
         }
       }
     },
-    "40": {
+    {
       "id": "embeddinggemma-2-gguf",
       "install_dir": "unsloth/embeddinggemma-2-GGUF",
       "name": "Embedding Gemma 2 GGUF",
@@ -2793,7 +2793,7 @@
         }
       }
     },
-    "41": {
+    {
       "id": "qwen2.5-vl-7b-instruct-gguf",
       "install_dir": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
       "name": "Qwen2.5-VL 7B Instruct GGUF",
@@ -2822,7 +2822,7 @@
         }
       }
     },
-    "42": {
+    {
       "id": "qwen3-embedding-4b",
       "install_dir": "unsloth/Qwen3-Embedding-4B",
       "name": "Qwen3 Embedding 4B",
@@ -2920,7 +2920,7 @@
         }
       }
     },
-    "43": {
+    {
       "id": "mmbert32k-intent-classifier",
       "install_dir": "vllm-sr/mmbert32k-intent-classifier-merged",
       "name": "mmBERT-32K Intent Classifier",
@@ -2983,7 +2983,7 @@
         }
       }
     },
-    "44": {
+    {
       "id": "underdog-woof",
       "install_dir": "ConwayResearch/Underdog-Woof",
       "name": "Underdog Woof",
@@ -3061,7 +3061,7 @@
         }
       }
     },
-    "45": {
+    {
       "id": "qwen-image-2.1-turbo",
       "install_dir": "unsloth/Qwen-Image-2.1-Turbo-GGUF",
       "name": "Qwen-Image-2.1 Turbo 7B",
@@ -3121,7 +3121,7 @@
         }
       }
     },
-    "46": {
+    {
       "id": "audio8-tts-preview-0.6b",
       "install_dir": "Edge0/Audio8-TTS-Preview-0.6b",
       "name": "Audio8 TTS Preview 0.6B",
@@ -3234,7 +3234,7 @@
         }
       }
     },
-    "47": {
+    {
       "id": "higgs-audio-v2-tokenizer",
       "install_dir": "bosonai/higgs-audio-v2-tokenizer",
       "name": "Higgs Audio v2 Tokenizer",
@@ -3276,7 +3276,7 @@
         }
       }
     },
-    "48": {
+    {
       "id": "qwen3-1.7b-multilingual-tts-gguf",
       "install_dir": "mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF",
       "name": "Qwen3 1.7B Multilingual TTS GGUF",
@@ -3375,7 +3375,7 @@
         }
       }
     },
-    "49": {
+    {
       "id": "audio8-asr-infinite-compressed",
       "install_dir": "Reza2kn/Audio8-ASR-Infinite-Compressed",
       "name": "Audio8 ASR Infinite Compressed",
@@ -3453,7 +3453,7 @@
         }
       }
     },
-    "50": {
+    {
       "id": "deepseek-r1-distill-qwen-32b",
       "install_dir": "unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF",
       "name": "DeepSeek-R1-Distill-Qwen-32B",
@@ -3528,5 +3528,5 @@
         }
       }
     }
-  }
+  ]
 }

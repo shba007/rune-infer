@@ -14,8 +14,29 @@ const LIMIT: u64 = 4 * 1024 * 1024;
 #[derive(Deserialize)]
 struct RawRegistry {
     schema_version: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_local_models")]
     local_models: Vec<serde_json::Value>,
+}
+
+fn deserialize_local_models<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Array(vec) => Ok(vec),
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<(usize, serde_json::Value)> = map
+                .into_iter()
+                .filter_map(|(k, v)| k.parse::<usize>().ok().map(|idx| (idx, v)))
+                .collect();
+            entries.sort_by_key(|(idx, _)| *idx);
+            Ok(entries.into_iter().map(|(_, v)| v).collect())
+        }
+        _ => Ok(Vec::new()),
+    }
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -35,6 +35,12 @@
 - [x] `litert` CompiledModel CPU and GPU adapters for `.tflite` multimodal vision models
 - [x] Automatic runtime engine binary downloader and extractor with platform detection (`llama_server/install.rs`, `engines/download.rs`)
 - [x] GGUF header sniffing and automatic model architecture/companion detection (`detect.rs`)
+- [ ] 3D generation engine backend (`hunyuan3d`) for high-fidelity textured mesh generation (`Hunyuan-3D-2.1`)
+- [ ] Vision-Language-Action (VLA) trajectory planning engine for autonomous driving trajectory prediction & chain-of-causation reasoning (`Alpamayo2-Edge`)
+- [ ] Speech-Augmented Language Model (SALM) hybrid Mamba-Transformer MoE engine with DFlash2 speculative decoding (`NVIDIA-Nemotron-3.5-Transcribe-30B-A4B`)
+- [ ] Dense multilingual TTS and zero-shot voice cloning engine integration (`Ming-3.0-tts-0.5B`) via `audio-cpp`
+- [ ] Segment Anything 3.1 (SAM 3.1) text-prompted mask generation engine via ONNX / native safetensors (`unsloth/sam3.1`)
+- [ ] Interactive 3D scene & Three.js/GLB code generation support on `llama-server` (`Qwen3.5-4B-3D-Coder`)
 - [ ] Model weight automated pulling CLI (`rune-infer pull <model-id>`)
 - [ ] Detailed engine startup and model loading progress reporting to TUI (currently binary loading/loaded state)
 - [ ] Engine downloader support for offline native ARM64 fallback builds
@@ -75,6 +81,11 @@
 - [x] `POST /v1/audio/diarizations` (speaker diarization intervals and turns)
 - [x] `POST /v1/audio/speech-to-speech` (composite speech-to-speech conversion)
 - [x] Management APIs (`/v1/management/roles`, `/v1/management/models/{id}/load`, `/v1/management/model-icon/{model}`, `/v1/capabilities`)
+- [ ] `POST /v1/3d/generations` (textured 3D mesh generation from single/multi-view images and text prompts via Hunyuan-3D-2.1)
+- [ ] `POST /v1/robotics/trajectory` / `POST /v1/vla/act` (autonomous driving future trajectory waypoint planning and causal reasoning via Alpamayo2-Edge)
+- [ ] Zero-shot text-prompted mask generation and bounding box prediction via SAM 3.1 (`/v1/images/segmentations`)
+- [ ] Zero-shot voice cloning, voice design, and paralinguistic emotion controls in `/v1/audio/speech` via Ming-3.0-tts-0.5B
+- [ ] Long-form audio context QA and rich speaker-attributed transcription via Nemotron-3.5-Transcribe-30B-A4B
 - [ ] Music generation engine backend (`music`)
 - [ ] Vocal/instrument audio separation engine backend (`separate`)
 - [ ] Zero-shot voice cloning and timbre conversion backends (`clone`, `convert`)
@@ -95,6 +106,7 @@
 - [x] Headless mode (`--headless` or non-TTY detection)
 - [x] Full-frame `NO_COLOR` and `RUNE_ASCII=1` fallback rendering
 - [x] Executable self-update command (`rune-infer self-update`) with checksum verification and rollback
+- [ ] Model registry entries & one-click TUI downloads for new model suite (`Hunyuan-3D-2.1`, `Alpamayo2-Edge`, `Nemotron-3.5-Transcribe-30B-A4B`, `Qwen3.5-4B-3D-Coder`, `Ming-3.0-tts-0.5B`, `sam3.1`) into `models/`
 - [ ] Windows and macOS binary code signing (SmartScreen/Gatekeeper warnings)
 - [ ] Docker container image packaging and publishing
 - [ ] Uninstall script for shared `~/.rune` artifacts
