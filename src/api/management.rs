@@ -248,6 +248,45 @@ pub(crate) struct EngineInstallation {
     operation: &'static str,
     status: &'static str,
     message: String,
+    #[serde(skip)]
+    stop: Arc<std::sync::atomic::AtomicBool>,
+}
+
+fn cancel_engine(state: &AppState, name: &str, operation: &str) -> Reply<Json<EngineInstallation>> {
+    store(state)?;
+    let mut current = state.engine_installation.lock().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Engine operation status unavailable",
+        )
+    })?;
+    let job = current
+        .as_mut()
+        .filter(|job| job.name == name && job.operation == operation)
+        .ok_or((StatusCode::NOT_FOUND, "No matching engine operation found"))?;
+    if job.status != "running" {
+        return Err((
+            StatusCode::CONFLICT,
+            "Engine operation is no longer running",
+        ));
+    }
+    job.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    job.message = "Cancelling engine operation; waiting for current step".into();
+    Ok(Json(job.clone()))
+}
+
+pub(super) async fn cancel_engine_installation(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Reply<Json<EngineInstallation>> {
+    cancel_engine(&state, &name, "install")
+}
+
+pub(super) async fn cancel_engine_update(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Reply<Json<EngineInstallation>> {
+    cancel_engine(&state, &name, "update")
 }
 
 pub(super) async fn engine_installation(
@@ -308,6 +347,7 @@ pub(super) async fn start_engine_installation(
         operation: "install",
         status: "running",
         message: "Installing engine".into(),
+        stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
     {
         let _guard = state.management_operation.lock().map_err(|_| {
@@ -338,9 +378,11 @@ pub(super) async fn start_engine_installation(
     }
     let status = state.engine_installation.clone();
     let inference = state.inference.clone();
+    let stop = job.stop.clone();
     tokio::spawn(async move {
+        let worker_stop = stop.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = worker_stop;
             let (events, receiver) = std::sync::mpsc::channel();
             drop(receiver);
             crate::inference::engines::download::with_cancellation(stop.clone(), || {
@@ -361,6 +403,11 @@ pub(super) async fn start_engine_installation(
                         job.message = "Engine installation failed; check Infer logs".into();
                     }
                     Ok(Err(error)) => {
+                        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                            job.status = "cancelled";
+                            job.message = "Engine installation cancelled".into();
+                            return;
+                        }
                         tracing::warn!(engine = %name, %error, "Engine installation failed");
                         job.status = "failed";
                         job.message = "Engine installation failed; check Infer logs".into();
@@ -439,6 +486,7 @@ pub(super) async fn start_engine_update(
         operation: "update",
         status: "running",
         message: "Checking and updating engine".into(),
+        stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
     {
         let _guard = state.management_operation.lock().map_err(|_| {
@@ -469,9 +517,14 @@ pub(super) async fn start_engine_update(
     }
     let status = state.engine_installation.clone();
     let inference = state.inference.clone();
+    let stop = job.stop.clone();
     tokio::spawn(async move {
+        let worker_stop = stop.clone();
         let result = tokio::task::spawn_blocking(move || {
             let release = crate::engine_releases::check_latest_release(row.name)?;
+            if worker_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("Engine update cancelled".into());
+            }
             let mut engine = row;
             crate::engine_releases::apply_release(&mut engine, release, &root);
             match crate::engine_releases::engine_action(&engine) {
@@ -489,7 +542,7 @@ pub(super) async fn start_engine_update(
                     return Err("Engine installation is required before updating".into());
                 }
             }
-            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = worker_stop;
             let (events, receiver) = std::sync::mpsc::channel();
             drop(receiver);
             crate::inference::engines::download::with_cancellation(stop.clone(), || {
@@ -508,6 +561,11 @@ pub(super) async fn start_engine_update(
                         job.message = message;
                     }
                     Ok(Err(error)) => {
+                        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                            job.status = "cancelled";
+                            job.message = "Engine update cancelled".into();
+                            return;
+                        }
                         tracing::warn!(engine = %name, %error, "Engine update failed");
                         job.status = "failed";
                         job.message = "Engine update failed; check Infer logs".into();
@@ -1190,6 +1248,7 @@ mod tests {
             operation: "update",
             status: "running",
             message: "Updating".into(),
+            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         });
         let blocked = router
             .clone()
@@ -1376,6 +1435,7 @@ mod tests {
             operation: "install",
             status: "running",
             message: "Installing engine".into(),
+            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         });
         assert_eq!(
             router
@@ -1386,6 +1446,42 @@ mod tests {
                 .status(),
             StatusCode::OK
         );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(installation_request("DELETE", false, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(installation_request("DELETE", true, "other"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        let cancelled = router
+            .clone()
+            .oneshot(installation_request("DELETE", true, "needle"))
+            .await
+            .unwrap();
+        assert_eq!(cancelled.status(), StatusCode::OK);
+        assert!(
+            jobs.lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .stop
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(cancelled.into_body(), 65536).await.unwrap()).unwrap();
+        assert_eq!(body["status"], "running");
+        assert!(body["message"].as_str().unwrap().contains("Cancelling"));
         assert_eq!(
             router
                 .clone()
@@ -1438,6 +1534,7 @@ mod tests {
             operation: "update",
             status: "running",
             message: "Updating engine".into(),
+            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         });
         assert_eq!(
             router
@@ -1447,6 +1544,33 @@ mod tests {
                 .unwrap()
                 .status(),
             StatusCode::OK
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(update_request("DELETE", true, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        assert!(
+            jobs.lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .stop
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
+        jobs.lock().unwrap().as_mut().unwrap().status = "completed";
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(update_request("DELETE", true, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::CONFLICT
         );
         assert_eq!(
             router

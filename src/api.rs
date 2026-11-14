@@ -191,11 +191,15 @@ pub fn create_router(state: AppState) -> Router {
         .route("/management/engines", get(management::engines))
         .route(
             "/management/engines/{name}/installation",
-            get(management::engine_installation).post(management::start_engine_installation),
+            get(management::engine_installation)
+                .post(management::start_engine_installation)
+                .delete(management::cancel_engine_installation),
         )
         .route(
             "/management/engines/{name}/update",
-            get(management::engine_update).post(management::start_engine_update),
+            get(management::engine_update)
+                .post(management::start_engine_update)
+                .delete(management::cancel_engine_update),
         )
         .route(
             "/management/engines/{name}/release-check",
