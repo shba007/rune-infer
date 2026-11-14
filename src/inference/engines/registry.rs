@@ -242,7 +242,6 @@ pub(crate) fn parse_sd(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error>>
     )
 }
 
-#[cfg(feature = "tui")]
 pub(crate) fn compare_sd_registry(
     versions: &BTreeMap<String, u64>,
     installed: &str,
@@ -351,7 +350,6 @@ pub(crate) fn parse_crispasr(body: &[u8]) -> Result<serde_json::Value, Box<dyn E
     )
 }
 
-#[cfg(feature = "tui")]
 pub(crate) fn audio_identity(output: &str) -> Option<(&str, bool)> {
     let line = output.lines().next()?.trim().strip_prefix("audio.cpp ")?;
     let mut words = line.split_whitespace();
@@ -580,7 +578,6 @@ pub(crate) fn parse_nemo(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error
     )
 }
 
-#[cfg(feature = "tui")]
 pub(crate) fn compare_nemo_revision(
     versions: &BTreeMap<String, u64>,
     installed: &str,

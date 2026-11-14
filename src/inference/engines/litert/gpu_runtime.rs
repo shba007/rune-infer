@@ -21,8 +21,8 @@ const FILES: [(&str, &str); 4] = [
     ),
 ];
 
-pub(super) fn bundle_path() -> PathBuf {
-    download::engine_bin().join("litert/gpu-2.3.0")
+pub(super) fn bundle_path() -> Result<PathBuf, String> {
+    Ok(download::engine_bin()?.join("litert/gpu-2.3.0"))
 }
 
 pub(super) fn validate_bundle(directory: &Path) -> Result<(), Box<dyn Error>> {
@@ -42,7 +42,7 @@ pub(super) fn ensure_installed(cpu: &Path) -> Result<PathBuf, Box<dyn Error>> {
         return Err("LiteRT GPU currently requires Windows x64".into());
     }
     super::validate_runtime(cpu)?;
-    let destination = bundle_path();
+    let destination = bundle_path()?;
     if destination.exists() {
         validate_bundle(&destination)?;
         return Ok(std::fs::canonicalize(destination.join("libLiteRt.dll"))?);

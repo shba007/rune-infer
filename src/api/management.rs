@@ -36,6 +36,7 @@ type Reply<T> = Result<T, (StatusCode, &'static str)>;
 #[derive(Serialize)]
 pub(super) struct EngineInventory {
     engines: Vec<EngineEntry>,
+    installation: Option<EngineInstallation>,
 }
 
 #[derive(Serialize)]
@@ -45,6 +46,7 @@ struct EngineEntry {
     managed: bool,
     version: String,
     release_check_available: bool,
+    installation_available: bool,
 }
 
 pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<EngineInventory>> {
@@ -59,6 +61,7 @@ pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<En
         crate::engine_inventory::discover_engines(&root)
             .into_iter()
             .map(|row| EngineEntry {
+                installation_available: crate::engine_inventory::installation_available(&row),
                 name: row.name,
                 installed: row.installed,
                 managed: row.managed,
@@ -75,7 +78,136 @@ pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<En
             "Engine inventory unavailable",
         )
     })?;
-    Ok(Json(EngineInventory { engines }))
+    let installation = state
+        .engine_installation
+        .lock()
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Engine installation status unavailable",
+            )
+        })?
+        .clone();
+    Ok(Json(EngineInventory {
+        engines,
+        installation,
+    }))
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct EngineInstallation {
+    name: String,
+    status: &'static str,
+    message: String,
+}
+
+pub(super) async fn engine_installation(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Reply<Json<EngineInstallation>> {
+    store(&state)?;
+    let current = state.engine_installation.lock().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Engine installation status unavailable",
+        )
+    })?;
+    current
+        .as_ref()
+        .filter(|job| job.name == name)
+        .cloned()
+        .map(Json)
+        .ok_or((StatusCode::NOT_FOUND, "No engine installation found"))
+}
+
+pub(super) async fn start_engine_installation(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Reply<(StatusCode, Json<EngineInstallation>)> {
+    store(&state)?;
+    let kind = crate::engine_inventory::install_engine_kind(&name)
+        .ok_or((StatusCode::BAD_REQUEST, "Engine installation unavailable"))?;
+    let root = crate::engine_inventory::managed_root().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Cannot resolve Infer engine storage",
+        )
+    })?;
+    let checked_name = name.clone();
+    let available = tokio::task::spawn_blocking(move || {
+        crate::engine_inventory::discover_engines(&root)
+            .iter()
+            .any(|row| {
+                row.name == checked_name && crate::engine_inventory::installation_available(row)
+            })
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Engine inventory unavailable",
+        )
+    })?;
+    if !available {
+        return Err((
+            StatusCode::CONFLICT,
+            "Engine installation unavailable or already installed",
+        ));
+    }
+    let job = EngineInstallation {
+        name: name.clone(),
+        status: "running",
+        message: "Installing engine".into(),
+    };
+    {
+        let mut current = state.engine_installation.lock().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Engine installation status unavailable",
+            )
+        })?;
+        if current.as_ref().is_some_and(|job| job.status == "running") {
+            return Err((
+                StatusCode::CONFLICT,
+                "An engine installation is already running",
+            ));
+        }
+        *current = Some(job.clone());
+    }
+    let status = state.engine_installation.clone();
+    let inference = state.inference.clone();
+    tokio::spawn(async move {
+        let result = tokio::task::spawn_blocking(move || {
+            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (events, receiver) = std::sync::mpsc::channel();
+            drop(receiver);
+            crate::inference::engines::download::with_cancellation(stop.clone(), || {
+                crate::inference::engines::update::install_engine(inference, stop, kind, events)
+            })
+        })
+        .await;
+        if let Ok(mut current) = status.lock() {
+            if let Some(job) = current.as_mut().filter(|job| job.name == name) {
+                match result {
+                    Ok(Ok(message)) => {
+                        job.status = "completed";
+                        job.message = message;
+                    }
+                    Err(error) => {
+                        tracing::error!(engine = %name, %error, "Engine installation task failed");
+                        job.status = "failed";
+                        job.message = "Engine installation failed; check Infer logs".into();
+                    }
+                    Ok(Err(error)) => {
+                        tracing::warn!(engine = %name, %error, "Engine installation failed");
+                        job.status = "failed";
+                        job.message = "Engine installation failed; check Infer logs".into();
+                    }
+                }
+            }
+        }
+    });
+    Ok((StatusCode::ACCEPTED, Json(job)))
 }
 
 #[derive(Serialize)]
@@ -666,6 +798,7 @@ mod tests {
             "unused-server".into(),
             "unused-catalog".into(),
         )));
+        let jobs = state.engine_installation.clone();
         let router = crate::api::create_router(state);
         let request = |authorized| {
             let builder = Request::builder().uri("/v1/management/engines");
@@ -713,6 +846,67 @@ mod tests {
                 .unwrap()
                 .status(),
             StatusCode::BAD_REQUEST
+        );
+        let installation_request = |method: &str, authorized: bool, name: &str| {
+            let builder = Request::builder()
+                .method(method)
+                .uri(format!("/v1/management/engines/{name}/installation"));
+            let builder = if authorized {
+                builder.header("authorization", "Bearer test-key")
+            } else {
+                builder
+            };
+            builder.body(Body::empty()).unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(installation_request("POST", false, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(installation_request("POST", true, "encoder"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(installation_request("GET", true, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        *jobs.lock().unwrap() = Some(EngineInstallation {
+            name: "needle".into(),
+            status: "running",
+            message: "Installing engine".into(),
+        });
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(installation_request("GET", true, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(installation_request("POST", true, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::CONFLICT
         );
         let response = router.oneshot(request(true)).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);

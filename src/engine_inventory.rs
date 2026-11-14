@@ -15,6 +15,35 @@ pub(crate) fn managed_root() -> Result<PathBuf, String> {
     crate::home::rune_home().map_err(|_| "Cannot resolve Infer's managed home".into())
 }
 
+fn override_vars(name: &str) -> &'static [&'static str] {
+    match name {
+        "llama-server" | "llama-server-prism" => &["LLAMA_SERVER_PATH"],
+        "audio-cpp" => &["AUDIOCPP_PATH", "AUDIO8_PATH"],
+        "sd-server" => &["SD_SERVER_PATH"],
+        "crispasr" => &["CRISPASR_PATH"],
+        "nemo-speech" => &["NEMO_SPEECH_PATH"],
+        "whisper-cpp" => &["WHISPER_CPP_PATH"],
+        "litert" => &["LITERT_LIBRARY_PATH"],
+        "onnx" => &["ONNX_RUNTIME_LIBRARY_PATH"],
+        _ => &[],
+    }
+}
+
+pub(crate) fn installation_available(row: &EngineRow) -> bool {
+    !row.installed
+        && !override_vars(row.name)
+            .iter()
+            .any(|name| std::env::var_os(name).is_some())
+        && install_engine_kind(row.name).is_some()
+        && (!matches!(row.name, "litert" | "onnx") || cfg!(all(windows, target_arch = "x86_64")))
+        && cfg!(any(
+            windows,
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos"
+        ))
+}
+
 #[derive(Clone, Debug)]
 #[cfg_attr(not(feature = "tui"), allow(dead_code))]
 pub(crate) struct EngineRow {
@@ -56,18 +85,7 @@ pub(crate) fn discover_engines(root: &std::path::Path) -> Vec<EngineRow> {
             } else {
                 format!("{executable}{suffix}")
             };
-            let custom_vars: &[&str] = match name {
-                "llama-server" | "llama-server-prism" => &["LLAMA_SERVER_PATH"],
-                "audio-cpp" => &["AUDIOCPP_PATH", "AUDIO8_PATH"],
-                "sd-server" => &["SD_SERVER_PATH"],
-                "crispasr" => &["CRISPASR_PATH"],
-                "nemo-speech" => &["NEMO_SPEECH_PATH"],
-                "whisper-cpp" => &["WHISPER_CPP_PATH"],
-                "litert" => &["LITERT_LIBRARY_PATH"],
-                "onnx" => &["ONNX_RUNTIME_LIBRARY_PATH"],
-                _ => &[],
-            };
-            let custom = custom_vars
+            let custom = override_vars(name)
                 .iter()
                 .find_map(std::env::var_os)
                 .map(PathBuf::from);
@@ -232,6 +250,23 @@ pub(crate) fn parse_engine_version(stdout: &str, stderr: &str) -> Option<String>
             }
         })
         .or_else(|| lines.first().map(|line| (*line).to_owned()))
+}
+
+pub(crate) fn install_engine_kind(name: &str) -> Option<crate::config::EngineKind> {
+    use crate::config::EngineKind;
+    Some(match name {
+        "llama-server" => EngineKind::LlamaServer,
+        "llama-server-prism" => EngineKind::LlamaServerPrism,
+        "audio-cpp" => EngineKind::AudioCpp,
+        "sd-server" => EngineKind::SdServer,
+        "crispasr" => EngineKind::Crispasr,
+        "nemo-speech" => EngineKind::NemoSpeech,
+        "needle" => EngineKind::Needle,
+        "whisper-cpp" => EngineKind::WhisperCpp,
+        "litert" => EngineKind::Litert,
+        "onnx" => EngineKind::Onnx,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

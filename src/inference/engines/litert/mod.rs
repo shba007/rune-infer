@@ -96,9 +96,10 @@ pub(crate) fn reviewed_model(model: &Path) -> anyhow::Result<&'static ModelProfi
 }
 
 pub fn runtime_path() -> anyhow::Result<PathBuf> {
-    let path = std::env::var_os("LITERT_LIBRARY_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(managed_runtime_path);
+    let path = match std::env::var_os("LITERT_LIBRARY_PATH") {
+        Some(path) => PathBuf::from(path),
+        None => managed_runtime_path().map_err(anyhow::Error::msg)?,
+    };
     anyhow::ensure!(
         crate::embedding::root().is_none() || path.is_absolute(),
         "LITERT_LIBRARY_PATH must be absolute when Infer is embedded"
@@ -110,14 +111,14 @@ pub fn runtime_path() -> anyhow::Result<PathBuf> {
     Ok(std::fs::canonicalize(path)?)
 }
 
-fn managed_runtime_path() -> PathBuf {
-    let directory = super::download::engine_bin().join("litert");
+fn managed_runtime_path() -> Result<PathBuf, String> {
+    let directory = super::download::engine_bin()?.join("litert");
     let direct = directory.join("libLiteRt.dll");
-    if direct.is_file() {
+    Ok(if direct.is_file() {
         direct
     } else {
         super::download::find_executable_recursive(&directory, "libLiteRt.dll").unwrap_or(direct)
-    }
+    })
 }
 
 pub(crate) fn validate_runtime(path: &Path) -> Result<(), Box<dyn Error>> {
@@ -145,7 +146,7 @@ pub(crate) fn ensure_runtime_installed() -> Result<PathBuf, Box<dyn Error>> {
         gpu_runtime::ensure_installed(&path)?;
         return Ok(std::fs::canonicalize(path)?);
     }
-    let path = managed_runtime_path();
+    let path = managed_runtime_path()?;
     if path.exists() {
         validate_runtime(&path)?;
         gpu_runtime::ensure_installed(&path)?;
@@ -173,7 +174,9 @@ pub(crate) fn runtime_version(path: &Path) -> Option<String> {
         .ok()
         .filter(|hash| hash == RUNTIME_SHA)
         .map(|_| {
-            if gpu_runtime::validate_bundle(&gpu_runtime::bundle_path()).is_ok() {
+            if gpu_runtime::bundle_path()
+                .is_ok_and(|path| gpu_runtime::validate_bundle(&path).is_ok())
+            {
                 "LiteRT 2.3.0 GPU + CPU".into()
             } else {
                 "LiteRT 2.3.0 CPU".into()
@@ -201,8 +204,9 @@ pub(crate) fn helper_path() -> Result<PathBuf, Box<dyn Error>> {
 
 pub(crate) fn verification_files() -> Vec<PathBuf> {
     let mut files = runtime_path().into_iter().collect::<Vec<_>>();
-    let bundle = gpu_runtime::bundle_path();
-    if gpu_runtime::validate_bundle(&bundle).is_ok() {
+    if let Ok(bundle) = gpu_runtime::bundle_path()
+        && gpu_runtime::validate_bundle(&bundle).is_ok()
+    {
         for name in [
             "libLiteRt.dll",
             "libLiteRtWebGpuAccelerator.dll",

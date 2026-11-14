@@ -267,7 +267,7 @@ impl WhisperCppEngine {
         } else {
             "whisper-cli"
         };
-        let base = download::engine_bin().join("whisper-cpp");
+        let base = download::engine_bin()?.join("whisper-cpp");
         let direct = base.join(executable);
         if direct.is_file() {
             return Ok(direct);

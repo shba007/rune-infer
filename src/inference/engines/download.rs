@@ -84,13 +84,12 @@ pub(crate) fn engine_unavailable(name: &str) -> String {
     )
 }
 
-pub(crate) fn engine_bin() -> PathBuf {
+pub(crate) fn engine_bin() -> Result<PathBuf, String> {
     INSTALL_BIN.with(|root| {
-        root.borrow().clone().unwrap_or_else(|| {
-            crate::embedding::root()
-                .map(|root| root.join("bin"))
-                .unwrap_or_else(|| PathBuf::from("bin"))
-        })
+        if let Some(path) = root.borrow().clone() {
+            return Ok(path);
+        }
+        crate::engine_inventory::managed_root().map(|root| root.join("bin"))
     })
 }
 
@@ -988,6 +987,17 @@ mod progress_tests {
     use super::*;
     use std::cell::RefCell;
     use std::rc::Rc;
+
+    #[test]
+    fn engine_directory_uses_managed_home_and_scoped_installation_override() {
+        let managed = crate::engine_inventory::managed_root().unwrap().join("bin");
+        assert_eq!(engine_bin().unwrap(), managed);
+        let staging = std::env::temp_dir().join("infer-staging-fixture");
+        with_install_bin(staging.clone(), || {
+            assert_eq!(engine_bin().unwrap(), staging)
+        });
+        assert_eq!(engine_bin().unwrap(), managed);
+    }
 
     fn serve_resume_response(
         response: Vec<u8>,

@@ -286,9 +286,10 @@ impl OnnxEngine {
                     .into(),
             );
         }
-        let runtime = std::env::var_os("ONNX_RUNTIME_LIBRARY_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| super::download::engine_bin().join("onnxruntime/onnxruntime.dll"));
+        let runtime = match std::env::var_os("ONNX_RUNTIME_LIBRARY_PATH") {
+            Some(path) => PathBuf::from(path),
+            None => super::download::engine_bin()?.join("onnxruntime/onnxruntime.dll"),
+        };
         if crate::embedding::root().is_some() && !runtime.is_absolute() {
             return Err("ONNX_RUNTIME_LIBRARY_PATH must be absolute when Infer is embedded".into());
         }

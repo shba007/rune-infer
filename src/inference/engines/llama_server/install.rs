@@ -27,7 +27,7 @@ pub(super) fn resolve_binary(
         }
     }
 
-    let root_bin = download::engine_bin().join(exe_name);
+    let root_bin = download::engine_bin()?.join(exe_name);
     if root_bin.exists() {
         return Ok(root_bin);
     }
@@ -36,7 +36,7 @@ pub(super) fn resolve_binary(
         RuntimeFlavor::Upstream => "llama-upstream",
         RuntimeFlavor::Prism => "llama-prism",
     };
-    let base_dir = download::engine_bin().join(folder_name);
+    let base_dir = download::engine_bin()?.join(folder_name);
     let exe_path = base_dir.join(exe_name);
 
     if exe_path.exists() {

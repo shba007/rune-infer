@@ -34,7 +34,7 @@ impl NeedleEngine {
     }
 
     fn resolve_binary(install: bool) -> Result<PathBuf, Box<dyn Error>> {
-        let base_dir = download::engine_bin().join("needle");
+        let base_dir = download::engine_bin()?.join("needle");
         let exe_name = if cfg!(windows) {
             "needle.exe"
         } else {
@@ -105,7 +105,6 @@ pub(crate) fn latest_metadata(
         .json()?)
 }
 
-#[cfg(feature = "tui")]
 pub(crate) fn verify_forward_update(
     client: &reqwest::blocking::Client,
     installed: &str,
@@ -124,7 +123,6 @@ pub(crate) fn verify_forward_update(
     verify_revision_history(&history, installed, selected)
 }
 
-#[cfg(any(feature = "tui", test))]
 fn verify_revision_history(
     history: &serde_json::Value,
     installed: &str,

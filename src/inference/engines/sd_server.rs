@@ -407,7 +407,7 @@ impl SdServerEngine {
             }
         }
 
-        let base_dir = download::engine_bin().join("sd-server");
+        let base_dir = download::engine_bin()?.join("sd-server");
         let exe_path = base_dir.join(exe_name);
         if exe_path.exists() {
             return Ok(exe_path);
@@ -417,7 +417,7 @@ impl SdServerEngine {
             return Ok(nested);
         }
 
-        let root_bin = download::engine_bin().join(exe_name);
+        let root_bin = download::engine_bin()?.join(exe_name);
         if root_bin.exists() {
             return Ok(root_bin);
         }

@@ -234,7 +234,7 @@ impl NemoSpeechEngine {
             }
         }
 
-        let base_dir = download::engine_bin().join("nemo-speech");
+        let base_dir = download::engine_bin()?.join("nemo-speech");
         let exe_path = base_dir.join(exe_name);
 
         if crate::embedding::root().is_some() {
@@ -244,7 +244,7 @@ impl NemoSpeechEngine {
             if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
                 return Ok(nested);
             }
-            let root_bin = download::engine_bin().join(exe_name);
+            let root_bin = download::engine_bin()?.join(exe_name);
             if root_bin.is_file() {
                 return Ok(root_bin);
             }
@@ -272,7 +272,7 @@ impl NemoSpeechEngine {
             return Ok(nested);
         }
 
-        let root_bin = download::engine_bin().join(exe_name);
+        let root_bin = download::engine_bin()?.join(exe_name);
         if root_bin.exists() {
             return Ok(root_bin);
         }

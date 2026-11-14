@@ -72,6 +72,7 @@ pub struct AppState {
     pub config: Arc<std::sync::RwLock<ModelRegistry>>,
     pub concurrency: Arc<RequestConcurrencyState>,
     pub(crate) management: Option<Arc<management::CatalogStore>>,
+    pub(crate) engine_installation: Arc<std::sync::Mutex<Option<management::EngineInstallation>>>,
 }
 
 impl AppState {
@@ -86,6 +87,7 @@ impl AppState {
             config: Arc::new(std::sync::RwLock::new(config)),
             concurrency: Arc::new(RequestConcurrencyState::default()),
             management: None,
+            engine_installation: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -168,6 +170,10 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/management/roles", get(management::roles))
         .route("/management/engines", get(management::engines))
+        .route(
+            "/management/engines/{name}/installation",
+            get(management::engine_installation).post(management::start_engine_installation),
+        )
         .route(
             "/management/engines/{name}/release-check",
             axum::routing::post(management::check_engine_release),

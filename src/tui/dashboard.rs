@@ -1,5 +1,6 @@
 //! Live dashboard: model lifecycle, VRAM, throughput, requests and logs.
 
+use crate::engine_inventory::install_engine_kind;
 use crate::engine_releases::check_latest_release;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -1920,23 +1921,6 @@ fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
         "Ahead" => unavailable("Installed version is newer; no downgrade will be performed"),
         _ => EngineAction::Update,
     }
-}
-
-fn install_engine_kind(name: &str) -> Option<crate::config::EngineKind> {
-    use crate::config::EngineKind;
-    Some(match name {
-        "llama-server" => EngineKind::LlamaServer,
-        "llama-server-prism" => EngineKind::LlamaServerPrism,
-        "audio-cpp" => EngineKind::AudioCpp,
-        "sd-server" => EngineKind::SdServer,
-        "crispasr" => EngineKind::Crispasr,
-        "nemo-speech" => EngineKind::NemoSpeech,
-        "needle" => EngineKind::Needle,
-        "whisper-cpp" => EngineKind::WhisperCpp,
-        "litert" => EngineKind::Litert,
-        "onnx" => EngineKind::Onnx,
-        _ => return None,
-    })
 }
 
 #[cfg(test)]

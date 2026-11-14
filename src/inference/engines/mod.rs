@@ -12,5 +12,5 @@ pub(crate) mod release_cache;
 pub mod sd_server;
 pub mod whisper;
 
-#[cfg(feature = "tui")]
+#[cfg_attr(not(feature = "tui"), allow(dead_code))]
 pub(crate) mod update;

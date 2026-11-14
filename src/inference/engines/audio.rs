@@ -221,7 +221,7 @@ impl AudioEngine {
                 } else {
                     "audiocpp_cli"
                 };
-                download::engine_bin().join("audiocpp").join(exe_name)
+                download::engine_bin()?.join("audiocpp").join(exe_name)
             }
             Err(e) => return Err(e),
         };
@@ -307,7 +307,7 @@ impl AudioEngine {
             }
         }
 
-        let base_dir = download::engine_bin().join("audiocpp");
+        let base_dir = download::engine_bin()?.join("audiocpp");
         let exe_path = base_dir.join(exe_name);
         if exe_path.exists() {
             if install {
@@ -323,7 +323,7 @@ impl AudioEngine {
             return Ok(nested);
         }
 
-        let root_bin = download::engine_bin().join(exe_name);
+        let root_bin = download::engine_bin()?.join(exe_name);
         if root_bin.exists() {
             return Ok(root_bin);
         }

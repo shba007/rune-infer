@@ -21,6 +21,7 @@ pub(crate) fn install_engine(
     kind: EngineKind,
     events: std::sync::mpsc::Sender<UpdateEvent>,
 ) -> UpdateResult<String> {
+    let bin = crate::engine_inventory::managed_root()?.join("bin");
     let directory = match kind {
         EngineKind::LlamaServer => "llama-upstream",
         EngineKind::LlamaServerPrism => "llama-prism",
@@ -58,25 +59,27 @@ pub(crate) fn install_engine(
         std::thread::sleep(Duration::from_millis(300));
     };
     if kind == EngineKind::Litert && std::env::var_os("LITERT_LIBRARY_PATH").is_none() {
-        let current = PathBuf::from("bin/litert/libLiteRt.dll");
+        let current = bin.join("litert/libLiteRt.dll");
         if super::litert::validate_runtime(&current).is_ok() {
             emit("Installing pinned LiteRT WebGPU and DXC sidecars".into());
-            crate::setup::install_engine(kind).map_err(|error| error.to_string())?;
+            download::with_install_bin(bin.clone(), || crate::setup::install_engine(kind))
+                .map_err(|error| error.to_string())?;
             return Ok("Installed verified LiteRT GPU + CPU runtime".into());
         }
     }
     if kind == EngineKind::Onnx && std::env::var_os("ONNX_RUNTIME_LIBRARY_PATH").is_none() {
-        let current = PathBuf::from("bin/onnxruntime/onnxruntime.dll");
+        let current = bin.join("onnxruntime/onnxruntime.dll");
         if super::onnx::runtime::runtime_version(&current).as_deref()
             == Some("ONNX Runtime 1.31.1 CPU")
         {
             emit("Installing pinned ONNX CUDA dependencies".into());
-            crate::setup::install_engine(kind).map_err(|error| error.to_string())?;
+            download::with_install_bin(bin.clone(), || crate::setup::install_engine(kind))
+                .map_err(|error| error.to_string())?;
             return Ok("Installed verified ONNX CPU + CUDA runtime".into());
         }
     }
     stage_engine_install(
-        PathBuf::from("bin"),
+        bin,
         directory,
         kind,
         &stop,

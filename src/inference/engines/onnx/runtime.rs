@@ -202,7 +202,7 @@ pub(crate) fn ensure_runtime_installed() -> Result<PathBuf, Box<dyn Error>> {
     }
     let client = download::create_download_client()?;
     let mut registry = None;
-    install_at(download::engine_bin(), |stage, name, hash| {
+    install_at(download::engine_bin()?, |stage, name, hash| {
         if registry.is_none() {
             registry = Some(super::super::registry::onnx_files(&client)?);
         }
