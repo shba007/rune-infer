@@ -405,8 +405,9 @@ pub(crate) fn update_llama(
             None,
         )
     };
-    let current = PathBuf::from("bin").join(directory);
-    for directory in [Path::new("bin"), current.as_path()] {
+    let bin = download::engine_bin()?;
+    let current = bin.join(directory);
+    for directory in [bin.as_path(), current.as_path()] {
         let meta = std::fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err("Managed engine location is not a regular directory".into());
@@ -461,7 +462,7 @@ pub(crate) fn update_llama(
         }
     }
     stage_engine_update(
-        PathBuf::from("bin"),
+        bin,
         directory,
         &stop,
         &events,
@@ -664,15 +665,16 @@ pub(crate) fn update_nemo(
     let client = download::create_download_client().map_err(|e| e.to_string())?;
     let release = super::registry::nemo_release(&client).map_err(|e| e.to_string())?;
     let expected = checked_nemo_release(&release, &expected_tag)?;
-    let current = Path::new("bin/nemo-speech");
-    for directory in [Path::new("bin"), current] {
+    let bin = download::engine_bin()?;
+    let current = bin.join("nemo-speech");
+    for directory in [bin.as_path(), current.as_path()] {
         let meta = std::fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err("Managed engine location is not a regular directory".into());
         }
     }
-    ensure_no_links(current)?;
-    let exe = download::find_executable_recursive(current, "nemo-speech.exe")
+    ensure_no_links(&current)?;
+    let exe = download::find_executable_recursive(&current, "nemo-speech.exe")
         .ok_or("Managed NeMo Speech executable not found")?;
     let installed = nemo_binary_version(&candidate_version(&exe)?)
         .ok_or("Cannot verify installed NeMo Speech version")?;
@@ -688,7 +690,7 @@ pub(crate) fn update_nemo(
         }
     }
     stage_engine_update(
-        PathBuf::from("bin"),
+        bin,
         "nemo-speech",
         &stop,
         &events,
@@ -777,15 +779,16 @@ pub(crate) fn update_sd(
     }
     let selected = super::sd_server::release_commit(&expected_tag)
         .ok_or("Selected SD-server release has no verifiable commit identity")?;
-    let current = Path::new("bin/sd-server");
-    for directory in [Path::new("bin"), current] {
+    let bin = download::engine_bin()?;
+    let current = bin.join("sd-server");
+    for directory in [bin.as_path(), current.as_path()] {
         let meta = std::fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err("Managed engine location is not a regular directory".into());
         }
     }
-    ensure_no_links(current)?;
-    let exe = download::find_executable_recursive(current, "sd-server.exe")
+    ensure_no_links(&current)?;
+    let exe = download::find_executable_recursive(&current, "sd-server.exe")
         .ok_or("Managed SD-server executable not found")?;
     let installed = super::sd_server::reported_version(&candidate_version(&exe)?)
         .ok_or("Cannot verify installed SD-server commit")?;
@@ -825,7 +828,7 @@ pub(crate) fn update_sd(
         return Ok("Already up to date; no download needed".into());
     }
     stage_engine_update(
-        PathBuf::from("bin"),
+        bin,
         "sd-server",
         &stop,
         &events,
@@ -905,14 +908,15 @@ pub(crate) fn update_needle(
         }
         std::thread::sleep(Duration::from_millis(300));
     };
-    let current = Path::new("bin/needle");
-    for directory in [Path::new("bin"), current] {
+    let bin = download::engine_bin()?;
+    let current = bin.join("needle");
+    for directory in [bin.as_path(), current.as_path()] {
         let meta = std::fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err("Managed engine location is not a regular directory".into());
         }
     }
-    ensure_no_links(current)?;
+    ensure_no_links(&current)?;
     let installed = needle::installed_revision(&current.join("needle.exe"))
         .ok_or("Cannot verify installed Needle receipt and binary checksum; update refused")?;
     if installed.eq_ignore_ascii_case(&expected) {
@@ -929,7 +933,7 @@ pub(crate) fn update_needle(
     needle::verify_forward_update(&client, installed.trim_start_matches("revision "), selected)
         .map_err(|e| e.to_string())?;
     stage_engine_update(
-        PathBuf::from("bin"),
+        bin,
         "needle",
         &stop,
         &events,
@@ -970,7 +974,8 @@ pub(crate) fn update_audio(
         }
         std::thread::sleep(Duration::from_millis(300));
     };
-    let current = PathBuf::from("bin").join("audiocpp");
+    let bin = download::engine_bin()?;
+    let current = bin.join("audiocpp");
     let exe_name = if cfg!(windows) {
         "audiocpp_cli.exe"
     } else {
@@ -1014,7 +1019,6 @@ pub(crate) fn update_audio(
             Ok((name, url, sha, size))
         })
         .collect::<UpdateResult<_>>()?;
-    let bin = PathBuf::from("bin");
     let bin_info = std::fs::symlink_metadata(&bin).map_err(|e| e.to_string())?;
     if !bin_info.is_dir() || bin_info.file_type().is_symlink() {
         return Err("Engine directory is not a regular directory".into());
@@ -1151,7 +1155,7 @@ pub(crate) fn update_whisper(
         }
         std::thread::sleep(Duration::from_millis(300));
     };
-    let bin = PathBuf::from("bin");
+    let bin = download::engine_bin()?;
     let current = bin.join("whisper-cpp");
     for path in [&bin, &current] {
         let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
@@ -1318,7 +1322,7 @@ pub(crate) fn update_crispasr(
         }
         std::thread::sleep(Duration::from_millis(300));
     };
-    let bin = PathBuf::from("bin");
+    let bin = download::engine_bin()?;
     let current = bin.join("crispasr");
     for path in [&bin, &current] {
         let meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;

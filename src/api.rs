@@ -175,6 +175,10 @@ pub fn create_router(state: AppState) -> Router {
             get(management::engine_installation).post(management::start_engine_installation),
         )
         .route(
+            "/management/engines/{name}/update",
+            get(management::engine_update).post(management::start_engine_update),
+        )
+        .route(
             "/management/engines/{name}/release-check",
             axum::routing::post(management::check_engine_release),
         )

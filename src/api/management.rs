@@ -47,6 +47,7 @@ struct EngineEntry {
     version: String,
     release_check_available: bool,
     installation_available: bool,
+    update_available: bool,
 }
 
 pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<EngineInventory>> {
@@ -62,6 +63,7 @@ pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<En
             .into_iter()
             .map(|row| EngineEntry {
                 installation_available: crate::engine_inventory::installation_available(&row),
+                update_available: can_update_engine(&row),
                 name: row.name,
                 installed: row.installed,
                 managed: row.managed,
@@ -97,6 +99,7 @@ pub(super) async fn engines(State(state): State<Arc<AppState>>) -> Reply<Json<En
 #[derive(Clone, Serialize)]
 pub(crate) struct EngineInstallation {
     name: String,
+    operation: &'static str,
     status: &'static str,
     message: String,
 }
@@ -114,7 +117,7 @@ pub(super) async fn engine_installation(
     })?;
     current
         .as_ref()
-        .filter(|job| job.name == name)
+        .filter(|job| job.name == name && job.operation == "install")
         .cloned()
         .map(Json)
         .ok_or((StatusCode::NOT_FOUND, "No engine installation found"))
@@ -156,6 +159,7 @@ pub(super) async fn start_engine_installation(
     }
     let job = EngineInstallation {
         name: name.clone(),
+        operation: "install",
         status: "running",
         message: "Installing engine".into(),
     };
@@ -202,6 +206,146 @@ pub(super) async fn start_engine_installation(
                         tracing::warn!(engine = %name, %error, "Engine installation failed");
                         job.status = "failed";
                         job.message = "Engine installation failed; check Infer logs".into();
+                    }
+                }
+            }
+        }
+    });
+    Ok((StatusCode::ACCEPTED, Json(job)))
+}
+
+fn can_update_engine(row: &crate::engine_inventory::EngineRow) -> bool {
+    cfg!(all(windows, target_arch = "x86_64"))
+        && row.installed
+        && row.managed
+        && matches!(
+            row.name,
+            "llama-server"
+                | "llama-server-prism"
+                | "nemo-speech"
+                | "audio-cpp"
+                | "crispasr"
+                | "sd-server"
+                | "needle"
+                | "whisper-cpp"
+        )
+}
+
+pub(super) async fn engine_update(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Reply<Json<EngineInstallation>> {
+    store(&state)?;
+    let current = state.engine_installation.lock().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Engine update status unavailable",
+        )
+    })?;
+    current
+        .as_ref()
+        .filter(|job| job.name == name && job.operation == "update")
+        .cloned()
+        .map(Json)
+        .ok_or((StatusCode::NOT_FOUND, "No engine update found"))
+}
+
+pub(super) async fn start_engine_update(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> Reply<(StatusCode, Json<EngineInstallation>)> {
+    store(&state)?;
+    let root = crate::engine_inventory::managed_root().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Cannot resolve Infer engine storage",
+        )
+    })?;
+    let checked_name = name.clone();
+    let discovery_root = root.clone();
+    let row = tokio::task::spawn_blocking(move || {
+        crate::engine_inventory::discover_engines(&discovery_root)
+            .into_iter()
+            .find(|row| row.name == checked_name && can_update_engine(row))
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Engine inventory unavailable",
+        )
+    })?
+    .ok_or((StatusCode::CONFLICT, "Engine update unavailable"))?;
+    let job = EngineInstallation {
+        name: name.clone(),
+        operation: "update",
+        status: "running",
+        message: "Checking and updating engine".into(),
+    };
+    {
+        let mut current = state.engine_installation.lock().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Engine update status unavailable",
+            )
+        })?;
+        if current.as_ref().is_some_and(|job| job.status == "running") {
+            return Err((
+                StatusCode::CONFLICT,
+                "An engine operation is already running",
+            ));
+        }
+        *current = Some(job.clone());
+    }
+    let status = state.engine_installation.clone();
+    let inference = state.inference.clone();
+    tokio::spawn(async move {
+        let result = tokio::task::spawn_blocking(move || {
+            let release = crate::engine_releases::check_latest_release(row.name)?;
+            let mut engine = row;
+            crate::engine_releases::apply_release(&mut engine, release, &root);
+            match crate::engine_releases::engine_action(&engine) {
+                crate::engine_releases::EngineAction::Update => {}
+                crate::engine_releases::EngineAction::Unavailable(reason)
+                    if matches!(
+                        crate::engine_releases::release_status(&engine),
+                        "Up to date" | "Ahead"
+                    ) =>
+                {
+                    return Ok(reason);
+                }
+                crate::engine_releases::EngineAction::Unavailable(reason) => return Err(reason),
+                crate::engine_releases::EngineAction::Install => {
+                    return Err("Engine installation is required before updating".into());
+                }
+            }
+            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (events, receiver) = std::sync::mpsc::channel();
+            drop(receiver);
+            crate::inference::engines::download::with_cancellation(stop.clone(), || {
+                crate::engine_releases::perform_update(inference, stop, engine, events)
+            })
+        })
+        .await;
+        if let Ok(mut current) = status.lock() {
+            if let Some(job) = current
+                .as_mut()
+                .filter(|job| job.name == name && job.operation == "update")
+            {
+                match result {
+                    Ok(Ok(message)) => {
+                        job.status = "completed";
+                        job.message = message;
+                    }
+                    Ok(Err(error)) => {
+                        tracing::warn!(engine = %name, %error, "Engine update failed");
+                        job.status = "failed";
+                        job.message = "Engine update failed; check Infer logs".into();
+                    }
+                    Err(error) => {
+                        tracing::error!(engine = %name, %error, "Engine update task failed");
+                        job.status = "failed";
+                        job.message = "Engine update failed; check Infer logs".into();
                     }
                 }
             }
@@ -887,6 +1031,7 @@ mod tests {
         );
         *jobs.lock().unwrap() = Some(EngineInstallation {
             name: "needle".into(),
+            operation: "install",
             status: "running",
             message: "Installing engine".into(),
         });
@@ -908,6 +1053,68 @@ mod tests {
                 .status(),
             StatusCode::CONFLICT
         );
+        let update_request = |method: &str, authorized: bool, name: &str| {
+            let builder = Request::builder()
+                .method(method)
+                .uri(format!("/v1/management/engines/{name}/update"));
+            let builder = if authorized {
+                builder.header("authorization", "Bearer test-key")
+            } else {
+                builder
+            };
+            builder.body(Body::empty()).unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(update_request("POST", false, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(update_request("POST", true, "encoder"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(update_request("GET", true, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        *jobs.lock().unwrap() = Some(EngineInstallation {
+            name: "needle".into(),
+            operation: "update",
+            status: "running",
+            message: "Updating engine".into(),
+        });
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(update_request("GET", true, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(installation_request("GET", true, "needle"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
         let response = router.oneshot(request(true)).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body: serde_json::Value =
@@ -918,6 +1125,96 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|item| item["name"] == "encoder" && item["installed"] == true)
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an isolated RUNE_HOME and network access"]
+    async fn managed_needle_update_reports_current_without_replacing_binary() {
+        let root = crate::engine_inventory::managed_root().unwrap();
+        let config = crate::config::ModelRegistry::new();
+        let inference = Arc::new(crate::inference::AppState::new(&config));
+        let installer_state = inference.clone();
+        tokio::task::spawn_blocking(move || {
+            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (events, receiver) = std::sync::mpsc::channel();
+            drop(receiver);
+            crate::inference::engines::update::install_engine(
+                installer_state,
+                stop,
+                crate::config::EngineKind::Needle,
+                events,
+            )
+            .unwrap();
+        })
+        .await
+        .unwrap();
+        let binary = root.join("bin/needle").join(if cfg!(windows) {
+            "needle.exe"
+        } else {
+            "needle"
+        });
+        let before = crate::inference::engines::download::file_sha256(&binary).unwrap();
+        let runtime = crate::inference::engines::registry::needle_runtime().unwrap();
+        let (events, receiver) = std::sync::mpsc::channel();
+        drop(receiver);
+        let current = crate::inference::engines::update::update_needle(
+            inference.clone(),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            format!("revision {}", runtime.revision),
+            events,
+        )
+        .unwrap();
+        assert!(current.contains("up to date"));
+        let mut config = config;
+        config.server.api_key = Some("test-key".into());
+        let mut state = AppState::new(
+            inference,
+            Arc::new(crate::proxy::ProxyService::new(&config)),
+            config,
+        );
+        state.management = Some(Arc::new(CatalogStore::new(
+            "unused-server".into(),
+            "unused-catalog".into(),
+        )));
+        let router = crate::api::create_router(state);
+        let request = |method| {
+            Request::builder()
+                .method(method)
+                .uri("/v1/management/engines/needle/update")
+                .header("authorization", "Bearer test-key")
+                .body(Body::empty())
+                .unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request("POST"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::ACCEPTED
+        );
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let response = router.clone().oneshot(request("GET")).await.unwrap();
+            let body: serde_json::Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), 32768).await.unwrap())
+                    .unwrap();
+            if body["status"] != "running" {
+                assert_eq!(body["status"], "completed", "{body}");
+                assert!(
+                    body["message"].as_str().unwrap().contains("up to date"),
+                    "{body}"
+                );
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "Update timed out");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert_eq!(
+            crate::inference::engines::download::file_sha256(&binary).unwrap(),
+            before
         );
     }
 
