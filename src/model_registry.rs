@@ -570,6 +570,27 @@ pub(crate) fn regular_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn model_install_lock(model_dir: &Path) -> Result<std::fs::File> {
+    let lock_path = model_dir.join(".rune-model-install.lock");
+    if let Ok(meta) = std::fs::symlink_metadata(&lock_path) {
+        ensure!(
+            meta.is_file() && !meta.file_type().is_symlink(),
+            "Model installation lock is not a regular file"
+        );
+    }
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .context("Cannot open model installation lock")?;
+    lock.try_lock().map_err(|_| {
+        anyhow::anyhow!("Another installation is already using this model directory")
+    })?;
+    Ok(lock)
+}
+
 pub(crate) fn read_regular(path: &Path) -> Result<Option<Vec<u8>>> {
     match std::fs::symlink_metadata(path) {
         Ok(meta) => {
@@ -747,23 +768,7 @@ fn install_with(
     if version.files.iter().any(encoder_directory_file) {
         regular_dir(&encoder_dir)?;
     }
-    let lock_path = model_dir.join(".rune-model-install.lock");
-    if let Ok(meta) = std::fs::symlink_metadata(&lock_path) {
-        ensure!(
-            meta.is_file() && !meta.file_type().is_symlink(),
-            "Model installation lock is not a regular file"
-        );
-    }
-    let lock = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&lock_path)
-        .context("Cannot open model installation lock")?;
-    lock.try_lock().map_err(|_| {
-        anyhow::anyhow!("Another installation is already using this model directory")
-    })?;
+    let _lock = model_install_lock(&model_dir)?;
     let dest = model_dir.join(&file.filename);
     let server_before = read_regular(server_path)?;
     if server_before.is_none() && catalog_before.is_none() {

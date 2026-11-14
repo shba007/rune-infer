@@ -168,6 +168,7 @@ pub(super) fn stage(
         target.push(part);
         crate::model_registry::regular_dir(&target).map_err(|e| e.to_string())?;
     }
+    let _lock = crate::model_registry::model_install_lock(&target).map_err(|e| e.to_string())?;
     for (file, source) in matched {
         if cancel.load(Ordering::Relaxed) {
             return Err("Import cancelled".into());
@@ -276,6 +277,20 @@ mod tests {
         std::fs::write(source.join("model.gguf"), b"GGUFxxx").unwrap();
         stage(&target, &model, &source, &cancel).unwrap();
         assert_eq!(std::fs::read(&staged).unwrap(), b"GGUFxxx");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn import_respects_model_installation_lock() {
+        let (root, model) = fixture();
+        let source = root.join("source");
+        let target = root.join("home");
+        let folder = target.join("models/author/family");
+        std::fs::create_dir_all(&folder).unwrap();
+        let lock = crate::model_registry::model_install_lock(&folder).unwrap();
+        assert!(stage(&target, &model, &source, &AtomicBool::new(false)).is_err());
+        drop(lock);
+        stage(&target, &model, &source, &AtomicBool::new(false)).unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
 
