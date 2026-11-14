@@ -3,6 +3,8 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
+mod import;
+pub use import::{Found, scan};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -241,6 +243,13 @@ pub struct Downloads {
     state: Arc<Mutex<Status>>,
     cancel: Mutex<Option<Arc<AtomicBool>>>,
 }
+
+pub(crate) struct DownloadSelection {
+    pub(crate) id: String,
+    pub(crate) revision: String,
+    pub(crate) manifest: String,
+    pub(crate) directory: Option<std::path::PathBuf>,
+}
 impl Downloads {
     pub fn status(&self) -> Status {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -274,8 +283,42 @@ impl Downloads {
         revision: String,
         reviewed_manifest: String,
     ) -> Result<(), String> {
-        if !root.is_absolute() {
-            return Err("Infer home must be absolute".into());
+        let server = root.join("config/server.json");
+        let catalog = root.join("config/catalog.json");
+        self.start_for_server(
+            root,
+            server,
+            catalog,
+            DownloadSelection {
+                id,
+                revision,
+                manifest: reviewed_manifest,
+                directory: None,
+            },
+        )
+    }
+
+    pub(crate) fn start_for_server(
+        &self,
+        root: std::path::PathBuf,
+        server: std::path::PathBuf,
+        catalog: std::path::PathBuf,
+        selection: DownloadSelection,
+    ) -> Result<(), String> {
+        if !root.is_absolute() || !server.is_absolute() || !catalog.is_absolute() {
+            return Err("Infer home and configuration paths must be absolute".into());
+        }
+        let DownloadSelection {
+            id,
+            revision,
+            manifest: reviewed_manifest,
+            directory,
+        } = selection;
+        if directory
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute() || !path.is_dir())
+        {
+            return Err("Choose an existing folder on the Infer server".into());
         }
         let model = crate::model_registry::bundled()
             .map_err(|e| e.to_string())?
@@ -298,20 +341,45 @@ impl Downloads {
                     .into(),
             );
         }
+        self.start_selected(root, server, catalog, model, directory)
+    }
+
+    fn start_selected(
+        &self,
+        root: std::path::PathBuf,
+        server: std::path::PathBuf,
+        catalog: std::path::PathBuf,
+        model: crate::model_registry::LocalModel,
+        directory: Option<std::path::PathBuf>,
+    ) -> Result<(), String> {
+        let id = model.id.clone();
         let mut slot = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
         if slot.is_some() {
-            return Err("A model download is already in progress".into());
+            if matches!(
+                self.status().phase.as_str(),
+                "complete" | "failed" | "cancelled"
+            ) {
+                slot.take();
+            } else {
+                return Err("A model download is already in progress".into());
+            }
         }
         let cancel = Arc::new(AtomicBool::new(false));
         *slot = Some(cancel.clone());
         *self.state.lock().unwrap_or_else(|e| e.into_inner()) = Status {
             phase: "preparing".into(),
             model: Some(id),
+            filename: directory
+                .as_ref()
+                .map(|_| "Checking and copying your model files".into()),
             ..Status::default()
         };
         let state = self.state.clone();
         std::thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if let Some(directory) = directory {
+                    import::stage(&root, &model, &directory, &cancel)?;
+                }
                 let report = |state: Arc<Mutex<Status>>| {
                     move |progress: crate::inference::engines::download::DownloadProgress| {
                         let mut status = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -324,8 +392,8 @@ impl Downloads {
                 crate::model_registry::install_observed(
                     &model,
                     &root,
-                    &root.join("config/server.json"),
-                    &root.join("config/catalog.json"),
+                    &server,
+                    &catalog,
                     cancel.clone(),
                     report(state.clone()),
                 )
@@ -340,11 +408,14 @@ impl Downloads {
                     status.downloaded = 0;
                     status.total = None;
                 }
-                crate::embedding::install_llama_observed(
-                    &root,
-                    cancel.clone(),
-                    report(state.clone()),
-                )
+                crate::inference::engines::download::with_install_bin(root.join("bin"), || {
+                    crate::inference::engines::download::with_cancellation(cancel.clone(), || {
+                        crate::inference::engines::download::with_progress(
+                            report(state.clone()),
+                            crate::setup::install_llama_server,
+                        )
+                    })
+                })
                 .map_err(|e| format!("Engine preparation failed: {e}"))?;
                 Ok::<(), String>(())
             }))
@@ -364,9 +435,64 @@ impl Downloads {
     }
 }
 
+impl Drop for Downloads {
+    fn drop(&mut self) {
+        self.cancel();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropping_download_manager_cancels_active_work() {
+        let downloads = Downloads::default();
+        let token = Arc::new(AtomicBool::new(false));
+        *downloads.cancel.lock().unwrap() = Some(token.clone());
+        drop(downloads);
+        assert!(token.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn failed_import_releases_the_job_for_a_retry() {
+        let root = std::env::temp_dir().join(format!(
+            "infer-import-job-{}",
+            crate::setup::generate_api_key()
+        ));
+        std::fs::create_dir_all(root.join("empty-source")).unwrap();
+        let candidate = managed_candidates(false, None, false, None)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let downloads = Downloads::default();
+        for _ in 0..2 {
+            downloads
+                .start_for_server(
+                    root.clone(),
+                    root.join("config/server.json"),
+                    root.join("config/catalog.json"),
+                    DownloadSelection {
+                        id: candidate.id.clone(),
+                        revision: candidate.revision.clone(),
+                        manifest: candidate.manifest.clone(),
+                        directory: Some(root.join("empty-source")),
+                    },
+                )
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                if downloads.status().phase == "failed" {
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        drop(downloads);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn managed_candidates_come_from_the_registry_and_computer_use_requires_capabilities() {

@@ -34,6 +34,109 @@ pub(super) struct CatalogDocument {
 type Reply<T> = Result<T, (StatusCode, &'static str)>;
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ModelDownloadRequest {
+    id: String,
+    revision: String,
+    manifest: String,
+    #[serde(default)]
+    directory: Option<PathBuf>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ModelScanRequest {
+    directory: PathBuf,
+}
+
+pub(super) async fn scan_models(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ModelScanRequest>,
+) -> Reply<Json<Vec<crate::model_management::Found>>> {
+    store(&state)?;
+    let models =
+        tokio::task::spawn_blocking(move || crate::model_management::scan(&request.directory))
+            .await
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Model scan unavailable"))?
+            .map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Choose an existing folder on the Infer server",
+                )
+            })?;
+    Ok(Json(models))
+}
+
+pub(super) async fn model_download_status(
+    State(state): State<Arc<AppState>>,
+) -> Reply<Json<crate::model_management::Status>> {
+    store(&state)?;
+    Ok(Json(state.model_downloads.status()))
+}
+
+pub(super) async fn start_model_download(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ModelDownloadRequest>,
+) -> Reply<(StatusCode, Json<crate::model_management::Status>)> {
+    let paths = store(&state)?;
+    let root = crate::engine_inventory::managed_root().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Cannot resolve Infer model storage",
+        )
+    })?;
+    let _guard = state.management_operation.lock().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Infer management is unavailable",
+        )
+    })?;
+    if state
+        .engine_installation
+        .lock()
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Engine operation status unavailable",
+            )
+        })?
+        .as_ref()
+        .is_some_and(|job| job.status == "running")
+    {
+        return Err((
+            StatusCode::CONFLICT,
+            "An engine operation is already running",
+        ));
+    }
+    let result = state.model_downloads.start_for_server(
+        root,
+        paths.server.clone(),
+        paths.catalog.clone(),
+        crate::model_management::DownloadSelection {
+            id: request.id,
+            revision: request.revision,
+            manifest: request.manifest,
+            directory: request.directory,
+        },
+    );
+    result.map_err(|_| {
+        (
+            StatusCode::CONFLICT,
+            "Model changed, is unavailable, or another download is in progress",
+        )
+    })?;
+    Ok((StatusCode::ACCEPTED, Json(state.model_downloads.status())))
+}
+
+pub(super) async fn cancel_model_download(
+    State(state): State<Arc<AppState>>,
+) -> Reply<Json<crate::model_management::Status>> {
+    store(&state)?;
+    state.model_downloads.cancel();
+    Ok(Json(state.model_downloads.status()))
+}
+
+#[derive(Deserialize)]
 pub(super) struct CandidateQuery {
     #[serde(default)]
     purpose: Option<String>,
@@ -207,6 +310,18 @@ pub(super) async fn start_engine_installation(
         message: "Installing engine".into(),
     };
     {
+        let _guard = state.management_operation.lock().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Infer management is unavailable",
+            )
+        })?;
+        if matches!(
+            state.model_downloads.status().phase.as_str(),
+            "preparing" | "downloading" | "engine"
+        ) {
+            return Err((StatusCode::CONFLICT, "A model operation is already running"));
+        }
         let mut current = state.engine_installation.lock().map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -326,6 +441,18 @@ pub(super) async fn start_engine_update(
         message: "Checking and updating engine".into(),
     };
     {
+        let _guard = state.management_operation.lock().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Infer management is unavailable",
+            )
+        })?;
+        if matches!(
+            state.model_downloads.status().phase.as_str(),
+            "preparing" | "downloading" | "engine"
+        ) {
+            return Err((StatusCode::CONFLICT, "A model operation is already running"));
+        }
         let mut current = state.engine_installation.lock().map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -970,6 +1097,123 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_slice(&to_bytes(response.into_body(), 8192).await.unwrap()).unwrap();
         assert_eq!(body, serde_json::json!({"roles":{"voice":"first"}}));
+    }
+
+    #[tokio::test]
+    async fn model_download_and_scan_require_auth_and_reject_invalid_requests() {
+        let mut config = crate::config::ModelRegistry::new();
+        config.server.api_key = Some("test-key".into());
+        let mut state = AppState::new(
+            Arc::new(crate::inference::AppState::new(&config)),
+            Arc::new(crate::proxy::ProxyService::new(&config)),
+            config,
+        );
+        state.management = Some(Arc::new(CatalogStore::new(
+            "unused-server".into(),
+            "unused-catalog".into(),
+        )));
+        let jobs = state.engine_installation.clone();
+        let router = crate::api::create_router(state);
+        let request = |method: &str, path: &str, authorized: bool, body: &str| {
+            let builder = Request::builder()
+                .method(method)
+                .uri(path)
+                .header("content-type", "application/json");
+            let builder = if authorized {
+                builder.header("authorization", "Bearer test-key")
+            } else {
+                builder
+            };
+            builder.body(Body::from(body.to_owned())).unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request("GET", "/v1/management/model-download", false, ""))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request(
+                    "POST",
+                    "/v1/management/model-scan",
+                    false,
+                    r#"{"directory":"relative"}"#
+                ))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request(
+                    "POST",
+                    "/v1/management/model-scan",
+                    true,
+                    r#"{"directory":"relative"}"#
+                ))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request(
+                    "POST",
+                    "/v1/management/model-download",
+                    true,
+                    r#"{"id":"missing","revision":"x","manifest":"x"}"#
+                ))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::CONFLICT
+        );
+        let response = router
+            .clone()
+            .oneshot(request("GET", "/v1/management/model-download", true, ""))
+            .await
+            .unwrap();
+        let status: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+        assert_eq!(status["phase"], "");
+        *jobs.lock().unwrap() = Some(EngineInstallation {
+            name: "needle".into(),
+            operation: "update",
+            status: "running",
+            message: "Updating".into(),
+        });
+        let blocked = router
+            .clone()
+            .oneshot(request(
+                "POST",
+                "/v1/management/model-download",
+                true,
+                r#"{"id":"missing","revision":"x","manifest":"x"}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(blocked.status(), StatusCode::CONFLICT);
+        assert!(
+            String::from_utf8_lossy(&to_bytes(blocked.into_body(), 1024).await.unwrap())
+                .contains("engine operation")
+        );
+        assert_eq!(
+            router
+                .oneshot(request("DELETE", "/v1/management/model-download", true, ""))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
     }
 
     #[tokio::test]

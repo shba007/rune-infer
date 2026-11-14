@@ -308,7 +308,7 @@ pub(crate) fn valid_model_id(id: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'.'))
 }
 
-fn validate_install_path<'a>(path: &'a str, filename: &str) -> Result<Vec<&'a str>> {
+pub(crate) fn validate_install_path<'a>(path: &'a str, filename: &str) -> Result<Vec<&'a str>> {
     let parts: Vec<_> = path.split('/').collect();
     ensure!(
         !parts.is_empty() && parts.len() <= 32 && parts.last() == Some(&filename),

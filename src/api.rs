@@ -73,6 +73,8 @@ pub struct AppState {
     pub concurrency: Arc<RequestConcurrencyState>,
     pub(crate) management: Option<Arc<management::CatalogStore>>,
     pub(crate) engine_installation: Arc<std::sync::Mutex<Option<management::EngineInstallation>>>,
+    pub(crate) model_downloads: Arc<crate::model_management::Downloads>,
+    pub(crate) management_operation: Arc<std::sync::Mutex<()>>,
 }
 
 impl AppState {
@@ -88,6 +90,8 @@ impl AppState {
             concurrency: Arc::new(RequestConcurrencyState::default()),
             management: None,
             engine_installation: Arc::new(std::sync::Mutex::new(None)),
+            model_downloads: Arc::new(crate::model_management::Downloads::default()),
+            management_operation: Arc::new(std::sync::Mutex::new(())),
         }
     }
 
@@ -172,6 +176,17 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/management/model-candidates",
             get(management::model_candidates),
+        )
+        .route(
+            "/management/model-scan",
+            post(management::scan_models).layer(DefaultBodyLimit::max(16_384)),
+        )
+        .route(
+            "/management/model-download",
+            get(management::model_download_status)
+                .post(management::start_model_download)
+                .delete(management::cancel_model_download)
+                .layer(DefaultBodyLimit::max(1_100_000)),
         )
         .route("/management/engines", get(management::engines))
         .route(
