@@ -279,8 +279,11 @@ impl SdServerEngine {
         if let Some(ref llm) = model.text_encoder_path {
             if Path::new(llm).exists() {
                 tracing::info!("[SdServerEngine] Attaching text encoder / LLM: {}", llm);
-                // Wan-style video models encode text with UMT5 (--t5xxl); DiT image models use an LLM.
-                let flag = if model.modality == crate::config::Modality::VideoGeneration {
+                // Wan-style video models encode text with UMT5 (--t5xxl); DiT image models and
+                // LTX-2 (Gemma 3 plus connectors) use an LLM.
+                let flag = if model.modality == crate::config::Modality::VideoGeneration
+                    && model.embeddings_connectors_path.is_none()
+                {
                     "--t5xxl"
                 } else {
                     "--llm"
@@ -295,6 +298,22 @@ impl SdServerEngine {
             if Path::new(vae).exists() {
                 tracing::info!("[SdServerEngine] Attaching VAE: {}", vae);
                 cmd.arg("--vae").arg(vae);
+            }
+        }
+
+        for (flag, path, label) in [
+            (
+                "--embeddings-connectors",
+                &model.embeddings_connectors_path,
+                "LTX connectors",
+            ),
+            ("--audio-vae", &model.audio_vae_path, "LTX audio VAE"),
+        ] {
+            if let Some(path) = path
+                && Path::new(path).exists()
+            {
+                tracing::info!("[SdServerEngine] Attaching {label}: {path}");
+                cmd.arg(flag).arg(path);
             }
         }
 

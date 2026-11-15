@@ -69,6 +69,7 @@ fn supports_computer_use(catalog: &crate::model_registry::CatalogDefaults) -> bo
         catalog
             .capabilities
             .iter()
+            .flatten()
             .any(|cap| cap.eq_ignore_ascii_case("vision"))
     } else {
         catalog
@@ -84,7 +85,7 @@ fn supports_computer_use(catalog: &crate::model_registry::CatalogDefaults) -> bo
                 .iter()
                 .any(|proof| proof.engine == crate::config::EngineKind::LlamaServer)
     } else {
-        catalog.capabilities.iter().any(|cap| {
+        catalog.capabilities.iter().flatten().any(|cap| {
             ["tool call", "tool_calls", "tools"]
                 .iter()
                 .any(|alias| cap.eq_ignore_ascii_case(alias))

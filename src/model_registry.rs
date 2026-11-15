@@ -55,12 +55,19 @@ pub struct LocalModel {
     pub versions: BTreeMap<String, Version>,
     #[serde(default)]
     pub catalog: Option<CatalogDefaults>,
+    /// Why this Infer build cannot install the model. Only set on entries from
+    /// the `*_listing` functions; installable lists never contain them.
+    #[serde(skip)]
+    pub unsupported: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogDefaults {
     pub tasks: Vec<String>,
-    pub capabilities: Vec<String>,
+    /// Descriptive tags for the catalog entry. Omit to reuse the model's own
+    /// `capabilities` instead of repeating them; `[]` means none.
+    #[serde(default)]
+    pub capabilities: Option<Vec<String>>,
     pub max_context_length: Option<u32>,
     #[serde(default)]
     pub sampling: Option<serde_json::Value>,
@@ -77,6 +84,9 @@ pub struct CatalogDefaults {
     pub structured_output_support: Option<crate::audio_operations::OperationSupport>,
     #[serde(default)]
     pub image_reference_checks: Vec<crate::config::ImageReferenceVerification>,
+    /// Published benchmark figures, copied into the catalog entry on install.
+    #[serde(default)]
+    pub benchmarks: Option<serde_json::Value>,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -109,6 +119,18 @@ pub fn fetch() -> Result<Vec<LocalModel>> {
     parse(&fetch_document()?)
 }
 
+/// Every registry entry in file order, including those this build cannot
+/// install (marked by [`LocalModel::unsupported`]), so a browser can list them.
+pub fn fetch_listing() -> Result<Vec<LocalModel>> {
+    parse_listing(&fetch_document()?)
+}
+
+/// [`fetch_listing`] for an explicitly selected local registry file.
+pub fn load_listing_from_path(path: &Path) -> Result<Vec<LocalModel>> {
+    let body = read_registry_file(path)?;
+    parse_listing(&body).with_context(|| format!("Invalid model registry {}", path.display()))
+}
+
 /// The registry reviewed and shipped with this Infer build. Hosts can use this
 /// when model selection must match the exact Infer version they have bundled.
 pub fn bundled() -> Result<Vec<LocalModel>> {
@@ -117,6 +139,11 @@ pub fn bundled() -> Result<Vec<LocalModel>> {
 
 /// Load model metadata from an explicitly selected local registry file.
 pub fn load_from_path(path: &Path) -> Result<Vec<LocalModel>> {
+    let body = read_registry_file(path)?;
+    parse(&body).with_context(|| format!("Invalid model registry {}", path.display()))
+}
+
+fn read_registry_file(path: &Path) -> Result<Vec<u8>> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("Cannot open model registry {}", path.display()))?;
     let mut body = Vec::new();
@@ -127,7 +154,7 @@ pub fn load_from_path(path: &Path) -> Result<Vec<LocalModel>> {
         body.len() as u64 <= LIMIT,
         "Model registry exceeds size limit"
     );
-    parse(&body).with_context(|| format!("Invalid model registry {}", path.display()))
+    Ok(body)
 }
 
 pub(crate) fn fetch_document() -> Result<Vec<u8>> {
@@ -154,6 +181,8 @@ pub(crate) fn fetch_document() -> Result<Vec<u8>> {
 struct Parsed {
     models: Vec<LocalModel>,
     skipped: Vec<(String, String)>,
+    /// Every entry that deserialized, installable or not, in file order.
+    listed: Vec<LocalModel>,
 }
 
 fn parse_entries(bytes: &[u8]) -> Result<Parsed> {
@@ -173,6 +202,7 @@ fn parse_entries(bytes: &[u8]) -> Result<Parsed> {
     let mut parsed = Parsed {
         models: Vec::new(),
         skipped: Vec::new(),
+        listed: Vec::new(),
     };
     for entry in registry.local_models {
         let id = entry
@@ -180,15 +210,40 @@ fn parse_entries(bytes: &[u8]) -> Result<Parsed> {
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        match serde_json::from_value::<LocalModel>(entry)
-            .map_err(anyhow::Error::from)
-            .and_then(|model| validate_model(&model).map(|()| model))
-        {
-            Ok(model) => parsed.models.push(model),
-            Err(error) => parsed.skipped.push((id, format!("{error:#}"))),
+        let model = match serde_json::from_value::<LocalModel>(entry) {
+            Ok(mut model) => {
+                if let Some(catalog) = model.catalog.as_mut()
+                    && catalog.capabilities.is_none()
+                {
+                    catalog.capabilities = Some(model.capabilities.clone());
+                }
+                model
+            }
+            Err(error) => {
+                parsed.skipped.push((id, format!("{error:#}")));
+                continue;
+            }
+        };
+        match validate_model(&model) {
+            Ok(()) => {
+                parsed.listed.push(model.clone());
+                parsed.models.push(model);
+            }
+            Err(error) => {
+                let reason = format!("{error:#}");
+                parsed.skipped.push((id, reason.clone()));
+                parsed.listed.push(LocalModel {
+                    unsupported: Some(reason),
+                    ..model
+                });
+            }
         }
     }
     Ok(parsed)
+}
+
+fn parse_listing(bytes: &[u8]) -> Result<Vec<LocalModel>> {
+    Ok(parse_entries(bytes)?.listed)
 }
 
 /// Loads every entry that passes validation. Entries this Infer build cannot
@@ -467,7 +522,12 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
             (if image {
                 matches!(
                     file.id.as_str(),
-                    "model" | "text_encoder" | "vae" | "tokenizer"
+                    "model"
+                        | "text_encoder"
+                        | "vae"
+                        | "tokenizer"
+                        | "embeddings_connectors"
+                        | "audio_vae"
                 ) || encoder_directory_file(file)
             } else {
                 matches!(file.id.as_str(), "model" | "projector")
@@ -478,7 +538,8 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
             !file.filename.is_empty()
                 && (match file.id.as_str() {
                     "tokenizer" => file.filename.ends_with(".json"),
-                    "vae" => file.filename.ends_with(".safetensors"),
+                    "vae" | "audio_vae" | "embeddings_connectors" =>
+                        file.filename.ends_with(".safetensors"),
                     "encoder_config" => file.filename == "config.json",
                     "encoder_generation_config" => file.filename == "generation_config.json",
                     "encoder_index" => file.filename == "model.safetensors.index.json",
@@ -878,6 +939,8 @@ fn install_with(
             ("text_encoder", "text_encoder_path"),
             ("vae", "vae_path"),
             ("tokenizer", "tokenizer_path"),
+            ("embeddings_connectors", "embeddings_connectors_path"),
+            ("audio_vae", "audio_vae_path"),
         ] {
             if let Some(companion) = version.files.iter().find(|file| file.id == role) {
                 let expected = model_dir.join(&companion.filename);
@@ -931,7 +994,8 @@ fn install_with(
             [a] if a == "Speech Generation" => defaults.tasks == ["text-to-audio"],
             [a] if a == "Portrait Matting" => {
                 defaults.tasks == ["image-to-matting"]
-                    && defaults.capabilities == ["Portrait Matting"]
+                    && defaults.capabilities.as_deref()
+                        == Some(&["Portrait Matting".to_string()][..])
             }
             [a, b, c, d] if a == "Chat" && b == "Vision" && c == "Audio" && d == "Video" => {
                 projector.is_some()
@@ -971,11 +1035,18 @@ fn install_with(
                 && !defaults.extra.contains_key("mtp_path")
                 && !defaults.extra.contains_key("text_encoder_path")
                 && !defaults.extra.contains_key("vae_path")
+                && !defaults.extra.contains_key("embeddings_connectors_path")
+                && !defaults.extra.contains_key("audio_vae_path")
                 && !defaults.extra.contains_key("tokenizer_path"),
             "Catalog paths must be provided by verified files"
         );
         entry["tasks"] = serde_json::to_value(&defaults.tasks)?;
-        entry["capabilities"] = serde_json::to_value(&defaults.capabilities)?;
+        entry["capabilities"] = serde_json::to_value(
+            defaults
+                .capabilities
+                .as_ref()
+                .unwrap_or(&model.capabilities),
+        )?;
         entry["max_context_length"] = serde_json::to_value(defaults.max_context_length)?;
         if let Some(sampling) = &defaults.sampling {
             entry["sampling"] = sampling.clone();
@@ -1007,6 +1078,9 @@ fn install_with(
         }
         if !defaults.extra.is_empty() {
             entry["extra"] = serde_json::Value::Object(defaults.extra.clone());
+        }
+        if let Some(benchmarks) = &defaults.benchmarks {
+            entry["benchmarks"] = benchmarks.clone();
         }
     }
     if let Some(projector) = projector {

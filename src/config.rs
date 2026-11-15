@@ -791,6 +791,10 @@ pub struct ModelConfig {
     pub text_encoder_path: Option<String>,
     pub tokenizer_path: Option<String>,
     pub llm_vision_path: Option<String>,
+    /// LTX-2 text embedding connectors (`--embeddings-connectors`).
+    pub embeddings_connectors_path: Option<String>,
+    /// LTX-2 audio VAE (`--audio-vae`).
+    pub audio_vae_path: Option<String>,
     pub default_steps: Option<u32>,
     pub default_cfg_scale: Option<f32>,
     pub default_sample_method: Option<String>,

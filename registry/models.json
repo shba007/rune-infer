@@ -400,9 +400,6 @@
           "gpu_layers": 99,
           "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
         },
-        "engines": [
-          "llama-server"
-        ],
         "extra": {
           "max_resolution": "4096×4096 (Dynamic 4K)"
         }
@@ -474,9 +471,6 @@
           "gpu_layers": 99,
           "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
         },
-        "engines": [
-          "llama-server"
-        ],
         "extra": {
           "max_resolution": "4096×4096 (Dynamic 4K)"
         }
@@ -546,9 +540,6 @@
           "gpu_layers": 99,
           "args": ""
         },
-        "engines": [
-          "llama-server"
-        ],
         "extra": {
           "max_resolution": "3840×2160 (4K UHD)"
         }
@@ -615,9 +606,6 @@
           "gpu_layers": 99,
           "args": ""
         },
-        "engines": [
-          "llama-server"
-        ],
         "extra": {}
       },
       "latest": "e3335e20fc13b04618c821f9b99d1f8ef5cd103d",
@@ -673,9 +661,6 @@
           "gpu_layers": 99,
           "args": ""
         },
-        "engines": [
-          "llama-server"
-        ],
         "extra": {},
         "audio_operations": {
           "transcription": {
@@ -826,9 +811,6 @@
           "gpu_layers": 99,
           "args": ""
         },
-        "engines": [
-          "nemo-speech"
-        ],
         "audio_operations": {
           "transcription": {
             "status": "supported",
@@ -886,9 +868,6 @@
           "gpu_layers": 99,
           "args": "--seed 42"
         },
-        "engines": [
-          "audio-cpp"
-        ],
         "audio_operations": {
           "speech_generation": {
             "status": "supported",
@@ -946,9 +925,6 @@
           "gpu_layers": 99,
           "args": "--diffusion-fa --params-backend disk"
         },
-        "engines": [
-          "sd-server"
-        ],
         "extra": {
           "default_cfg_scale": 4,
           "default_sample_method": "euler",
@@ -1032,9 +1008,6 @@
           "gpu_layers": 99,
           "args": "--diffusion-fa --params-backend disk"
         },
-        "engines": [
-          "sd-server"
-        ],
         "extra": {
           "default_cfg_scale": 4,
           "default_sample_method": "euler",
@@ -1097,9 +1070,6 @@
           "gpu_layers": 99,
           "args": "--diffusion-fa --params-backend disk --flow-shift 5"
         },
-        "engines": [
-          "sd-server"
-        ],
         "extra": {
           "default_cfg_scale": 3,
           "default_sample_method": "euler",
@@ -1169,9 +1139,6 @@
           "gpu_layers": 99,
           "args": "--diffusion-fa --params-backend disk --model-args qwen_image_zero_cond_t=true"
         },
-        "engines": [
-          "sd-server"
-        ],
         "extra": {
           "default_cfg_scale": 5,
           "default_sample_method": "euler",
@@ -1351,10 +1318,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": "-fa on"
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       },
       "latest": "c34254d35dd0f02af73f3e804abfcbc24cb0bb8a",
       "versions": {
@@ -1413,10 +1377,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": "-fa on"
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       },
       "latest": "a007835baf4bfb0211a102e289194bd91e5f317a",
       "versions": {
@@ -1473,10 +1434,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": "-fa on"
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       },
       "latest": "045834b6864fb5cee8e9c72e47ef4c19140ce932",
       "versions": {
@@ -1537,9 +1495,6 @@
           "gpu_layers": 99,
           "args": "-fa on"
         },
-        "engines": [
-          "llama-server"
-        ],
         "tool_call_support": {
           "status": "supported",
           "verified_with": [
@@ -1621,10 +1576,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0"
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       },
       "latest": "db25077c33951fe163b42986fba0132e279872a2",
       "versions": {
@@ -1678,10 +1630,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": "--repeat-penalty 1.1"
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       },
       "latest": "fa4368c4338a022b713374116ea8945ae416ee93",
       "versions": {
@@ -1724,9 +1673,6 @@
           "gpu_layers": 99,
           "args": ""
         },
-        "engines": [
-          "audio-cpp"
-        ],
         "audio_operations": {
           "speech_generation": {
             "status": "supported",
@@ -1796,9 +1742,6 @@
           "gpu_layers": 99,
           "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
         },
-        "engines": [
-          "llama-server-prism"
-        ],
         "extra": {
           "max_resolution": "4096×4096 (Dynamic 4K)"
         }
@@ -1842,9 +1785,6 @@
         "tasks": [
           "image-to-matting"
         ],
-        "capabilities": [
-          "Portrait Matting"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -1852,10 +1792,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "onnx"
-        ]
+        }
       },
       "latest": "v1",
       "versions": {
@@ -1931,10 +1868,7 @@
         "sampling": {
           "temperature": 0.2,
           "max_tokens": 4096
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       }
     },
     {
@@ -1988,9 +1922,6 @@
           "gpu_layers": 99,
           "args": "--vae D:/Models/gguf/ace_1.5_vae.safetensors"
         },
-        "engines": [
-          "sd-server"
-        ],
         "extra": {
           "default_cfg_scale": 2,
           "default_sample_method": "euler",
@@ -2041,10 +1972,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "audio-cpp"
-        ]
+        }
       }
     },
     {
@@ -3008,10 +2936,6 @@
         "tasks": [
           "audio-to-text"
         ],
-        "capabilities": [
-          "Transcription",
-          "Audio"
-        ],
         "max_context_length": null,
         "local": {
           "params": 769000000,
@@ -3120,9 +3044,6 @@
         "tasks": [
           "text-to-embedding"
         ],
-        "capabilities": [
-          "Embedding"
-        ],
         "max_context_length": null,
         "local": {
           "params": 33000000,
@@ -3186,10 +3107,7 @@
           "context_length": 8192,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       }
     },
     {
@@ -3241,10 +3159,7 @@
         "sampling": {
           "temperature": 0.7,
           "max_tokens": 4096
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       }
     },
     {
@@ -3533,10 +3448,6 @@
         "tasks": [
           "text-to-audio"
         ],
-        "capabilities": [
-          "Speech Generation",
-          "Audio"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -3544,10 +3455,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "python"
-        ]
+        }
       }
     },
     {
@@ -3560,8 +3468,7 @@
       "engine": "sd-server",
       "format": "gguf",
       "capabilities": [
-        "Text-to-Image",
-        "Fast Generation"
+        "Image Generation"
       ],
       "catalog": {
         "tasks": [
@@ -3583,9 +3490,6 @@
           "gpu_layers": 99,
           "args": "--diffusion-fa"
         },
-        "engines": [
-          "sd-server"
-        ],
         "extra": {
           "default_steps": 8,
           "default_cfg_scale": 1,
@@ -3726,10 +3630,6 @@
         "tasks": [
           "text-to-audio"
         ],
-        "capabilities": [
-          "Audio",
-          "Speech Generation"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -3737,10 +3637,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "audio-cpp"
-        ]
+        }
       }
     },
     {
@@ -3788,9 +3685,6 @@
         "tasks": [
           "audio-to-audio"
         ],
-        "capabilities": [
-          "Audio"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -3798,10 +3692,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "transformers"
-        ]
+        }
       }
     },
     {
@@ -3906,10 +3797,6 @@
         "tasks": [
           "text-to-audio"
         ],
-        "capabilities": [
-          "Speech Generation",
-          "Audio"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -3917,10 +3804,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       }
     },
     {
@@ -4004,10 +3888,6 @@
         "tasks": [
           "audio-to-text"
         ],
-        "capabilities": [
-          "Transcription",
-          "Audio"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -4015,10 +3895,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "audio-cpp"
-        ]
+        }
       }
     },
     {
@@ -4031,11 +3908,7 @@
       "engine": "llama-server",
       "format": "gguf",
       "capabilities": [
-        "Reasoning",
-        "Code Generation",
-        "Agentic Tasks",
-        "Tool Call",
-        "Structured Output"
+        "Chat"
       ],
       "catalog": {
         "tasks": [
@@ -4112,9 +3985,6 @@
         "tasks": [
           "text-to-video"
         ],
-        "capabilities": [
-          "Video Generation"
-        ],
         "max_context_length": null,
         "local": {
           "params": 5000000000,
@@ -4123,9 +3993,6 @@
           "gpu_layers": 99,
           "args": "--diffusion-fa --offload-to-cpu --vae-tiling --flow-shift 5"
         },
-        "engines": [
-          "sd-server"
-        ],
         "extra": {
           "default_cfg_scale": 5,
           "default_sample_method": "euler",
@@ -4179,9 +4046,6 @@
         "tasks": [
           "text-to-text"
         ],
-        "capabilities": [
-          "Chat"
-        ],
         "max_context_length": 131072,
         "local": {
           "params": 9000000000,
@@ -4193,10 +4057,7 @@
         "sampling": {
           "temperature": 0.2,
           "max_tokens": 4096
-        },
-        "engines": [
-          "llama-server"
-        ]
+        }
       },
       "latest": "5ba2fe84cb89d9eb354b5dfd9d5ce2958e8b6b19",
       "versions": {
@@ -4238,10 +4099,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "onnx"
-        ]
+        }
       },
       "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
       "versions": {
@@ -4275,9 +4133,6 @@
         "tasks": [
           "image-to-detection"
         ],
-        "capabilities": [
-          "Pose Estimation"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -4285,10 +4140,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "onnx"
-        ]
+        }
       },
       "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
       "versions": {
@@ -4322,9 +4174,6 @@
         "tasks": [
           "image-to-detection"
         ],
-        "capabilities": [
-          "Instance Segmentation"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -4332,10 +4181,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "onnx"
-        ]
+        }
       },
       "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
       "versions": {
@@ -4369,9 +4215,6 @@
         "tasks": [
           "image-to-detection"
         ],
-        "capabilities": [
-          "Oriented Bounding Boxes"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -4379,10 +4222,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "onnx"
-        ]
+        }
       },
       "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
       "versions": {
@@ -4416,9 +4256,6 @@
         "tasks": [
           "image-to-segmentation"
         ],
-        "capabilities": [
-          "Semantic Segmentation"
-        ],
         "max_context_length": null,
         "local": {
           "params": null,
@@ -4426,10 +4263,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "onnx"
-        ]
+        }
       },
       "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
       "versions": {
@@ -4533,10 +4367,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "litert"
-        ]
+        }
       },
       "latest": "178427e448dbf4da93b1e7b1b2abc103ad329bd6",
       "versions": {
@@ -4578,10 +4409,7 @@
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
-        },
-        "engines": [
-          "litert"
-        ]
+        }
       },
       "latest": "7581137eff8d4e94f6e796d3baea0e9fa79b22d2",
       "versions": {
@@ -4594,6 +4422,177 @@
               "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/resolve/7581137eff8d4e94f6e796d3baea0e9fa79b22d2/depth_anything_v2_large_gpu_fp32.tflite",
               "sha256": "1a4bf05de63bb60a450ad8b8de834a612d6de748df5095785976c58605a7d705",
               "size_bytes": 1337072996
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ltx-2.3-22b-distilled",
+      "install_dir": "lightricks/ltx-2.3-22b-distilled",
+      "name": "LTX-2.3 22B Distilled",
+      "description": "Lightricks LTX-2.3 22B distilled 1.1 (Q4_K_M): few-step text-to-video up to 720p at 24 fps with a Gemma 3 12B text encoder; runs on 16 GB of VRAM with the encoder and weights offloaded",
+      "license": "LTX-2 Community License",
+      "source_url": "https://huggingface.co/unsloth/LTX-2.3-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": [
+        "Video Generation"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-video"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 22000000000,
+          "bits_per_weight": 5.2,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "--diffusion-fa --offload-to-cpu --vae-tiling"
+        },
+        "extra": {
+          "default_cfg_scale": 1,
+          "default_sample_method": "euler",
+          "default_steps": 8,
+          "max_resolution": "1280x720"
+        }
+      },
+      "latest": "96e8ed4925ead3db9ff4d0084f165ef6a74f28d0",
+      "versions": {
+        "96e8ed4925ead3db9ff4d0084f165ef6a74f28d0": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "ltx-2.3-22b-distilled-1.1-Q4_K_M.gguf",
+              "url": "https://huggingface.co/unsloth/LTX-2.3-GGUF/resolve/96e8ed4925ead3db9ff4d0084f165ef6a74f28d0/distilled-1.1/ltx-2.3-22b-distilled-1.1-Q4_K_M.gguf",
+              "sha256": "5d09efdc0b8ec2054c44a05366cd7c6634ffa333b379b1f8baf018a78974b73d",
+              "size_bytes": 14194441248
+            },
+            {
+              "id": "text_encoder",
+              "filename": "gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
+              "url": "https://huggingface.co/unsloth/gemma-3-12b-it-qat-GGUF/resolve/858acec7ec0541a46c39985c95d3b52d8f3ab183/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
+              "sha256": "da98f81c86916ed1c76b3eeda56b25cb7b8352b01093e2edb8028110fe2cb53b",
+              "size_bytes": 7432229248
+            },
+            {
+              "id": "embeddings_connectors",
+              "filename": "ltx-2.3-22b-distilled_embeddings_connectors.safetensors",
+              "url": "https://huggingface.co/unsloth/LTX-2.3-GGUF/resolve/96e8ed4925ead3db9ff4d0084f165ef6a74f28d0/text_encoders/ltx-2.3-22b-distilled_embeddings_connectors.safetensors",
+              "sha256": "c61cbb396e2a8175d8b2da51f0fdac885a4ccd22c9f64dafa5aa2c455dc8a507",
+              "size_bytes": 2312144712
+            },
+            {
+              "id": "vae",
+              "filename": "ltx-2.3-22b-distilled_video_vae.safetensors",
+              "url": "https://huggingface.co/unsloth/LTX-2.3-GGUF/resolve/96e8ed4925ead3db9ff4d0084f165ef6a74f28d0/vae/ltx-2.3-22b-distilled_video_vae.safetensors",
+              "sha256": "e68d6d8f8a42942ac9b862cc315beb3bc30805a8876c7ad63ba5bf7a2b8e168a",
+              "size_bytes": 1452256522
+            },
+            {
+              "id": "audio_vae",
+              "filename": "ltx-2.3-22b-distilled_audio_vae.safetensors",
+              "url": "https://huggingface.co/unsloth/LTX-2.3-GGUF/resolve/96e8ed4925ead3db9ff4d0084f165ef6a74f28d0/vae/ltx-2.3-22b-distilled_audio_vae.safetensors",
+              "sha256": "3cd6a6eb8cb28f5ecc12f1f3126952b2a3d2b0b42ad3270e63cefafafe0d9b57",
+              "size_bytes": 364853140
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "h3-image",
+      "install_dir": "unsloth/MiniMax-H3-Image-GGUF",
+      "name": "MiniMax H3-Image",
+      "description": "MiniMax H3-Image 33.1B DiT with native 4K rendering, 6-step distilled sampling, and support for up to 16 reference images",
+      "license": "MiniMax Community License",
+      "source_url": "https://huggingface.co/unsloth/MiniMax-H3-Image-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": [
+        "Image Generation"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-image",
+          "text-image-to-image",
+          "image-to-image"
+        ],
+        "capabilities": [
+          "High Resolution (4K)",
+          "Multi-Reference Editing"
+        ],
+        "max_context_length": null,
+        "sampling": {
+          "default_steps": 6,
+          "default_cfg_scale": 1,
+          "default_sample_method": "euler"
+        },
+        "local": {
+          "params": 33100000000,
+          "bits_per_weight": 4.5,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "--diffusion-fa --params-backend disk"
+        },
+        "extra": {
+          "default_steps": 6,
+          "default_cfg_scale": 1,
+          "default_sample_method": "euler",
+          "max_resolution": "4096×4096 (Native DiT)",
+          "vae_path": "D:/Projects/Public/rune/code-model/MiniMaxAI/MiniMax-H3-Image/vae/diffusion_pytorch_model.safetensors",
+          "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-GGUF/text_encoder/qwen3vl_32b_minimax_h3-Q4_K_M.gguf"
+        },
+        "image_reference_checks": [
+          {
+            "counts": [
+              1,
+              2,
+              4,
+              8,
+              12,
+              16
+            ],
+            "engine": "sd-server",
+            "version": "stable-diffusion.cpp PR #2324"
+          }
+        ],
+        "benchmarks": {
+          "index_name": "Artificial Analysis Image Editing Elo",
+          "score": 1137,
+          "unit": "Elo",
+          "cost_per_task_usd": 0,
+          "time_per_task_minutes": 0.15,
+          "output_tokens_per_task": 6
+        }
+      },
+      "latest": "2eda8f761a1625818e2933e7e726e337d197bc27",
+      "versions": {
+        "2eda8f761a1625818e2933e7e726e337d197bc27": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "minimax_h3_image_pruned-Q4_K_M.gguf",
+              "url": "https://huggingface.co/unsloth/MiniMax-H3-Image-GGUF/resolve/2eda8f761a1625818e2933e7e726e337d197bc27/minimax_h3_image_pruned-Q4_K_M.gguf",
+              "sha256": "ef784687ff25a974191d00f941388060ef971286fbd2e98b2769fa78c8d599a8",
+              "size_bytes": 12721119968
+            },
+            {
+              "id": "text_encoder",
+              "filename": "qwen3vl_32b_minimax_h3-Q4_K_M.gguf",
+              "url": "https://huggingface.co/unsloth/MiniMax-H3-GGUF/resolve/babc040eff0084465460ead58fdb8ec44296f8dd/qwen3vl_32b_minimax_h3-Q4_K_M.gguf",
+              "sha256": "11e6efe70a57ce7f4838c47bdbd1a1c4b8ce10e2b7747f1b065990b70f4b05fc",
+              "size_bytes": 18218065024
+            },
+            {
+              "id": "vae",
+              "filename": "diffusion_pytorch_model.safetensors",
+              "url": "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/resolve/5f90473023975e6271b0ed1dd84c4e88e4bbc6d3/vae/diffusion_pytorch_model.safetensors",
+              "sha256": "a7c8bb1e181865e7cf87c29d3d6bc728d944ce4862b92d0e1cbdcc36b3b180b2",
+              "size_bytes": 2336964672
             }
           ]
         }

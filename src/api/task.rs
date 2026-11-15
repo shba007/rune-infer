@@ -415,6 +415,11 @@ impl Requirements {
                     ("extra.vae_path", &model.vae_path),
                     ("extra.text_encoder_path", &model.text_encoder_path),
                     ("extra.llm_vision_path", &model.llm_vision_path),
+                    (
+                        "extra.embeddings_connectors_path",
+                        &model.embeddings_connectors_path,
+                    ),
+                    ("extra.audio_vae_path", &model.audio_vae_path),
                 ] {
                     if let Some(path) = path
                         && !crate::inference::engines::sd_server::companion_path_available(

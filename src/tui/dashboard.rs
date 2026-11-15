@@ -847,8 +847,8 @@ impl App {
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 let result = match path {
-                    Some(path) => crate::model_registry::load_from_path(&path),
-                    None => crate::model_registry::fetch(),
+                    Some(path) => crate::model_registry::load_listing_from_path(&path),
+                    None => crate::model_registry::fetch_listing(),
                 }
                 .map_err(|error| format!("{error:#}"));
                 let _ = tx.send(result);
@@ -891,7 +891,10 @@ impl App {
                 .get(self.model_registry_selected)
                 .cloned()
             {
-                if self.index.contains_key(&model.id) {
+                if let Some(reason) = &model.unsupported {
+                    self.model_registry_status =
+                        Some(format!("{} cannot be installed here: {reason}", model.id));
+                } else if self.index.contains_key(&model.id) {
                     self.model_registry_status = Some(
                         "Model ID already configured; existing configuration preserved".into(),
                     );
@@ -2579,10 +2582,12 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
         .skip(start)
         .take(visible)
         .map(|(index, model)| {
-            let size: u64 = model.versions[&model.latest]
-                .files
-                .iter()
-                .fold(0_u64, |sum, file| sum.saturating_add(file.size_bytes));
+            let size: u64 = model.versions.get(&model.latest).map_or(0, |version| {
+                version
+                    .files
+                    .iter()
+                    .fold(0_u64, |sum, file| sum.saturating_add(file.size_bytes))
+            });
             Row::new([
                 if index == app.model_registry_selected {
                     ">"
@@ -2593,7 +2598,9 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
                 model.id.clone(),
                 model.name.clone(),
                 crate::inference::engines::download::format_bytes(size),
-                if app.index.contains_key(&model.id) {
+                if model.unsupported.is_some() {
+                    "Unsupported"
+                } else if app.index.contains_key(&model.id) {
                     "Configured"
                 } else {
                     "Available"
@@ -2608,7 +2615,7 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
             Constraint::Min(20),
             Constraint::Min(20),
             Constraint::Length(12),
-            Constraint::Length(11),
+            Constraint::Length(12),
         ],
     )
     .header(
@@ -2630,7 +2637,14 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
     } else if let Some(model) = app.model_registry_models.get(app.model_registry_selected) {
         format!(
             "{status}\nEngine: {} · License: {}\n{}",
-            model.engine, model.license, model.description
+            model.engine,
+            model.license,
+            model
+                .unsupported
+                .as_ref()
+                .map_or(model.description.clone(), |reason| format!(
+                    "Not installable by this build: {reason}"
+                ))
         )
     } else {
         status.to_string()

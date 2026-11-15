@@ -253,6 +253,8 @@ fn absolute_local_paths(root: &Path, model: &mut crate::config::ModelConfig) {
         &mut model.text_encoder_path,
         &mut model.tokenizer_path,
         &mut model.llm_vision_path,
+        &mut model.embeddings_connectors_path,
+        &mut model.audio_vae_path,
     ]
     .into_iter()
     .flatten()
