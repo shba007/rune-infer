@@ -28,6 +28,10 @@ struct Args {
     #[arg(short, long, global = true)]
     config: Option<String>,
 
+    /// Directory for managed engine binaries (default: bin/ next to the resolved config; also RUNE_ENGINES_DIR)
+    #[arg(long, global = true, value_name = "PATH")]
+    engines_dir: Option<std::path::PathBuf>,
+
     /// Use a local models.json for dashboard model installation
     #[arg(long, global = true, value_name = "PATH")]
     model_registry: Option<std::path::PathBuf>,
@@ -95,6 +99,11 @@ enum Command {
     Serve,
     /// Run the interactive setup wizard (API keys, local models, engines)
     Setup,
+    /// Download a reviewed model from the registry (omit the id to list them)
+    Download {
+        /// Registry model id, e.g. wan2.2-ti2v-5b
+        id: Option<String>,
+    },
     /// Upgrade a schema 1 models.json to the current schema (keeps a .v1.bak backup)
     Migrate {
         /// Show what would change without writing anything
@@ -134,6 +143,10 @@ async fn main() -> Result<()> {
     }
     let ws =
         Workspace::resolve(args.config.as_deref()).context("Cannot determine working folder")?;
+    rune_infer::set_default_engines_dir(&ws.root);
+    if let Some(dir) = &args.engines_dir {
+        rune_infer::set_engines_dir(dir).context("Cannot resolve the engines directory")?;
+    }
 
     #[cfg(feature = "tui")]
     let args = {
@@ -160,6 +173,20 @@ async fn main() -> Result<()> {
     ws.enter()
         .with_context(|| format!("Cannot use folder {}", ws.root.display()))?;
     let env_result = dotenvy::from_path(ws.env_file()).map(|_| ws.env_file());
+
+    if let Some(Command::Download { id }) = &args.command {
+        let (root, server, catalog, id) = (
+            ws.root.clone(),
+            ws.server_path.clone(),
+            ws.catalog_path.clone(),
+            id.clone(),
+        );
+        // The installer uses blocking HTTP clients, which must not live on the async runtime.
+        return tokio::task::spawn_blocking(move || {
+            rune_infer::model_registry::download_for_cli(&root, &server, &catalog, id.as_deref())
+        })
+        .await?;
+    }
 
     #[cfg(feature = "tui")]
     let tui_mode = !args.headless && rune_infer::tui::is_interactive();

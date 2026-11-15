@@ -403,7 +403,8 @@ fn validate_encoder_index(version: &Version, index_path: &Path) -> Result<()> {
 fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     let vision = model.capabilities == ["Chat", "Vision"]
         || model.capabilities == ["Chat", "Vision", "Audio", "Video"];
-    let image = model.capabilities == ["Image Generation"];
+    let image =
+        model.capabilities == ["Image Generation"] || model.capabilities == ["Video Generation"];
     let matting = model.capabilities == ["Portrait Matting"];
     ensure!(
         matting
@@ -557,6 +558,57 @@ pub fn install_observed(
             install(model, root, server, catalog)
         })
     })
+}
+
+/// `rune-infer download`: list the reviewed registry, or verify-download one model,
+/// register it in the catalog and make sure its engine is installed.
+pub fn download_for_cli(
+    root: &Path,
+    server: &Path,
+    catalog: &Path,
+    id: Option<&str>,
+) -> Result<()> {
+    let models = bundled()?;
+    let Some(id) = id else {
+        for model in &models {
+            println!("{:<44} {:<14} {}", model.id, model.engine, model.name);
+        }
+        return Ok(());
+    };
+    let model = models
+        .into_iter()
+        .find(|model| model.id == id)
+        .with_context(|| format!("Unknown model '{id}'; run `rune-infer download` to list them"))?;
+    let mut last = std::time::Instant::now() - std::time::Duration::from_secs(5);
+    let mut last_name = String::new();
+    let path = install_observed(
+        &model,
+        root,
+        server,
+        catalog,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        move |progress| {
+            let finished = progress.total == Some(progress.downloaded);
+            if progress.filename != last_name || finished || last.elapsed().as_secs() >= 2 {
+                last_name = progress.filename.clone();
+                last = std::time::Instant::now();
+                eprintln!(
+                    "{}: {:.2} / {} GB",
+                    progress.filename,
+                    progress.downloaded as f64 / 1e9,
+                    progress
+                        .total
+                        .map_or("?".into(), |total| format!("{:.2}", total as f64 / 1e9)),
+                );
+            }
+        },
+    )?;
+    println!("Installed {} at {}", model.id, path.display());
+    if let Some(kind) = crate::engine_inventory::install_engine_kind(&model.engine) {
+        let binary = crate::setup::install_engine(kind).map_err(|e| anyhow::anyhow!(e))?;
+        println!("Engine {} ready at {}", model.engine, binary.display());
+    }
+    Ok(())
 }
 
 pub(crate) fn regular_dir(path: &Path) -> Result<()> {
@@ -873,6 +925,7 @@ fn install_with(
                     || defaults.tasks == ["text-image-to-image", "image-to-image"]
                     || defaults.tasks == ["text-to-image", "text-image-to-image", "image-to-image"]
             }
+            [a] if a == "Video Generation" => defaults.tasks == ["text-to-video"],
             [a] if a == "Decision" => defaults.tasks == ["text-to-decision"],
             [a] if a == "Transcription" => defaults.tasks == ["audio-to-text"],
             [a] if a == "Speech Generation" => defaults.tasks == ["text-to-audio"],
@@ -1060,7 +1113,7 @@ fn install_with(
     regular_dir(catalog_dir)?;
     regular_dir(server_dir)?;
     let staged_catalog = unique_path(catalog_dir, "catalog");
-    let catalog_bytes = serde_json::to_vec_pretty(&catalog_value)?;
+    let catalog_bytes = crate::schema::render_catalog(&catalog_value)?.into_bytes();
     write_new(&staged_catalog, &catalog_bytes)?;
     let result = (|| -> Result<()> {
         crate::inference::engines::download::check_cancelled()?;

@@ -4,7 +4,7 @@ use crate::types::{
     EmbeddingResponse, ImageCaptionResponse, ImageEmbeddingsResponse, ImageGenerationResponse,
     ImageGroundingResponse, ImageRestorationResponse, ImageStyleTransferResponse,
     ImageUpscaleResponse, ModerationResponse, NluIntentResponse, RecognizeObjectsResponse,
-    RecognizeTarget, RegionCrop, Usage,
+    RecognizeTarget, RegionCrop, Usage, VideoGenerationResponse,
 };
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,18 @@ pub enum InferenceTaskRequest {
         thinking: Option<serde_json::Value>,
         #[serde(default)]
         chat_template_kwargs: Option<serde_json::Value>,
+    },
+    VideoGeneration {
+        prompt: String,
+        negative_prompt: Option<String>,
+        size: Option<String>,
+        frames: Option<u32>,
+        fps: Option<u32>,
+        steps: Option<u32>,
+        cfg_scale: Option<f32>,
+        seed: Option<i64>,
+        sample_method: Option<String>,
+        output_format: Option<String>,
     },
     ImageGeneration {
         prompt: String,
@@ -206,6 +218,7 @@ pub enum InferenceTaskResponse {
     },
     Text(String),
     Image(ImageGenerationResponse),
+    Video(VideoGenerationResponse),
     Audio(Vec<u8>),
     Transcription(AudioTranscriptionResponse),
     Translation(AudioTranslationResponse),

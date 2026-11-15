@@ -402,6 +402,48 @@ pub struct ImageGenerationRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoGenerationRequest {
+    pub prompt: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub size: Option<String>,
+    #[serde(default)]
+    pub negative_prompt: Option<String>,
+    /// Frame count; Wan-style models need 4n+1 frames (e.g. 17, 33, 81).
+    #[serde(default, alias = "video_frames")]
+    pub frames: Option<u32>,
+    #[serde(default)]
+    pub fps: Option<u32>,
+    #[serde(default)]
+    pub steps: Option<u32>,
+    #[serde(default, alias = "guidance")]
+    pub cfg_scale: Option<f32>,
+    #[serde(default)]
+    pub seed: Option<i64>,
+    #[serde(default)]
+    pub sample_method: Option<String>,
+    /// `webm` (default), `webp` (animated) or `avi`.
+    #[serde(default)]
+    pub output_format: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoData {
+    pub b64_json: String,
+    pub mime_type: String,
+    pub output_format: String,
+    pub fps: u32,
+    pub frame_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoGenerationResponse {
+    pub created: u64,
+    pub data: Vec<VideoData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageGenerationResponse {
     pub created: u64,
     pub data: Vec<ImageData>,

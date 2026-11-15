@@ -12,6 +12,8 @@ values:
     value: qwen3.8-27b
   - key: image_model
     value: z-image
+  - key: video_model
+    value: wan2.2-ti2v-5b
   - key: depth_model
     value: depth-anything-v2-small-fp32
   - key: asr_model

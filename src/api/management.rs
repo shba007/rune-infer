@@ -987,7 +987,7 @@ fn remove_with(
     {
         models.remove(index);
     }
-    let text = serde_json::to_string_pretty(&catalog)
+    let text = crate::schema::render_catalog(&catalog)
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Invalid catalog"))?;
     let revision = crate::catalog_management::revision(&current);
     commit(store, &current, &revision, &text)?;

@@ -130,6 +130,8 @@ pub enum Modality {
     )]
     Omni,
     ImageGeneration,
+    #[serde(alias = "video", alias = "video-generation")]
+    VideoGeneration,
     #[serde(alias = "AudioToText", alias = "AudioTranscription")]
     SpeechToText,
     #[serde(alias = "TextToAudio", alias = "AudioSpeech")]
@@ -177,6 +179,7 @@ impl Modality {
             Modality::VisionText => "vision-text",
             Modality::Omni => "omni",
             Modality::ImageGeneration => "image-generation",
+            Modality::VideoGeneration => "video-generation",
             Modality::SpeechToText => "speech-to-text",
             Modality::TextToSpeech => "text-to-speech",
             Modality::SpeechToSpeech => "speech-to-speech",

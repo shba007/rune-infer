@@ -1,0 +1,32 @@
+$kind: http-example
+name: 400 Bad Request (Invalid Output Format)
+request:
+  url: '{{base_url}}/v1/videos/generations'
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "{{video_model}}",
+        "prompt": "A red fox running through snow",
+        "output_format": "mp4"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "message": "'output_format' must be webm, webp or avi",
+          "type": "invalid_request_error",
+          "param": "output_format",
+          "code": "invalid_parameter_value"
+        }
+      }
+order: 1030

@@ -1877,7 +1877,7 @@
       "id": "qwen3.5-9b-gguf",
       "install_dir": "unsloth/Qwen3.5-9B-GGUF",
       "name": "Qwen3.5 9B GGUF",
-      "description": "Qwen3.5 9B reasoning chat model in GGUF format",
+      "description": "Qwen3.5 9B vision and reasoning model with F16 vision projector",
       "license": "Apache-2.0",
       "source_url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
       "engine": "llama-server",
@@ -1897,13 +1897,48 @@
               "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf",
               "sha256": "809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4",
               "size_bytes": 9527502048
+            },
+            {
+              "id": "projector",
+              "filename": "mmproj-F16.gguf",
+              "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-F16.gguf",
+              "sha256": "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
+              "size_bytes": 918166080
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-text",
+          "text-image-to-text",
+          "text-video-to-text"
+        ],
+        "capabilities": [
+          "Chat",
+          "Vision",
+          "Reasoning",
+          "Tool Call"
+        ],
+        "max_context_length": 131072,
+        "local": {
+          "params": 9000000000,
+          "bits_per_weight": 8,
+          "context_length": 8192,
+          "gpu_layers": 99,
+          "args": "-fa on"
+        },
+        "sampling": {
+          "temperature": 0.2,
+          "max_tokens": 4096
+        },
+        "engines": [
+          "llama-server"
+        ]
       }
     },
     {
-      "id": "ace-step-1.5",
+      "id": "acestep-v1.5-turbo",
       "install_dir": "ACE-Step/Ace-Step1.5",
       "name": "ACE-Step 1.5 Turbo",
       "description": "Fast text-to-music / audio foundation model",
@@ -1931,10 +1966,35 @@
               "id": "model",
               "filename": "ace-step-1.5-turbo-q8_0.gguf",
               "url": "https://huggingface.co/ACE-Step/Ace-Step1.5/resolve/19671f406d603126926c1b7e2adc169acbcade22/ace-step-1.5-turbo-q8_0.gguf",
-              "sha256": "",
+              "sha256": "1f0015f81c10a1182531e6207c7aeaa060b8cad3470a2f88daa3cb74ed636e63",
               "size_bytes": 6185468096
             }
           ]
+        }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Music Generation",
+          "Turbo Generation"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 4500000000,
+          "bits_per_weight": 8,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "--vae D:/Models/gguf/ace_1.5_vae.safetensors"
+        },
+        "engines": [
+          "sd-server"
+        ],
+        "extra": {
+          "default_cfg_scale": 2,
+          "default_sample_method": "euler",
+          "default_steps": 8
         }
       }
     },
@@ -1965,10 +2025,30 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Speech Generation",
+          "Audio"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 3000000000,
+          "bits_per_weight": 8,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "audio-cpp"
+        ]
       }
     },
     {
-      "id": "needle3",
+      "id": "cactus-needle-3",
       "install_dir": "Cactus-Compute/needle3",
       "name": "Needle 3",
       "description": "Lightweight cactus compute neural network",
@@ -1993,6 +2073,33 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-text"
+        ],
+        "capabilities": [
+          "Tool Call",
+          "Structured Output"
+        ],
+        "max_context_length": 8192,
+        "local": {
+          "params": 121000000,
+          "bits_per_weight": 2,
+          "context_length": -1,
+          "gpu_layers": 0,
+          "args": ""
+        },
+        "sampling": {
+          "temperature": 0.1,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0.01,
+          "max_tokens": 2048
+        },
+        "engines": [
+          "needle"
+        ]
       }
     },
     {
@@ -2036,6 +2143,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "image-to-embedding"
+        ],
+        "capabilities": [
+          "Vision Features",
+          "Semantic Search"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 1100000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2085,6 +2212,27 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "image-to-segmentation"
+        ],
+        "capabilities": [
+          "Visual Segmentation",
+          "Object Masking",
+          "Video Tracking"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 224000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2141,6 +2289,23 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-moderation"
+        ],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2176,6 +2341,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "audio-to-audio"
+        ],
+        "capabilities": [
+          "Audio",
+          "Neural Codec"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 50000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2260,6 +2445,23 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-embedding"
+        ],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2331,6 +2533,27 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-image-to-detection"
+        ],
+        "capabilities": [
+          "Zero-Shot Detection",
+          "Grounding",
+          "Bounding Boxes"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 172000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2409,6 +2632,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Zero-Shot Cloning",
+          "Multilingual"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 1500000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2480,6 +2723,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Conversational Voice",
+          "Expressive Synthesis"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 4000000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "--tokenizer D:/Models/huggingface/hub/models--bosonai--higgs-audio-v2-tokenizer/snapshots/main"
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2508,10 +2771,32 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "audio-to-diarization"
+        ],
+        "capabilities": [
+          "Speech-Analysis",
+          "Speaker-Diarization",
+          "Multi-Speaker",
+          "Timestamps"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 100000000,
+          "bits_per_weight": 8,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "audio-cpp"
+        ]
       }
     },
     {
-      "id": "whisper-large-v3-turbo",
+      "id": "whisper-large-v3",
       "install_dir": "openai/whisper-large-v3-turbo",
       "name": "OpenAI Whisper Large v3 Turbo (GGML)",
       "description": "Fast high accuracy speech transcription model in GGML format",
@@ -2537,10 +2822,43 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "audio-to-text"
+        ],
+        "capabilities": [
+          "Multilingual",
+          "Bengali",
+          "Timestamps"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 809000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "--vad"
+        },
+        "engines": [
+          "crispasr",
+          "whisper-cpp"
+        ],
+        "audio_operations": {
+          "transcription": {
+            "status": "supported",
+            "verified_with": [
+              {
+                "engine": "crispasr",
+                "version": "version       : 0.8.49; git sha       : d9426437"
+              }
+            ]
+          }
+        }
       }
     },
     {
-      "id": "qwen3-tts-12hz-1.7b-customvoice",
+      "id": "qwen3-tts-1.7b-customvoice",
       "install_dir": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
       "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
       "description": "Custom voice generative text-to-speech model",
@@ -2636,6 +2954,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Voice Cloning",
+          "Zero-Shot TTS"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 1700000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2665,6 +3003,27 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "audio-to-text"
+        ],
+        "capabilities": [
+          "Transcription",
+          "Audio"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 769000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "crispasr",
+          "whisper-cpp"
+        ]
       }
     },
     {
@@ -2756,6 +3115,25 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-embedding"
+        ],
+        "capabilities": [
+          "Embedding"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 33000000,
+          "bits_per_weight": 8,
+          "context_length": 512,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -2791,6 +3169,27 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-embedding"
+        ],
+        "capabilities": [
+          "Semantic Search",
+          "Code Retrieval",
+          "Matryoshka Representations"
+        ],
+        "max_context_length": 8192,
+        "local": {
+          "params": 740000000,
+          "bits_per_weight": 8,
+          "context_length": 8192,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "llama-server"
+        ]
       }
     },
     {
@@ -2820,6 +3219,32 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-text",
+          "text-image-to-text"
+        ],
+        "capabilities": [
+          "Chat",
+          "Vision",
+          "Tool Call"
+        ],
+        "max_context_length": 131072,
+        "local": {
+          "params": 7000000000,
+          "bits_per_weight": 4.5,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "-fa on"
+        },
+        "sampling": {
+          "temperature": 0.7,
+          "max_tokens": 4096
+        },
+        "engines": [
+          "llama-server"
+        ]
       }
     },
     {
@@ -2918,10 +3343,37 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-embedding"
+        ],
+        "capabilities": [
+          "Semantic Search",
+          "Code Retrieval"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 4000000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "sampling": {
+          "temperature": 0,
+          "top_p": 1,
+          "top_k": 1,
+          "min_p": 0,
+          "max_tokens": 1
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
-      "id": "mmbert32k-intent-classifier",
+      "id": "mmbert32k-intent-classifier-merged",
       "install_dir": "vllm-sr/mmbert32k-intent-classifier-merged",
       "name": "mmBERT-32K Intent Classifier",
       "description": "Long-context multilingual BERT intent classification model",
@@ -2981,6 +3433,23 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-text"
+        ],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "encoder"
+        ]
       }
     },
     {
@@ -3059,6 +3528,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Speech Generation",
+          "Audio"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "python"
+        ]
       }
     },
     {
@@ -3232,6 +3721,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Audio",
+          "Speech Generation"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "audio-cpp"
+        ]
       }
     },
     {
@@ -3274,6 +3783,25 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "audio-to-audio"
+        ],
+        "capabilities": [
+          "Audio"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "transformers"
+        ]
       }
     },
     {
@@ -3373,6 +3901,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Speech Generation",
+          "Audio"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "llama-server"
+        ]
       }
     },
     {
@@ -3451,6 +3999,26 @@
             }
           ]
         }
+      },
+      "catalog": {
+        "tasks": [
+          "audio-to-text"
+        ],
+        "capabilities": [
+          "Transcription",
+          "Audio"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "audio-cpp"
+        ]
       }
     },
     {
@@ -3523,6 +4091,509 @@
               "url": "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF/resolve/1938d05cc893a60f37be1dc16e7465038f4fca63/DeepSeek-R1-Distill-Qwen-32B-Q3_K_M.gguf",
               "sha256": "618f96af5fb0df73093d49ff9b611aab2ec3fe878c8fb5db9787c50a4b37a9bd",
               "size_bytes": 15935047584
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "wan2.2-ti2v-5b",
+      "install_dir": "wan-ai/wan2.2-ti2v-5b",
+      "name": "Wan2.2 TI2V 5B",
+      "description": "Alibaba Wan2.2 text/image-to-video 5B (Q8_0): 720p-class clips at 24 fps from a high-compression VAE; runs in under 16 GB of VRAM with the UMT5 encoder offloaded",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": [
+        "Video Generation"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-video"
+        ],
+        "capabilities": [
+          "Video Generation"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 5000000000,
+          "bits_per_weight": 8.5,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "--diffusion-fa --offload-to-cpu --vae-tiling --flow-shift 5"
+        },
+        "engines": [
+          "sd-server"
+        ],
+        "extra": {
+          "default_cfg_scale": 5,
+          "default_sample_method": "euler",
+          "default_steps": 30,
+          "max_resolution": "832x480 (up to 1280x704)"
+        }
+      },
+      "latest": "57437632ddd08bdcbd1508c866aa22e126ed51d2",
+      "versions": {
+        "57437632ddd08bdcbd1508c866aa22e126ed51d2": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "Wan2.2-TI2V-5B-Q8_0.gguf",
+              "url": "https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF/resolve/57437632ddd08bdcbd1508c866aa22e126ed51d2/Wan2.2-TI2V-5B-Q8_0.gguf",
+              "sha256": "57bece983817ab2f957546683bb670f13be7d99022d45674840cd999a050ea8f",
+              "size_bytes": 5400179040
+            },
+            {
+              "id": "text_encoder",
+              "filename": "umt5-xxl-encoder-Q8_0.gguf",
+              "url": "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/b535255bee98c2b0a59ea7c0ae2dcd0c6657b3b7/umt5-xxl-encoder-Q8_0.gguf",
+              "sha256": "2521d4de0bf9e1cc6549866463ceae85e4ec3239bc6063f7488810be39033bbc",
+              "size_bytes": 6043068256
+            },
+            {
+              "id": "vae",
+              "filename": "Wan2.2_VAE.safetensors",
+              "url": "https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF/resolve/57437632ddd08bdcbd1508c866aa22e126ed51d2/VAE/Wan2.2_VAE.safetensors",
+              "sha256": "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156",
+              "size_bytes": 1409400960
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scadcoder-qwen3.5-9b-v11-q5-k-m",
+      "install_dir": "mradermacher/scadcoder-qwen3.5-9b-v11-GGUF",
+      "name": "SCADcoder Qwen3.5 9B v11 Q5_K_M",
+      "description": "OpenSCAD fine-tune of Qwen3.5 9B v11; text-only CAD generation",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/mradermacher/scadcoder-qwen3.5-9b-v11-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Chat"
+      ],
+      "catalog": {
+        "tasks": [
+          "text-to-text"
+        ],
+        "capabilities": [
+          "Chat"
+        ],
+        "max_context_length": 131072,
+        "local": {
+          "params": 9000000000,
+          "bits_per_weight": 5.5,
+          "context_length": 8192,
+          "gpu_layers": 99,
+          "args": "-fa on"
+        },
+        "sampling": {
+          "temperature": 0.2,
+          "max_tokens": 4096
+        },
+        "engines": [
+          "llama-server"
+        ]
+      },
+      "latest": "5ba2fe84cb89d9eb354b5dfd9d5ce2958e8b6b19",
+      "versions": {
+        "5ba2fe84cb89d9eb354b5dfd9d5ce2958e8b6b19": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "scadcoder-qwen3.5-9b-v11.Q5_K_M.gguf",
+              "url": "https://huggingface.co/mradermacher/scadcoder-qwen3.5-9b-v11-GGUF/resolve/5ba2fe84cb89d9eb354b5dfd9d5ce2958e8b6b19/scadcoder-qwen3.5-9b-v11.Q5_K_M.gguf",
+              "sha256": "c891091addee4ddec259f9f5acadae7b1199e5067b14c880edeecfc2ffa00b96",
+              "size_bytes": 6642545024
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "yolo26x",
+      "install_dir": "ultralytics/yolo26x",
+      "name": "YOLO26x Object Detection",
+      "description": "YOLO26x COCO object detection, reviewed ONNX export with embedded non-maximum suppression (AGPL-3.0).",
+      "license": "AGPL-3.0",
+      "source_url": "https://huggingface.co/ultralytics/yolo26x",
+      "engine": "onnx",
+      "format": "onnx",
+      "capabilities": [
+        "Object Detection"
+      ],
+      "catalog": {
+        "tasks": [
+          "image-to-detection"
+        ],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "onnx"
+        ]
+      },
+      "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+      "versions": {
+        "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "yolo26x_detect.onnx",
+              "url": "https://huggingface.co/ultralytics/yolo26x/resolve/1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b/yolo26x_detect.onnx",
+              "sha256": "5267bf1883b43df3aca8791721909679ee83de8a7d5546a7ecdd75b99877bce4",
+              "size_bytes": 223237286
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "yolo26x-pose",
+      "install_dir": "ultralytics/yolo26x-pose",
+      "name": "YOLO26x Pose Estimation",
+      "description": "YOLO26x COCO human pose estimation with 17 keypoints; reviewed ONNX export (AGPL-3.0).",
+      "license": "AGPL-3.0",
+      "source_url": "https://huggingface.co/ultralytics/yolo26x",
+      "engine": "onnx",
+      "format": "onnx",
+      "capabilities": [
+        "Pose Estimation"
+      ],
+      "catalog": {
+        "tasks": [
+          "image-to-detection"
+        ],
+        "capabilities": [
+          "Pose Estimation"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "onnx"
+        ]
+      },
+      "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+      "versions": {
+        "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "yolo26x-pose.onnx",
+              "url": "https://huggingface.co/ultralytics/yolo26x/resolve/1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b/yolo26x-pose.onnx",
+              "sha256": "f9fa35b3181b72328414649cad937bf752c15ad0bf5131d91dea12f1bf4090e7",
+              "size_bytes": 230646812
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "yolo26x-seg",
+      "install_dir": "ultralytics/yolo26x-seg",
+      "name": "YOLO26x Instance Segmentation",
+      "description": "YOLO26x COCO instance segmentation with per-object masks; reviewed ONNX export (AGPL-3.0).",
+      "license": "AGPL-3.0",
+      "source_url": "https://huggingface.co/ultralytics/yolo26x",
+      "engine": "onnx",
+      "format": "onnx",
+      "capabilities": [
+        "Instance Segmentation"
+      ],
+      "catalog": {
+        "tasks": [
+          "image-to-detection"
+        ],
+        "capabilities": [
+          "Instance Segmentation"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "onnx"
+        ]
+      },
+      "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+      "versions": {
+        "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "yolo26x-seg.onnx",
+              "url": "https://huggingface.co/ultralytics/yolo26x/resolve/1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b/yolo26x-seg.onnx",
+              "sha256": "c815dd6377a436a3c453c435a8da6b88c5136135148304750aa9d8c2300eb25d",
+              "size_bytes": 251623808
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "yolo26x-obb",
+      "install_dir": "ultralytics/yolo26x-obb",
+      "name": "YOLO26x Oriented Bounding Boxes",
+      "description": "YOLO26x oriented detection for 15 DOTA aerial-image classes; reviewed ONNX export (AGPL-3.0).",
+      "license": "AGPL-3.0",
+      "source_url": "https://huggingface.co/ultralytics/yolo26x",
+      "engine": "onnx",
+      "format": "onnx",
+      "capabilities": [
+        "Oriented Bounding Boxes"
+      ],
+      "catalog": {
+        "tasks": [
+          "image-to-detection"
+        ],
+        "capabilities": [
+          "Oriented Bounding Boxes"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "onnx"
+        ]
+      },
+      "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+      "versions": {
+        "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "yolo26x-obb.onnx",
+              "url": "https://huggingface.co/ultralytics/yolo26x/resolve/1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b/yolo26x-obb.onnx",
+              "sha256": "565c3c7f1611027b509d6df2b81a8abbb2d3f3b004f84c17607545394458bfec",
+              "size_bytes": 230526559
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "yolo26x-sem-ade20k",
+      "install_dir": "ultralytics/yolo26x-sem-ade20k",
+      "name": "YOLO26x Semantic Segmentation ADE20K",
+      "description": "YOLO26x semantic segmentation for 150 ADE20K scene classes; locally exported ONNX model (AGPL-3.0).",
+      "license": "AGPL-3.0",
+      "source_url": "https://huggingface.co/ultralytics/yolo26x",
+      "engine": "onnx",
+      "format": "onnx",
+      "capabilities": [
+        "Semantic Segmentation"
+      ],
+      "catalog": {
+        "tasks": [
+          "image-to-segmentation"
+        ],
+        "capabilities": [
+          "Semantic Segmentation"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "onnx"
+        ]
+      },
+      "latest": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+      "versions": {
+        "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "yolo26x-sem-ade20k.onnx",
+              "url": "https://huggingface.co/ultralytics/yolo26x/resolve/1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b/yolo26x-sem-ade20k.onnx",
+              "sha256": "3740e49cd9150fac97a6b6fdb610b66e6d522b816c37c3fbb1a7642fe51efef0",
+              "size_bytes": 150149739
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "indicwhisper-bengali",
+      "install_dir": "rupind/indic-whisper-medium-gguf",
+      "name": "AI4Bharat IndicWhisper Bengali",
+      "description": "Multilingual Whisper model fine-tuned for Indic speech-to-text transcription with Silero VAD",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/rupind/indic-whisper-medium-gguf",
+      "engine": "crispasr",
+      "format": "gguf",
+      "capabilities": [
+        "Transcription",
+        "Audio"
+      ],
+      "catalog": {
+        "tasks": [
+          "audio-to-text"
+        ],
+        "capabilities": [
+          "Bengali",
+          "Low WER",
+          "Timestamps"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": 244000000,
+          "bits_per_weight": 16,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": "--vad -vp 250 -vsd 400"
+        },
+        "engines": [
+          "crispasr",
+          "whisper-cpp"
+        ],
+        "audio_operations": {
+          "transcription": {
+            "status": "supported",
+            "verified_with": [
+              {
+                "engine": "crispasr",
+                "version": "version       : 0.8.49; git sha       : d9426437"
+              }
+            ]
+          }
+        }
+      },
+      "latest": "cd29126d09ff28ffa9c199f75ba8b64e79395e78",
+      "versions": {
+        "cd29126d09ff28ffa9c199f75ba8b64e79395e78": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "ggml-indic-whisper-medium-q8_0.bin",
+              "url": "https://huggingface.co/rupind/indic-whisper-medium-gguf/resolve/cd29126d09ff28ffa9c199f75ba8b64e79395e78/ggml-indic-whisper-medium-q8_0.bin",
+              "sha256": "d05cca7435c15fe1226baac6eff7fdec526c9f11f26397e21c136f719f6deb6c",
+              "size_bytes": 823369796
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "depth-anything-v2-small",
+      "install_dir": "litert-community/depth-anything-v2-small",
+      "name": "Depth Anything V2 Small FP32",
+      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-small architecture)",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/litert-community/depth-anything-v2-small",
+      "engine": "litert",
+      "format": "other",
+      "capabilities": [
+        "Depth Estimation"
+      ],
+      "catalog": {
+        "tasks": [
+          "image-to-depth"
+        ],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "litert"
+        ]
+      },
+      "latest": "178427e448dbf4da93b1e7b1b2abc103ad329bd6",
+      "versions": {
+        "178427e448dbf4da93b1e7b1b2abc103ad329bd6": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "depth_anything_v2_small.tflite",
+              "url": "https://huggingface.co/litert-community/depth-anything-v2-small/resolve/178427e448dbf4da93b1e7b1b2abc103ad329bd6/tflite/depth_anything_v2_small.tflite",
+              "sha256": "651415f1774e02d06de946eccf2e6dbbc5f499a9e932d9de7ada3d59637d2e8e",
+              "size_bytes": 99530468
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "depth-anything-v2-large",
+      "install_dir": "depth-anything/Depth-Anything-V2-Large-hf",
+      "name": "Depth Anything V2 Large FP32",
+      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-large architecture)",
+      "license": "CC-BY-NC-4.0",
+      "source_url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf",
+      "engine": "litert",
+      "format": "other",
+      "capabilities": [
+        "Depth Estimation"
+      ],
+      "catalog": {
+        "tasks": [
+          "image-to-depth"
+        ],
+        "capabilities": [],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": 32,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "litert"
+        ]
+      },
+      "latest": "7581137eff8d4e94f6e796d3baea0e9fa79b22d2",
+      "versions": {
+        "7581137eff8d4e94f6e796d3baea0e9fa79b22d2": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "depth_anything_v2_large_gpu_fp32.tflite",
+              "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Large-hf/resolve/7581137eff8d4e94f6e796d3baea0e9fa79b22d2/depth_anything_v2_large_gpu_fp32.tflite",
+              "sha256": "1a4bf05de63bb60a450ad8b8de834a612d6de748df5095785976c58605a7d705",
+              "size_bytes": 1337072996
             }
           ]
         }

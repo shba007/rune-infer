@@ -1,0 +1,76 @@
+$kind: http-request
+url: "{{base_url}}/v1/videos/generations"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "model": "{{video_model}}",
+      "prompt": "A red fox running through fresh snow in a pine forest, cinematic, soft morning light",
+      "negative_prompt": "blurry, low quality, watermark",
+      "size": "832x480",
+      "frames": 33,
+      "fps": 24,
+      "steps": 20,
+      "cfg_scale": 5,
+      "seed": 42,
+      "output_format": "webm"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const template = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                 background: #121212; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; }
+          .card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 8px; padding: 16px; margin-bottom: 24px; max-width: 95%; text-align: center; }
+          video { max-width: 100%; max-height: 70vh; border-radius: 6px; border: 1px solid #333; }
+          .footer { margin-top: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #888; gap: 16px; }
+          .btn { padding: 8px 16px; background: #ff6c37; color: #fff; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: 600; }
+          .error { color: #ff5555; }
+        </style>
+      </head>
+      <body>
+        <div id="container">Loading video...</div>
+        <script>
+          pm.getData(function (err, data) {
+            const container = document.getElementById('container');
+            const items = (data && data.data) || [];
+            if (err || !items.length) {
+              container.innerHTML = '<div class="error">No video found in response data.</div>';
+              return;
+            }
+            container.innerHTML = '';
+            items.forEach(function (item, index) {
+              if (!item.b64_json) {
+                container.innerHTML += '<div class="error">Video ' + index + ' has no b64_json</div>';
+                return;
+              }
+              const mime = item.mime_type || 'video/webm';
+              const src = 'data:' + mime + ';base64,' + item.b64_json;
+              const card = document.createElement('div');
+              card.className = 'card';
+              card.innerHTML = '<video controls loop autoplay muted src="' + src + '"></video>' +
+                '<div class="footer"><span>Video #' + (index + 1) + ' &bull; ' + (item.frame_count || '?') + ' frames @ ' +
+                (item.fps || '?') + ' fps &bull; ' + (item.output_format || '') + '</span>' +
+                '<a class="btn" href="' + src + '" download="generated_' + (index + 1) + '.' + (item.output_format || 'webm') + '">Download</a></div>';
+              container.appendChild(card);
+            });
+          });
+        </script>
+      </body>
+      </html>
+      `;
+
+      if (pm.response.code === 200) {
+          pm.visualizer.set(template, pm.response.json());
+      }
+    language: text/javascript
+examples: .resources/Generate Video.resources/examples
+order: 1000

@@ -1,0 +1,40 @@
+$kind: http-example
+request:
+  url: '{{base_url}}/v1/videos/generations'
+  method: POST
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "model": "{{video_model}}",
+        "prompt": "A red fox running through fresh snow in a pine forest",
+        "size": "832x480",
+        "frames": 17,
+        "fps": 24,
+        "steps": 20,
+        "seed": 42,
+        "output_format": "webm"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    content-type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "created": 1790890405,
+        "data": [
+          {
+            "b64_json": "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwH/////////FUmpZpkq17GDD0JATYCGQ2hyb21lV0GGQ2hyb21lFlSua7+uvdeBAXPFh...(truncated base64 WebM)",
+            "mime_type": "video/webm",
+            "output_format": "webm",
+            "fps": 24,
+            "frame_count": 17
+          }
+        ]
+      }
+order: 1000

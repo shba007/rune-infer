@@ -7,6 +7,7 @@ variables:
   omni_model: gemma-4-12b-it
   vision_model: qwen3.8-27b
   image_model: z-image
+  video_model: wan2.2-ti2v-5b
   depth_model: depth-anything-v2-small
   portrait_matting_model: birefnet-matting
   asr_model: parakeet-tdt-0.6b-v3

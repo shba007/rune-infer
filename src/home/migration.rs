@@ -260,7 +260,10 @@ pub(crate) fn migrate_legacy_home(source: &Path, destination: &Path) -> io::Resu
         let mut value: serde_json::Value = serde_json::from_slice(&std::fs::read(&catalog)?)
             .map_err(|_| invalid("Invalid legacy catalog JSON"))?;
         rebase(&mut value, &receipt.source, &env)?;
-        std::fs::write(&catalog, serde_json::to_string_pretty(&value)? + "\n")?;
+        std::fs::write(
+            &catalog,
+            crate::schema::render_catalog(&value).map_err(|_| invalid("Invalid catalog JSON"))?,
+        )?;
         validate(&stage)?;
         if fingerprint(source)? != receipt.files {
             return Err(invalid(

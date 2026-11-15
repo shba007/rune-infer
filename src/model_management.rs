@@ -408,14 +408,20 @@ impl Downloads {
                     status.downloaded = 0;
                     status.total = None;
                 }
-                crate::inference::engines::download::with_install_bin(root.join("bin"), || {
-                    crate::inference::engines::download::with_cancellation(cancel.clone(), || {
-                        crate::inference::engines::download::with_progress(
-                            report(state.clone()),
-                            crate::setup::install_llama_server,
+                crate::inference::engines::download::with_install_bin(
+                    crate::engine_inventory::bin_dir(&root),
+                    || {
+                        crate::inference::engines::download::with_cancellation(
+                            cancel.clone(),
+                            || {
+                                crate::inference::engines::download::with_progress(
+                                    report(state.clone()),
+                                    crate::setup::install_llama_server,
+                                )
+                            },
                         )
-                    })
-                })
+                    },
+                )
                 .map_err(|e| format!("Engine preparation failed: {e}"))?;
                 Ok::<(), String>(())
             }))

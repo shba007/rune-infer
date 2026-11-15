@@ -89,7 +89,7 @@ pub(crate) fn engine_bin() -> Result<PathBuf, String> {
         if let Some(path) = root.borrow().clone() {
             return Ok(path);
         }
-        crate::engine_inventory::managed_root().map(|root| root.join("bin"))
+        crate::engine_inventory::managed_root().map(|root| crate::engine_inventory::bin_dir(&root))
     })
 }
 

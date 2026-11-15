@@ -105,7 +105,8 @@ fn llama_server_installed(home: &Path) -> bool {
     if std::env::var_os("LLAMA_SERVER_PATH").is_some_and(|p| Path::new(&p).exists()) {
         return true;
     }
-    for base in [home.join("bin"), home.join("bin").join("llama-upstream")] {
+    let bin = crate::engine_inventory::bin_dir(home);
+    for base in [bin.clone(), bin.join("llama-upstream")] {
         if base.join(exe).exists() {
             return true;
         }

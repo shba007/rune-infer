@@ -306,7 +306,7 @@ Rules:
   settings, model catalog, secrets). Bump `schema_version` and add a `migrate`
   step for any shape change.
 - Env vars used today: `RUNE_HOST`, `RUNE_PORT`, `RUNE_API_KEY`,
-  `LLAMA_SERVER_PATH`, `SD_SERVER_PATH`, `CRISPASR_PATH`, `NEMO_SPEECH_PATH`,
+  `RUNE_ENGINES_DIR` (same as `--engines-dir`: where managed engines are installed, default `bin/` next to the resolved config, like `config/`), `LLAMA_SERVER_PATH`, `SD_SERVER_PATH`, `CRISPASR_PATH`, `NEMO_SPEECH_PATH`,
   `AUDIO8_PATH`, `S3_*`/`AWS_*`, `RUSTFS_*`, `GH_TOKEN`, provider keys.
 
 ---
@@ -318,7 +318,7 @@ OpenAI canonical: chat completions (stream + non-stream, vision, video, tools,
 (generations/edits/variations), audio (transcriptions/translations/speech),
 models, health. (Note: `/v1/responses` and Anthropic Messages at `/v1/messages`
 and `/anthropic/v1/messages` are implemented but currently disabled in schema 2
-routing pending full protocol alignment). Rune-specific: `/v1/inference`,
+routing pending full protocol alignment). Rune-specific: `/v1/videos/generations` (text-to-video via `sd-server`'s async `vid_gen`; returns a base64 webm/webp/avi, task `text-to-video`, modality `VideoGeneration`), `/v1/inference`,
 `/v1/nlu/intents`, `/v1/ocr`, `/v1/images/{captions,detections,embeddings,
 recognize,upscales,restorations,style-transfers}`, `/v1/audio/speech-to-speech`.
 
@@ -353,6 +353,7 @@ Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
   `install.sh` / `install.ps1` detect the platform, verify the checksum
   (abort on mismatch), install to the shared `~/.rune` directory on every platform, and handle upgrades. Env overrides:
   `RUNE_VERSION`, `RUNE_INSTALL_DIR`, `RUNE_BASE_URL`, `RUNE_NO_MODIFY_PATH`.
+- `rune-infer download [id]` lists the reviewed registry (`registry/models.json`) or downloads one model (SHA-256 verified), registers it in `catalog.json` and installs its engine.
 - Known gaps: release binaries are unsigned (SmartScreen/Gatekeeper warn); no
   uninstall script. `windows-arm64` is built `continue-on-error` (newest
   target; `install.ps1` falls back to the x64 build under emulation if it is

@@ -1,5 +1,6 @@
 use super::download;
 pub(crate) mod edit;
+mod video;
 use crate::config::ModelConfig;
 use crate::inference::process::{
     ProcessGuard, SafeBlockingClient, configure_death_signal, http_probe_success,
@@ -278,7 +279,13 @@ impl SdServerEngine {
         if let Some(ref llm) = model.text_encoder_path {
             if Path::new(llm).exists() {
                 tracing::info!("[SdServerEngine] Attaching text encoder / LLM: {}", llm);
-                cmd.arg("--llm").arg(llm);
+                // Wan-style video models encode text with UMT5 (--t5xxl); DiT image models use an LLM.
+                let flag = if model.modality == crate::config::Modality::VideoGeneration {
+                    "--t5xxl"
+                } else {
+                    "--llm"
+                };
+                cmd.arg(flag).arg(llm);
             }
         }
 
@@ -566,6 +573,7 @@ impl InferenceEngine for SdServerEngine {
         }
         let result = (|| match task {
             InferenceTaskRequest::ImageEdit { .. } => self.execute_edit(task),
+            InferenceTaskRequest::VideoGeneration { .. } => self.execute_video(task),
             InferenceTaskRequest::ImageGeneration {
                 prompt,
                 negative_prompt,
@@ -691,7 +699,7 @@ impl InferenceEngine for SdServerEngine {
                     usage: Usage::new(prompt.len() as u32 / 4, 1),
                 })
             }
-            _ => Err("SdServerEngine only supports ImageGeneration tasks".into()),
+            _ => Err("SdServerEngine only supports image and video generation tasks".into()),
         })();
         let result = checked_result(&self.diagnostics, result);
         if runtime_failure(&self.diagnostics).is_some() {

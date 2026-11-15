@@ -128,6 +128,7 @@ impl Requirements {
                 result
             }
             ImageGeneration { .. } => Self::new(&["text"], "image", "generation"),
+            VideoGeneration { .. } => Self::new(&["text"], "video", "generation"),
             ImageEdit { .. } => Self::new(&["text", "image"], "image", "edit"),
             AudioTranscription { .. } => Self::new(&["audio"], "text", "transcription"),
             AudioTranslation { .. } => Self::new(&["audio"], "text", "translation"),

@@ -33,7 +33,7 @@ pub(crate) fn apply_release(
     let mut whisper_verified = false;
     if engine.name == "whisper-cpp" && engine.installed && engine.managed {
         if let Some(package) = &release.whisper_gpu {
-            let base = root.join("bin/whisper-cpp");
+            let base = crate::engine_inventory::bin_dir(root).join("whisper-cpp");
             let in_managed_folder = engine
                 .path
                 .canonicalize()

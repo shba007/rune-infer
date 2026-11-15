@@ -21,7 +21,7 @@ pub(crate) fn install_engine(
     kind: EngineKind,
     events: std::sync::mpsc::Sender<UpdateEvent>,
 ) -> UpdateResult<String> {
-    let bin = crate::engine_inventory::managed_root()?.join("bin");
+    let bin = crate::engine_inventory::bin_dir(&crate::engine_inventory::managed_root()?);
     let directory = match kind {
         EngineKind::LlamaServer => "llama-upstream",
         EngineKind::LlamaServerPrism => "llama-prism",

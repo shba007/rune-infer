@@ -357,8 +357,10 @@
       "description": "Self-supervised vision transformer foundation backbone for dense feature representation, depth, and semantics",
       "capabilities": [
         "Vision Features",
-        "Semantic Search",
-        "Depth Estimation"
+        "Semantic Search"
+      ],
+      "tasks": [
+        "image-to-embedding"
       ],
       "engine": [
         "encoder"
@@ -390,6 +392,9 @@
         "Object Masking",
         "Video Tracking"
       ],
+      "tasks": [
+        "image-to-segmentation"
+      ],
       "engine": [
         "encoder"
       ],
@@ -419,6 +424,9 @@
         "Zero-Shot Detection",
         "Grounding",
         "Bounding Boxes"
+      ],
+      "tasks": [
+        "text-image-to-detection"
       ],
       "engine": [
         "encoder"
@@ -501,6 +509,9 @@
       "capabilities": [
         "Semantic Search",
         "Code Retrieval"
+      ],
+      "tasks": [
+        "text-to-embedding"
       ],
       "engine": [
         "encoder"
@@ -658,6 +669,9 @@
       "capabilities": [
         "Tool Call",
         "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text"
       ],
       "engine": [
         "needle"
@@ -916,6 +930,44 @@
       }
     },
     {
+      "id": "wan2.2-ti2v-5b",
+      "name": "Wan2.2 TI2V 5B",
+      "description": "Alibaba Wan2.2 text/image-to-video 5B (Q8_0): 720p-class clips at 24 fps from a high-compression VAE; runs in under 16 GB of VRAM with the UMT5 encoder offloaded",
+      "capabilities": [
+        "Video Generation"
+      ],
+      "tasks": [
+        "text-to-video"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/wan-ai/wan2.2-ti2v-5b/Wan2.2-TI2V-5B-Q8_0.gguf",
+        "params": 5000000000,
+        "bits_per_weight": 8.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --offload-to-cpu --vae-tiling --flow-shift 5"
+      },
+      "extra": {
+        "default_cfg_scale": 5,
+        "default_sample_method": "euler",
+        "default_steps": 30,
+        "max_resolution": "832x480 (up to 1280x704)",
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/wan-ai/wan2.2-ti2v-5b/umt5-xxl-encoder-Q8_0.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/wan-ai/wan2.2-ti2v-5b/Wan2.2_VAE.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "Physical AI Bench Generation Overall",
+        "score": 80.4,
+        "unit": "score",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 1.1
+      }
+    },
+    {
       "id": "yolo26x",
       "name": "YOLO26x Object Detection",
       "description": "YOLO26x COCO object detection, reviewed ONNX export with embedded non-maximum suppression (AGPL-3.0).",
@@ -1048,8 +1100,11 @@
       "name": "AceStep v1.5 Turbo",
       "description": "AceStep v1.5 Turbo accelerated diffusion model for sub-second generation",
       "capabilities": [
-        "Turbo Generation",
-        "Photorealism"
+        "Music Generation",
+        "Turbo Generation"
+      ],
+      "tasks": [
+        "text-to-audio"
       ],
       "engine": [
         "sd-server"
@@ -1226,6 +1281,9 @@
         "Conversational Voice",
         "Expressive Synthesis"
       ],
+      "tasks": [
+        "text-to-audio"
+      ],
       "engine": [
         "encoder"
       ],
@@ -1333,6 +1391,9 @@
         "Voice Cloning",
         "Zero-Shot TTS"
       ],
+      "tasks": [
+        "text-to-audio"
+      ],
       "engine": [
         "encoder"
       ],
@@ -1361,6 +1422,9 @@
       "capabilities": [
         "Zero-Shot Cloning",
         "Multilingual"
+      ],
+      "tasks": [
+        "text-to-audio"
       ],
       "engine": [
         "encoder"
@@ -1392,6 +1456,9 @@
         "Speaker-Diarization",
         "Multi-Speaker",
         "Timestamps"
+      ],
+      "tasks": [
+        "audio-to-diarization"
       ],
       "engine": [
         "audio-cpp"
@@ -1455,6 +1522,9 @@
       "name": "Granite Embedding 311M Multilingual R2",
       "description": "IBM Granite 311M Multilingual ModernBERT dense embedding model",
       "capabilities": [],
+      "tasks": [
+        "text-to-embedding"
+      ],
       "engine": [
         "encoder"
       ],
@@ -1481,6 +1551,9 @@
       "name": "GLiGuard LLM Guardrails 300M",
       "description": "Fastino GLiGuard 300M multi-category safety moderation model",
       "capabilities": [],
+      "tasks": [
+        "text-to-moderation"
+      ],
       "engine": [
         "encoder"
       ],
@@ -1507,6 +1580,7 @@
       "name": "mmBERT 32K Intent Classifier",
       "description": "ModernBERT 32K zero-shot intent and entity classifier",
       "capabilities": [],
+      "modality": "Nlu",
       "engine": [
         "encoder"
       ],

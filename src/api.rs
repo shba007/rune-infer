@@ -12,6 +12,7 @@ pub mod moderation;
 pub mod nlu;
 pub mod ocr;
 mod task;
+pub mod videos;
 // pub mod responses;
 
 pub use gate::ModelExecutionGate;
@@ -122,6 +123,11 @@ pub fn create_router(state: AppState) -> Router {
             post(images::image_generation_handler),
         )
         .route("/images/edits", post(images::image_edit_handler))
+        // Videos
+        .route(
+            "/videos/generations",
+            post(videos::video_generation_handler),
+        )
         .route("/images/variations", post(images::image_variation_handler))
         .route("/images/captions", post(images::image_caption_handler))
         .route("/images/detections", post(images::detect_objects_handler))

@@ -51,6 +51,146 @@ pub struct CatalogFile {
     pub aliases: std::collections::HashMap<String, String>,
 }
 
+const CATALOG_ROOT_KEYS: &[&str] = &["schema_version", "models", "roles", "aliases"];
+const CATALOG_MODEL_KEYS: &[&str] = &[
+    "id",
+    "name",
+    "description",
+    "capabilities",
+    "modality",
+    "tasks",
+    "aliases",
+    "roles",
+    "engine",
+    "max_context_length",
+    "sampling",
+    "local",
+    "remote",
+    "extra",
+    "audio_operations",
+    "image_reference_checks",
+    "structured_output_support",
+    "tool_call_support",
+    "benchmarks",
+];
+const CATALOG_LOCAL_KEYS: &[&str] = &[
+    "path",
+    "params",
+    "bits_per_weight",
+    "context_length",
+    "gpu_layers",
+    "args",
+];
+const CATALOG_SAMPLING_KEYS: &[&str] = &["temperature", "top_p", "top_k", "min_p", "max_tokens"];
+const CATALOG_REMOTE_KEYS: &[&str] = &[
+    "provider",
+    "upstream_model",
+    "api_key",
+    "base_url",
+    "rate_limit",
+];
+const CATALOG_RATE_LIMIT_KEYS: &[&str] = &[
+    "requests_per_minute",
+    "tokens_per_minute",
+    "requests_per_day",
+    "tokens_per_day",
+    "max_concurrent",
+    "retry_delay_ms",
+    "max_retries",
+    "queue_timeout_seconds",
+    "retry_timeout_seconds",
+];
+const CATALOG_BENCHMARK_KEYS: &[&str] = &[
+    "index_name",
+    "score",
+    "unit",
+    "mode",
+    "reasoning_effort",
+    "domains",
+    "cost_per_task_usd",
+    "time_per_task_minutes",
+    "output_tokens_per_task",
+];
+const CATALOG_DOMAIN_KEYS: &[&str] = &[
+    "finance_and_accounting",
+    "strategy_and_ops",
+    "legal",
+    "healthcare_and_medical",
+    "engineering",
+    "economics",
+];
+
+fn catalog_key_order(path: &[&str]) -> &'static [&'static str] {
+    match path {
+        [] => CATALOG_ROOT_KEYS,
+        ["models", _] => CATALOG_MODEL_KEYS,
+        ["models", _, "local"] => CATALOG_LOCAL_KEYS,
+        ["models", _, "sampling"] => CATALOG_SAMPLING_KEYS,
+        ["models", _, "remote"] => CATALOG_REMOTE_KEYS,
+        ["models", _, "remote", "rate_limit"] => CATALOG_RATE_LIMIT_KEYS,
+        ["models", _, "benchmarks"] => CATALOG_BENCHMARK_KEYS,
+        ["models", _, "benchmarks", "domains"] => CATALOG_DOMAIN_KEYS,
+        _ => &[],
+    }
+}
+
+fn write_catalog_value(out: &mut String, value: &Value, path: &mut Vec<String>, depth: usize) {
+    let pad = |out: &mut String, level: usize| out.push_str(&"  ".repeat(level));
+    match value {
+        Value::Object(map) if !map.is_empty() => {
+            let route: Vec<&str> = path.iter().map(String::as_str).collect();
+            let order = catalog_key_order(&route);
+            let mut keys: Vec<&String> = map.keys().collect();
+            // Listed keys first in their canonical order; the rest stay alphabetical.
+            keys.sort_by_key(|key| {
+                order
+                    .iter()
+                    .position(|known| known == key)
+                    .unwrap_or(usize::MAX)
+            });
+            out.push_str("{\n");
+            for (index, key) in keys.iter().enumerate() {
+                pad(out, depth + 1);
+                out.push_str(&Value::String((*key).clone()).to_string());
+                out.push_str(": ");
+                path.push((*key).clone());
+                write_catalog_value(out, &map[*key], path, depth + 1);
+                path.pop();
+                out.push_str(if index + 1 < keys.len() { ",\n" } else { "\n" });
+            }
+            pad(out, depth);
+            out.push('}');
+        }
+        Value::Array(items) if !items.is_empty() => {
+            out.push_str("[\n");
+            for (index, item) in items.iter().enumerate() {
+                pad(out, depth + 1);
+                // Array positions are unnamed in the key-order lookup, except models.
+                path.push(index.to_string());
+                write_catalog_value(out, item, path, depth + 1);
+                path.pop();
+                out.push_str(if index + 1 < items.len() { ",\n" } else { "\n" });
+            }
+            pad(out, depth);
+            out.push(']');
+        }
+        other => out.push_str(&other.to_string()),
+    }
+}
+
+/// Render a catalog document in the canonical, hand-maintained layout.
+///
+/// `serde_json::Value` objects are key-sorted, so writers that edit the raw JSON
+/// used to emit models with alphabetical keys. This prints the same data with
+/// each model's fields in schema order (`id`, `name`, ..., `tasks`, `engine`,
+/// `local`, `extra`, ...). Values are never altered, only their order.
+pub fn render_catalog(value: &Value) -> Result<String> {
+    let mut out = String::new();
+    write_catalog_value(&mut out, value, &mut Vec::new(), 0);
+    out.push('\n');
+    Ok(out)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegistryFile {
@@ -389,6 +529,8 @@ fn derived_modality(tasks: &[String]) -> Modality {
         Modality::ObjectDetection
     } else if outputs("moderation") {
         Modality::Moderation
+    } else if outputs("video") {
+        Modality::VideoGeneration
     } else if outputs("image") {
         Modality::ImageGeneration
     } else if outputs("audio") {
@@ -575,5 +717,34 @@ mod audio_modality_tests {
             derived_modality(&["audio-to-text-audio".into()]),
             Modality::SpeechToSpeech
         );
+    }
+}
+
+#[cfg(test)]
+mod render_catalog_tests {
+    use super::*;
+
+    #[test]
+    fn rendering_keeps_the_canonical_key_order() {
+        let value = serde_json::json!({
+            "models": [{
+                "tasks": ["text-to-text"], "name": "A", "id": "a", "description": "",
+                "capabilities": ["Chat"], "max_context_length": null,
+                "engine": ["llama-server"], "extra": {"z": 1, "a": []},
+                "local": {"path": "a.gguf", "args": "", "params": 1}
+            }],
+            "schema_version": SCHEMA_VERSION
+        });
+        let text = render_catalog(&value).unwrap();
+        let position = |key: &str| text.find(&format!("\"{key}\"")).unwrap();
+        assert!(position("schema_version") < position("models"));
+        assert!(position("id") < position("name"));
+        assert!(position("capabilities") < position("tasks"));
+        assert!(position("tasks") < position("engine"));
+        assert!(position("engine") < position("local"));
+        assert!(position("path") < position("params"));
+        assert!(position("params") < position("args"));
+        assert!(text.contains("\"a\": []"));
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), value);
     }
 }
