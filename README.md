@@ -24,6 +24,14 @@
 
 Rune Infer is a high-performance, single-binary AI model gateway that unifies local engines (GGUF, safetensors, CACT) and remote cloud providers (Gemini, OpenAI, Anthropic, OpenRouter) behind standard OpenAI and Anthropic HTTP APIs. Designed to never crash the host, it enforces pre-flight token and VRAM budgeting, lazy-loads models on demand with LRU and idle unloading, and manages engine subprocesses with strict lifecycle isolation. It ships as both an interactive terminal app (with a live dashboard and first-run setup wizard) and an embeddable Rust library.
 
+## Goal
+
+Full statement: [`Goal.md`](Goal.md). It describes direction; the rest of this README describes what works today.
+
+**Current goal.** Infer is the only part of Rune, a local, Jarvis-like AI harness, that runs a model or an engine, including specialist operations such as OCR, detection, generation and speech. It is to publish a schema for each operation and to decide where a named model runs: on this device, then on the user's PC, then in the cloud. Rune Studio always talks to an embedded Infer, so Infer is also to run on weak devices as a forwarder.
+
+**Not goals.** An agent or tool loop, choosing which model a step uses (the caller names it), running MCP servers, storing memory, and model families that do not serve the harness. A non-goal is not a removal order: existing code outside these goals stays until the owner explicitly approves removing it.
+
 ### Features
 
 - 🌐 **Unified API Gateway**: Drop-in compatible with standard OpenAI SDK endpoints (`/v1/chat/completions`, `/v1/embeddings`, `/v1/audio/*`, `/v1/images/*`, `/v1/moderations`) alongside direct task execution (`/v1/inference`), intent classification (`/v1/nlu/intents`), and document OCR (`/v1/ocr`). *(Note: `/v1/responses` and Anthropic Messages `/v1/messages` are implemented but currently disabled in routing pending schema 2 protocol alignment).*

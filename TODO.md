@@ -8,7 +8,7 @@
 - [x] Runtime filesystem polling hot-reload (`spawn_config_watcher`) detecting configuration changes every 2 seconds without restarting
 - [x] Home workspace directory resolution (`--config` > `RUNE_HOME` > dev `./config` > `~/.rune/infer`)
 - [ ] Configuration hot-reload via filesystem events (`notify` crate) instead of 2-second polling
-- [ ] Model catalog dynamic update via REST API without file editing
+- [x] Model catalog dynamic update via REST API without file editing (`GET`/`PUT /v1/management/catalog`)
 
 ## 2. Host Safety, Budgeting & Lifecycle
 - [x] Pre-flight token calculation preventing GGML/CUDA out-of-memory aborts (`SIGABRT`)
@@ -89,7 +89,7 @@
 - [ ] Music generation engine backend (`music`)
 - [ ] Vocal/instrument audio separation engine backend (`separate`)
 - [ ] Zero-shot voice cloning and timbre conversion backends (`clone`, `convert`)
-- [ ] Video generation engine backend (`video-create`)
+- [x] `POST /v1/videos/generations` (video generation through `sd-server`; route and handler present, not verified end to end here)
 
 ## 7. Cloud Proxy & Provider Adapters
 - [x] OpenAI adapter with rate limiting and retry handling
@@ -110,3 +110,16 @@
 - [ ] Windows and macOS binary code signing (SmartScreen/Gatekeeper warnings)
 - [ ] Docker container image packaging and publishing
 - [ ] Uninstall script for shared `~/.rune` artifacts
+
+## 9. Direction (see Goal.md)
+- [ ] Embedded Infer path for Rune Studio on Linux (Windows-only today)
+- [ ] Measure and reduce model swap time between agent, verifier, voice and decision roles on a single consumer GPU
+- [ ] Low-delay speech recognition and synthesis suitable for conversation, and a wake-word path
+- [ ] Embeddings for Rune Lake without evicting the agent model
+- [ ] Safe use from a weak device on the home network (key-protected, not internet-exposed)
+- [ ] Defer model families that do not serve the harness (driving trajectory, 3D generation) until the items above are done
+- [ ] Publish an input and output schema for each operation so Studio can offer it as a model-call step and render its result
+- [ ] Placement with fallback for a named model: this device, then the user's PC, then cloud; cloud-only models go direct; report where it ran; keep sensitive data classes on the user's hardware
+- [ ] Forward every operation (not only chat) to another Infer on the home network
+- [ ] Run on Android as a forwarder with small or no local models
+- [ ] Take model capability and benchmark facts into the registry for Studio's per-step model choice

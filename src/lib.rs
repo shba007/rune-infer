@@ -8,6 +8,7 @@ pub mod detect;
 pub mod embedding;
 mod engine_inventory;
 pub use engine_inventory::{ENGINES_DIR_ENV, set_default_engines_dir, set_engines_dir};
+pub use inference::engines::registry::{ENGINE_REGISTRY_ENV, set_engine_registry};
 mod engine_releases;
 pub mod home;
 pub mod inference;

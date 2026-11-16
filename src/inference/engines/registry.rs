@@ -6,6 +6,25 @@ const REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/engines.json";
 const MAX_REGISTRY_BYTES: u64 = 4 * 1024 * 1024;
 
+/// Environment variable naming a local engines.json to use instead of the
+/// published one (the `--engine-registry` option takes precedence).
+pub const ENGINE_REGISTRY_ENV: &str = "RUNE_ENGINE_REGISTRY";
+
+static LOCAL_REGISTRY: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// Read engine metadata from `path` instead of the published registry (the
+/// `--engine-registry` option). Relative paths are resolved against the current
+/// directory. Must be called before the first lookup; later calls are ignored.
+pub fn set_engine_registry(path: &std::path::Path) -> std::io::Result<()> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let _ = LOCAL_REGISTRY.set(path);
+    Ok(())
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Registry {
@@ -182,6 +201,21 @@ pub(crate) fn prism_release(
 }
 
 fn fetch_document(client: &reqwest::blocking::Client) -> Result<Vec<u8>, Box<dyn Error>> {
+    let local = LOCAL_REGISTRY
+        .get()
+        .cloned()
+        .or_else(|| std::env::var_os(ENGINE_REGISTRY_ENV).map(std::path::PathBuf::from));
+    if let Some(path) = local {
+        let mut body = Vec::new();
+        std::fs::File::open(&path)
+            .map_err(|e| format!("Cannot open engine registry {}: {e}", path.display()))?
+            .take(MAX_REGISTRY_BYTES + 1)
+            .read_to_end(&mut body)?;
+        if body.len() as u64 > MAX_REGISTRY_BYTES {
+            return Err("Engine registry exceeds size limit".into());
+        }
+        return Ok(body);
+    }
     let mut body = Vec::new();
     client
         .get(REGISTRY_URL)
@@ -1136,9 +1170,10 @@ mod tests {
     #[test]
     fn sd_registry_contains_verified_bundles_and_ordered_commits() {
         let release = parse_sd(SEED).unwrap();
-        assert_eq!(release["tag_name"], "master-1043-3be2378");
+        assert_eq!(release["tag_name"], "master-1106-532d2c1");
         assert_eq!(release["rune_registry_revisions"]["c6dfa9d"], 1);
         assert_eq!(release["rune_registry_revisions"]["3be2378"], 2);
+        assert_eq!(release["rune_registry_revisions"]["532d2c1"], 3);
         #[cfg(feature = "tui")]
         {
             let revisions =
@@ -1147,16 +1182,16 @@ mod tests {
                 compare_sd_registry(
                     &revisions,
                     "commit c6dfa9def12fd0cb36ac7149ba30a75792bedbf0",
-                    "master-1043-3be2378"
+                    "master-1106-532d2c1"
                 ),
                 Some(std::cmp::Ordering::Less)
             );
             assert_eq!(
-                compare_sd_registry(&revisions, "commit 3be2378", "master-1043-3be2378"),
+                compare_sd_registry(&revisions, "commit 532d2c1", "master-1106-532d2c1"),
                 Some(std::cmp::Ordering::Equal)
             );
             assert_eq!(
-                compare_sd_registry(&revisions, "commit ffffffff", "master-1043-3be2378"),
+                compare_sd_registry(&revisions, "commit ffffffff", "master-1106-532d2c1"),
                 None
             );
         }
@@ -1168,7 +1203,7 @@ mod tests {
             .iter_mut()
             .find(|entry| entry["id"] == "sd-server")
             .unwrap();
-        engine["versions"]["master-1043-3be2378"]["artifacts"][2]["files"]
+        engine["versions"]["master-1106-532d2c1"]["artifacts"][2]["files"]
             .as_array_mut()
             .unwrap()
             .pop();

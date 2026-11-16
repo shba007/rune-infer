@@ -4,7 +4,7 @@
 # To render this tape into public/demo_tts.gif:
 #   vhs demos/tts/tts.tape
 # Or run:
-#   .\demos\record.ps1 -Name tts
+#   bash demos/record.sh tts
 
 Output public/demo_tts.gif
 
@@ -21,7 +21,7 @@ Set Theme "Catppuccin Mocha"
 Hide
 Type "$env:RUNE_API_KEY = 'rune-demo-secure-key'"
 Enter
-Type "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File .\demos\tts\driver.ps1' -WindowStyle Hidden"
+Type "Start-Process bash -ArgumentList 'demos/tts/driver.sh' -WindowStyle Hidden"
 Enter
 Type ".\target\release\rune-infer.exe --config config/models.json"
 Enter

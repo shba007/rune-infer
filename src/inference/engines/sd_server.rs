@@ -767,7 +767,7 @@ mod tests {
         let cuda = release_assets(assets, "windows", "x86_64", Some((12, 8))).unwrap();
         assert_eq!(cuda.len(), 2);
         assert_eq!(cuda[0]["name"], "cudart-sd-bin-win-cu12-x64.zip");
-        assert_eq!(cuda[1]["name"], "sd-master-3be2378-bin-win-cuda12-x64.zip");
+        assert_eq!(cuda[1]["name"], "sd-master-532d2c1-bin-win-cuda12-x64.zip");
         assert!(release_assets(assets, "linux", "x86_64", None).is_ok());
         assert!(release_assets(assets, "macos", "aarch64", None).is_ok());
         assert!(release_assets(assets, "windows", "aarch64", None).is_err());

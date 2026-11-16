@@ -9,7 +9,7 @@ This directory contains maintained guides and demo assets for Rune Infer.
 - `demo_tts.gif`: Text-to-speech screencast (Audio8 real-time speech synthesis) generated via `demos/tts/tts.tape`.
 
 To record or re-render these screencasts, see [`demos/README.md`](../demos/README.md) or run:
-```powershell
-.\demos\record.ps1 -Name overview
-.\demos\record.ps1 -Name tts
+```bash
+bash demos/record.sh overview
+bash demos/record.sh tts
 ```

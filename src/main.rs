@@ -32,6 +32,10 @@ struct Args {
     #[arg(long, global = true, value_name = "PATH")]
     engines_dir: Option<std::path::PathBuf>,
 
+    /// Use a local engines.json for engine install/update instead of the published one (also RUNE_ENGINE_REGISTRY)
+    #[arg(long, global = true, value_name = "PATH")]
+    engine_registry: Option<std::path::PathBuf>,
+
     /// Use a local models.json for dashboard model installation
     #[arg(long, global = true, value_name = "PATH")]
     model_registry: Option<std::path::PathBuf>,
@@ -146,6 +150,9 @@ async fn main() -> Result<()> {
     rune_infer::set_default_engines_dir(&ws.root);
     if let Some(dir) = &args.engines_dir {
         rune_infer::set_engines_dir(dir).context("Cannot resolve the engines directory")?;
+    }
+    if let Some(path) = &args.engine_registry {
+        rune_infer::set_engine_registry(path).context("Cannot resolve the engine registry")?;
     }
 
     #[cfg(feature = "tui")]

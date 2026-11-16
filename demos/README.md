@@ -9,16 +9,16 @@ This directory contains automated terminal screencast recordings and background 
 ```text
 demos/
 ├── README.md                  # This guide and demo catalog
-├── record.ps1                 # Master orchestrator script
+├── record.sh                  # Master orchestrator script
 ├── common/
-│   ├── driver_helpers.ps1     # Shared background driver utilities (Wait-RuneServer, etc.)
+│   ├── driver_helpers.sh      # Shared background driver utilities (wait_rune_server, etc.)
 │   └── template.tape          # Starter VHS tape template for new recordings
 ├── overview/
 │   ├── overview.tape          # 60s screencast: live dashboard, lazy-loading & VRAM LRU swap
-│   └── driver.ps1             # Background driver issuing chat completion requests
+│   └── driver.sh              # Background driver issuing chat completion requests
 └── tts/
     ├── tts.tape               # Text-to-speech screencast: Audio8 real-time synthesis
-    └── driver.ps1             # Background driver issuing /v1/audio/speech request
+    └── driver.sh              # Background driver issuing /v1/audio/speech request
 ```
 
 ---
@@ -48,18 +48,18 @@ demos/
 
 ## Recording Demos
 
-Use the included orchestrator script `demos/record.ps1`:
+Use the included orchestrator script `demos/record.sh`:
 
-```powershell
+```bash
 # Validate all tapes without rendering
-.\demos\record.ps1 -ValidateOnly
+bash demos/record.sh --validate-only
 
 # Record a specific demo
-.\demos\record.ps1 -Name overview
-.\demos\record.ps1 -Name tts
+bash demos/record.sh overview
+bash demos/record.sh tts
 
 # Compile release binary and record all demos
-.\demos\record.ps1 -Build
+bash demos/record.sh --build
 
 # Or run VHS directly from the repository root
 vhs demos/overview/overview.tape
@@ -73,31 +73,32 @@ vhs demos/tts/tts.tape
 To add a new recording for another feature or modality:
 
 1. **Create the folder**:
-   ```powershell
-   New-Item -ItemType Directory -Path "demos/<feature>"
+   ```bash
+   mkdir -p demos/<feature>
    ```
 2. **Create the tape script**:
    Copy [`demos/common/template.tape`](common/template.tape) into `demos/<feature>/<feature>.tape` and customize:
    - Output path: `Output docs/demo_<feature>.gif`
-   - Background driver path: `.\demos\<feature>\driver.ps1`
+   - Background driver path: `demos/<feature>/driver.sh`
    - Sleep durations matching the expected request runtime.
 3. **Create the background driver**:
-   Create `demos/<feature>/driver.ps1`:
-   ```powershell
+   Create `demos/<feature>/driver.sh`:
+   ```bash
+   #!/usr/bin/env bash
    # Import shared helper utilities
-   $helpersPath = Join-Path $PSScriptRoot "..\common\driver_helpers.ps1"
-   if (Test-Path $helpersPath) { . $helpersPath }
+   here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+   . "$here/../common/driver_helpers.sh"
 
    # Wait for server /health to be responsive
-   $null = Wait-RuneServer -Url "http://127.0.0.1:8081/health" -TimeoutSeconds 15
+   wait_rune_server "http://127.0.0.1:8081/health" 15
 
    # Issue your demo request(s)
-   Invoke-RestMethod -Uri "http://127.0.0.1:8081/v1/..." ...
+   demo_post "http://127.0.0.1:8081/v1/..." '{ ... }' >/dev/null
    ```
 4. **Validate and record**:
-   ```powershell
-   .\demos\record.ps1 -Name <feature> -ValidateOnly
-   .\demos\record.ps1 -Name <feature>
+   ```bash
+   bash demos/record.sh <feature> --validate-only
+   bash demos/record.sh <feature>
    ```
 5. **Update documentation**:
    Add the new demo to the table above and document the output in [`docs/README.md`](../docs/README.md).

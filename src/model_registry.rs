@@ -2375,4 +2375,24 @@ mod tests {
         value["local_models"].as_array_mut().unwrap().push(first);
         assert!(parse(&serde_json::to_vec(&value).unwrap()).is_err());
     }
+
+    #[test]
+    fn every_installable_registry_model_installs_from_its_verified_files() {
+        for mut model in parse(include_bytes!("../registry/models.json")).unwrap() {
+            let (root, _, _) = fixture();
+            for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
+                let contents = fixture_bytes(file);
+                file.sha256 = hex::encode(Sha256::digest(contents));
+                file.size_bytes = contents.len() as u64;
+            }
+            let server = root.join("config/server.json");
+            let catalog = root.join("config/catalog.json");
+            install_with(&model, &root, &server, &catalog, |file, path| {
+                std::fs::write(path, fixture_bytes(file))?;
+                Ok(())
+            })
+            .unwrap_or_else(|error| panic!("{} failed to install: {error:#}", model.id));
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
 }

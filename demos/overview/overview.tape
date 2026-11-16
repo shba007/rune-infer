@@ -4,7 +4,7 @@
 # To render this tape into public/demo.gif:
 #   vhs demos/overview/overview.tape
 # Or run:
-#   .\demos\record.ps1 -Name overview
+#   bash demos/record.sh overview
 
 Output public/demo.gif
 
@@ -21,7 +21,7 @@ Set Theme "Catppuccin Mocha"
 Hide
 Type "$env:RUNE_API_KEY = 'rune-demo-secure-key'"
 Enter
-Type "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File .\demos\overview\driver.ps1' -WindowStyle Hidden"
+Type "Start-Process bash -ArgumentList 'demos/overview/driver.sh' -WindowStyle Hidden"
 Enter
 Type ".\target\release\rune-infer.exe --config config/models.json"
 Enter

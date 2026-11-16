@@ -173,68 +173,6 @@
       }
     },
     {
-      "id": "qwen3.8-27b",
-      "name": "Qwen3.8 27B",
-      "description": "Qwen3.8 27B multimodal vision-language model with separate Unsloth MTP speculative draft head",
-      "capabilities": [
-        "Chat",
-        "Vision",
-        "Reasoning",
-        "Agentic Tasks",
-        "Tool Call",
-        "Structured Output",
-        "Person Identification",
-        "MTP"
-      ],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-video-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 262144,
-      "sampling": {
-        "temperature": 0.3,
-        "top_p": 0.9,
-        "top_k": 40,
-        "min_p": 0.05,
-        "max_tokens": 1024
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-IQ3_S.gguf",
-        "params": 27000000000,
-        "bits_per_weight": 3.44,
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
-      },
-      "extra": {
-        "max_resolution": "4096×4096 (Dynamic 4K)",
-        "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/mmproj-BF16.gguf",
-        "mtp_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.8-27B-GGUF/mtp-Qwen3.8-27B-Q4_0.gguf"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 20,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "xhigh",
-        "domains": {
-          "finance_and_accounting": 36,
-          "strategy_and_ops": 32,
-          "legal": 31,
-          "healthcare_and_medical": 30,
-          "engineering": 35,
-          "economics": 33
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 8.5,
-        "output_tokens_per_task": 105000
-      }
-    },
-    {
       "id": "ternary-bonsai-2-27b-pq2-0",
       "name": "Ternary Bonsai-2 27B",
       "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
@@ -290,65 +228,6 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 4.8,
         "output_tokens_per_task": 62000
-      }
-    },
-    {
-      "id": "ornith-1.5-9b",
-      "name": "Ornith 1.5 9B",
-      "description": "Multimodal vision-language reasoning model specialized for agentic coding and technical tasks",
-      "capabilities": [
-        "Chat",
-        "Vision",
-        "Reasoning",
-        "Agentic Coding",
-        "Structured Output",
-        "Tool Call"
-      ],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-video-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 262144,
-      "sampling": {
-        "temperature": 0.6,
-        "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.01,
-        "max_tokens": 4096
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/ornith-ai/Ornith-1.5-9B-GGUF/Ornith-1.5-9B-Q8_0.gguf",
-        "params": 9400000000,
-        "bits_per_weight": 8.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "extra": {
-        "max_resolution": "3840×2160 (4K UHD)",
-        "mmproj_path": "D:/Projects/Public/rune/code-model/ornith-ai/Ornith-1.5-9B-GGUF/mmproj-Ornith-1.5-9B-BF16.gguf"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 16,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "medium",
-        "domains": {
-          "finance_and_accounting": 29,
-          "strategy_and_ops": 26,
-          "legal": 25,
-          "healthcare_and_medical": 24,
-          "engineering": 29,
-          "economics": 27
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 3.5,
-        "output_tokens_per_task": 52000
       }
     },
     {
@@ -758,63 +637,6 @@
       }
     },
     {
-      "id": "qwen-image-2.1",
-      "name": "Qwen-Image-2.1 7B",
-      "description": "Qwen-Image-2.1 7B with native 2K rendering, RGBA transparency, live-verified instruction edits and image variations, up to ten unmasked references and two references with alpha masks",
-      "capabilities": [
-        "Transparency (RGBA)"
-      ],
-      "tasks": [
-        "text-to-image",
-        "text-image-to-image",
-        "image-to-image"
-      ],
-      "engine": [
-        "sd-server"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/qwen-image-2.1-Q4_K_M.gguf",
-        "params": 7000000000,
-        "bits_per_weight": 4.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk"
-      },
-      "extra": {
-        "default_cfg_scale": 4,
-        "default_sample_method": "euler",
-        "default_steps": 30,
-        "max_resolution": "2048×2048 (Native DiT)",
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
-        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
-      },
-      "image_reference_checks": [
-        {
-          "counts": [
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10
-          ],
-          "engine": "sd-server",
-          "version": "stable-diffusion.cpp version unknown, commit c6dfa9d"
-        }
-      ],
-      "benchmarks": {
-        "index_name": "LMSYS Image Arena ELO",
-        "score": 1115,
-        "unit": "ELO",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.45,
-        "output_tokens_per_task": 20
-      }
-    },
-    {
       "id": "qwen-image-2.1-uncensored",
       "name": "Qwen-Image-2.1 7B Uncensored",
       "description": "Qwen-Image-2.1 7B Uncensored variant with bypassed alignment filtering",
@@ -1122,7 +944,6 @@
         "default_cfg_scale": 2,
         "default_sample_method": "euler",
         "default_steps": 8,
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace_1.5_vae.safetensors"
       },
       "benchmarks": {
@@ -1226,83 +1047,6 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.15,
         "output_tokens_per_task": 1200
-      }
-    },
-    {
-      "id": "indicwhisper-bengali",
-      "name": "AI4Bharat IndicWhisper Bengali",
-      "description": "Multilingual Whisper model fine-tuned for Indic speech-to-text transcription with Silero VAD",
-      "capabilities": [
-        "Bengali",
-        "Low WER",
-        "Timestamps"
-      ],
-      "tasks": [
-        "audio-to-text"
-      ],
-      "engine": [
-        "crispasr",
-        "whisper-cpp"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/rupind/indic-whisper-medium-gguf/ggml-indic-whisper-medium-q8_0.bin",
-        "params": 244000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--vad -vp 250 -vsd 400"
-      },
-      "audio_operations": {
-        "transcription": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "crispasr",
-              "version": "version       : 0.8.49; git sha       : d9426437"
-            }
-          ]
-        }
-      },
-      "benchmarks": {
-        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
-        "score": 94.5,
-        "unit": "Accuracy %",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.35,
-        "output_tokens_per_task": 1200
-      }
-    },
-    {
-      "id": "higgs-audio-v3-tts-4b",
-      "name": "Higgs Audio v3 TTS 4B",
-      "description": "Expressive dialogue conversational TTS engine using Higgs tokenizer",
-      "capabilities": [
-        "Conversational Voice",
-        "Expressive Synthesis"
-      ],
-      "tasks": [
-        "text-to-audio"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/multimodalart/higgs-audio-v3-tts-4b-transformers/higgs-audio-v3-tts-4b-q8_0.gguf",
-        "params": 4000000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--tokenizer D:/Models/huggingface/hub/models--bosonai--higgs-audio-v2-tokenizer/snapshots/main"
-      },
-      "benchmarks": {
-        "index_name": "TTS Arena Mean Opinion Score (MOS)",
-        "score": 4.38,
-        "unit": "MOS / 5.0",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.2,
-        "output_tokens_per_task": 600
       }
     },
     {
@@ -1518,35 +1262,6 @@
       }
     },
     {
-      "id": "granite-embedding-311m-multilingual-r2",
-      "name": "Granite Embedding 311M Multilingual R2",
-      "description": "IBM Granite 311M Multilingual ModernBERT dense embedding model",
-      "capabilities": [],
-      "tasks": [
-        "text-to-embedding"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/ibm-granite/granite-embedding-311m-multilingual-r2/granite-embedding-311M-multilingual-r2-Q4_K_M.gguf",
-        "params": null,
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
-        "score": 63.1,
-        "unit": "NDCG@10",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.03,
-        "output_tokens_per_task": 8192
-      }
-    },
-    {
       "id": "gliguard-LLMGuardrails-300M",
       "name": "GLiGuard LLM Guardrails 300M",
       "description": "Fastino GLiGuard 300M multi-category safety moderation model",
@@ -1699,13 +1414,13 @@
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "rate_limit": {
           "requests_per_minute": 5,
+          "tokens_per_minute": 250000,
+          "requests_per_day": 20,
           "max_concurrent": 2,
           "retry_delay_ms": 2000,
           "max_retries": 6,
           "queue_timeout_seconds": 30,
-          "requests_per_day": 20,
-          "retry_timeout_seconds": 45,
-          "tokens_per_minute": 250000
+          "retry_timeout_seconds": 45
         }
       },
       "benchmarks": {
@@ -1767,35 +1482,6 @@
       }
     },
     {
-      "id": "depth-anything-v2-small",
-      "name": "Depth Anything V2 Small FP32",
-      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-small architecture)",
-      "capabilities": [],
-      "tasks": [
-        "image-to-depth"
-      ],
-      "engine": [
-        "litert"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/depth_anything_v2_small.tflite",
-        "params": null,
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "NYUv2 Relative Depth Accuracy Index (1 - AbsRel)",
-        "score": 91.8,
-        "unit": "Accuracy %",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.02,
-        "output_tokens_per_task": 1
-      }
-    },
-    {
       "id": "depth-anything-v2-large",
       "name": "Depth Anything V2 Large FP32",
       "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-large architecture)",
@@ -1822,49 +1508,6 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.05,
         "output_tokens_per_task": 1
-      }
-    },
-    {
-      "id": "lfm3-1.7b-q4-k-m",
-      "name": "LiquidAI LFM3 1.7B Q4_K_M",
-      "description": "Liquid AI's 1.7B text model in the official Q4_K_M GGUF format.",
-      "capabilities": [],
-      "tasks": [
-        "text-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 262144,
-      "sampling": {
-        "temperature": 0.1,
-        "top_k": 50
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-1.7B-GGUF/LFM3-1.7B-Q4_K_M.gguf",
-        "params": 1700000000,
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--repeat-penalty 1.1"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 7.2,
-        "unit": "index",
-        "mode": "non_reasoning",
-        "reasoning_effort": "none",
-        "domains": {
-          "finance_and_accounting": 14,
-          "strategy_and_ops": 12,
-          "legal": 11,
-          "healthcare_and_medical": 10,
-          "engineering": 13,
-          "economics": 12
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 1,
-        "output_tokens_per_task": 16000
       }
     },
     {
@@ -1991,57 +1634,6 @@
       }
     },
     {
-      "id": "holo3.1-4b-q4",
-      "name": "Holo3.1 4B",
-      "description": "Computer-use vision model; integration and hardware compatibility require validation.",
-      "capabilities": [
-        "Chat",
-        "Tool Call",
-        "Vision"
-      ],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 32768,
-      "sampling": {
-        "temperature": 0,
-        "max_tokens": 512
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-4B-GGUF/Holo-3.1-4B.Q4_K_M.gguf",
-        "params": 4000000000,
-        "bits_per_weight": 5.6,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "-fa on"
-      },
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-4B-GGUF/Holo-3.1-4B.mmproj-f16.gguf"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 12,
-        "unit": "index",
-        "mode": "non_reasoning",
-        "reasoning_effort": "none",
-        "domains": {
-          "finance_and_accounting": 22,
-          "strategy_and_ops": 20,
-          "legal": 19,
-          "healthcare_and_medical": 18,
-          "engineering": 23,
-          "economics": 21
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 1.8,
-        "output_tokens_per_task": 30000
-      }
-    },
-    {
       "id": "holo3.1-9b-q4",
       "name": "Holo3.1 9B",
       "description": "Computer-use vision model; integration and hardware compatibility require validation.",
@@ -2093,37 +1685,6 @@
       }
     },
     {
-      "id": "vevo2-audiocpp",
-      "name": "Vevo2 (audio.cpp)",
-      "description": "Vevo2 audio synthesis and voice generation model in GGUF format",
-      "capabilities": [
-        "Speech Generation",
-        "Audio"
-      ],
-      "tasks": [
-        "text-to-audio"
-      ],
-      "engine": [
-        "audio-cpp"
-      ],
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Vevo2-GGUF/vevo2-q8_0.gguf",
-        "params": 3000000000,
-        "bits_per_weight": 8,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "TTS Arena Mean Opinion Score (MOS)",
-        "score": 4.42,
-        "unit": "MOS / 5.0",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.08,
-        "output_tokens_per_task": 500
-      }
-    },
-    {
       "id": "snac-24khz",
       "name": "SNAC 24kHz Tokenizer",
       "description": "Multi-scale neural audio codec operating at 24kHz",
@@ -2152,169 +1713,6 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.04,
         "output_tokens_per_task": 512
-      }
-    },
-    {
-      "id": "indic-whisper-medium-gguf",
-      "name": "Indic Whisper Medium GGUF",
-      "description": "Indic languages speech recognition model in whisper.cpp / ggml format",
-      "capabilities": [
-        "Transcription",
-        "Audio"
-      ],
-      "tasks": [
-        "audio-to-text"
-      ],
-      "engine": [
-        "crispasr",
-        "whisper-cpp"
-      ],
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/rupind/indic-whisper-medium-gguf/ggml-indic-whisper-medium-q8_0.bin",
-        "params": 769000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
-        "score": 93.2,
-        "unit": "Accuracy %",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.3,
-        "output_tokens_per_task": 1200
-      }
-    },
-    {
-      "id": "bge-small-en-v1.5",
-      "name": "BGE Small EN v1.5",
-      "description": "Fast high performance English text embedding model",
-      "capabilities": [
-        "Embedding"
-      ],
-      "tasks": [
-        "text-to-embedding"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/bge-small-en-v1.5/bge-small-en-v1.5-q8_0.gguf",
-        "params": 33000000,
-        "bits_per_weight": 8,
-        "context_length": 512,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
-        "score": 62.2,
-        "unit": "NDCG@10",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.02,
-        "output_tokens_per_task": 512
-      }
-    },
-    {
-      "id": "qwen2.5-vl-7b-instruct-gguf",
-      "name": "Qwen2.5-VL 7B Instruct GGUF",
-      "description": "Vision-language chat model quantized in GGUF format",
-      "capabilities": [
-        "Chat",
-        "Vision",
-        "Tool Call"
-      ],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 131072,
-      "sampling": {
-        "temperature": 0.7,
-        "max_tokens": 4096
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
-        "params": 7000000000,
-        "bits_per_weight": 4.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "-fa on"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 19.5,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "medium",
-        "domains": {
-          "finance_and_accounting": 31,
-          "strategy_and_ops": 29,
-          "legal": 28,
-          "healthcare_and_medical": 27,
-          "engineering": 32,
-          "economics": 30
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 4.1,
-        "output_tokens_per_task": 58000
-      }
-    },
-    {
-      "id": "qwen3.5-9b-gguf",
-      "name": "Qwen3.5 9B GGUF",
-      "description": "Qwen3.5 9B vision and reasoning model with F16 vision projector",
-      "capabilities": [
-        "Chat",
-        "Vision",
-        "Reasoning",
-        "Tool Call"
-      ],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-video-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 131072,
-      "sampling": {
-        "temperature": 0.2,
-        "max_tokens": 4096
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q8_0.gguf",
-        "params": 9000000000,
-        "bits_per_weight": 8,
-        "context_length": 8192,
-        "gpu_layers": 99,
-        "args": "-fa on"
-      },
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3.5-9B-GGUF/mmproj-F16.gguf"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 18,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "medium",
-        "domains": {
-          "finance_and_accounting": 31,
-          "strategy_and_ops": 28,
-          "legal": 27,
-          "healthcare_and_medical": 26,
-          "engineering": 31,
-          "economics": 29
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 3.6,
-        "output_tokens_per_task": 54000
       }
     },
     {
@@ -2474,8 +1872,8 @@
       "remote": {
         "provider": "google",
         "upstream_model": "gemini-4-carbon",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "api_key": "{{GEMINI_API_KEY}}",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "rate_limit": {
           "requests_per_minute": 1000,
           "max_concurrent": 10,
@@ -2527,8 +1925,8 @@
       "remote": {
         "provider": "google",
         "upstream_model": "gemini-4-hydrogen",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "api_key": "{{GEMINI_API_KEY}}",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "rate_limit": {
           "requests_per_minute": 1500,
           "max_concurrent": 15,
@@ -2604,11 +2002,292 @@
         "time_per_task_minutes": 5.2,
         "output_tokens_per_task": 65000
       }
+    },
+    {
+      "id": "h3-image",
+      "name": "MiniMax H3-Image",
+      "description": "MiniMax H3-Image 33.1B DiT with native 4K rendering, 6-step distilled sampling, and support for up to 16 reference images",
+      "capabilities": [
+        "High Resolution (4K)",
+        "Multi-Reference Editing"
+      ],
+      "tasks": [
+        "text-to-image",
+        "text-image-to-image",
+        "image-to-image"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/minimax_h3_image_pruned-Q4_K_M.gguf",
+        "params": 33100000000,
+        "bits_per_weight": 4.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --params-backend disk"
+      },
+      "extra": {
+        "default_cfg_scale": 1,
+        "default_sample_method": "euler",
+        "default_steps": 6,
+        "max_resolution": "4096×4096 (Native DiT)",
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/qwen3vl_32b_minimax_h3-Q4_K_M.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/diffusion_pytorch_model.safetensors"
+      },
+      "image_reference_checks": [
+        {
+          "counts": [
+            4,
+            8
+          ],
+          "engine": "sd-server",
+          "version": "stable-diffusion.cpp PR #2324"
+        }
+      ],
+      "benchmarks": {
+        "index_name": "Artificial Analysis Image Editing Elo",
+        "score": 1137,
+        "unit": "Elo",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.15,
+        "output_tokens_per_task": 6
+      }
+    },
+    {
+      "id": "ltx-2.3-22b-distilled",
+      "name": "LTX-2.3 22B Distilled",
+      "description": "Lightricks LTX-2.3 22B distilled 1.1 (Q4_K_M): few-step text-to-video up to 720p at 24 fps with a Gemma 3 12B text encoder; runs on 16 GB of VRAM with the encoder and weights offloaded",
+      "capabilities": [
+        "Video Generation"
+      ],
+      "tasks": [
+        "text-to-video"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled-1.1-Q4_K_M.gguf",
+        "params": 22000000000,
+        "bits_per_weight": 5.2,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --offload-to-cpu --vae-tiling"
+      },
+      "extra": {
+        "default_cfg_scale": 1,
+        "default_sample_method": "euler",
+        "default_steps": 8,
+        "max_resolution": "1280x720",
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_video_vae.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "Physical AI Bench Generation Overall",
+        "score": 75.8,
+        "unit": "Score",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.45,
+        "output_tokens_per_task": 128
+      }
+    },
+    {
+      "id": "scrfd-34g-gnkps",
+      "name": "SCRFD 34G Face Detector & Keypoints",
+      "description": "High-accuracy Sample and Computation Redistribution Face Detector (34GF) with 5-point facial landmarks",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/detection/scrfd_34g_gnkps.onnx"
+      }
+    },
+    {
+      "id": "glintr100-arcface",
+      "name": "GlintR100 ArcFace Feature Extractor",
+      "description": "ResNet-100 ArcFace embedding model trained on Glint360k (512-dim facial biometric embeddings)",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-embedding"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/recognition/glintr100.onnx"
+      }
+    },
+    {
+      "id": "w600k-r50-arcface",
+      "name": "WebFace600K ResNet-50 ArcFace",
+      "description": "InsightFace WebFace600K ResNet-50 biometric face recognition model (512-dim embedding)",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-embedding"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/recognition/w600k_r50.onnx"
+      }
+    },
+    {
+      "id": "mivolo-v2-age-gender",
+      "name": "MiVOLO v2 Age & Gender Estimator",
+      "description": "Multi-input Visual Offset for Localization and Estimation of Age and Gender using face and body patches",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/demographics/mivolo_v2_age.onnx"
+      }
+    },
+    {
+      "id": "fairface-demographics",
+      "name": "FairFace Demographics Classifier",
+      "description": "FairFace race, gender, and 9-group age classification model balanced across 7 racial groups",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/demographics/fairface.onnx"
+      }
+    },
+    {
+      "id": "sixdrepnet-head-pose",
+      "name": "SixDRepNet 6D Head Pose Estimator",
+      "description": "Rotation matrix representation-based continuous 6D head pose estimator (pitch, yaw, roll)",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/pose/head_pose/sixdrepnet.onnx"
+      }
+    },
+    {
+      "id": "enet-b2-emotion",
+      "name": "EfficientNet-B2 Facial Emotion Classifier",
+      "description": "Facial affect and expression recognition across 8 discrete emotions (HSEmotion based)",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/emotion/enet_b2_8.onnx"
+      }
+    },
+    {
+      "id": "segformer-face-parsing",
+      "name": "SegFormer B0 Face Parsing",
+      "description": "Transformer-based semantic face parsing for skin, hair, eyes, lips, nose, glasses, and background",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-segmentation"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/segmentation/segformer_face_parsing.onnx"
+      }
+    },
+    {
+      "id": "resnet50-gaze-estimation",
+      "name": "ResNet-50 3D Gaze Estimator",
+      "description": "3D gaze direction and eye vector estimation from face/eye region inputs (MPIIGaze/ETH-XGaze)",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/gaze/resnet50_gaze.onnx"
+      }
+    },
+    {
+      "id": "minifasnet-v2-liveness",
+      "name": "MiniFASNet v2 Silent Face Anti-Spoofing",
+      "description": "Silent anti-spoofing and liveness detector to prevent 2D photo, video replay, and 3D mask attacks",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/liveness/minifasnet_v2.onnx"
+      }
+    },
+    {
+      "id": "aesthetic-score-mlp",
+      "name": "CLIP Aesthetics Predictor MLP",
+      "description": "Predicts human aesthetic perception and image quality ratings (1 to 10 scale)",
+      "capabilities": [
+        "Vision"
+      ],
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/aesthetic/aesthetic_score_mlp.onnx"
+      }
     }
   ],
   "aliases": {
-    "deepseek-r1-distill-qwen-32b": "deepseek-r1-distill-qwen-32b",
     "deepseek-r1-32b": "deepseek-r1-distill-qwen-32b",
-    "deepseek-r1-qwen-32b": "deepseek-r1-distill-qwen-32b"
+    "deepseek-r1-distill-qwen-32b": "deepseek-r1-distill-qwen-32b",
+    "deepseek-r1-qwen-32b": "deepseek-r1-distill-qwen-32b",
+    "ltx-2.3-22b-distilled": "ltx-2.3-22b-distilled",
+    "ltx-video": "ltx-2.3-22b-distilled",
+    "ltx-2.3": "ltx-2.3-22b-distilled"
   }
 }

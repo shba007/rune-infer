@@ -1456,7 +1456,7 @@
       "name": "stable-diffusion.cpp",
       "kind": "managed",
       "comparison_url": "https://api.github.com/repos/leejet/stable-diffusion.cpp/compare",
-      "latest": "master-1043-3be2378",
+      "latest": "master-1106-532d2c1",
       "versions": {
         "master-1031-c6dfa9d": {
           "release_number": 1,
@@ -1682,6 +1682,121 @@
                   "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-Darwin-macOS-26.6.2-arm64.zip",
                   "sha256": "ec40c7b84d86333ea89a9a52745fce25c3081122f6207a4370f35b504df99252",
                   "size_bytes": 37650853,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        },
+        "master-1106-532d2c1": {
+          "release_number": 3,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-win-cpu-x64.zip",
+                  "sha256": "abef332cfca7861cc567910e79bedb70bfb2920bb4eedac97fcbb6db477f1596",
+                  "size_bytes": 18358541,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-win-vulkan-x64.zip",
+                  "sha256": "3e66222c87ca27074e1fd8ce79706eef17a8aaf39949906aa1bee7e060f22ecc",
+                  "size_bytes": 30312081,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.0"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-win-cuda12-x64.zip",
+                  "sha256": "b087219145a382cc1b1e826318289e1f672b9bb6965977734ef0deb85fe2d03a",
+                  "size_bytes": 412365497,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/cudart-sd-bin-win-cu12-x64.zip",
+                  "sha256": "fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d",
+                  "size_bytes": 563452046,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-Linux-Ubuntu-26.04-x86_64.zip",
+                  "sha256": "0a02f7f51feb0691128f60cf6ff1c686ec23089561cfe7c3b72645f446646e13",
+                  "size_bytes": 29124086,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-Linux-Ubuntu-26.04-x86_64-vulkan.zip",
+                  "sha256": "ca30fe17f1735cdfb4c8561b75799070c25cc86a9e5438f4c0e1b163baae4e12",
+                  "size_bytes": 42212329,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-Darwin-macOS-26.7.2-arm64.zip",
+                  "sha256": "8146d6ffc75f8ff8f64b62a80fffee8fb714ab65e368e202084135fa07cc6f36",
+                  "size_bytes": 38331254,
                   "format": "zip"
                 }
               ]

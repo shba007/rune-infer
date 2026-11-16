@@ -4,7 +4,7 @@
 # To render this tape:
 #   vhs demos/<feature>/<feature>.tape
 # Or using the orchestrator:
-#   .\demos\record.ps1 -Name <feature>
+#   bash demos/record.sh <feature>
 
 Output docs/demo_feature.gif
 
@@ -21,7 +21,7 @@ Set Theme "Catppuccin Mocha"
 Hide
 Type "$env:RUNE_API_KEY = 'rune-demo-secure-key'"
 Enter
-Type "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File .\demos\feature\driver.ps1' -WindowStyle Hidden"
+Type "Start-Process bash -ArgumentList 'demos/feature/driver.sh' -WindowStyle Hidden"
 Enter
 Type ".\target\release\rune-infer.exe --config config/models.json"
 Enter

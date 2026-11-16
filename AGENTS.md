@@ -13,6 +13,21 @@ per request by the `model` id.
 local or cloud — goes through this one endpoint. It is intended as the
 foundation of a larger Rune ecosystem.
 
+`Goal.md` holds the current goals and non-goals for that ecosystem and for
+Infer; read it before proposing work. It states intent, not status. In short:
+Infer is the only component that runs a model or an engine, including specialist
+operations (OCR, detection, generation, speech), which are never wrapped as Kit
+tools. Infer is to publish a schema per operation, and to decide where a named
+model runs: this device, then the user's PC, then the cloud. The caller (Studio)
+still names the model and its ordered equivalents.
+
+Philosophy rule 6 below states this placement order. It is not implemented yet.
+
+Not goals for Infer: an agent or tool loop, choosing which model a step uses,
+running MCP servers, storing memory, and model families that do not serve the
+harness. A non-goal is not a removal order: never remove, disable or rewrite
+existing code because it is a non-goal without the owner's explicit permission.
+
 This document is the source of truth for scope, architecture and direction.
 Update it whenever a decision below changes. (Rewritten 2026-10-11 to match the
 code as built; the original plan assumed in-process `llama-cpp-2` FFI and a
@@ -35,8 +50,17 @@ Cargo workspace, neither of which is how the project turned out.)
 5. **Orchestrate, don't reinvent.** Prefer driving best-in-class upstream
    engines (`llama-server`, `sd-server`, `crispasr`) as managed subprocesses;
    write native Rust only where that is the practical option.
-6. **Explicit routing.** The caller names the exact model id. No aliases,
-   fallback chains or capability-based routing (revisit only if asked).
+6. **The caller names the model; Infer decides where it runs.** The caller
+   gives the exact model id, and may give an ordered list of equivalent models.
+   Infer never picks a model by capability and has no aliases. For a named
+   model Infer chooses the place in a fixed order: this device if it fits, then
+   the user's own PC, then the cloud; a cloud-only model goes straight to the
+   cloud. Only when all places fail does Infer move to the caller's next
+   equivalent model, in the same order. Sensitive data classes never leave the
+   user's own hardware, and the response reports where the model ran.
+   (Decided 2026-11-16, replacing "explicit routing, no fallback chains". Not
+   implemented yet: the code today runs the named model where it is configured
+   and has no fallback.)
 7. **Pragmatic-superset compatibility.** Unmodified OpenAI and Anthropic SDKs
    must work. Rune extensions (extra fields, `/v1/inference`) are fine; document
    unsupported parameters rather than stubbing them silently.
@@ -185,8 +209,9 @@ Behaviour notes:
 
 Known divergences from the idealised design: the trait is synchronous and
 narrow (`execute` with an optional token callback); `Modality` dispatch is
-partly a `match` in `registry.rs`; ``notify` is a dependency but config
-hot-reload is **not implemented yet**.
+partly a `match` in `registry.rs`; config hot-reload is implemented by polling
+file metadata every 2 seconds (`spawn_config_watcher` in `server.rs`), not by
+filesystem events, and `notify` is not a dependency.
 
 ---
 

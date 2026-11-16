@@ -1603,7 +1603,7 @@
     },
     {
       "id": "lfm3-1.7b-q4-k-m",
-      "install_dir": "LiquidAI/LFM3-1.7B-GGUF",
+      "install_dir": "liquidai/lfm3-1.7b",
       "name": "LiquidAI LFM3 1.7B Q4_K_M",
       "description": "Liquid AI's 1.7B text model in the official Q4_K_M GGUF format.",
       "license": "LFM Open License v1.0",
@@ -1624,7 +1624,6 @@
           "top_k": 50
         },
         "local": {
-          "path": "liquidai/lfm3-1.7b/LFM3-1.7B-Q4_K_M.gguf",
           "params": 1700000000,
           "bits_per_weight": null,
           "context_length": -1,
@@ -3493,9 +3492,7 @@
         "extra": {
           "default_steps": 8,
           "default_cfg_scale": 1,
-          "default_sample_method": "euler",
-          "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors",
-          "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf"
+          "default_sample_method": "euler"
         }
       },
       "latest": "5d1f9f759ea877ae556cda88dbec958b62ad3809",
@@ -4525,11 +4522,6 @@
           "Multi-Reference Editing"
         ],
         "max_context_length": null,
-        "sampling": {
-          "default_steps": 6,
-          "default_cfg_scale": 1,
-          "default_sample_method": "euler"
-        },
         "local": {
           "params": 33100000000,
           "bits_per_weight": 4.5,
@@ -4541,19 +4533,13 @@
           "default_steps": 6,
           "default_cfg_scale": 1,
           "default_sample_method": "euler",
-          "max_resolution": "4096×4096 (Native DiT)",
-          "vae_path": "D:/Projects/Public/rune/code-model/MiniMaxAI/MiniMax-H3-Image/vae/diffusion_pytorch_model.safetensors",
-          "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-GGUF/text_encoder/qwen3vl_32b_minimax_h3-Q4_K_M.gguf"
+          "max_resolution": "4096×4096 (Native DiT)"
         },
         "image_reference_checks": [
           {
             "counts": [
-              1,
-              2,
               4,
-              8,
-              12,
-              16
+              8
             ],
             "engine": "sd-server",
             "version": "stable-diffusion.cpp PR #2324"
