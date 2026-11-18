@@ -2588,7 +2588,7 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
                     .iter()
                     .fold(0_u64, |sum, file| sum.saturating_add(file.size_bytes))
             });
-            let id_display = if model.param_variant.is_some()
+            let id_display = if model.param_count.is_some()
                 || model
                     .catalog
                     .as_ref()
@@ -2619,6 +2619,28 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
                 .to_string(),
             ])
         });
+    let available_count = app
+        .model_registry_models
+        .iter()
+        .filter(|m| m.unsupported.is_none() && !app.index.contains_key(&m.id))
+        .count();
+    let total_count = app.model_registry_models.len();
+    let source = if app.info.model_registry_path.is_some() {
+        "local registry"
+    } else {
+        "remote registry"
+    };
+    let title = if available_count < total_count {
+        format!(
+            " Available models · {} available ({} in registry) · {} ",
+            available_count, total_count, source
+        )
+    } else {
+        format!(
+            " Available models · {} available · {} ",
+            available_count, source
+        )
+    };
     let table = Table::new(
         rows,
         [
@@ -2633,11 +2655,7 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
         Row::new(["", "Model ID / Variant", "Name", "Download", "Status"])
             .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD)),
     )
-    .block(panel(if app.info.model_registry_path.is_some() {
-        " Available models · local registry "
-    } else {
-        " Available models · remote registry "
-    }));
+    .block(panel(title));
     f.render_widget(table, table_area);
     let status = app
         .model_registry_status
@@ -2651,7 +2669,7 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
             .as_ref()
             .and_then(|c| c.local.params)
             .unwrap_or(0);
-        let current_q = model.quantization.as_deref().unwrap_or("Default");
+        let current_q = model.recommended_quantization().unwrap_or("Default");
         let bpw = model
             .catalog
             .as_ref()
@@ -2680,7 +2698,7 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
             ram_budget_bytes as f64 / 1_073_741_824.0
         );
 
-        let quant_line = match (&model.quantization, &model.quantization_note) {
+        let quant_line = match (model.recommended_quantization(), model.recommended_note()) {
             (Some(q), Some(note)) => format!("Quantization: {q} · {note}\n"),
             (Some(q), None) => format!("Quantization: {q}\n"),
             (None, Some(note)) => format!("Quantization: {note}\n"),
@@ -2691,26 +2709,64 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
                 .quantizations
                 .iter()
                 .map(|q| {
-                    if let Some(sz) = q.size_bytes {
+                    let sz_part = if let Some(sz) = q.size_bytes {
                         format!(
-                            "{} ({})",
-                            q.name,
+                            " ({})",
                             crate::inference::engines::download::format_bytes(sz)
                         )
                     } else {
-                        q.name.clone()
-                    }
+                        String::new()
+                    };
+                    let thinking_part = if !q.supported_thinking.is_empty() {
+                        let efforts: Vec<String> = q
+                            .supported_thinking
+                            .iter()
+                            .map(|t| {
+                                if let Some(spd) = t.tokens_per_second {
+                                    format!(
+                                        "{}: {:.1} ({} tok/s)",
+                                        t.effort,
+                                        t.score,
+                                        spd.round() as u64
+                                    )
+                                } else {
+                                    format!("{}: {:.1}", t.effort, t.score)
+                                }
+                            })
+                            .collect();
+                        format!(" [Thinking: {}]", efforts.join(", "))
+                    } else {
+                        String::new()
+                    };
+                    format!("{}{}{}", q.name, sz_part, thinking_part)
                 })
                 .collect();
-            format!("Available Quants: {}\n", items.join(", "))
+            format!(
+                "Available Quants & Thinking Scores:\n{}\n",
+                items
+                    .iter()
+                    .map(|it| format!("  · {it}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
         } else {
             String::new()
         };
-        let class_line = format!(
-            "Class: {} · Variant: {}\n",
-            model.family_name(),
-            model.parameter_count_display()
-        );
+        let class_line = if let Some(range) = &model.score_range {
+            format!(
+                "Class: {} · Variant: {} · Artificial Analysis Score Range: {:.1} - {:.1}\n",
+                model.family_name(),
+                model.parameter_count_display(),
+                range.min,
+                range.max
+            )
+        } else {
+            format!(
+                "Class: {} · Variant: {}\n",
+                model.family_name(),
+                model.parameter_count_display()
+            )
+        };
         let hw_profile = format!(
             "Host Hardware: {vram_disp} · {ram_disp}\nMachine Sweet Spot: {}\n",
             verdict.reason
@@ -3128,6 +3184,7 @@ mod tests {
             .collect();
         assert!(rendered.contains("lfm3-1.7b-q4-k-m"));
         assert!(rendered.contains("LFM Open License"));
+        assert!(rendered.contains("Available models") && rendered.contains("available"));
         app.model_registry_selected = 0;
         app.on_key(KeyCode::Down, KeyModifiers::NONE);
         assert_eq!(app.model_registry_selected, 1);

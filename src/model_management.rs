@@ -115,7 +115,18 @@ pub fn candidates(
             }
         )
     });
-    let mut output: Vec<_> = models
+    let mut all_models = Vec::new();
+    for model in models {
+        for variant in &model.variants {
+            if variant.id != model.id && ids.contains(&variant.id) {
+                if let Some(resolved) = model.resolve_variant(&variant.id) {
+                    all_models.push(resolved);
+                }
+            }
+        }
+        all_models.push(model);
+    }
+    let mut output: Vec<_> = all_models
         .into_iter()
         .filter(|model| ids.contains(&model.id))
         .filter_map(|model| {

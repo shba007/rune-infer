@@ -40,7 +40,32 @@ where
         _ => Ok(Vec::new()),
     }
 }
-#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ScoreRange {
+    pub min: f64,
+    pub max: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ThinkingEffortOption {
+    /// Reasoning / thinking effort level (e.g. "low", "medium", "high", "standard", "quality").
+    pub effort: String,
+    /// Artificial Analysis benchmark score (e.g. Intelligence Index, Quality Index).
+    pub score: f64,
+    /// Benchmark index name (e.g. "Artificial Analysis Intelligence Index").
+    #[serde(default)]
+    pub index_name: Option<String>,
+    /// Estimated speed in tokens per second under this thinking effort.
+    #[serde(default)]
+    pub tokens_per_second: Option<f64>,
+    /// Reasoning token budget (e.g. 1024, 4096, 16384).
+    #[serde(default)]
+    pub budget_tokens: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct QuantizationOption {
     pub name: String,
@@ -55,20 +80,40 @@ pub struct QuantizationOption {
     #[serde(default)]
     pub sha256: Option<String>,
     #[serde(default)]
+    pub recommended: Option<bool>,
+    #[serde(default)]
     pub note: Option<String>,
+    /// Supported thinking effort options and their Artificial Analysis benchmark scores.
+    #[serde(default)]
+    pub supported_thinking: Vec<ThinkingEffortOption>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ParamVariant {
     pub param_count: String,
     pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub install_dir: Option<String>,
     #[serde(default)]
     pub params: Option<u64>,
     #[serde(default)]
     pub default_context: Option<u32>,
     #[serde(default)]
     pub quantizations: Vec<QuantizationOption>,
+    /// Artificial Analysis benchmark score range across quantizations of this variant.
+    #[serde(default)]
+    pub score_range: Option<ScoreRange>,
+    #[serde(default)]
+    pub latest: Option<String>,
+    #[serde(default)]
+    pub versions: Option<BTreeMap<String, Version>>,
+    #[serde(default)]
+    pub catalog: Option<CatalogDefaults>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -92,26 +137,20 @@ pub struct LocalModel {
     #[serde(default)]
     pub family: Option<String>,
     /// Parameter count identifier for this variant (e.g. "0.8B", "4B", "9B", "27B").
-    #[serde(default)]
-    pub param_variant: Option<String>,
-    /// Specific quantization type (e.g. "Q4_K_M", "Q8_0", "Q3_K_M").
-    #[serde(default)]
-    pub quantization: Option<String>,
+    #[serde(default, alias = "param_variant")]
+    pub param_count: Option<String>,
     /// All available quantization options for this specific parameter variant.
     #[serde(default)]
     pub quantizations: Vec<QuantizationOption>,
     /// Nested parameter variants if this entry groups a model class.
     #[serde(default)]
     pub variants: Vec<ParamVariant>,
-    /// Recommended sweet-spot quantization (e.g. "Q4_K_M" for maximum quality without speed loss).
-    #[serde(default)]
-    pub recommended_quantization: Option<String>,
-    /// Quality vs speed / resource trade-off note or suggestion.
-    #[serde(default)]
-    pub quantization_note: Option<String>,
     /// Target hardware preference ("cpu", "gpu", or "any").
     #[serde(default)]
     pub hardware_mode: Option<String>,
+    /// Benchmark score range (min and max) from Artificial Analysis across the whole model family.
+    #[serde(default)]
+    pub score_range: Option<ScoreRange>,
     /// Why this Infer build cannot install the model. Only set on entries from
     /// the `*_listing` functions; installable lists never contain them.
     #[serde(skip)]
@@ -154,7 +193,10 @@ impl LocalModel {
 
     /// Resolves the parameter count display (e.g. "9B", "27B", "0.8B").
     pub fn parameter_count_display(&self) -> String {
-        if let Some(v) = &self.param_variant {
+        if let Some(v) = &self.param_count {
+            return v.clone();
+        }
+        if let Some(v) = self.variants.first().map(|v| &v.param_count) {
             return v.clone();
         }
         if let Some(p) = self.catalog.as_ref().and_then(|c| c.local.params) {
@@ -171,6 +213,64 @@ impl LocalModel {
             }
         }
         "Standard".into()
+    }
+
+    /// Resolves the recommended quantization name (from the quantization marked `recommended: true`, or the first).
+    pub fn recommended_quantization(&self) -> Option<&str> {
+        self.quantizations
+            .iter()
+            .find(|q| q.recommended.unwrap_or(false))
+            .map(|q| q.name.as_str())
+            .or_else(|| self.quantizations.first().map(|q| q.name.as_str()))
+    }
+
+    /// Resolves the recommended quantization note.
+    pub fn recommended_note(&self) -> Option<&str> {
+        self.quantizations
+            .iter()
+            .find(|q| q.recommended.unwrap_or(false))
+            .and_then(|q| q.note.as_deref())
+            .or_else(|| self.quantizations.first().and_then(|q| q.note.as_deref()))
+    }
+
+    /// Returns a `LocalModel` configured for `target_id`.
+    /// If `self.id == target_id`, returns a clone of self.
+    /// If a nested variant in `self.variants` matches `target_id`, returns a `LocalModel` for that variant.
+    pub fn resolve_variant(&self, target_id: &str) -> Option<LocalModel> {
+        if self.id == target_id {
+            return Some(self.clone());
+        }
+        for v in &self.variants {
+            if v.id == target_id {
+                let mut m = self.clone();
+                m.id = v.id.clone();
+                if let Some(name) = &v.name {
+                    m.name = name.clone();
+                }
+                if let Some(desc) = &v.description {
+                    m.description = desc.clone();
+                }
+                if let Some(dir) = &v.install_dir {
+                    m.install_dir = Some(dir.clone());
+                }
+                if let Some(versions) = &v.versions {
+                    m.versions = versions.clone();
+                }
+                if let Some(latest) = &v.latest {
+                    m.latest = latest.clone();
+                }
+                if let Some(catalog) = &v.catalog {
+                    m.catalog = Some(catalog.clone());
+                }
+                if let Some(range) = &v.score_range {
+                    m.score_range = Some(range.clone());
+                }
+                m.param_count = Some(v.param_count.clone());
+                m.quantizations = v.quantizations.clone();
+                return Some(m);
+            }
+        }
+        None
     }
 }
 #[derive(Clone, Debug, Deserialize)]
@@ -340,7 +440,7 @@ fn parse_entries(bytes: &[u8]) -> Result<Parsed> {
         match validate_model(&model) {
             Ok(()) => {
                 parsed.listed.push(model.clone());
-                parsed.models.push(model);
+                parsed.models.push(model.clone());
             }
             Err(error) => {
                 let reason = format!("{error:#}");
@@ -2522,13 +2622,18 @@ mod tests {
             "capabilities": ["Chat"],
             "latest": "main",
             "family": "Qwen 3.5",
-            "param_variant": "9B",
+            "param_count": "9B",
+            "score_range": { "min": 45.5, "max": 85.0 },
             "quantizations": [
                 {
                     "name": "Q4_K_M",
                     "bits_per_weight": 4.5,
                     "size_bytes": 5500000000,
-                    "note": "Sweet spot for 16GB GPUs"
+                    "note": "Sweet spot for 16GB GPUs",
+                    "supported_thinking": [
+                        { "effort": "low", "score": 73.5, "index_name": "Artificial Analysis Intelligence Index", "tokens_per_second": 28.0, "budget_tokens": 1024 },
+                        { "effort": "high", "score": 83.2, "index_name": "Artificial Analysis Intelligence Index", "tokens_per_second": 11.0, "budget_tokens": 16384 }
+                    ]
                 },
                 {
                     "name": "Q8_0",
@@ -2541,8 +2646,16 @@ mod tests {
                     "param_count": "0.8B",
                     "id": "qwen3.5-0.8b",
                     "params": 873000000,
+                    "score_range": { "min": 45.5, "max": 53.0 },
                     "quantizations": [
-                        { "name": "Q4_K_M", "bits_per_weight": 4.5, "size_bytes": 550000000 }
+                        {
+                            "name": "Q4_K_M",
+                            "bits_per_weight": 4.5,
+                            "size_bytes": 550000000,
+                            "supported_thinking": [
+                                { "effort": "low", "score": 45.5, "tokens_per_second": 58.0 }
+                            ]
+                        }
                     ]
                 }
             ],
@@ -2565,9 +2678,19 @@ mod tests {
         let model: LocalModel = serde_json::from_str(json).unwrap();
         assert_eq!(model.family_name(), "Qwen 3.5");
         assert_eq!(model.parameter_count_display(), "9B");
+        assert_eq!(model.score_range.as_ref().unwrap().min, 45.5);
+        assert_eq!(model.score_range.as_ref().unwrap().max, 85.0);
         assert_eq!(model.quantizations.len(), 2);
         assert_eq!(model.quantizations[0].name, "Q4_K_M");
+        assert_eq!(model.quantizations[0].supported_thinking.len(), 2);
+        assert_eq!(model.quantizations[0].supported_thinking[0].effort, "low");
+        assert_eq!(model.quantizations[0].supported_thinking[0].score, 73.5);
         assert_eq!(model.variants.len(), 1);
         assert_eq!(model.variants[0].param_count, "0.8B");
+        assert_eq!(model.variants[0].score_range.as_ref().unwrap().max, 53.0);
+        assert_eq!(
+            model.variants[0].quantizations[0].supported_thinking[0].score,
+            45.5
+        );
     }
 }

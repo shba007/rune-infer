@@ -333,7 +333,29 @@ impl ModelExecutionGate {
         let start_time = std::time::Instant::now();
         let model_id = self.model_config.id.clone();
 
-        if self.is_background {
+        let is_completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        struct CancelOnDrop {
+            completed: Arc<std::sync::atomic::AtomicBool>,
+            flag: Arc<std::sync::atomic::AtomicBool>,
+            engine: Arc<dyn crate::inference::traits::InferenceEngine>,
+        }
+        impl Drop for CancelOnDrop {
+            fn drop(&mut self) {
+                if !self.completed.load(std::sync::atomic::Ordering::Relaxed) {
+                    self.flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.engine.cancel();
+                }
+            }
+        }
+        let _cancel_guard = CancelOnDrop {
+            completed: is_completed.clone(),
+            flag: cancel_flag.clone(),
+            engine: engine.clone(),
+        };
+
+        let result = if self.is_background {
             let exec_handle = crate::telemetry::spawn_blocking(move || {
                 let gen_start = std::time::Instant::now();
                 let res = engine_clone
@@ -443,6 +465,16 @@ impl ModelExecutionGate {
                         .into_response(),
                 )),
             }
+        };
+        is_completed.store(true, std::sync::atomic::Ordering::Relaxed);
+        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            crate::telemetry::record_failure(
+                &model_id,
+                499,
+                start_time.elapsed().as_millis(),
+                "client disconnected during execution",
+            );
         }
+        result
     }
 }

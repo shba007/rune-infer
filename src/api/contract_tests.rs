@@ -1437,6 +1437,38 @@ async fn foreground_http_request_starts_within_250ms_and_background_returns_503(
     );
 }
 
+#[tokio::test]
+async fn client_disconnect_cancels_in_flight_task_engine() {
+    let engine = Arc::new(BlockingEngine {
+        started: tokio::sync::Notify::new(),
+        canceled: std::sync::Mutex::new(false),
+        released: std::sync::Condvar::new(),
+    });
+    let (router, _) = app(Some(engine.clone()));
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({"model":"fixture","input":["background"]}))
+                .unwrap(),
+        ))
+        .unwrap();
+    let handle = tokio::spawn(router.oneshot(request));
+    tokio::time::timeout(std::time::Duration::from_secs(1), engine.started.notified())
+        .await
+        .unwrap();
+    // Simulate browser cancel / client drop by aborting the request future
+    handle.abort();
+    let _ = handle.await;
+    // Allow drop guard to execute
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(
+        *engine.canceled.lock().unwrap(),
+        "Task engine should be cancelled when client drops the connection"
+    );
+}
+
 #[test]
 fn absent_vram_is_unknown_and_never_serialized_as_zero_or_null() {
     let response = ModelsResponse {
