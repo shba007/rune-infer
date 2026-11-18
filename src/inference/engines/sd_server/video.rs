@@ -3,6 +3,7 @@ use super::SdServerEngine;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{Usage, VideoData, VideoGenerationResponse};
 use std::error::Error;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const DEFAULT_SIZE: (u32, u32) = (832, 480);
@@ -78,6 +79,16 @@ impl SdServerEngine {
             return Err(format!("sd-server rejected the video request: {text}").into());
         }
         let job: serde_json::Value = submit.json()?;
+        if let Some(id) = job["id"].as_str() {
+            *self.active_job_id.lock().unwrap() = Some(id.to_string());
+        }
+        struct JobGuard<'a>(&'a Mutex<Option<String>>);
+        impl Drop for JobGuard<'_> {
+            fn drop(&mut self) {
+                *self.0.lock().unwrap() = None;
+            }
+        }
+        let _job_guard = JobGuard(&self.active_job_id);
         let poll_url = job["poll_url"]
             .as_str()
             .map(|path| format!("{base}{path}"))

@@ -15716,7 +15716,7 @@
           "bits_per_weight": 3.5,
           "context_length": -1,
           "gpu_layers": 99,
-          "args": "--diffusion-fa --backend te=cpu --offload-to-cpu --vae-tiling"
+          "args": "--diffusion-fa --params-backend disk --vae-tiling"
         },
         "extra": {
           "default_steps": 6,

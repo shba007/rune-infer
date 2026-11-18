@@ -260,6 +260,21 @@ impl ProcessGuard {
     pub fn terminate(&mut self) -> std::io::Result<()> {
         self.child.kill()
     }
+
+    pub fn replace_child(&mut self, new_child: Child) -> std::io::Result<()> {
+        let old_pid = self.child.id();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        unregister_pid(old_pid);
+        try_attach_to_supervisor(&new_child)?;
+        tracing::info!(
+            "[Supervisor] Replaced managed process '{}' (new PID: {})",
+            self.label,
+            new_child.id()
+        );
+        self.child = new_child;
+        Ok(())
+    }
 }
 
 impl Drop for ProcessGuard {

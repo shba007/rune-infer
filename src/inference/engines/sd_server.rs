@@ -197,6 +197,10 @@ pub struct SdServerEngine {
     default_cfg: f32,
     diagnostics: Arc<Mutex<SdDiagnostics>>,
     execution_lock: Mutex<()>,
+    model: ModelConfig,
+    pub(crate) active_job_id: Arc<Mutex<Option<String>>>,
+    is_generating: Arc<std::sync::atomic::AtomicBool>,
+    last_stderr_lines: Arc<Mutex<Vec<String>>>,
 }
 
 #[derive(Default)]
@@ -253,18 +257,15 @@ fn checked_result<T>(
 }
 
 impl SdServerEngine {
-    pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
-        let bin_path = Self::resolve_binary(false)?;
-        let port = Self::find_free_port()?;
-
-        tracing::info!(
-            "[SdServerEngine] Launching managed sd-server for '{}' on port {}...",
-            model.id,
-            port
-        );
-
-        let mut cmd = Command::new(&bin_path);
-        crate::embedding::configure_child(&mut cmd, &bin_path);
+    fn spawn_child(
+        bin_path: &Path,
+        model: &ModelConfig,
+        port: u16,
+        diagnostics: Arc<Mutex<SdDiagnostics>>,
+        last_stderr_lines: Arc<Mutex<Vec<String>>>,
+    ) -> Result<std::process::Child, Box<dyn Error>> {
+        let mut cmd = Command::new(bin_path);
+        crate::embedding::configure_child(&mut cmd, bin_path);
         configure_death_signal(&mut cmd);
 
         cmd.arg("--diffusion-model")
@@ -349,17 +350,13 @@ impl SdServerEngine {
 
         let stderr_pipe = child.stderr.take();
         let stdout_pipe = child.stdout.take();
-        let last_stderr_lines = Arc::new(Mutex::new(Vec::new()));
-        let diagnostics = Arc::new(Mutex::new(SdDiagnostics::default()));
-        let guard = ProcessGuard::try_new(child, format!("sd-server-{}", model.id))?;
         if let Some(pipe) = stdout_pipe {
-            let diagnostics = diagnostics.clone();
+            let diag = diagnostics.clone();
             std::thread::spawn(move || {
                 for line in std::io::BufReader::new(pipe).lines().map_while(Result::ok) {
                     if prefix_cache_retry(&line) {
                         tracing::warn!("[sd-server] {line}");
-                        diagnostics
-                            .lock()
+                        diag.lock()
                             .unwrap_or_else(|p| p.into_inner())
                             .observe(&line);
                     }
@@ -367,18 +364,17 @@ impl SdServerEngine {
             });
         }
         if let Some(pipe) = stderr_pipe {
-            let lines_clone = last_stderr_lines.clone();
-            let diagnostics = diagnostics.clone();
+            let lines_clone = last_stderr_lines;
+            let diag = diagnostics;
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
                 for line in reader.lines().map_while(Result::ok) {
                     // Stream logs so you can see live progress and errors
                     tracing::info!("[sd-server] {}", line);
-                    diagnostics
-                        .lock()
+                    diag.lock()
                         .unwrap_or_else(|p| p.into_inner())
                         .observe(&line);
-                    let mut l = lines_clone.lock().unwrap();
+                    let mut l = lines_clone.lock().unwrap_or_else(|p| p.into_inner());
                     if l.len() >= 30 {
                         l.remove(0);
                     }
@@ -386,7 +382,28 @@ impl SdServerEngine {
                 }
             });
         }
+        Ok(child)
+    }
 
+    pub fn new(model: &ModelConfig) -> Result<Self, Box<dyn Error>> {
+        let bin_path = Self::resolve_binary(false)?;
+        let port = Self::find_free_port()?;
+
+        tracing::info!(
+            "[SdServerEngine] Launching managed sd-server for '{}' on port {}...",
+            model.id,
+            port
+        );
+        let last_stderr_lines = Arc::new(Mutex::new(Vec::new()));
+        let diagnostics = Arc::new(Mutex::new(SdDiagnostics::default()));
+        let child = Self::spawn_child(
+            &bin_path,
+            model,
+            port,
+            diagnostics.clone(),
+            last_stderr_lines.clone(),
+        )?;
+        let guard = ProcessGuard::try_new(child, format!("sd-server-{}", model.id))?;
         Self::wait_for_server(port, &guard, &last_stderr_lines)?;
 
         let client = reqwest::blocking::Client::builder()
@@ -400,11 +417,42 @@ impl SdServerEngine {
             port,
             client: SafeBlockingClient::new(client),
             _process: guard,
-            default_steps: steps,
-            default_cfg: cfg,
+            default_steps: model.default_steps.unwrap_or(20),
+            default_cfg: model.default_cfg_scale.unwrap_or(4.5),
             diagnostics,
             execution_lock: Mutex::new(()),
+            model: model.clone(),
+            active_job_id: Arc::new(Mutex::new(None)),
+            is_generating: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            last_stderr_lines,
         })
+    }
+
+    fn ensure_running(&self) -> Result<(), Box<dyn Error>> {
+        let is_dead = {
+            let mut guard = self._process.lock().unwrap_or_else(|p| p.into_inner());
+            guard.try_wait()?.is_some()
+        };
+        if is_dead {
+            tracing::info!(
+                "[SdServerEngine] Managed process for '{}' on port {} is not running; restarting...",
+                self.id,
+                self.port
+            );
+            let bin_path = Self::resolve_binary(false)?;
+            let child = Self::spawn_child(
+                &bin_path,
+                &self.model,
+                self.port,
+                self.diagnostics.clone(),
+                self.last_stderr_lines.clone(),
+            )?;
+            let mut guard = self._process.lock().unwrap_or_else(|p| p.into_inner());
+            guard.replace_child(child)?;
+            drop(guard);
+            Self::wait_for_server(self.port, &self._process, &self.last_stderr_lines)?;
+        }
+        Ok(())
     }
 
     fn find_free_port() -> Result<u16, Box<dyn Error>> {
@@ -573,6 +621,39 @@ impl InferenceEngine for SdServerEngine {
         &self.id
     }
 
+    fn supports_cancellation(&self) -> bool {
+        true
+    }
+
+    fn cancel(&self) {
+        if let Ok(mut job) = self.active_job_id.lock() {
+            if let Some(id) = job.take() {
+                let port = self.port;
+                std::thread::spawn(move || {
+                    let client = reqwest::blocking::Client::new();
+                    let _ = client
+                        .post(format!("http://127.0.0.1:{port}/sdcpp/v1/jobs/{id}/cancel"))
+                        .timeout(Duration::from_secs(2))
+                        .send();
+                });
+                return;
+            }
+        }
+        if self
+            .is_generating
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            tracing::warn!(
+                "[SdServerEngine] Cancelling in-flight generation for '{}' on port {}",
+                self.id,
+                self.port
+            );
+            if let Ok(mut guard) = self._process.lock() {
+                let _ = guard.terminate();
+            }
+        }
+    }
+
     fn execute(
         &self,
         task: &InferenceTaskRequest,
@@ -582,6 +663,16 @@ impl InferenceEngine for SdServerEngine {
             .execution_lock
             .lock()
             .unwrap_or_else(|p| p.into_inner());
+        self.ensure_running()?;
+        self.is_generating
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        struct GenGuard<'a>(&'a std::sync::atomic::AtomicBool);
+        impl Drop for GenGuard<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        let _gen_guard = GenGuard(&self.is_generating);
         if let Some(error) = runtime_failure(&self.diagnostics) {
             return Err(error.into());
         }
