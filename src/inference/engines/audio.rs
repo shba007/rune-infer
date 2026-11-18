@@ -179,6 +179,22 @@ pub(crate) fn validate_task(task: &InferenceTaskRequest) -> Result<(), &'static 
     Ok(())
 }
 
+fn check_ram_budget(id: &str, model_path: &Path, backend: &str) -> Result<(), Box<dyn Error>> {
+    let total_system_ram =
+        crate::inference::budget::detect_total_system_ram().unwrap_or(32 * 1024 * 1024 * 1024);
+    let ram_limit_bytes = ((total_system_ram as f64) * 0.20) as u64; // 20% limit
+    let model_size_bytes = std::fs::metadata(model_path).map(|m| m.len()).unwrap_or(0);
+    if backend == "cpu" && model_size_bytes > ram_limit_bytes {
+        return Err(format!(
+            "audio.cpp memory limit: model '{id}' ({:.2} GiB) exceeds the 20% system RAM budget limit ({:.2} GiB of {:.2} GiB total RAM). Please use a quantized model (e.g. Q8_0 or Q4) or run with GPU acceleration to prevent excessive RAM usage.",
+            model_size_bytes as f64 / (1024.0 * 1024.0 * 1024.0),
+            ram_limit_bytes as f64 / (1024.0 * 1024.0 * 1024.0),
+            total_system_ram as f64 / (1024.0 * 1024.0 * 1024.0),
+        ).into());
+    }
+    Ok(())
+}
+
 pub struct AudioEngine {
     id: String,
     bin_path: PathBuf,
@@ -557,6 +573,11 @@ impl InferenceEngine for AudioEngine {
                     "cpu"
                 };
 
+                if let Err(e) = check_ram_budget(&self.id, &self.model_path, backend_flag) {
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                    return Err(e);
+                }
+
                 let id_lower = self.id.to_lowercase();
                 let path_lower = self.model_path.to_string_lossy().to_lowercase();
                 let family = if id_lower.contains("whisper") || path_lower.contains("whisper") {
@@ -742,6 +763,11 @@ impl InferenceEngine for AudioEngine {
                 } else {
                     "cpu"
                 };
+
+                if let Err(e) = check_ram_budget(&self.id, &self.model_path, backend_flag) {
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                    return Err(e);
+                }
 
                 let id_lower = self.id.to_lowercase();
                 let path_lower = self.model_path.to_string_lossy().to_lowercase();
@@ -953,6 +979,11 @@ impl InferenceEngine for AudioEngine {
                 } else {
                     "cpu"
                 };
+
+                if let Err(e) = check_ram_budget(&self.id, &self.model_path, backend_flag) {
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                    return Err(e);
+                }
 
                 cmd.args(&self.speech_args);
                 cmd.arg("--task")

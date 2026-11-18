@@ -905,6 +905,18 @@ pub fn make_executable(path: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn detect_host_cuda_version() -> Option<(u32, u32)> {
+    if let Ok(backend) =
+        std::env::var("RUNE_ENGINE_BACKEND").or_else(|_| std::env::var("RUNE_BACKEND"))
+    {
+        if backend.eq_ignore_ascii_case("cpu") {
+            return None;
+        }
+    }
+    if let Ok(force_cpu) = std::env::var("RUNE_FORCE_CPU") {
+        if force_cpu == "1" || force_cpu.eq_ignore_ascii_case("true") {
+            return None;
+        }
+    }
     let output = crate::embedding::system_command("nvidia-smi")
         .ok()?
         .output()
@@ -1020,6 +1032,7 @@ mod progress_tests {
                     Err(error) => panic!("Model test request was not received: {error}"),
                 }
             };
+            let _ = stream.set_nonblocking(false);
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();

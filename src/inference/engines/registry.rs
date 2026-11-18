@@ -1282,10 +1282,21 @@ mod tests {
         assert_eq!(files.len(), 3);
         assert_eq!(files["cpu"].size_bytes, 12173824);
         let mut value: serde_json::Value = serde_json::from_slice(SEED).unwrap();
-        value["engines"][1]["versions"]["2.3.0"]["artifacts"][0]["files"][0]["sha256"] =
-            "bad".into();
+        let engine = value["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "litert")
+            .unwrap();
+        engine["versions"]["2.3.0"]["artifacts"][0]["files"][0]["sha256"] = "bad".into();
         assert!(parse_litert(&serde_json::to_vec(&value).unwrap()).is_err());
-        value["engines"][1]["latest"] = "2.4.0".into();
+        let engine = value["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "litert")
+            .unwrap();
+        engine["latest"] = "2.4.0".into();
         assert!(parse_litert(&serde_json::to_vec(&value).unwrap()).is_err());
     }
     #[test]
@@ -1294,8 +1305,13 @@ mod tests {
         assert_eq!(files.len(), 4);
         assert_eq!(files["ort"].size_bytes, 392924457);
         let mut value: serde_json::Value = serde_json::from_slice(SEED).unwrap();
-        value["engines"][2]["versions"]["1.31.1"]["artifacts"][0]["files"][1]["sha256"] =
-            "bad".into();
+        let engine = value["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "onnx")
+            .unwrap();
+        engine["versions"]["1.31.1"]["artifacts"][0]["files"][1]["sha256"] = "bad".into();
         assert!(parse_onnx(&serde_json::to_vec(&value).unwrap()).is_err());
     }
     #[test]
@@ -1328,7 +1344,13 @@ mod tests {
     #[test]
     fn rejects_invalid_registry_data() {
         let mut v: serde_json::Value = serde_json::from_slice(SEED).unwrap();
-        v["engines"][0]["versions"]["b12027"]["artifacts"][0]["files"][0]["sha256"] = "bad".into();
+        let engine = v["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "llama-server")
+            .unwrap();
+        engine["versions"]["b12027"]["artifacts"][0]["files"][0]["sha256"] = "bad".into();
         assert!(parse_llama(&serde_json::to_vec(&v).unwrap()).is_err());
         v["schema_version"] = 9.into();
         assert!(parse_llama(&serde_json::to_vec(&v).unwrap()).is_err());
@@ -1337,29 +1359,81 @@ mod tests {
     #[test]
     fn latest_is_explicit_not_lexicographically_selected() {
         let mut v: serde_json::Value = serde_json::from_slice(SEED).unwrap();
-        let version = v["engines"][0]["versions"]["b12027"].clone();
-        v["engines"][0]["versions"]["b9"] = version;
-        v["engines"][0]["versions"]["b9"]["release_number"] = 3.into();
-        v["engines"][0]["latest"] = "b9".into();
+        let version = {
+            let engine = v["engines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["id"] == "llama-server")
+                .unwrap();
+            engine["versions"]["b12027"].clone()
+        };
+        let engine = v["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "llama-server")
+            .unwrap();
+        engine["versions"]["b9"] = version;
+        engine["versions"]["b9"]["release_number"] = 3.into();
+        engine["latest"] = "b9".into();
         assert_eq!(
             parse_llama(&serde_json::to_vec(&v).unwrap()).unwrap()["tag_name"],
             "b9"
         );
-        v["engines"][0]["latest"] = "b10".into();
+        let engine = v["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "llama-server")
+            .unwrap();
+        engine["latest"] = "b10".into();
         assert!(parse_llama(&serde_json::to_vec(&v).unwrap()).is_err());
     }
 
     #[test]
     fn release_numbers_must_be_unique_positive_and_latest_must_be_newest() {
         let mut v: serde_json::Value = serde_json::from_slice(SEED).unwrap();
-        let version = v["engines"][0]["versions"]["b12027"].clone();
-        v["engines"][0]["versions"]["b9"] = version;
+        let version = {
+            let engine = v["engines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["id"] == "llama-server")
+                .unwrap();
+            engine["versions"]["b12027"].clone()
+        };
+        let engine = v["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "llama-server")
+            .unwrap();
+        engine["versions"]["b9"] = version;
         assert!(parse_llama(&serde_json::to_vec(&v).unwrap()).is_err());
-        v["engines"][0]["versions"]["b9"]["release_number"] = 3.into();
+        let engine = v["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "llama-server")
+            .unwrap();
+        engine["versions"]["b9"]["release_number"] = 3.into();
         assert!(parse_llama(&serde_json::to_vec(&v).unwrap()).is_err());
-        v["engines"][0]["latest"] = "b9".into();
+        let engine = v["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "llama-server")
+            .unwrap();
+        engine["latest"] = "b9".into();
         assert!(parse_llama(&serde_json::to_vec(&v).unwrap()).is_ok());
-        v["engines"][0]["versions"]["b12027"]["release_number"] = 0.into();
+        let engine = v["engines"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|e| e["id"] == "llama-server")
+            .unwrap();
+        engine["versions"]["b12027"]["release_number"] = 0.into();
         assert!(parse_llama(&serde_json::to_vec(&v).unwrap()).is_err());
     }
 }

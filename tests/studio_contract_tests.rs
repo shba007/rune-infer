@@ -73,6 +73,7 @@ fn create_studio_test_app() -> (axum::Router, Arc<AppState>) {
             max_loaded_models: 1,
             idle_unload_seconds: 300,
             vram_budget_ratio: 0.95,
+            ..Default::default()
         },
         roles,
         aliases,

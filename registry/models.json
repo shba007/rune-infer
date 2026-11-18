@@ -313,6 +313,56 @@
       "source_url": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF",
       "engine": "llama-server",
       "format": "gguf",
+      "family": "Qwen 3.5",
+      "param_variant": "0.8B",
+      "quantization": "BF16",
+      "recommended_quantization": "Q4_K_M",
+      "quantization_note": "Sweet spot: Q4_K_M provides near-lossless perplexity at ~500MB RAM, ideal for CPU or edge deployment",
+      "hardware_mode": "cpu/gpu",
+      "quantizations": [
+        {
+          "name": "Q4_K_M",
+          "bits_per_weight": 4.5,
+          "size_bytes": 550000000,
+          "note": "Sweet spot: near-lossless perplexity at ~500MB RAM, ideal for CPU"
+        },
+        {
+          "name": "BF16",
+          "bits_per_weight": 16.0,
+          "size_bytes": 1516744736,
+          "note": "Full precision baseline"
+        }
+      ],
+      "variants": [
+        {
+          "param_count": "0.8B",
+          "id": "qwen3.5-0.8b",
+          "params": 873000000,
+          "quantizations": [
+            { "name": "Q4_K_M", "bits_per_weight": 4.5, "size_bytes": 550000000 },
+            { "name": "BF16", "bits_per_weight": 16.0, "size_bytes": 1516744736 }
+          ]
+        },
+        {
+          "param_count": "4B",
+          "id": "qwen3.5-4b-q4",
+          "params": 4000000000,
+          "quantizations": [
+            { "name": "Q4_K_M", "bits_per_weight": 4.5, "size_bytes": 2700000000 },
+            { "name": "Q8_0", "bits_per_weight": 8.5, "size_bytes": 4500000000 }
+          ]
+        },
+        {
+          "param_count": "9B",
+          "id": "qwen3.5-9b-gguf",
+          "params": 9400000000,
+          "quantizations": [
+            { "name": "Q3_K_M", "bits_per_weight": 3.5, "size_bytes": 4800000000 },
+            { "name": "Q4_K_M", "bits_per_weight": 4.5, "size_bytes": 5500000000 },
+            { "name": "Q8_0", "bits_per_weight": 8.5, "size_bytes": 9800000000 }
+          ]
+        }
+      ],
       "capabilities": [
         "Chat"
       ],
@@ -1122,6 +1172,10 @@
       "source_url": "https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF",
       "engine": "sd-server",
       "format": "gguf",
+      "quantization": "Q3_K_L",
+      "recommended_quantization": "Q3_K_L",
+      "quantization_note": "Sweet spot: fast 30-step diffusion inference, crisp detail retention and instruction adherence without GPU VRAM exhaustion",
+      "hardware_mode": "gpu",
       "capabilities": [
         "Image Generation"
       ],
@@ -1226,6 +1280,26 @@
       "source_url": "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF",
       "engine": "llama-server",
       "format": "gguf",
+      "family": "Gemma 4",
+      "param_variant": "12B",
+      "quantization": "Q6_K_XL",
+      "recommended_quantization": "Q4_K_M",
+      "quantization_note": "Sweet spot: Q4_K_M delivers 99% FP16 reasoning & vision quality with 45% VRAM reduction and maximum decode tokens/sec",
+      "hardware_mode": "gpu",
+      "quantizations": [
+        {
+          "name": "Q4_K_M",
+          "bits_per_weight": 4.5,
+          "size_bytes": 7700000000,
+          "note": "Sweet spot for 16GB GPUs: maximum decode tokens/sec"
+        },
+        {
+          "name": "Q6_K_XL",
+          "bits_per_weight": 6.5,
+          "size_bytes": 10500000000,
+          "note": "Near-lossless vision precision"
+        }
+      ],
       "capabilities": [
         "Chat",
         "Vision"
@@ -1252,7 +1326,7 @@
         "local": {
           "params": 12000000000,
           "bits_per_weight": 4.5,
-          "context_length": -1,
+          "context_length": 32768,
           "gpu_layers": 99,
           "args": "-fa on"
         },
@@ -1468,6 +1542,26 @@
       "source_url": "https://huggingface.co/SoAIHQ/Qwen3.5-4B-GGUF",
       "engine": "llama-server",
       "format": "gguf",
+      "family": "Qwen 3.5",
+      "param_variant": "4B",
+      "quantization": "Q4_K_M",
+      "recommended_quantization": "Q4_K_M",
+      "quantization_note": "Sweet spot: fits easily in 6-8GB GPUs and mid-range CPU systems with high responsiveness",
+      "hardware_mode": "gpu",
+      "quantizations": [
+        {
+          "name": "Q4_K_M",
+          "bits_per_weight": 4.5,
+          "size_bytes": 2700000000,
+          "note": "Sweet spot for 6-8GB GPUs"
+        },
+        {
+          "name": "Q8_0",
+          "bits_per_weight": 8.5,
+          "size_bytes": 4500000000,
+          "note": "Full quality"
+        }
+      ],
       "capabilities": [
         "Chat",
         "Vision"
@@ -1656,6 +1750,26 @@
       "source_url": "https://huggingface.co/audio-cpp/audio.cpp-gguf",
       "engine": "audio-cpp",
       "format": "gguf",
+      "family": "Fish Audio S2",
+      "param_variant": "5B",
+      "quantization": "Q8_0",
+      "recommended_quantization": "Q8_0",
+      "quantization_note": "Sweet spot: Q8_0 preserves full voice clarity and intonation with 38% smaller footprint and low RAM overhead",
+      "hardware_mode": "gpu",
+      "quantizations": [
+        {
+          "name": "Q8_0",
+          "bits_per_weight": 8.0,
+          "size_bytes": 6317915552,
+          "note": "Sweet spot: lossless voice timbre, fits 8GB+ GPU & within RAM budget"
+        },
+        {
+          "name": "BF16",
+          "bits_per_weight": 16.0,
+          "size_bytes": 10229278080,
+          "note": "Unquantized baseline"
+        }
+      ],
       "capabilities": [
         "Speech Generation"
       ],
@@ -1667,7 +1781,7 @@
         "max_context_length": null,
         "local": {
           "params": 4954823665,
-          "bits_per_weight": 16,
+          "bits_per_weight": 8,
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
@@ -1684,8 +1798,20 @@
           }
         }
       },
-      "latest": "e36610ac69b5262e914a52635324050bee8f1ad2",
+      "latest": "7a103b33f04120535bdfe97b5f65b79d3c90d708",
       "versions": {
+        "7a103b33f04120535bdfe97b5f65b79d3c90d708": {
+          "release_number": 2,
+          "files": [
+            {
+              "id": "model",
+              "filename": "fish-audio-s2-pro-q8_0.gguf",
+              "url": "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/7a103b33f04120535bdfe97b5f65b79d3c90d708/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-q8_0.gguf",
+              "sha256": "4f051347079cfb61f9ef2996f67057229e486fefce31374721b5690940dfc34a",
+              "size_bytes": 6317915552
+            }
+          ]
+        },
         "e36610ac69b5262e914a52635324050bee8f1ad2": {
           "release_number": 1,
           "files": [
@@ -1818,6 +1944,32 @@
       "source_url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
       "engine": "llama-server",
       "format": "gguf",
+      "family": "Qwen 3.5",
+      "param_variant": "9B",
+      "quantization": "Q8_0",
+      "recommended_quantization": "Q4_K_M",
+      "quantization_note": "Sweet spot: Q4_K_M fits 16GB GPUs with 32k context and maximum decode speed; Q8_0 delivers near-lossless precision",
+      "hardware_mode": "gpu",
+      "quantizations": [
+        {
+          "name": "Q3_K_M",
+          "bits_per_weight": 3.5,
+          "size_bytes": 4800000000,
+          "note": "Fits 8GB GPUs comfortably"
+        },
+        {
+          "name": "Q4_K_M",
+          "bits_per_weight": 4.5,
+          "size_bytes": 5500000000,
+          "note": "Sweet spot: optimal speed and quality on 16GB GPUs"
+        },
+        {
+          "name": "Q8_0",
+          "bits_per_weight": 8.5,
+          "size_bytes": 9527502048,
+          "note": "Maximum precision & fidelity"
+        }
+      ],
       "capabilities": [
         "Chat",
         "Vision"
@@ -1930,7 +2082,7 @@
     },
     {
       "id": "vevo2-audiocpp",
-      "install_dir": "audio-cpp/audio.cpp-gguf/Vevo2-GGUF",
+      "install_dir": "audio-cpp/Vevo2-GGUF",
       "name": "Vevo2 (audio.cpp)",
       "description": "Vevo2 audio synthesis and voice generation model in GGUF format",
       "license": "Apache-2.0",
@@ -3930,24 +4082,6 @@
           "context_length": 32768,
           "gpu_layers": 99,
           "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
-        },
-        "benchmarks": {
-          "index_name": "Artificial Analysis Intelligence Index",
-          "score": 44,
-          "unit": "index",
-          "mode": "reasoning",
-          "reasoning_effort": "high",
-          "domains": {
-            "finance_and_accounting": 46,
-            "strategy_and_ops": 44,
-            "legal": 42,
-            "healthcare_and_medical": 43,
-            "engineering": 48,
-            "economics": 45
-          },
-          "cost_per_task_usd": 0,
-          "time_per_task_minutes": 5.2,
-          "output_tokens_per_task": 65000
         }
       },
       "latest": "1938d05cc893a60f37be1dc16e7465038f4fca63",
@@ -3964,6 +4098,24 @@
             }
           ]
         }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 44,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 46,
+          "strategy_and_ops": 44,
+          "legal": 42,
+          "healthcare_and_medical": 43,
+          "engineering": 48,
+          "economics": 45
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 5.2,
+        "output_tokens_per_task": 65000
       }
     },
     {
@@ -4508,6 +4660,26 @@
       "source_url": "https://huggingface.co/unsloth/MiniMax-H3-Image-GGUF",
       "engine": "sd-server",
       "format": "gguf",
+      "family": "MiniMax H3",
+      "param_variant": "33.1B",
+      "quantization": "Q3_K_M (DiT) / Q2_K_M (Text Encoder)",
+      "recommended_quantization": "Q3_K_M / Q2_K_M",
+      "quantization_note": "Sweet spot: fits within 16GB VRAM budget without scoping, preserving 4K diffusion generation and prompt coherence",
+      "hardware_mode": "gpu",
+      "quantizations": [
+        {
+          "name": "Q3_K_M / Q2_K_M",
+          "bits_per_weight": 3.5,
+          "size_bytes": 10422256352,
+          "note": "Sweet spot: fits 16GB VRAM GPUs without CPU scoping"
+        },
+        {
+          "name": "Q4_K_M / Q4_K_M",
+          "bits_per_weight": 4.5,
+          "size_bytes": 12722256352,
+          "note": "Requires 24GB VRAM GPU (RTX 3090/4090)"
+        }
+      ],
       "capabilities": [
         "Image Generation"
       ],
@@ -4524,7 +4696,7 @@
         "max_context_length": null,
         "local": {
           "params": 33100000000,
-          "bits_per_weight": 4.5,
+          "bits_per_weight": 3.5,
           "context_length": -1,
           "gpu_layers": 99,
           "args": "--diffusion-fa --params-backend disk"
@@ -4544,34 +4716,26 @@
             "engine": "sd-server",
             "version": "stable-diffusion.cpp PR #2324"
           }
-        ],
-        "benchmarks": {
-          "index_name": "Artificial Analysis Image Editing Elo",
-          "score": 1137,
-          "unit": "Elo",
-          "cost_per_task_usd": 0,
-          "time_per_task_minutes": 0.15,
-          "output_tokens_per_task": 6
-        }
+        ]
       },
       "latest": "2eda8f761a1625818e2933e7e726e337d197bc27",
       "versions": {
         "2eda8f761a1625818e2933e7e726e337d197bc27": {
-          "release_number": 1,
+          "release_number": 2,
           "files": [
             {
               "id": "model",
-              "filename": "minimax_h3_image_pruned-Q4_K_M.gguf",
-              "url": "https://huggingface.co/unsloth/MiniMax-H3-Image-GGUF/resolve/2eda8f761a1625818e2933e7e726e337d197bc27/minimax_h3_image_pruned-Q4_K_M.gguf",
-              "sha256": "ef784687ff25a974191d00f941388060ef971286fbd2e98b2769fa78c8d599a8",
-              "size_bytes": 12721119968
+              "filename": "minimax_h3_image_pruned-Q3_K_M.gguf",
+              "url": "https://huggingface.co/unsloth/MiniMax-H3-Image-GGUF/resolve/2eda8f761a1625818e2933e7e726e337d197bc27/minimax_h3_image_pruned-Q3_K_M.gguf",
+              "sha256": "2cbe351de01d3d5b25155213eb58cc75f95efe9d56af2126df6c8038f65dc008",
+              "size_bytes": 10422256352
             },
             {
               "id": "text_encoder",
-              "filename": "qwen3vl_32b_minimax_h3-Q4_K_M.gguf",
-              "url": "https://huggingface.co/unsloth/MiniMax-H3-GGUF/resolve/babc040eff0084465460ead58fdb8ec44296f8dd/qwen3vl_32b_minimax_h3-Q4_K_M.gguf",
-              "sha256": "11e6efe70a57ce7f4838c47bdbd1a1c4b8ce10e2b7747f1b065990b70f4b05fc",
-              "size_bytes": 18218065024
+              "filename": "qwen3vl_32b_minimax_h3-Q2_K_M.gguf",
+              "url": "https://huggingface.co/unsloth/MiniMax-H3-GGUF/resolve/babc040eff0084465460ead58fdb8ec44296f8dd/qwen3vl_32b_minimax_h3-Q2_K_M.gguf",
+              "sha256": "a8ccadccd57ef34c838ffb8a7da8368bb554721b2760274a1d3b0df63960b997",
+              "size_bytes": 13102161024
             },
             {
               "id": "vae",
@@ -4581,6 +4745,583 @@
               "size_bytes": 2336964672
             }
           ]
+        }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Image Editing Elo",
+        "score": 1137,
+        "unit": "Elo",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.15,
+        "output_tokens_per_task": 6
+      }
+    },
+    {
+      "id": "ace-step-1.5",
+      "install_dir": "ACE-Step/Ace-Step1.5",
+      "name": "ACE-Step 1.5 Turbo",
+      "description": "Fast text-to-music / audio foundation model",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/ACE-Step/Ace-Step1.5",
+      "engine": "sd-server",
+      "format": "gguf",
+      "capabilities": [
+        "Audio",
+        "Speech Generation"
+      ],
+      "latest": "19671f406d603126926c1b7e2adc169acbcade22",
+      "versions": {
+        "19671f406d603126926c1b7e2adc169acbcade22": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "vae",
+              "filename": "ace_1.5_vae.safetensors",
+              "url": "https://huggingface.co/ACE-Step/Ace-Step1.5/resolve/19671f406d603126926c1b7e2adc169acbcade22/ace_1.5_vae.safetensors",
+              "sha256": "6de92e3a862acd287e08b024ac90f0783a8635451b728721a33ff03565bcb2bb",
+              "size_bytes": 337431732
+            },
+            {
+              "id": "model",
+              "filename": "ace-step-1.5-turbo-q8_0.gguf",
+              "url": "https://huggingface.co/ACE-Step/Ace-Step1.5/resolve/19671f406d603126926c1b7e2adc169acbcade22/ace-step-1.5-turbo-q8_0.gguf",
+              "sha256": "",
+              "size_bytes": 6185468096
+            }
+          ]
+        }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        }
+      }
+    },
+    {
+      "id": "needle3",
+      "install_dir": "Cactus-Compute/needle3",
+      "name": "Needle 3",
+      "description": "Lightweight cactus compute neural network",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/Cactus-Compute/needle3",
+      "engine": "transformers",
+      "format": "other",
+      "capabilities": [
+        "Chat"
+      ],
+      "latest": "c95d25b4efa1e9601e785d92438e4ade0dbddbf8",
+      "versions": {
+        "c95d25b4efa1e9601e785d92438e4ade0dbddbf8": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "needle3.cact",
+              "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/c95d25b4efa1e9601e785d92438e4ade0dbddbf8/needle3.cact",
+              "sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+              "size_bytes": 35335380
+            }
+          ]
+        }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-text"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        }
+      }
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "install_dir": "openai/whisper-large-v3-turbo",
+      "name": "OpenAI Whisper Large v3 Turbo (GGML)",
+      "description": "Fast high accuracy speech transcription model in GGML format",
+      "license": "MIT",
+      "source_url": "https://huggingface.co/openai/whisper-large-v3-turbo",
+      "engine": "transformers",
+      "format": "other",
+      "capabilities": [
+        "Transcription",
+        "Audio"
+      ],
+      "latest": "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+      "versions": {
+        "41f01f3fe87f28c78e2fbf8b568835947dd65ed9": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "ggml-large-v3-turbo.bin",
+              "url": "https://huggingface.co/openai/whisper-large-v3-turbo/resolve/41f01f3fe87f28c78e2fbf8b568835947dd65ed9/ggml-large-v3-turbo.bin",
+              "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+              "size_bytes": 1624555275
+            }
+          ]
+        }
+      },
+      "catalog": {
+        "tasks": [
+          "audio-to-text"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        }
+      }
+    },
+    {
+      "id": "qwen3-tts-12hz-1.7b-customvoice",
+      "install_dir": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+      "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
+      "description": "Custom voice generative text-to-speech model",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+      "engine": "transformers",
+      "format": "gguf",
+      "capabilities": [
+        "Speech Generation",
+        "Audio"
+      ],
+      "latest": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
+      "versions": {
+        "0c0e3051f131929182e2c023b9537f8b1c68adfe": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
+              "sha256": "",
+              "size_bytes": 1329512960
+            },
+            {
+              "id": "speech_tokenizer",
+              "filename": "speech_tokenizer/model.safetensors",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/model.safetensors",
+              "sha256": "",
+              "size_bytes": 682293092
+            },
+            {
+              "id": "config",
+              "filename": "config.json",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/config.json",
+              "sha256": "17a07f527a1c25ea30b4e023a184482a23d3e279d697b1dc81b1bde498d29cf9",
+              "size_bytes": 4908
+            },
+            {
+              "id": "generation_config",
+              "filename": "generation_config.json",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/generation_config.json",
+              "sha256": "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa",
+              "size_bytes": 245
+            },
+            {
+              "id": "merges",
+              "filename": "merges.txt",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/merges.txt",
+              "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+              "size_bytes": 1671839
+            },
+            {
+              "id": "preprocessor_config",
+              "filename": "preprocessor_config.json",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/preprocessor_config.json",
+              "sha256": "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119",
+              "size_bytes": 127
+            },
+            {
+              "id": "config",
+              "filename": "speech_tokenizer/config.json",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/config.json",
+              "sha256": "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167",
+              "size_bytes": 2336
+            },
+            {
+              "id": "configuration",
+              "filename": "speech_tokenizer/configuration.json",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/configuration.json",
+              "sha256": "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd",
+              "size_bytes": 76
+            },
+            {
+              "id": "preprocessor_config",
+              "filename": "speech_tokenizer/preprocessor_config.json",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/preprocessor_config.json",
+              "sha256": "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb",
+              "size_bytes": 234
+            },
+            {
+              "id": "tokenizer_config",
+              "filename": "tokenizer_config.json",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/tokenizer_config.json",
+              "sha256": "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670",
+              "size_bytes": 7344
+            },
+            {
+              "id": "vocab",
+              "filename": "vocab.json",
+              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/vocab.json",
+              "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+              "size_bytes": 2776833
+            }
+          ]
+        }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "max_context_length": null,
+        "local": {
+          "params": null,
+          "bits_per_weight": null,
+          "context_length": -1,
+          "gpu_layers": 99,
+          "args": ""
+        }
+      }
+    },
+    {
+      "id": "mmbert32k-intent-classifier",
+      "install_dir": "vllm-sr/mmbert32k-intent-classifier-merged",
+      "name": "mmBERT-32K Intent Classifier",
+      "description": "Long-context multilingual BERT intent classification model",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged",
+      "engine": "transformers",
+      "format": "gguf",
+      "capabilities": [
+        "Decision"
+      ],
+      "latest": "e283f64afd21b34ca12cb078f148d1aa49d6d7b8",
+      "versions": {
+        "e283f64afd21b34ca12cb078f148d1aa49d6d7b8": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "mmBERT-Base-Q4_k_m.gguf",
+              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/mmBERT-Base-Q4_k_m.gguf",
+              "sha256": "",
+              "size_bytes": 240114112
+            },
+            {
+              "id": "category_mapping",
+              "filename": "category_mapping.json",
+              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/category_mapping.json",
+              "sha256": "eab2718d86701e41f2916fb4ef69455d53819611a587853d793cfc882d181865",
+              "size_bytes": 624
+            },
+            {
+              "id": "config",
+              "filename": "config.json",
+              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/config.json",
+              "sha256": "7c65f5ecdf5113464e04331c28d3e5b60dbbe798bec981295e9c15678c4a93b0",
+              "size_bytes": 1836
+            },
+            {
+              "id": "special_tokens_map",
+              "filename": "special_tokens_map.json",
+              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/special_tokens_map.json",
+              "sha256": "6e3204c5a4004719c185007a745d1940471a6fb02521cfa0a00306dbb6bc5903",
+              "size_bytes": 1051
+            },
+            {
+              "id": "tokenizer_config",
+              "filename": "tokenizer_config.json",
+              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/tokenizer_config.json",
+              "sha256": "cfd674edc60659156ae92d20c0b827bb743e64a1546b6210b120b13adb2b595b",
+              "size_bytes": 46634
+            },
+            {
+              "id": "tokenizer",
+              "filename": "tokenizer.json",
+              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/tokenizer.json",
+              "sha256": "17f7d8b9518c403d7429ad9eeeabb6eed49c8d3311de8ef4ed5ad811381a2ced",
+              "size_bytes": 34363441
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scrfd-34g-gnkps",
+      "name": "SCRFD 34G Face Detector & Keypoints",
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/detection/scrfd_34g_gnkps.onnx"
+    },
+    {
+      "id": "glintr100-arcface",
+      "name": "GlintR100 ArcFace Feature Extractor",
+      "tasks": [
+        "image-to-embedding"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/recognition/glintr100.onnx"
+    },
+    {
+      "id": "w600k-r50-arcface",
+      "name": "WebFace600K ResNet-50 ArcFace",
+      "tasks": [
+        "image-to-embedding"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/recognition/w600k_r50.onnx"
+    },
+    {
+      "id": "mivolo-v2-age-gender",
+      "name": "MiVOLO v2 Age & Gender Estimator",
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/demographics/mivolo_v2_age.onnx"
+    },
+    {
+      "id": "fairface-demographics",
+      "name": "FairFace Demographics Classifier",
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/demographics/fairface.onnx"
+    },
+    {
+      "id": "sixdrepnet-head-pose",
+      "name": "SixDRepNet 6D Head Pose Estimator",
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/pose/head_pose/sixdrepnet.onnx"
+    },
+    {
+      "id": "enet-b2-emotion",
+      "name": "EfficientNet-B2 Facial Emotion Classifier",
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/emotion/enet_b2_8.onnx"
+    },
+    {
+      "id": "segformer-face-parsing",
+      "name": "SegFormer B0 Face Parsing",
+      "tasks": [
+        "image-to-segmentation"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/segmentation/segformer_face_parsing.onnx"
+    },
+    {
+      "id": "resnet50-gaze-estimation",
+      "name": "ResNet-50 3D Gaze Estimator",
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/gaze/resnet50_gaze.onnx"
+    },
+    {
+      "id": "minifasnet-v2-liveness",
+      "name": "MiniFASNet v2 Silent Face Anti-Spoofing",
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/liveness/minifasnet_v2.onnx"
+    },
+    {
+      "id": "aesthetic-score-mlp",
+      "name": "CLIP Aesthetics Predictor MLP",
+      "tasks": [
+        "image-to-detection"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/aesthetic/aesthetic_score_mlp.onnx"
+    },
+    {
+      "id": "audioldm2-large",
+      "install_dir": "cvssp/audioldm2-large",
+      "name": "AudioLDM 2 Large",
+      "description": "Text-to-Audio / Sound Effects (SFX) Latent Diffusion Model with AudioMAE and Flan-T5 conditioning (FAD 1.59)",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/cvssp/audioldm2-large",
+      "engine": "diffusers",
+      "format": "safetensors",
+      "capabilities": [
+        "Audio",
+        "Audio Generation",
+        "Sound Effects",
+        "Foley Generation"
+      ],
+      "latest": "main",
+      "versions": {
+        "main": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "unet",
+              "filename": "unet/diffusion_pytorch_model.safetensors",
+              "url": "https://huggingface.co/cvssp/audioldm2-large/resolve/main/unet/diffusion_pytorch_model.safetensors",
+              "sha256": "",
+              "size_bytes": 3004652256
+            },
+            {
+              "id": "vae",
+              "filename": "vae/diffusion_pytorch_model.safetensors",
+              "url": "https://huggingface.co/cvssp/audioldm2-large/resolve/main/vae/diffusion_pytorch_model.safetensors",
+              "sha256": "",
+              "size_bytes": 222323712
+            },
+            {
+              "id": "text_encoder",
+              "filename": "text_encoder/model.safetensors",
+              "url": "https://huggingface.co/cvssp/audioldm2-large/resolve/main/text_encoder/model.safetensors",
+              "sha256": "",
+              "size_bytes": 622432256
+            },
+            {
+              "id": "text_encoder_2",
+              "filename": "text_encoder_2/model.safetensors",
+              "url": "https://huggingface.co/cvssp/audioldm2-large/resolve/main/text_encoder_2/model.safetensors",
+              "sha256": "",
+              "size_bytes": 990124032
+            },
+            {
+              "id": "language_model",
+              "filename": "language_model/model.safetensors",
+              "url": "https://huggingface.co/cvssp/audioldm2-large/resolve/main/language_model/model.safetensors",
+              "sha256": "",
+              "size_bytes": 497672192
+            },
+            {
+              "id": "projection",
+              "filename": "projection_model/model.safetensors",
+              "url": "https://huggingface.co/cvssp/audioldm2-large/resolve/main/projection_model/model.safetensors",
+              "sha256": "",
+              "size_bytes": 5262336
+            }
+          ]
+        }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Audio",
+          "Sound Effects",
+          "Foley Generation"
+        ],
+        "max_context_length": 512,
+        "local": {
+          "params": 750000000,
+          "bits_per_weight": 16,
+          "context_length": 512,
+          "gpu_layers": 99,
+          "args": ""
+        }
+      }
+    },
+    {
+      "id": "fish-audio-drama-3-q4",
+      "install_dir": "ggml-org/drama-3-GGUF",
+      "name": "Fish Audio Drama 3 (Q4_K_M)",
+      "description": "35B MoE (3B active) Theatrical Multi-Speaker Text-to-Speech & Voice Acting Model with Natural-Language Stage Directions (Q4_K_M GGUF for 16GB VRAM)",
+      "license": "Fish Audio Community License",
+      "source_url": "https://huggingface.co/ggml-org/drama-3-GGUF",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Audio",
+        "Speech Generation",
+        "Voice Cloning",
+        "Multi-Speaker",
+        "Theatrical Drama"
+      ],
+      "latest": "main",
+      "versions": {
+        "main": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "drama-3-Q4_K_M.gguf",
+              "url": "https://huggingface.co/ggml-org/drama-3-GGUF/resolve/main/drama-3-Q4_K_M.gguf",
+              "sha256": "",
+              "size_bytes": 22120000000
+            }
+          ]
+        }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-audio"
+        ],
+        "capabilities": [
+          "Audio",
+          "Speech Generation",
+          "Voice Cloning",
+          "Multi-Speaker"
+        ],
+        "max_context_length": 32768,
+        "sampling": {
+          "temperature": 0.7,
+          "top_p": 0.85,
+          "top_k": 40,
+          "max_tokens": 4096
+        },
+        "local": {
+          "params": 35000000000,
+          "bits_per_weight": 4.5,
+          "context_length": 32768,
+          "gpu_layers": 48,
+          "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0"
         }
       }
     }

@@ -43,6 +43,7 @@ fn create_test_app(api_key: Option<String>) -> axum::Router {
             max_loaded_models: 1,
             idle_unload_seconds: 300,
             vram_budget_ratio: 0.95,
+            ..Default::default()
         },
         ..Default::default()
     };

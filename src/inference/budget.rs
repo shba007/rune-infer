@@ -168,6 +168,67 @@ pub fn detect_used_gpu_vram() -> Option<u64> {
     Some(mib * 1024 * 1024)
 }
 
+static TOTAL_SYSTEM_RAM: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+
+/// Detects total installed physical system RAM across Windows, macOS, and Linux.
+pub fn detect_total_system_ram() -> Option<u64> {
+    *TOTAL_SYSTEM_RAM.get_or_init(query_total_system_ram_uncached)
+}
+
+fn query_total_system_ram_uncached() -> Option<u64> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        unsafe {
+            let mut status: MEMORYSTATUSEX = std::mem::zeroed();
+            status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+            if GlobalMemoryStatusEx(&mut status) != 0 {
+                return Some(status.ullTotalPhys);
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = std::process::Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
+        {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                if let Ok(bytes) = text.trim().parse::<u64>() {
+                    return Some(bytes);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/proc/meminfo") {
+            for line in content.lines() {
+                if line.starts_with("MemTotal:") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Ok(kb) = parts[1].parse::<u64>() {
+                            return Some(kb * 1024);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Calculates the allowed system RAM budget in bytes according to server config.
+pub fn calculate_ram_budget(server: &ServerConfig) -> u64 {
+    let total_ram = detect_total_system_ram().unwrap_or(32 * 1024 * 1024 * 1024);
+    let ratio = server.ram_budget_ratio.clamp(0.01, 1.0);
+    ((total_ram as f64) * ratio) as u64
+}
+
 /// Heuristic parameter estimation from model metadata, id, name, or file size.
 pub fn heuristic_model_params(model: &ModelConfig) -> u64 {
     if let Some(p) = model.total_params {
@@ -371,6 +432,146 @@ pub fn calculate_budget(model: &ModelConfig, server: &ServerConfig) -> VramBudge
     }
 }
 
+/// Dynamic sweet-spot verdict tailored to the host machine's hardware.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MachineSweetSpotVerdict {
+    /// The quantization recommended for maximum quality without speed loss on this machine.
+    pub recommended_quantization: String,
+    /// Detailed rationale explaining why this quantization is the sweet spot for the machine.
+    pub reason: String,
+    /// Whether the model in this quantization fits in physical GPU VRAM.
+    pub fits_vram: bool,
+    /// Whether the model fits within the system RAM budget (e.g. 20% limit).
+    pub fits_ram: bool,
+    /// Estimated total memory requirement in bytes.
+    pub estimated_memory_bytes: u64,
+    /// True if the evaluated quantization is the optimal sweet spot for this machine.
+    pub is_sweet_spot: bool,
+}
+
+/// Evaluates whether a given model parameter count and quantization are the sweet spot
+/// for the current machine's detected GPU VRAM, system RAM, and active backend mode.
+pub fn evaluate_machine_sweet_spot(
+    params: u64,
+    current_quant: &str,
+    bits_per_weight: f64,
+    context_tokens: u32,
+    server: Option<&ServerConfig>,
+) -> MachineSweetSpotVerdict {
+    let total_vram = detect_total_gpu_vram();
+    let total_ram = detect_total_system_ram().unwrap_or(16 * 1024 * 1024 * 1024);
+    let ram_budget_ratio = server.map_or(0.20, |s| s.ram_budget_ratio);
+    let ram_budget = (total_ram as f64 * ram_budget_ratio) as u64;
+
+    let is_cpu_mode = server.and_then(|s| s.engine_backend.as_deref()) == Some("cpu")
+        || std::env::var("RUNE_FORCE_CPU").is_ok()
+        || std::env::var("RUNE_ENGINE_BACKEND").is_ok_and(|b| b.eq_ignore_ascii_case("cpu"))
+        || total_vram.is_none();
+
+    let weight_bytes = (params as f64 * bits_per_weight / 8.0) as u64;
+    let kv_bytes = (context_tokens as u64).saturating_mul(if params > 20_000_000_000 {
+        64 * 1024
+    } else {
+        32 * 1024
+    });
+    let total_estimated = weight_bytes.saturating_add(kv_bytes);
+    let fits_ram = total_estimated <= ram_budget;
+
+    if is_cpu_mode || total_vram.is_none() {
+        let recommended = "Q4_K_M";
+        let is_sweet_spot = current_quant.to_ascii_uppercase().contains("Q4") && fits_ram;
+        let reason = if !fits_ram {
+            format!(
+                "Exceeds 20% system RAM limit ({:.1} GiB needed > {:.1} GiB budget). Choose smaller variant or tighter quant.",
+                total_estimated as f64 / 1_073_741_824.0,
+                ram_budget as f64 / 1_073_741_824.0
+            )
+        } else if is_sweet_spot {
+            format!(
+                "★ CPU Sweet Spot: Fits within 20% RAM limit ({:.1} GiB / {:.1} GiB budget) with high-efficiency integer vector decoding.",
+                total_estimated as f64 / 1_073_741_824.0,
+                ram_budget as f64 / 1_073_741_824.0
+            )
+        } else {
+            format!(
+                "Fits CPU RAM ({:.1} GiB / {:.1} GiB budget); Q4_K_M recommended for 2-3x faster CPU execution without RAM bloat.",
+                total_estimated as f64 / 1_073_741_824.0,
+                ram_budget as f64 / 1_073_741_824.0
+            )
+        };
+        MachineSweetSpotVerdict {
+            recommended_quantization: recommended.to_string(),
+            reason,
+            fits_vram: false,
+            fits_ram,
+            estimated_memory_bytes: total_estimated,
+            is_sweet_spot,
+        }
+    } else {
+        let vram = total_vram.unwrap_or(0);
+        let usable_vram = (vram as f64 * 0.88) as u64;
+        let fits_vram = total_estimated <= usable_vram;
+        let vram_gib = vram as f64 / 1_073_741_824.0;
+
+        let (recommended, is_sweet_spot, reason) = if !fits_vram {
+            let rec = if (params as f64 * 3.5 / 8.0) as u64 <= usable_vram {
+                "Q3_K_M"
+            } else if (params as f64 * 2.5 / 8.0) as u64 <= usable_vram {
+                "Q2_K"
+            } else {
+                "Smaller Model Variant"
+            };
+            (
+                rec.to_string(),
+                false,
+                format!(
+                    "Exceeds GPU VRAM ({:.1} GiB needed > {:.1} GiB usable). Requires {} or smaller variant to prevent OOM/CPU spillover.",
+                    total_estimated as f64 / 1_073_741_824.0,
+                    usable_vram as f64 / 1_073_741_824.0,
+                    rec
+                ),
+            )
+        } else {
+            let rec = if params >= 25_000_000_000 {
+                if vram_gib < 20.0 { "Q3_K_M" } else { "Q4_K_M" }
+            } else if params >= 8_000_000_000 {
+                if vram_gib < 10.0 { "Q3_K_M" } else { "Q4_K_M" }
+            } else {
+                "Q4_K_M"
+            };
+
+            let is_sweet = (rec == "Q3_K_M" && current_quant.to_ascii_uppercase().contains("Q3"))
+                || (rec == "Q4_K_M" && current_quant.to_ascii_uppercase().contains("Q4"))
+                || current_quant.to_ascii_uppercase().contains(rec);
+
+            let text = if is_sweet {
+                format!(
+                    "★ Sweet Spot for your {:.0} GiB GPU: Fits VRAM ({:.1} GiB used) at 99%+ quality & peak decode speed with full context.",
+                    vram_gib,
+                    total_estimated as f64 / 1_073_741_824.0
+                )
+            } else {
+                format!(
+                    "Fits GPU VRAM ({:.1} GiB / {:.0} GiB); {} is the optimal sweet spot for your hardware.",
+                    total_estimated as f64 / 1_073_741_824.0,
+                    vram_gib,
+                    rec
+                )
+            };
+            (rec.to_string(), is_sweet, text)
+        };
+
+        MachineSweetSpotVerdict {
+            recommended_quantization: recommended,
+            reason,
+            fits_vram,
+            fits_ram,
+            estimated_memory_bytes: total_estimated,
+            is_sweet_spot,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,5 +610,29 @@ mod tests {
                 < 1e-4
         );
         assert!((parse_cache_type_multiplier("", "--cache-type-k", "-ctk") - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_evaluate_machine_sweet_spot_cpu_mode() {
+        let server = ServerConfig {
+            engine_backend: Some("cpu".to_string()),
+            ram_budget_ratio: 0.20,
+            ..Default::default()
+        };
+
+        let verdict = evaluate_machine_sweet_spot(873_000_000, "Q4_K_M", 4.5, 4096, Some(&server));
+        assert!(verdict.fits_ram);
+        assert!(!verdict.fits_vram);
+        assert_eq!(verdict.recommended_quantization, "Q4_K_M");
+        assert!(verdict.is_sweet_spot);
+        assert!(verdict.reason.contains("CPU Sweet Spot"));
+    }
+
+    #[test]
+    fn test_evaluate_machine_sweet_spot_gpu_fit() {
+        let server = ServerConfig::default();
+        let verdict =
+            evaluate_machine_sweet_spot(9_400_000_000, "Q4_K_M", 4.5, 4096, Some(&server));
+        assert_eq!(verdict.recommended_quantization, "Q4_K_M");
     }
 }

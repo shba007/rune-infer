@@ -1,11 +1,13 @@
 //! Local model entries in the remotely hosted, reviewed model registry.
 use anyhow::{Context, Result, ensure};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+
+pub use crate::inference::budget::{MachineSweetSpotVerdict, evaluate_machine_sweet_spot};
 
 const REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/models.json";
@@ -38,6 +40,37 @@ where
         _ => Ok(Vec::new()),
     }
 }
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct QuantizationOption {
+    pub name: String,
+    #[serde(default)]
+    pub bits_per_weight: Option<f64>,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
+    #[serde(default)]
+    pub filename: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ParamVariant {
+    pub param_count: String,
+    pub id: String,
+    #[serde(default)]
+    pub params: Option<u64>,
+    #[serde(default)]
+    pub default_context: Option<u32>,
+    #[serde(default)]
+    pub quantizations: Vec<QuantizationOption>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LocalModel {
@@ -55,10 +88,90 @@ pub struct LocalModel {
     pub versions: BTreeMap<String, Version>,
     #[serde(default)]
     pub catalog: Option<CatalogDefaults>,
+    /// Model class or family group (e.g. "Qwen 3.5", "MiniMax H3", "Fish Audio", "Gemma 4").
+    #[serde(default)]
+    pub family: Option<String>,
+    /// Parameter count identifier for this variant (e.g. "0.8B", "4B", "9B", "27B").
+    #[serde(default)]
+    pub param_variant: Option<String>,
+    /// Specific quantization type (e.g. "Q4_K_M", "Q8_0", "Q3_K_M").
+    #[serde(default)]
+    pub quantization: Option<String>,
+    /// All available quantization options for this specific parameter variant.
+    #[serde(default)]
+    pub quantizations: Vec<QuantizationOption>,
+    /// Nested parameter variants if this entry groups a model class.
+    #[serde(default)]
+    pub variants: Vec<ParamVariant>,
+    /// Recommended sweet-spot quantization (e.g. "Q4_K_M" for maximum quality without speed loss).
+    #[serde(default)]
+    pub recommended_quantization: Option<String>,
+    /// Quality vs speed / resource trade-off note or suggestion.
+    #[serde(default)]
+    pub quantization_note: Option<String>,
+    /// Target hardware preference ("cpu", "gpu", or "any").
+    #[serde(default)]
+    pub hardware_mode: Option<String>,
     /// Why this Infer build cannot install the model. Only set on entries from
     /// the `*_listing` functions; installable lists never contain them.
     #[serde(skip)]
     pub unsupported: Option<String>,
+}
+
+impl LocalModel {
+    /// Resolves the human-friendly model class / family name.
+    pub fn family_name(&self) -> String {
+        if let Some(f) = &self.family {
+            return f.clone();
+        }
+        let id = self.id.to_ascii_lowercase();
+        if id.starts_with("qwen3.5") {
+            "Qwen 3.5".into()
+        } else if id.starts_with("qwen3.8") || id.contains("qwen3.8") {
+            "Qwen 3.8".into()
+        } else if id.starts_with("qwen-image") {
+            "Qwen Image".into()
+        } else if id.starts_with("holo") {
+            "Holo".into()
+        } else if id.starts_with("minimax") || id == "h3-image" {
+            "MiniMax H3".into()
+        } else if id.starts_with("fish-audio") {
+            "Fish Audio S2".into()
+        } else if id.starts_with("gemma") {
+            "Gemma".into()
+        } else if id.starts_with("lfm") || id.starts_with("liquid") || id == "d1-3b" {
+            "Liquid AI".into()
+        } else if id.starts_with("yolo") {
+            "YOLO 26".into()
+        } else if id.contains("whisper") {
+            "Whisper".into()
+        } else if id.starts_with("depth-anything") {
+            "Depth Anything".into()
+        } else {
+            self.name.clone()
+        }
+    }
+
+    /// Resolves the parameter count display (e.g. "9B", "27B", "0.8B").
+    pub fn parameter_count_display(&self) -> String {
+        if let Some(v) = &self.param_variant {
+            return v.clone();
+        }
+        if let Some(p) = self.catalog.as_ref().and_then(|c| c.local.params) {
+            return crate::inference::budget::format_params(p);
+        }
+        let id = self.id.to_ascii_lowercase();
+        for part in id.split('-') {
+            if part.ends_with('b')
+                && part[..part.len() - 1]
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '.')
+            {
+                return part.to_ascii_uppercase();
+            }
+        }
+        "Standard".into()
+    }
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -2394,5 +2507,67 @@ mod tests {
             .unwrap_or_else(|error| panic!("{} failed to install: {error:#}", model.id));
             std::fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    #[test]
+    fn test_model_family_and_parameter_display_and_nested_schema() {
+        let json = r#"{
+            "id": "qwen3.5-9b",
+            "name": "Qwen3.5 9B",
+            "description": "9B model",
+            "license": "Apache-2.0",
+            "source_url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
+            "engine": "llama-server",
+            "format": "gguf",
+            "capabilities": ["Chat"],
+            "latest": "main",
+            "family": "Qwen 3.5",
+            "param_variant": "9B",
+            "quantizations": [
+                {
+                    "name": "Q4_K_M",
+                    "bits_per_weight": 4.5,
+                    "size_bytes": 5500000000,
+                    "note": "Sweet spot for 16GB GPUs"
+                },
+                {
+                    "name": "Q8_0",
+                    "bits_per_weight": 8.5,
+                    "size_bytes": 9800000000
+                }
+            ],
+            "variants": [
+                {
+                    "param_count": "0.8B",
+                    "id": "qwen3.5-0.8b",
+                    "params": 873000000,
+                    "quantizations": [
+                        { "name": "Q4_K_M", "bits_per_weight": 4.5, "size_bytes": 550000000 }
+                    ]
+                }
+            ],
+            "versions": {
+                "main": {
+                    "release_number": 1,
+                    "files": [
+                        {
+                            "id": "model",
+                            "filename": "model.gguf",
+                            "url": "https://huggingface.co/example",
+                            "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                            "size_bytes": 5500000000
+                        }
+                    ]
+                }
+            }
+        }"#;
+
+        let model: LocalModel = serde_json::from_str(json).unwrap();
+        assert_eq!(model.family_name(), "Qwen 3.5");
+        assert_eq!(model.parameter_count_display(), "9B");
+        assert_eq!(model.quantizations.len(), 2);
+        assert_eq!(model.quantizations[0].name, "Q4_K_M");
+        assert_eq!(model.variants.len(), 1);
+        assert_eq!(model.variants[0].param_count, "0.8B");
     }
 }

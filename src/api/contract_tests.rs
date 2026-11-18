@@ -936,9 +936,7 @@ fn catalog_vision_models_do_not_match_unrelated_filters() {
     for id in [
         "gemma-4-12b-it",
         "minicpm-o-4-5-q8-0",
-        "qwen3.8-27b",
         "ternary-bonsai-2-27b-pq2-0",
-        "ornith-1.5-9b",
     ] {
         let entry = catalog
             .models

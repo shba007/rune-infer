@@ -207,6 +207,10 @@ pub struct ServerConfig {
     pub idle_unload_seconds: u64,
     #[serde(default = "default_vram_budget_ratio")]
     pub vram_budget_ratio: f64,
+    #[serde(default = "default_ram_budget_ratio")]
+    pub ram_budget_ratio: f64,
+    #[serde(default)]
+    pub engine_backend: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -217,13 +221,19 @@ impl Default for ServerConfig {
             api_key: None,
             max_loaded_models: 1,
             idle_unload_seconds: 300,
-            vram_budget_ratio: 0.97,
+            vram_budget_ratio: 0.90,
+            ram_budget_ratio: 0.20,
+            engine_backend: None,
         }
     }
 }
 
 fn default_vram_budget_ratio() -> f64 {
-    0.97
+    0.90
+}
+
+fn default_ram_budget_ratio() -> f64 {
+    0.20
 }
 
 #[derive(Debug, Clone)]

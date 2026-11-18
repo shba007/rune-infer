@@ -31,7 +31,7 @@
         "path": "D:/Projects/Public/rune/code-model/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-UD-Q6_K_XL.gguf",
         "params": 12000000000,
         "bits_per_weight": 4.5,
-        "context_length": -1,
+        "context_length": 32768,
         "gpu_layers": 99,
         "args": "-fa on"
       },
@@ -193,11 +193,11 @@
       ],
       "max_context_length": 262144,
       "sampling": {
-        "temperature": 0.7,
-        "top_p": 0.9,
-        "top_k": 50,
+        "max_tokens": 4096,
         "min_p": 0.05,
-        "max_tokens": 4096
+        "temperature": 0.7,
+        "top_k": 50,
+        "top_p": 0.9
       },
       "local": {
         "path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PQ2_0.gguf",
@@ -667,6 +667,7 @@
         "default_steps": 30,
         "max_resolution": "2048×2048 (Native DiT)",
         "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
+        "llm_vision_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/mmproj-qwen3vl_8b_heretic-f16.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
       },
       "benchmarks": {
@@ -703,8 +704,9 @@
         "default_cfg_scale": 5,
         "default_sample_method": "euler",
         "default_steps": 30,
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
-        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-Edit-2511-GGUF/text_encoder/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+        "llm_vision_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-Edit-2511-GGUF/text_encoder/mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-Edit-2511-GGUF/vae/qwen_image_vae.safetensors"
       },
       "benchmarks": {
         "index_name": "LMSYS Image Arena ELO (Edit Benchmark)",
@@ -733,7 +735,7 @@
         "bits_per_weight": 8.63,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk --flow-shift 5 --tokenizer D:/Models/huggingface/hub/models--unsloth--MOSS-Image-SFT-FP8/snapshots/8fb0d8c3a126cfd1406acaf96698dbfe9d99b680/tokenizer/tokenizer.json"
+        "args": "--diffusion-fa --params-backend disk --flow-shift 5 --tokenizer D:/Projects/Public/rune/code-model/unsloth/MOSS-Image-SFT-GGUF/tokenizer/tokenizer.json"
       },
       "extra": {
         "default_cfg_scale": 3,
@@ -802,7 +804,10 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x_detect.onnx",
-        "gpu_layers": 99
+        "gpu_layers": 99,
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1
       },
       "benchmarks": {
         "index_name": "MS-COCO val2017 mAP50-95",
@@ -828,7 +833,10 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-pose.onnx",
-        "gpu_layers": 99
+        "gpu_layers": 99,
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1
       },
       "benchmarks": {
         "index_name": "MS-COCO Keypoints val2017 mAP",
@@ -854,7 +862,10 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-seg.onnx",
-        "gpu_layers": 99
+        "gpu_layers": 99,
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1
       },
       "benchmarks": {
         "index_name": "MS-COCO val2017 Mask mAP",
@@ -880,7 +891,10 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-obb.onnx",
-        "gpu_layers": 99
+        "gpu_layers": 99,
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1
       },
       "benchmarks": {
         "index_name": "DOTA-v1.5 Oriented Bounding Box mAP",
@@ -906,7 +920,10 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/litert/yolo26x-sem-ade20k.onnx",
-        "gpu_layers": 99
+        "gpu_layers": 99,
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1
       },
       "benchmarks": {
         "index_name": "ADE20K Semantic Segmentation mIoU",
@@ -1061,9 +1078,9 @@
         "audio-cpp"
       ],
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-bf16.gguf",
+        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-q8_0.gguf",
         "params": 4954823665,
-        "bits_per_weight": 16,
+        "bits_per_weight": 8,
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
@@ -1171,7 +1188,7 @@
         "text-to-audio"
       ],
       "engine": [
-        "encoder"
+        "audio-cpp"
       ],
       "max_context_length": null,
       "local": {
@@ -1315,7 +1332,10 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.03,
         "output_tokens_per_task": 128
-      }
+      },
+      "tasks": [
+        "text-to-text"
+      ]
     },
     {
       "id": "space-bunny-alpha",
@@ -1751,6 +1771,11 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.22,
         "output_tokens_per_task": 8
+      },
+      "sampling": {
+        "default_steps": 8,
+        "default_cfg_scale": 1,
+        "default_sample_method": "euler"
       }
     },
     {
@@ -2021,19 +2046,19 @@
       ],
       "max_context_length": null,
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/minimax_h3_image_pruned-Q4_K_M.gguf",
+        "path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/minimax_h3_image_pruned-Q3_K_M.gguf",
         "params": 33100000000,
-        "bits_per_weight": 4.5,
+        "bits_per_weight": 3.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk"
+        "args": "--diffusion-fa --backend te=cpu --offload-to-cpu --vae-tiling"
       },
       "extra": {
         "default_cfg_scale": 1,
         "default_sample_method": "euler",
         "default_steps": 6,
         "max_resolution": "4096×4096 (Native DiT)",
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/qwen3vl_32b_minimax_h3-Q4_K_M.gguf",
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/qwen3vl_32b_minimax_h3-Q2_K_M.gguf",
         "vae_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/diffusion_pytorch_model.safetensors"
       },
       "image_reference_checks": [
@@ -2083,7 +2108,9 @@
         "default_steps": 8,
         "max_resolution": "1280x720",
         "text_encoder_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
-        "vae_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_video_vae.safetensors"
+        "vae_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_video_vae.safetensors",
+        "embeddings_connectors_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_embeddings_connectors.safetensors",
+        "audio_vae_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_audio_vae.safetensors"
       },
       "benchmarks": {
         "index_name": "Physical AI Bench Generation Overall",

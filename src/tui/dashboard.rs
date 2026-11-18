@@ -2569,7 +2569,7 @@ fn draw_all_models(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
     let [table_area, details] =
-        Layout::vertical([Constraint::Min(4), Constraint::Length(5)]).areas(area);
+        Layout::vertical([Constraint::Min(4), Constraint::Length(8)]).areas(area);
     let visible = table_area.height.saturating_sub(3) as usize;
     let start = app
         .model_registry_selected
@@ -2588,6 +2588,17 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
                     .iter()
                     .fold(0_u64, |sum, file| sum.saturating_add(file.size_bytes))
             });
+            let id_display = if model.param_variant.is_some()
+                || model
+                    .catalog
+                    .as_ref()
+                    .and_then(|c| c.local.params)
+                    .is_some()
+            {
+                format!("{} [{}]", model.id, model.parameter_count_display())
+            } else {
+                model.id.clone()
+            };
             Row::new([
                 if index == app.model_registry_selected {
                     ">"
@@ -2595,7 +2606,7 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
                     " "
                 }
                 .to_string(),
-                model.id.clone(),
+                id_display,
                 model.name.clone(),
                 crate::inference::engines::download::format_bytes(size),
                 if model.unsupported.is_some() {
@@ -2612,14 +2623,14 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
         rows,
         [
             Constraint::Length(2),
-            Constraint::Min(20),
+            Constraint::Min(24),
             Constraint::Min(20),
             Constraint::Length(12),
             Constraint::Length(12),
         ],
     )
     .header(
-        Row::new(["", "Model ID", "Name", "Download", "Status"])
+        Row::new(["", "Model ID / Variant", "Name", "Download", "Status"])
             .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD)),
     )
     .block(panel(if app.info.model_registry_path.is_some() {
@@ -2635,8 +2646,78 @@ fn draw_model_registry(f: &mut Frame, area: Rect, app: &App) {
     let detail = if let Some(progress) = &app.model_download {
         format!("{status}\n{}", progress.filename)
     } else if let Some(model) = app.model_registry_models.get(app.model_registry_selected) {
+        let params_val = model
+            .catalog
+            .as_ref()
+            .and_then(|c| c.local.params)
+            .unwrap_or(0);
+        let current_q = model.quantization.as_deref().unwrap_or("Default");
+        let bpw = model
+            .catalog
+            .as_ref()
+            .and_then(|c| c.local.bits_per_weight)
+            .unwrap_or(4.5);
+        let ctx = model
+            .catalog
+            .as_ref()
+            .and_then(|c| c.max_context_length)
+            .unwrap_or(4096);
+
+        let verdict = crate::inference::budget::evaluate_machine_sweet_spot(
+            params_val, current_q, bpw, ctx, None,
+        );
+
+        let vram_disp = match crate::inference::budget::detect_total_gpu_vram() {
+            Some(v) => format!("{:.1} GiB GPU VRAM", v as f64 / 1_073_741_824.0),
+            None => "CPU Mode (No GPU)".to_string(),
+        };
+        let total_ram_bytes =
+            crate::inference::budget::detect_total_system_ram().unwrap_or(16 * 1024 * 1024 * 1024);
+        let ram_budget_bytes = (total_ram_bytes as f64 * 0.20) as u64;
+        let ram_disp = format!(
+            "{:.1} GiB RAM (20% Limit: {:.1} GiB)",
+            total_ram_bytes as f64 / 1_073_741_824.0,
+            ram_budget_bytes as f64 / 1_073_741_824.0
+        );
+
+        let quant_line = match (&model.quantization, &model.quantization_note) {
+            (Some(q), Some(note)) => format!("Quantization: {q} · {note}\n"),
+            (Some(q), None) => format!("Quantization: {q}\n"),
+            (None, Some(note)) => format!("Quantization: {note}\n"),
+            (None, None) => String::new(),
+        };
+        let all_quants = if !model.quantizations.is_empty() {
+            let items: Vec<String> = model
+                .quantizations
+                .iter()
+                .map(|q| {
+                    if let Some(sz) = q.size_bytes {
+                        format!(
+                            "{} ({})",
+                            q.name,
+                            crate::inference::engines::download::format_bytes(sz)
+                        )
+                    } else {
+                        q.name.clone()
+                    }
+                })
+                .collect();
+            format!("Available Quants: {}\n", items.join(", "))
+        } else {
+            String::new()
+        };
+        let class_line = format!(
+            "Class: {} · Variant: {}\n",
+            model.family_name(),
+            model.parameter_count_display()
+        );
+        let hw_profile = format!(
+            "Host Hardware: {vram_disp} · {ram_disp}\nMachine Sweet Spot: {}\n",
+            verdict.reason
+        );
+
         format!(
-            "{status}\nEngine: {} · License: {}\n{}",
+            "{status}\nEngine: {} · License: {}\n{class_line}{quant_line}{all_quants}{hw_profile}{}",
             model.engine,
             model.license,
             model
