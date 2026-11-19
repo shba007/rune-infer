@@ -75,14 +75,6 @@ impl ProxyService {
         &self.client
     }
 
-    pub fn get_controller(&self, model_id: &str) -> Option<Arc<RemoteModelController>> {
-        self.controllers
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(model_id)
-            .map(|(_, controller)| controller.clone())
-    }
-
     pub async fn execute_chat(
         &self,
         config: &ModelConfig,

@@ -238,40 +238,6 @@ impl ModelRegistry {
         self.loading.remove(&canonical_id);
     }
 
-    pub fn get_or_load(&mut self, id: &str) -> Result<Arc<dyn InferenceEngine>, String> {
-        if let Some(engine) = self.get_loaded(id) {
-            return Ok(engine);
-        }
-
-        let (model_config, server_config, vram_before, barrier) = self.prepare_load(id)?;
-        let load_started = Instant::now();
-        let canonical_id = model_config.id.clone();
-
-        match Self::create_engine(&model_config, &server_config, vram_before) {
-            Ok((engine, engine_kind)) => {
-                self.finish_load(
-                    &model_config,
-                    engine.clone(),
-                    engine_kind,
-                    load_started,
-                    vram_before,
-                );
-                let mut st = barrier.mutex.lock().unwrap_or_else(|p| p.into_inner());
-                *st = LoadState::Ready(Ok(engine.clone()));
-                barrier.condvar.notify_all();
-                Ok(engine)
-            }
-            Err(e) => {
-                let err_msg = format!("Failed to load model '{}': {}", canonical_id, e);
-                self.fail_load(&canonical_id, &err_msg);
-                let mut st = barrier.mutex.lock().unwrap_or_else(|p| p.into_inner());
-                *st = LoadState::Ready(Err(err_msg.clone()));
-                barrier.condvar.notify_all();
-                Err(err_msg)
-            }
-        }
-    }
-
     pub fn touch_lru(&mut self, id: &str) {
         if let Some(pos) = self.lru_keys.iter().position(|k| k == id) {
             let key = self.lru_keys.remove(pos);

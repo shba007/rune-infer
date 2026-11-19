@@ -226,17 +226,6 @@ impl ChatMessage {
         (text, urls)
     }
 
-    pub fn audio_items(&self) -> Vec<InputAudioContent> {
-        let (_, items) = self.split_text_and_media();
-        items
-            .into_iter()
-            .filter_map(|item| match item {
-                MediaItem::Audio { data, format } => Some(InputAudioContent { data, format }),
-                _ => None,
-            })
-            .collect()
-    }
-
     pub fn has_audio(&self) -> bool {
         let (_, items) = self.split_text_and_media();
         items
@@ -493,11 +482,6 @@ impl Usage {
             prompt_tokens_details: None,
         }
     }
-
-    pub fn with_details(mut self, details: PromptTokensDetails) -> Self {
-        self.prompt_tokens_details = Some(details);
-        self
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -708,11 +692,6 @@ impl ModelInfo {
             roles: Vec::new(),
             aliases: Vec::new(),
         }
-    }
-
-    pub fn with_ownership(mut self, owner: impl Into<String>) -> Self {
-        self.owned_by = Some(owner.into());
-        self
     }
 
     pub fn with_mtp_heads(mut self, heads: Option<u32>) -> Self {
@@ -1447,17 +1426,6 @@ pub enum DecisionAnswer {
         score: f64,
         probabilities: HashMap<String, f64>,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpeechToSpeechRequest {
-    #[serde(default)]
-    pub model: Option<String>,
-    pub target_language: String,
-    #[serde(default)]
-    pub source_language: Option<String>,
-    #[serde(default)]
-    pub response_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

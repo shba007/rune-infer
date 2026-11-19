@@ -491,10 +491,6 @@ impl ModelRegistry {
                 self.models.iter().find(|m| m.modality == modality)
             })
     }
-
-    pub fn find_owned(&self, id: &str) -> Option<ModelConfig> {
-        self.find(id).cloned()
-    }
 }
 
 pub fn interpolate_env_vars(raw: &str) -> Result<String> {

@@ -239,10 +239,6 @@ pub const PROVIDERS: &[ProviderPreset] = &[
     },
 ];
 
-pub fn validate_provider_key(preset: &ProviderPreset, key: &str) -> Result<(), String> {
-    list_provider_models(preset, key).map(|_| ())
-}
-
 pub use crate::detect::{Discovery, LocalCandidate, Skipped, discover as discover_models};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

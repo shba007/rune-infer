@@ -265,10 +265,6 @@ impl Downloads {
     pub fn status(&self) -> Status {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
-    pub fn completed_model(&self) -> Option<String> {
-        let state = self.status();
-        (state.phase == "complete").then_some(state.model).flatten()
-    }
     pub fn cancel(&self) {
         if let Some(token) = self
             .cancel

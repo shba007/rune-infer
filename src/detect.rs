@@ -249,13 +249,6 @@ pub struct Detected {
     omni_family: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Role {
-    Model,
-    Projector,
-    Draft,
-}
-
 #[derive(Debug, Clone)]
 pub enum Classified {
     Model(Detected),

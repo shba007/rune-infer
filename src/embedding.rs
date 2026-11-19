@@ -315,19 +315,6 @@ pub fn prepare_config(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn install_llama_observed(
-    root: &Path,
-    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    progress: impl FnMut(crate::inference::engines::download::DownloadProgress) + 'static,
-) -> Result<PathBuf, String> {
-    initialize(root).map_err(str::to_owned)?;
-    crate::inference::engines::download::with_cancellation(cancel, || {
-        crate::inference::engines::download::with_progress(progress, || {
-            crate::setup::install_llama_server()
-        })
-    })
-}
-
 pub fn load_local_model(
     root: &Path,
     model_id: &str,
