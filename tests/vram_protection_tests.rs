@@ -90,19 +90,14 @@ fn test_vram_protection_budget_enforcement() {
     let qwen_plan = calculate_budget(qwen, &catalog.server);
     let bonsai_plan = calculate_budget(bonsai, &catalog.server);
 
-    // Both models should be individually budgeted within limits
     assert!(qwen_plan.n_ctx >= 2048);
     assert!(bonsai_plan.n_ctx >= 2048);
 
-    // 16 GB ceiling in bytes
     let sixteen_gb = 16 * 1024 * 1024 * 1024u64;
 
-    // Individually, each model's estimated weight footprint is bounded
     assert!(qwen_plan.model_vram_on_gpu_bytes < sixteen_gb);
     assert!(bonsai_plan.model_vram_on_gpu_bytes < sixteen_gb);
 
-    // Crucially: Concurrent loading without Rune Infer management would require ~22GB+,
-    // which would crash standard runners on a 16GB GPU
     let combined_weights = qwen_plan.model_vram_on_gpu_bytes + bonsai_plan.model_vram_on_gpu_bytes;
     assert!(
         combined_weights > sixteen_gb,
@@ -123,16 +118,13 @@ fn test_lru_graceful_model_swapping_prevents_oom() {
         id: "ternary-bonsai-2-27b-pq2-0".to_string(),
     });
 
-    // Start with empty registry
     assert_eq!(registry.loaded_models().len(), 0);
 
-    // Evict idle on an empty registry returns empty
     assert_eq!(
         registry.evict_idle(Duration::from_secs(300)),
         Vec::<String>::new()
     );
 
-    // Verify in-flight request protection: strong_count > 1 prevents eviction
     let _qwen_lock = qwen_engine.clone();
     assert_eq!(Arc::strong_count(&qwen_engine), 2);
     assert_eq!(Arc::strong_count(&bonsai_engine), 1);
@@ -143,7 +135,6 @@ fn test_idle_unload_reclaims_memory() {
     let catalog = create_test_catalog();
     let mut registry = EngineRegistry::new(catalog);
 
-    // Evict idle on an empty registry returns empty
     let evicted = registry.evict_idle(Duration::from_secs(300));
     assert!(evicted.is_empty());
 }

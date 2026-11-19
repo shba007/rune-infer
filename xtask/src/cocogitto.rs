@@ -1,4 +1,3 @@
-//! Read-only integration with pinned Cocogitto. Only Cocogitto renders notes.
 use cocogitto::{
     CocoGitto,
     conventional::{
@@ -50,7 +49,6 @@ fn initialize() -> Result<&'static cocogitto::settings::Settings> {
     INIT.call_once(|| {
         cocogitto::set_config_path(root.join("cog.toml").to_string_lossy().into_owned())
     });
-    // Validate configuration explicitly; do not accept Cocogitto's default fallback.
     CocoGitto::get_at(root.to_path_buf()).map_err(|e| e.to_string())?;
     let reviewed =
         cocogitto::settings::Settings::try_from(std::fs::read_to_string(root.join("cog.toml"))?)?;
@@ -133,8 +131,6 @@ pub fn generate(
     let previous = Version::parse(base.trim_start_matches('v'))?;
     let mut semantic: Vec<_> = commits.iter().filter_map(parsed).collect();
     for commit in &mut semantic {
-        // Cocogitto exposes pre-1.0 breaking fixes as patch. Preserve Rune's
-        // public policy by classifying them as features for bumping only.
         if previous.major == 0 && commit.conventional.is_breaking_change {
             commit.conventional.commit_type = "feat".into();
         } else if !cocogitto::COMMITS_METADATA.contains_key(&commit.conventional.commit_type) {
@@ -186,9 +182,6 @@ pub fn render_at(
     let settings = initialize()?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let coco = CocoGitto::get_at(root.to_path_buf()).map_err(|e| e.to_string())?;
-    // The public API returns the release type. Read only HEAD to obtain it,
-    // including in depth-one CI checkouts where no parent is available,
-    // then supply the already-selected, reviewed history without touching Git.
     let mut release = coco
         .get_changelog("HEAD..HEAD", false)
         .map_err(|e| e.to_string())?;

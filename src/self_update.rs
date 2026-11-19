@@ -1,4 +1,3 @@
-//! Update only the invoked executable; never resolve or migrate the Infer home.
 use anyhow::{Context, Result, bail, ensure};
 use sha2::{Digest, Sha256};
 use std::{
@@ -151,7 +150,6 @@ fn replace(target: &Path, candidate: &Path, backup: &Path, version: &str) -> Res
         })?;
         return Err(error.context("Update failed; previous executable restored"));
     }
-    // Windows may keep the running image locked until this process exits.
     if fs::remove_file(backup).is_err() {
         println!(
             "Previous executable retained at {} (remove after this command exits).",
@@ -211,7 +209,6 @@ pub async fn run(check: bool, requested: Option<&str>) -> Result<()> {
     }
     let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
     let name = format!("rune-infer-{}.{extension}", platform()?);
-    // Check published release metadata without downloading or executing a candidate.
     if check {
         let version = if requested != "latest" {
             requested.trim_start_matches('v').to_owned()

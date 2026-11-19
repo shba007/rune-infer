@@ -1,4 +1,3 @@
-// Class names embedded in the pinned ADE20K model export.
 pub(super) const LABELS: [&str; 150] = [
     "wall",
     "building",

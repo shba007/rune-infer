@@ -28,7 +28,6 @@ fn sample_qwen_reasoning_config() -> ModelConfig {
 
 #[test]
 fn test_normalized_thinking_parsing() {
-    // 1. OpenAI reasoning_effort "none" / "low" / "medium" / "high"
     let req_none = ChatCompletionRequest {
         model: "o3-mini".to_string(),
         stream: false,
@@ -64,7 +63,6 @@ fn test_normalized_thinking_parsing() {
         }
     );
 
-    // 2. Anthropic style object: {"type": "disabled"} / {"type": "enabled", "budget_tokens": 2048}
     let mut req_anthropic_disabled = req_none.clone();
     req_anthropic_disabled.reasoning_effort = None;
     req_anthropic_disabled.thinking = Some(json!({ "type": "disabled" }));
@@ -84,7 +82,6 @@ fn test_normalized_thinking_parsing() {
         }
     );
 
-    // 3. Boolean thinking: false / true
     let mut req_bool_false = req_none.clone();
     req_bool_false.reasoning_effort = None;
     req_bool_false.thinking = Some(json!(false));
@@ -93,7 +90,6 @@ fn test_normalized_thinking_parsing() {
         NormalizedThinking::Disabled
     );
 
-    // 4. chat_template_kwargs: {"thinking": false}
     let mut req_kwargs = req_none.clone();
     req_kwargs.reasoning_effort = None;
     req_kwargs.chat_template_kwargs = Some(json!({ "thinking": false }));
@@ -114,12 +110,10 @@ fn test_sampling_config_layering_with_reasoning_effort() {
         reasoning_effort: Some("medium".to_string()),
     };
 
-    // Unset request inherits default
     let req_empty = SamplingConfig::default();
     let effective = req_empty.over(&defaults);
     assert_eq!(effective.reasoning_effort, Some("medium".to_string()));
 
-    // Explicit request overrides default
     let req_override = SamplingConfig {
         reasoning_effort: Some("none".to_string()),
         ..Default::default()

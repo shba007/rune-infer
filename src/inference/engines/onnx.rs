@@ -1,4 +1,3 @@
-//! Isolated ONNX Runtime adapter for reviewed YOLO26x vision exports.
 mod ade20k;
 pub(crate) mod runtime;
 use crate::{

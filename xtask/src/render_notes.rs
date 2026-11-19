@@ -1,4 +1,3 @@
-//! Fixed-version formatting boundary: all Markdown is produced by Cocogitto.
 #[path = "cocogitto.rs"]
 #[allow(dead_code)]
 mod cocogitto;

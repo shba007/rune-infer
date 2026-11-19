@@ -1,4 +1,3 @@
-//! Explicit transport doubles. These never load models or establish model support.
 use rune_infer::{
     api::{AppState, create_router},
     config::{EngineConfig, EngineKind, ModelRegistry},
@@ -54,7 +53,6 @@ pub fn create_mock_app(mut catalog: ModelRegistry) -> axum::Router {
             "rune-transport-{}.gguf",
             rune_infer::setup::generate_api_key()
         ));
-        // Metadata-only GGUF simulates a local backend's projector contract.
         let mut bytes = b"GGUF".to_vec();
         bytes.extend(3u32.to_le_bytes());
         bytes.extend(0u64.to_le_bytes());
@@ -62,7 +60,7 @@ pub fn create_mock_app(mut catalog: ModelRegistry) -> axum::Router {
         for key in ["clip.has_vision_encoder", "clip.has_audio_encoder"] {
             bytes.extend((key.len() as u64).to_le_bytes());
             bytes.extend(key.as_bytes());
-            bytes.extend(7u32.to_le_bytes()); // GGUF bool
+            bytes.extend(7u32.to_le_bytes());
             bytes.push(1);
         }
         std::fs::write(&projector, bytes).unwrap();

@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# demos/record.sh
-# Master orchestrator for Rune Infer VHS screencast recordings
-#
-#   bash demos/record.sh [name|all] [--build] [--validate-only] [--quiet]
 set -uo pipefail
 
 name="all"
@@ -21,7 +17,6 @@ done
 
 cyan=$'\033[36m' gray=$'\033[90m' yellow=$'\033[33m' green=$'\033[32m' red=$'\033[31m' plain=$'\033[0m'
 
-# Ensure we operate from repository root
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 cd "$repo_root" || exit 1
@@ -29,14 +24,12 @@ cd "$repo_root" || exit 1
 echo "${cyan}=== Rune Infer Demo Recording Orchestrator ===${plain}"
 echo "${gray}Repository root: $repo_root${plain}"
 
-# 1. Check for VHS executable
 if ! command -v vhs >/dev/null 2>&1; then
   echo "Charm VHS CLI ('vhs') was not found on PATH." >&2
   echo 'Please install it: https://github.com/charmbracelet/vhs' >&2
   exit 1
 fi
 
-# 2. Discover available demo tapes (excluding template/common)
 tapes=()
 for tape in demos/*/*.tape; do
   [ -f "$tape" ] || continue
@@ -51,7 +44,6 @@ fi
 demo_of() { basename "$(dirname "$1")"; }
 names_of() { local list="" tape; for tape in "$@"; do list="${list:+$list, }$(demo_of "$tape")"; done; printf '%s' "$list"; }
 
-# Filter by requested demo name
 if [ "$name" != "all" ]; then
   matched=()
   for tape in "${tapes[@]}"; do
@@ -66,7 +58,6 @@ if [ "$name" != "all" ]; then
 fi
 echo "${yellow}Selected demos: $(names_of "${tapes[@]}")${plain}"
 
-# 3. Check or build release binary if not validate-only
 if [ "$validate_only" = false ]; then
   bin_name="rune-infer"
   [ "${OS:-}" = "Windows_NT" ] && bin_name="rune-infer.exe"
@@ -79,7 +70,6 @@ fi
 
 clock() { printf '%02d:%02d' $(($1 / 60)) $(($1 % 60)); }
 
-# 4. Process each selected demo tape
 rows=()
 for tape in "${tapes[@]}"; do
   demo="$(demo_of "$tape")"
@@ -98,7 +88,6 @@ for tape in "${tapes[@]}"; do
   duration="$(clock $((SECONDS - started)))"
 
   if [ "$code" -eq 0 ]; then
-    # Determine output file from tape content
     output_file="$(sed -nE 's/^[[:space:]]*Output[[:space:]]+(.+)$/\1/p' "$tape" | head -n 1 | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
     size=""
     if [ -n "$output_file" ] && [ -f "$output_file" ]; then

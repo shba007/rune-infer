@@ -1,5 +1,3 @@
-//! Embeddable server entry point shared by the CLI and library users.
-
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +12,6 @@ use crate::proxy::ProxyService;
 
 use std::path::{Path, PathBuf};
 
-/// Bind `host:port`, turning the common failure modes into actionable errors.
 pub async fn bind(host: &str, port: u16) -> Result<TcpListener> {
     let addr = format!("{host}:{port}");
     TcpListener::bind(&addr).await.map_err(|e| match e.kind() {
@@ -29,7 +26,6 @@ pub async fn bind(host: &str, port: u16) -> Result<TcpListener> {
     })
 }
 
-/// Serve the API on `listener` until `shutdown` resolves.
 pub async fn serve(
     config: ModelRegistry,
     listener: TcpListener,
@@ -38,7 +34,6 @@ pub async fn serve(
     serve_with_paths(config, None, None, listener, shutdown).await
 }
 
-/// Serve an embedded snapshot with catalog management. Changes take effect on restart.
 pub async fn serve_embedded_with_management(
     config: ModelRegistry,
     server_path: PathBuf,
@@ -66,7 +61,6 @@ pub async fn serve_embedded_with_management(
     result
 }
 
-/// Serve the API with optional configuration paths to watch for live catalog hot-reloading.
 pub async fn serve_with_paths(
     config: ModelRegistry,
     server_path: Option<PathBuf>,
@@ -86,7 +80,6 @@ pub async fn serve_with_paths(
     .await
 }
 
-/// Serve with a shared inference state for local management interfaces.
 pub async fn serve_with_inference(
     config: ModelRegistry,
     server_path: Option<PathBuf>,
@@ -172,8 +165,6 @@ fn spawn_config_watcher(
     })
 }
 
-/// Periodically unload models that have not been used for `idle_secs`
-/// (0 disables). Models serving a request are never unloaded.
 fn spawn_idle_reaper(
     inference: Arc<InferenceAppState>,
     idle_secs: u64,

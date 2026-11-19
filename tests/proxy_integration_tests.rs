@@ -136,19 +136,16 @@ async fn test_rate_limit_controller_concurrency() {
 
     let controller = RemoteModelController::new("test-claude".to_string(), Some(&config));
 
-    // Acquire first two permits
     let permit1 = controller.acquire_permit().await;
     let permit2 = controller.acquire_permit().await;
     assert!(permit1.is_ok());
     assert!(permit2.is_ok());
 
-    // Third acquire should time out because max_concurrent = 2
     let permit3 = controller.acquire_permit().await;
     assert!(permit3.is_err());
     let err = permit3.unwrap_err();
     assert_eq!(err.code.as_deref(), Some("rate_limit_exceeded"));
 
-    // Release permit 1 and retry
     drop(permit1);
     let permit4 = controller.acquire_permit().await;
     assert!(permit4.is_ok());

@@ -1,4 +1,3 @@
-//! Checksum-pinned WebGPU/DXC sidecars, published separately from the CPU DLL.
 use super::super::download;
 use std::{
     error::Error,
@@ -85,7 +84,6 @@ pub(super) fn ensure_installed(cpu: &Path) -> Result<PathBuf, Box<dyn Error>> {
             std::fs::copy(extracted.join("bin/x64").join(name), stage.join(name))?;
         }
         validate_bundle(&stage)?;
-        // Publish only the verified four-file bundle; preserve existing files.
         let publish = stage.join("bundle");
         std::fs::create_dir(&publish)?;
         for (name, _) in FILES {

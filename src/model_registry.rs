@@ -1,4 +1,3 @@
-//! Local model entries in the remotely hosted, reviewed model registry.
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -50,17 +49,12 @@ pub struct ScoreRange {
 #[derive(Clone, Debug, Deserialize, Serialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ThinkingEffortOption {
-    /// Reasoning / thinking effort level (e.g. "low", "medium", "high", "standard", "quality").
     pub effort: String,
-    /// Artificial Analysis benchmark score (e.g. Intelligence Index, Quality Index).
     pub score: f64,
-    /// Benchmark index name (e.g. "Artificial Analysis Intelligence Index").
     #[serde(default)]
     pub index_name: Option<String>,
-    /// Estimated speed in tokens per second under this thinking effort.
     #[serde(default)]
     pub tokens_per_second: Option<f64>,
-    /// Reasoning token budget (e.g. 1024, 4096, 16384).
     #[serde(default)]
     pub budget_tokens: Option<u32>,
 }
@@ -83,7 +77,6 @@ pub struct QuantizationOption {
     pub recommended: Option<bool>,
     #[serde(default)]
     pub note: Option<String>,
-    /// Supported thinking effort options and their Artificial Analysis benchmark scores.
     #[serde(default)]
     pub supported_thinking: Vec<ThinkingEffortOption>,
 }
@@ -105,7 +98,6 @@ pub struct ParamVariant {
     pub default_context: Option<u32>,
     #[serde(default)]
     pub quantizations: Vec<QuantizationOption>,
-    /// Artificial Analysis benchmark score range across quantizations of this variant.
     #[serde(default)]
     pub score_range: Option<ScoreRange>,
     #[serde(default)]
@@ -133,32 +125,23 @@ pub struct LocalModel {
     pub versions: BTreeMap<String, Version>,
     #[serde(default)]
     pub catalog: Option<CatalogDefaults>,
-    /// Model class or family group (e.g. "Qwen 3.5", "MiniMax H3", "Fish Audio", "Gemma 4").
     #[serde(default)]
     pub family: Option<String>,
-    /// Parameter count identifier for this variant (e.g. "0.8B", "4B", "9B", "27B").
     #[serde(default, alias = "param_variant")]
     pub param_count: Option<String>,
-    /// All available quantization options for this specific parameter variant.
     #[serde(default)]
     pub quantizations: Vec<QuantizationOption>,
-    /// Nested parameter variants if this entry groups a model class.
     #[serde(default)]
     pub variants: Vec<ParamVariant>,
-    /// Target hardware preference ("cpu", "gpu", or "any").
     #[serde(default)]
     pub hardware_mode: Option<String>,
-    /// Benchmark score range (min and max) from Artificial Analysis across the whole model family.
     #[serde(default)]
     pub score_range: Option<ScoreRange>,
-    /// Why this Infer build cannot install the model. Only set on entries from
-    /// the `*_listing` functions; installable lists never contain them.
     #[serde(skip)]
     pub unsupported: Option<String>,
 }
 
 impl LocalModel {
-    /// Resolves the human-friendly model class / family name.
     pub fn family_name(&self) -> String {
         if let Some(f) = &self.family {
             return f.clone();
@@ -191,7 +174,6 @@ impl LocalModel {
         }
     }
 
-    /// Resolves the parameter count display (e.g. "9B", "27B", "0.8B").
     pub fn parameter_count_display(&self) -> String {
         if let Some(v) = &self.param_count {
             return v.clone();
@@ -215,7 +197,6 @@ impl LocalModel {
         "Standard".into()
     }
 
-    /// Resolves the recommended quantization name (from the quantization marked `recommended: true`, or the first).
     pub fn recommended_quantization(&self) -> Option<&str> {
         self.quantizations
             .iter()
@@ -224,7 +205,6 @@ impl LocalModel {
             .or_else(|| self.quantizations.first().map(|q| q.name.as_str()))
     }
 
-    /// Resolves the recommended quantization note.
     pub fn recommended_note(&self) -> Option<&str> {
         self.quantizations
             .iter()
@@ -233,9 +213,6 @@ impl LocalModel {
             .or_else(|| self.quantizations.first().and_then(|q| q.note.as_deref()))
     }
 
-    /// Returns a `LocalModel` configured for `target_id`.
-    /// If `self.id == target_id`, returns a clone of self.
-    /// If a nested variant in `self.variants` matches `target_id`, returns a `LocalModel` for that variant.
     pub fn resolve_variant(&self, target_id: &str) -> Option<LocalModel> {
         if self.id == target_id {
             return Some(self.clone());
@@ -277,8 +254,6 @@ impl LocalModel {
 #[serde(deny_unknown_fields)]
 pub struct CatalogDefaults {
     pub tasks: Vec<String>,
-    /// Descriptive tags for the catalog entry. Omit to reuse the model's own
-    /// `capabilities` instead of repeating them; `[]` means none.
     #[serde(default)]
     pub capabilities: Option<Vec<String>>,
     pub max_context_length: Option<u32>,
@@ -297,7 +272,6 @@ pub struct CatalogDefaults {
     pub structured_output_support: Option<crate::audio_operations::OperationSupport>,
     #[serde(default)]
     pub image_reference_checks: Vec<crate::config::ImageReferenceVerification>,
-    /// Published benchmark figures, copied into the catalog entry on install.
     #[serde(default)]
     pub benchmarks: Option<serde_json::Value>,
 }
@@ -332,25 +306,19 @@ pub fn fetch() -> Result<Vec<LocalModel>> {
     parse(&fetch_document()?)
 }
 
-/// Every registry entry in file order, including those this build cannot
-/// install (marked by [`LocalModel::unsupported`]), so a browser can list them.
 pub fn fetch_listing() -> Result<Vec<LocalModel>> {
     parse_listing(&fetch_document()?)
 }
 
-/// [`fetch_listing`] for an explicitly selected local registry file.
 pub fn load_listing_from_path(path: &Path) -> Result<Vec<LocalModel>> {
     let body = read_registry_file(path)?;
     parse_listing(&body).with_context(|| format!("Invalid model registry {}", path.display()))
 }
 
-/// The registry reviewed and shipped with this Infer build. Hosts can use this
-/// when model selection must match the exact Infer version they have bundled.
 pub fn bundled() -> Result<Vec<LocalModel>> {
     parse(include_bytes!("../registry/models.json")).context("Invalid bundled model registry")
 }
 
-/// Load model metadata from an explicitly selected local registry file.
 pub fn load_from_path(path: &Path) -> Result<Vec<LocalModel>> {
     let body = read_registry_file(path)?;
     parse(&body).with_context(|| format!("Invalid model registry {}", path.display()))
@@ -394,7 +362,6 @@ pub(crate) fn fetch_document() -> Result<Vec<u8>> {
 struct Parsed {
     models: Vec<LocalModel>,
     skipped: Vec<(String, String)>,
-    /// Every entry that deserialized, installable or not, in file order.
     listed: Vec<LocalModel>,
 }
 
@@ -459,9 +426,6 @@ fn parse_listing(bytes: &[u8]) -> Result<Vec<LocalModel>> {
     Ok(parse_entries(bytes)?.listed)
 }
 
-/// Loads every entry that passes validation. Entries this Infer build cannot
-/// install yet are skipped and logged, so they can stay in the file without
-/// making the rest of the registry unusable.
 fn parse(bytes: &[u8]) -> Result<Vec<LocalModel>> {
     let parsed = parse_entries(bytes)?;
     for (id, reason) in &parsed.skipped {
@@ -668,8 +632,6 @@ fn validate_encoder_index(version: &Version, index_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// True when `capabilities` is exactly `primary`, optionally tagged `Audio`
-/// (in either order). Speech models are listed both ways in the registry.
 fn capabilities_are(capabilities: &[String], primary: &str) -> bool {
     match capabilities {
         [a] => a == primary,
@@ -812,7 +774,6 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     Ok(())
 }
 
-/// Download a reviewed model and register it in the user's catalog.
 pub fn install(model: &LocalModel, root: &Path, server: &Path, catalog: &Path) -> Result<PathBuf> {
     let client = crate::inference::engines::download::create_download_client()
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
@@ -831,8 +792,6 @@ pub fn install(model: &LocalModel, root: &Path, server: &Path, catalog: &Path) -
     })
 }
 
-/// Install through the same verified, resumable path used by the dashboard,
-/// while exposing progress and cancellation to an embedding host.
 pub fn install_observed(
     model: &LocalModel,
     root: &Path,
@@ -848,8 +807,6 @@ pub fn install_observed(
     })
 }
 
-/// `rune-infer download`: list the reviewed registry, or verify-download one model,
-/// register it in the catalog and make sure its engine is installed.
 pub fn download_for_cli(
     root: &Path,
     server: &Path,
@@ -1003,7 +960,6 @@ fn verify_file(path: &Path, file: &File) -> Result<()> {
     Ok(())
 }
 
-// Publish without replacing a file created by another process.
 fn publish_new(source: &Path, target: &Path) -> Result<()> {
     move_no_replace(source, target)
         .with_context(|| format!("Cannot publish {} without overwriting", target.display()))
@@ -1016,7 +972,6 @@ fn install_with(
     catalog_path: &Path,
     mut download: impl FnMut(&File, &Path) -> Result<()>,
 ) -> Result<PathBuf> {
-    // Revalidate even if a caller constructed the model instead of using fetch().
     let version = model
         .versions
         .get(&model.latest)

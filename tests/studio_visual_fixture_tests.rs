@@ -13,7 +13,6 @@ fn off_center_fixture_matches_expected_pixels() {
     assert_eq!(expected["point_pixels"], serde_json::json!([350, 36]));
 }
 
-/// Opt-in acceptance probe, never a substitute for a labeled calibration dataset.
 #[test]
 #[ignore = "requires a running server and explicit RUNE_VISUAL_MODEL; no GPU required by CI"]
 fn live_decision_and_grounding_acceptance() {

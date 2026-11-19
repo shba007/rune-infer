@@ -188,7 +188,6 @@ async fn main() -> Result<()> {
             ws.catalog_path.clone(),
             id.clone(),
         );
-        // The installer uses blocking HTTP clients, which must not live on the async runtime.
         return tokio::task::spawn_blocking(move || {
             rune_infer::model_registry::download_for_cli(&root, &server, &catalog, id.as_deref())
         })
@@ -235,13 +234,11 @@ async fn main() -> Result<()> {
         )
     });
 
-    // Persistent file log: records everything, including child process output.
     let file_layer = fmt::layer()
         .with_writer(file_appender)
         .with_ansi(false)
         .with_target(true);
 
-    // Colored console log only when there is no dashboard to draw over.
     let stdout_layer = (!tui_mode).then(|| {
         fmt::layer()
             .with_writer(std::io::stdout)
@@ -249,7 +246,6 @@ async fn main() -> Result<()> {
             .with_filter(filter_fn(|meta| meta.target() != "llama_server"))
     });
 
-    // Structured events for the dashboard / wizard.
     let (ui_tx, ui_rx) = tokio::sync::mpsc::unbounded_channel();
     let ui_layer = tui_mode.then(|| rune_infer::telemetry::EventLayer::new(ui_tx));
 
@@ -308,7 +304,6 @@ async fn run(
                 tokio::task::block_in_place(|| rune_infer::tui::run_wizard(term, &ws, &mut ui_rx));
             match outcome {
                 Ok(rune_infer::tui::WizardOutcome::Completed) => {
-                    // Pick up any keys the wizard just saved.
                     let _ = dotenvy::from_path_override(ws.env_file());
                 }
                 Ok(rune_infer::tui::WizardOutcome::Cancelled) => {
@@ -326,8 +321,6 @@ async fn run(
     #[cfg(not(feature = "tui"))]
     let _ = needs_setup;
 
-    // Everything below may fail with a user-facing message; restore the
-    // terminal first so that message is actually readable.
     let prepared = prepare(&args, &ws).await;
     let (config, listener, addr) = match prepared {
         Ok(p) => p,
@@ -429,7 +422,6 @@ async fn run(
         return result;
     }
 
-    // Headless: run until Ctrl-C or SIGTERM (or the server dies).
     let mut server = server;
     tokio::select! {
         _ = wait_for_shutdown_signal() => {
@@ -473,9 +465,7 @@ async fn wait_for_shutdown_signal() {
 }
 
 async fn shutdown(server: tokio::task::JoinHandle<Result<()>>) {
-    // In-flight streams can hold the graceful shutdown open; allow a sensible 10s drain timeout.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(10), server).await;
-    // Clean up any remaining registered child engine processes on shutdown
     rune_infer::inference::process::cleanup_orphaned_pids();
 }
 

@@ -57,10 +57,8 @@ fn create_test_app(api_key: Option<String>) -> axum::Router {
 
 #[tokio::test]
 async fn test_livez_and_readyz_probes_unauthenticated() {
-    // Setup app with strict API key required for normal endpoints
     let app = create_test_app(Some("sk-strict-key-12345".to_string()));
 
-    // 1. /health?probe=live probe must return 200 OK without requiring authentication
     let livez_req = Request::builder()
         .method("GET")
         .uri("/health?probe=live")
@@ -74,7 +72,6 @@ async fn test_livez_and_readyz_probes_unauthenticated() {
     assert_eq!(livez_data.status, "alive");
     assert_eq!(livez_data.service, "rune-infer");
 
-    // 2. /health?probe=ready probe must return 200 OK and describe model catalog readiness
     let readyz_req = Request::builder()
         .method("GET")
         .uri("/health?probe=ready")
@@ -90,7 +87,6 @@ async fn test_livez_and_readyz_probes_unauthenticated() {
     assert_eq!(readyz_data.models_configured, 1);
     assert!(readyz_data.models_loaded.is_empty());
 
-    // 3. /health default health probe must also succeed without authentication
     let health_req = Request::builder()
         .method("GET")
         .uri("/health")
@@ -107,7 +103,6 @@ async fn test_livez_and_readyz_probes_unauthenticated() {
 
 #[test]
 fn test_defensive_release_asset_extraction() {
-    // 1. Valid GitHub release asset object
     let valid_asset = serde_json::json!({
         "name": "llama-b3500-bin-win-cuda-cu12.4-x64.zip",
         "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b3500/llama-b3500-bin-win-cuda-cu12.4-x64.zip"
@@ -116,14 +111,12 @@ fn test_defensive_release_asset_extraction() {
     assert_eq!(name, "llama-b3500-bin-win-cuda-cu12.4-x64.zip");
     assert!(url.starts_with("https://github.com"));
 
-    // 2. GitHub API rate limit response object (no name/browser_download_url)
     let rate_limit_payload = serde_json::json!({
         "message": "API rate limit exceeded for 192.0.2.1. (But here's the good news: Authenticated requests get a higher rate limit.)",
         "documentation_url": "https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"
     });
     assert!(extract_release_asset_info(&rate_limit_payload).is_err());
 
-    // 3. Asset missing browser_download_url
     let partial_asset = serde_json::json!({
         "name": "archive.tar.gz"
     });
@@ -132,7 +125,6 @@ fn test_defensive_release_asset_extraction() {
 
 #[test]
 fn test_process_kill_pid_safety_boundary() {
-    // Calling kill_pid on 0 or 1 should safely no-op without killing host or panic
     kill_pid(0);
     kill_pid(1);
 }

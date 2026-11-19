@@ -35,12 +35,9 @@ impl RemoteModelController {
         }
     }
 
-    /// Acquires permission to execute a request.
-    /// If capacity is constrained, queues asynchronously until a slot opens or timeout is reached.
     pub async fn acquire_permit(&self) -> Result<PermitGuard<'_>, ApiError> {
         let deadline = Instant::now() + self.queue_timeout;
 
-        // 1. Reactive backoff check: wait if upstream enforced a 429 cooldown
         loop {
             let cooldown_wait = {
                 let guard = self.cooldown_until.lock().await;
@@ -68,7 +65,6 @@ impl RemoteModelController {
             }
         }
 
-        // 2. Sliding-window RPM check: ensure we do not exceed requests per minute
         loop {
             let now = Instant::now();
             if now >= deadline {
@@ -82,7 +78,6 @@ impl RemoteModelController {
 
             let sleep_delay = {
                 let mut timestamps = self.request_timestamps.lock().await;
-                // Evict timestamps older than 60 seconds
                 while let Some(&oldest) = timestamps.front() {
                     if now.duration_since(oldest) >= Duration::from_secs(60) {
                         timestamps.pop_front();
@@ -121,7 +116,6 @@ impl RemoteModelController {
             }
         }
 
-        // 3. Concurrency check: wait for a free semaphore permit
         let time_left = deadline.saturating_duration_since(Instant::now());
         if time_left.is_zero() {
             let mut timestamps = self.request_timestamps.lock().await;
@@ -154,7 +148,6 @@ impl RemoteModelController {
         Ok(PermitGuard { _permit: permit })
     }
 
-    /// Records an upstream 429 cooldown period.
     pub async fn record_rate_limit_backoff(&self, retry_after: Option<Duration>) {
         let backoff = retry_after.unwrap_or(Duration::from_secs(10));
         let mut guard = self.cooldown_until.lock().await;

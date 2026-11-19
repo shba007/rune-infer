@@ -1,4 +1,3 @@
-//! Offline acceptance for the actual bootstrap scripts; never changes the user's PATH.
 use sha2::{Digest, Sha256};
 use std::{
     env, fs,

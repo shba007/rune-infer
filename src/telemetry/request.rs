@@ -1,4 +1,3 @@
-//! HTTP request lifecycle tracking, including streamed bodies and early refusals.
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
@@ -58,7 +57,6 @@ pub(super) fn failure(model: &str, status: u16, latency: u128, error: &str) -> u
     })
 }
 
-/// Retain request correlation for audit events produced by blocking engine workers.
 pub(crate) fn spawn_blocking<F, R>(f: F) -> tokio::task::JoinHandle<R>
 where
     F: FnOnce() -> R + Send + 'static,
@@ -81,7 +79,6 @@ fn emit(r: &RequestRecord) {
         RequestPhase::Succeeded => "succeeded",
         RequestPhase::Failed => "failed",
     };
-    // Lifecycle events contain metadata only; bodies use the separate payload log.
     tracing::info!(target: "audit", event = "request_state", request_id = r.id,
         phase, model = %r.model, status = r.status, latency_ms = r.latency_ms,
         prompt_tokens = r.prompt_tokens, completion_tokens = r.completion_tokens,

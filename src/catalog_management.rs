@@ -1,17 +1,10 @@
-//! Validation helpers for editing the raw Infer catalog.
-//!
-//! These functions do not write files. Callers must serialize writes and
-//! compare the revision again at the point where a change is committed.
-
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 
-/// A digest of the exact file bytes, including whitespace and placeholders.
 pub fn revision(raw: &[u8]) -> String {
     hex::encode(Sha256::digest(raw))
 }
 
-/// Validate a proposed catalog without replacing its environment references.
 pub fn validate_update(
     current: &[u8],
     expected_revision: &str,

@@ -55,7 +55,6 @@ pub(super) fn prepare_validated_prompt(
         ));
     }
 
-    // A vision model is not an audio model: audio needs its own declared support.
     if has_audio && !model_config.supports_audio() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -70,8 +69,6 @@ pub(super) fn prepare_validated_prompt(
         ));
     }
 
-    // llama.cpp refuses image/audio input without an mmproj file and answers with a bare 500.
-    // Say what is actually wrong instead of forwarding the request to fail.
     if (has_vision || has_audio) && model_config.missing_projector() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -396,9 +393,6 @@ pub(super) fn prepare_validated_prompt(
 
     let est_text_tokens = ((prompt.len() / 4).max(1)) as u32;
     let context_limit = model_config.effective_context_limit();
-    // Without an explicit max_tokens, reserve room for the reply — but never
-    // more than a quarter of the window, or small-context models would reject
-    // every request from clients that omit max_tokens.
     let reserved_tokens = sampling
         .max_tokens
         .map(|t| t as u32)
@@ -459,7 +453,6 @@ mod tests {
     use super::*;
     use crate::schema::ModelEntry;
 
-    /// A local llama-server model. `mmproj` is spliced into `extra`.
     fn model(modality: &str, caps: &str, mmproj: Option<&str>) -> ModelConfig {
         let extra = mmproj
             .map(|p| format!(r#""mmproj_path": {p:?}"#))
@@ -484,7 +477,6 @@ mod tests {
 
     const IMAGE: &str = r#"{"type":"image_url","image_url":{"url":"data:image/png;base64,AAAA"}}"#;
     const AUDIO: &str = r#"{"type":"input_audio","input_audio":{"data":"AAAA","format":"wav"}}"#;
-    /// Any file that exists, standing in for a projector.
     const EXISTING_FILE: &str = env!("CARGO_MANIFEST_DIR");
 
     fn rejected_with(
@@ -495,8 +487,6 @@ mod tests {
 
     #[test]
     fn a_vision_model_does_not_accept_audio() {
-        // The bug this guards: `is_vision()` used to waive the audio check, so audio reached
-        // llama-server, which answered "audio input is not supported" with a 500.
         let vision = model("VisionText", r#"["Chat","Vision"]"#, Some(EXISTING_FILE));
         assert_eq!(
             rejected_with(prepare_prompt(&request(AUDIO), &vision)).as_deref(),
@@ -556,7 +546,6 @@ mod tests {
             );
             assert!(body.error.message.contains("extra.mmproj_path"), "{label}");
         }
-        // With a projector present the request moves past this gate.
         let ok = model("VisionText", r#"["Chat","Vision"]"#, Some(EXISTING_FILE));
         let code = rejected_with(prepare_prompt(&request(IMAGE), &ok));
         assert!(

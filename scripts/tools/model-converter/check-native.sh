@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Windows CPU parity check of a converted candidate against its Linux fixtures.
-#
-#   bash scripts/tools/model-converter/check-native.sh --report <report.json> [--runtime <libLiteRt.dll>]
-#
-# Run from Git Bash on Windows. Needs cargo, rustc and node (node only reads JSON).
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +20,6 @@ done
 report="$(cd "$(dirname "$report")" && pwd)/$(basename "$report")"
 directory="$(dirname "$report")"
 
-# Prints: <candidate file> <candidate sha256> <number of checks>
 proof="$(node -e '
   const proof = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8").replace(/^﻿/, ""))
   const checks = Array.isArray(proof.checks) ? proof.checks : []
@@ -50,7 +44,6 @@ runtime="$(cd "$(dirname "$runtime")" && pwd)/$(basename "$runtime")"
 cd "$repository" || exit 1
 build="$(cargo build --locked --lib --target-dir target/ci-check --message-format=json)" ||
   fail 'Infer library build failed.'
-# Prints the single .rlib of each dependency, or fails when there is not exactly one.
 rlibs="$(printf '%s\n' "$build" | node -e '
   const lines = require("fs").readFileSync(0, "utf8").split(/\r?\n/).filter((l) => l.startsWith("{"))
   const artifacts = lines.map((l) => JSON.parse(l)).filter((m) => m.reason === "compiler-artifact")

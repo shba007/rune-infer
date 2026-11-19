@@ -1,5 +1,3 @@
-//! Live dashboard: model lifecycle, VRAM, throughput, requests and logs.
-
 use crate::engine_inventory::install_engine_kind;
 #[cfg(test)]
 use crate::engine_releases::engine_action_on;
@@ -33,9 +31,7 @@ pub struct ModelRow {
     pub id: String,
     pub name: String,
     pub modality: String,
-    /// `None` for local models, provider name for cloud models.
     pub provider: Option<String>,
-    /// Preferred engine for local models (e.g. `nemo-speech`).
     pub engine: Option<String>,
     pub locality: String,
     pub capabilities: Vec<String>,
@@ -44,11 +40,6 @@ pub struct ModelRow {
     pub benchmarks: Option<crate::schema::BenchmarkMetrics>,
 }
 
-/// Model size classification per Artificial Analysis (https://artificialanalysis.ai/)
-/// - Tiny: <= 4B parameters
-/// - Small: 4B to 40B parameters
-/// - Medium: 40B to 150B parameters
-/// - Large: > 150B parameters
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SizeCategory {
     Tiny,
@@ -138,7 +129,6 @@ pub fn infer_parameter_count(id: &str, name: &str, explicit_params: Option<u64>)
     None
 }
 
-/// Real-life task classification grouping
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RealLifeTask {
     ImageEditing,
@@ -442,7 +432,6 @@ struct App {
     index: HashMap<String, usize>,
     requests: VecDeque<RequestRecord>,
     logs: VecDeque<LogLine>,
-    /// Fixed-point thousandths of a token/second preserve fractional rates.
     tps_hist: VecDeque<u64>,
     latency_hist: VecDeque<u64>,
     total_requests: u64,
@@ -1258,7 +1247,6 @@ fn push_capped(q: &mut VecDeque<u64>, v: u64, cap: usize) {
     q.push_back(v);
 }
 
-/// Run the dashboard until the user quits. Blocks the calling thread.
 pub fn run_dashboard(
     terminal: &mut DefaultTerminal,
     info: DashboardInfo,
@@ -1473,10 +1461,6 @@ fn spawn_vram_poller(
         }
     });
 }
-
-// ---------------------------------------------------------------------------
-// Drawing
-// ---------------------------------------------------------------------------
 
 fn draw(f: &mut Frame, app: &mut App) {
     let [header, body, footer] = Layout::vertical([
@@ -2027,7 +2011,6 @@ fn draw_models(f: &mut Frame, area: Rect, app: &App) {
     let header = Row::new(["", "Model", "Type", "Source", "Reqs", "Err", "tok/s"])
         .style(Style::new().fg(DIM).add_modifier(Modifier::BOLD));
 
-    // Prioritize display order: Loading -> Loaded -> Failed -> Active (requests > 0) -> Idle
     let mut display_indices: Vec<usize> = (0..app.models.len()).collect();
     display_indices.sort_by(|&a, &b| {
         let ma = &app.models[a];
@@ -2107,7 +2090,6 @@ fn draw_models(f: &mut Frame, area: Rect, app: &App) {
     .block(block);
     f.render_widget(table, area);
 
-    // Surface the most recent load failure inline, where the user is looking.
     if let Some(m) = app
         .models
         .iter()
@@ -2144,7 +2126,6 @@ fn draw_stats(f: &mut Frame, area: Rect, app: &App) {
     ])
     .areas(inner);
 
-    // VRAM dot gauge
     let reading = app.vram.lock().ok().and_then(|g| *g);
     match reading {
         Some((used, total)) if total > 0 => {
@@ -3202,11 +3183,9 @@ mod tests {
         assert!(!app.benchmark_view);
         assert_eq!(app.model_sort, ModelSort::Default);
 
-        // Toggle benchmark view
         app.on_key(KeyCode::Char('b'), KeyModifiers::NONE);
         assert!(app.benchmark_view);
 
-        // Cycle sorting
         app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
         assert_eq!(app.model_sort, ModelSort::IntelligenceIndex);
 
@@ -3228,17 +3207,14 @@ mod tests {
         app.on_key(KeyCode::Char('s'), KeyModifiers::NONE);
         assert_eq!(app.model_sort, ModelSort::Default);
 
-        // Test Task Filter cycling [g]
         assert_eq!(app.task_filter, TaskFilter::All);
         app.on_key(KeyCode::Char('g'), KeyModifiers::NONE);
         assert_eq!(app.task_filter, TaskFilter::ImageEditing);
 
-        // Test Size Filter cycling [z]
         assert_eq!(app.size_filter, SizeFilter::All);
         app.on_key(KeyCode::Char('z'), KeyModifiers::NONE);
         assert_eq!(app.size_filter, SizeFilter::Large);
 
-        // Verify Artificial Analysis size classification
         let (size_a, p_a) =
             SizeCategory::from_model("qwen3.8-27b", "Qwen3.8 27B", Some(27_000_000_000));
         assert_eq!(size_a, SizeCategory::Small);
@@ -3255,7 +3231,6 @@ mod tests {
             SizeCategory::from_model("nemotron-3.5-super-vl", "Nemotron 3.5 Super-VL", None);
         assert_eq!(size_nemo, SizeCategory::Medium);
 
-        // Verify Real-Life Task classification
         let tasks_edit =
             classify_real_life_tasks("qwen-image-edit-2511", &["image-to-image".into()], &[]);
         assert!(tasks_edit.contains(&RealLifeTask::ImageEditing));
@@ -4409,7 +4384,7 @@ mod tests {
     #[test]
     fn state_tracks_model_lifecycle_and_stats() {
         let mut a = app();
-        draw_all(&mut a); // empty state
+        draw_all(&mut a);
         a.on_event(UiEvent::Model(ModelEvent {
             ts: ts(),
             model: "a".into(),

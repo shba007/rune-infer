@@ -8,41 +8,33 @@ use tower::ServiceExt;
 
 #[test]
 fn test_ssrf_protection_blocks_private_and_metadata_addresses() {
-    // 1. Loopback IPv4 & IPv6
     assert!(validate_url_for_ssrf("http://127.0.0.1:8080/image.png").is_err());
     assert!(validate_url_for_ssrf("http://localhost:8080/image.png").is_err());
     assert!(validate_url_for_ssrf("http://[::1]:8080/image.png").is_err());
 
-    // 2. Cloud metadata IP (AWS, GCP, Azure IMDS)
     let meta_err = validate_url_for_ssrf("http://169.254.169.254/latest/meta-data/").unwrap_err();
     assert_eq!(meta_err.error.code.as_deref(), Some("ssrf_blocked"));
 
-    // 3. RFC1918 Private networks
     assert!(validate_url_for_ssrf("http://10.0.0.1:9000/internal.mp4").is_err());
     assert!(validate_url_for_ssrf("http://172.16.5.10/video.mp4").is_err());
     assert!(validate_url_for_ssrf("http://192.168.1.100/snapshot.jpg").is_err());
 
-    // 4. GCP internal metadata domain
     assert!(validate_url_for_ssrf("http://metadata.google.internal/computeMetadata/v1/").is_err());
 
-    // 5. Valid public URL passes SSRF validation
     assert!(validate_url_for_ssrf("https://example.com/sample.png").is_ok());
 }
 
 #[test]
 fn test_local_file_ingestion_blocked_by_default() {
-    // Ensure environment flag is unset
     unsafe {
         std::env::remove_var("RUNE_ALLOW_LOCAL_FILES");
     }
 
-    // Direct local path should be blocked
     let res = decode_media("Cargo.toml", (768, 768));
     assert!(res.is_err());
     let err = res.unwrap_err();
     assert_eq!(err.error.code.as_deref(), Some("local_files_disabled"));
 
-    // Windows / Unix absolute paths should also be blocked
     let res_abs = decode_media("C:/Windows/win.ini", (768, 768));
     assert!(res_abs.is_err());
     assert_eq!(
@@ -99,7 +91,6 @@ async fn test_audio_upload_filename_path_traversal_sanitized() {
     let wav_bytes = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00";
     let mut body_bytes = Vec::new();
     body_bytes.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\naudio8-asr-infinite\r\n").as_bytes());
-    // Malicious traversal filename attempt
     body_bytes.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"../../../../etc/cron.d/malicious.wav\"\r\nContent-Type: audio/wav\r\n\r\n").as_bytes());
     body_bytes.extend_from_slice(wav_bytes);
     body_bytes.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
@@ -115,7 +106,6 @@ async fn test_audio_upload_filename_path_traversal_sanitized() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    // Must succeed without crashing or writing out of temp directory
     assert_eq!(resp.status(), StatusCode::OK);
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();

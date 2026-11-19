@@ -1,7 +1,3 @@
-//! Validation-only worker; never linked into Infer's server.
-//! Build against Infer's existing sha2 and anyhow artifacts. The caller must
-//! set RUNE_LITERT_CANDIDATE_SHA256 to the conversion report's candidate digest.
-//! The native ABI implementation is shared with production to prevent drift.
 use std::{io::Read, path::Path};
 
 #[path = "../../../src/inference/engines/litert/native.rs"]

@@ -1,7 +1,3 @@
-//! Validation-only worker; never linked into Infer's server.
-//! Build against Infer's existing sha2 and anyhow artifacts. The caller must
-//! set RUNE_LITERT_CANDIDATE_SHA256 to the conversion report's candidate digest.
-//! Experimental GPU bindings are isolated from the production CPU worker.
 use std::{io::Read, path::Path};
 
 #[path = "gpu_abi.rs"]
@@ -133,6 +129,6 @@ fn main() -> anyhow::Result<()> {
             && args[3] == "--model",
         "Usage: candidate_worker litert-worker --runtime PINNED_DLL --model CANDIDATE_TFLITE"
     );
-    let _ = probe_shape()?; // Reject invalid diagnostic bounds before loading DLLs.
+    let _ = probe_shape()?;
     native::run(Path::new(&args[2]), Path::new(&args[4]))
 }

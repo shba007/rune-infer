@@ -8,7 +8,7 @@ use super::AppState;
 use crate::inference::types::{InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{ApiError, AudioSpeechRequest, ErrorResponse};
 
-const MAX_AUDIO_UPLOAD_BYTES: usize = 25 * 1024 * 1024; // 25 MB
+const MAX_AUDIO_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 fn audio_text_response(text: String, format: Option<&str>) -> Response {
     let content_type = match format {
@@ -300,7 +300,6 @@ pub async fn audio_transcriptions_handler(
                         trans.duration = Some(diar.duration);
                     }
 
-                    // Align segments with diarization turns
                     if let Some(serde_json::Value::Array(ref mut segs)) = trans.segments {
                         for seg in segs.iter_mut() {
                             if let serde_json::Value::Object(obj) = seg {
@@ -778,7 +777,6 @@ fn attach_transcription_to_diarization(
 
     let mut words: Vec<WordItem> = Vec::new();
 
-    // 1. Check top-level asr_resp.words
     if let Some(serde_json::Value::Array(word_arr)) = &asr_resp.words {
         for w in word_arr {
             if let serde_json::Value::Object(obj) = w {
@@ -796,7 +794,6 @@ fn attach_transcription_to_diarization(
         }
     }
 
-    // 2. Check segment-level words in asr_resp.segments
     if words.is_empty() {
         if let Some(serde_json::Value::Array(segs)) = &asr_resp.segments {
             for seg in segs {
@@ -824,7 +821,6 @@ fn attach_transcription_to_diarization(
         }
     }
 
-    // If word-level timestamps exist, assign each word to the diarization turn whose interval it belongs to
     if !words.is_empty() && !diar.segments.is_empty() {
         let mut turn_words: Vec<Vec<String>> = vec![Vec::new(); diar.segments.len()];
 
@@ -873,7 +869,6 @@ fn attach_transcription_to_diarization(
         return;
     }
 
-    // 3. Fallback: align ASR segments by maximum temporal overlap
     if let Some(serde_json::Value::Array(segs)) = &asr_resp.segments {
         let mut turn_texts: Vec<Vec<String>> = vec![Vec::new(); diar.segments.len()];
 

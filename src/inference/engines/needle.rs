@@ -307,7 +307,6 @@ mod install_tests {
         let selected = "b".repeat(40);
         let history = serde_json::json!([{"id":selected},{"id":installed}]);
         assert!(verify_revision_history(&history, &installed, &selected).is_ok());
-        // Date ordering is not used to infer ancestry: this is a revision-scoped history.
         assert!(
             verify_revision_history(
                 &serde_json::json!([{"id":installed},{"id":selected}]),

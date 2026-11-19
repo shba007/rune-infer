@@ -1,11 +1,3 @@
-//! `rune-infer migrate`: upgrade a `schema_version: 1` models.json to the
-//! current schema (see [`crate::schema`]).
-//!
-//! The v1 format let the engine be *inferred* from a model's architecture,
-//! modality, file type and id substrings. That inference now lives only here,
-//! so it runs once, at migration time, and the result is written into the
-//! file as an explicit `engine` object.
-
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -85,7 +77,6 @@ struct V1Model {
     sampling: Option<SamplingConfig>,
     engine: Option<EngineConfig>,
     runtime: Option<V1Runtime>,
-    /// Accepted so it is not reported as an unknown key; engines detect the format themselves.
     #[allow(dead_code)]
     format: Option<String>,
     #[serde(default)]
@@ -94,8 +85,6 @@ struct V1Model {
     unknown: Map<String, Value>,
 }
 
-/// The engine v1 inferred for a model that had no explicit `engine`.
-/// Rules are checked top to bottom; the first match wins.
 fn legacy_engine(m: &V1Model, id: &str) -> EngineKind {
     let arch = |name: &str| m.architecture.eq_ignore_ascii_case(name);
     let id_lower = id.to_lowercase();
@@ -144,7 +133,6 @@ fn legacy_engine(m: &V1Model, id: &str) -> EngineKind {
     }
 }
 
-/// Which llama.cpp build serves a GGUF architecture.
 pub fn llama_engine_for_architecture(architecture: &str) -> EngineKind {
     match architecture {
         "ternary-bonsai" | "bonsai" | "bonsai-vl" | "ternary-bonsai-vl" => {
@@ -154,11 +142,9 @@ pub fn llama_engine_for_architecture(architecture: &str) -> EngineKind {
     }
 }
 
-/// Result of converting a v1 document.
 #[derive(Debug)]
 pub struct Migration {
     pub file: RegistryFile,
-    /// Human-readable notes about inferred engines, dropped keys and warnings.
     pub notes: Vec<String>,
 }
 
@@ -267,8 +253,6 @@ fn convert(m: V1Model, notes: &mut Vec<String>) -> Result<ModelEntry> {
         .any(|k| matches!(k, EngineKind::LlamaServer | EngineKind::LlamaServerPrism));
 
     let runtime = m.runtime.as_ref();
-    // v1 silently defaulted an omitted context_length to 8192; that only ever
-    // mattered to llama.cpp engines, so keep it there and use "auto" elsewhere.
     let context_length = match (
         runtime.and_then(|r| r.context_length),
         runtime.is_some() && llama,
@@ -347,7 +331,6 @@ fn convert(m: V1Model, notes: &mut Vec<String>) -> Result<ModelEntry> {
     Ok(entry)
 }
 
-/// Convert a v1 document (placeholders like `{{VAR}}` are kept as written).
 pub fn migrate_json(json: &str) -> Result<Migration> {
     let v1: V1File = serde_json::from_str(json).context("Cannot read the config as schema 1")?;
     if v1.schema_version != 1 {
@@ -385,8 +368,6 @@ fn backup_path(config: &Path, ver: u64) -> PathBuf {
     candidate
 }
 
-/// Entry point for `rune-infer migrate`. Prints a report; splits and writes the upgraded
-/// schema 3 files (config/server.json and config/catalog.json) unless `dry_run`.
 pub fn run(config: &Path, dry_run: bool) -> Result<()> {
     let cfg_dir = config.parent().unwrap_or(Path::new("."));
     let server_path = cfg_dir.join("server.json");
@@ -487,7 +468,6 @@ pub fn run(config: &Path, dry_run: bool) -> Result<()> {
     let server_output = serde_json::to_string_pretty(&server_file)? + "\n";
     let catalog_output = serde_json::to_string_pretty(&catalog_file)? + "\n";
 
-    // Validate that the decoupled outputs load properly before touching anything on disk
     let check_server =
         crate::config::interpolate_with(&server_output, &|_| Some("placeholder".to_string()))?;
     let check_catalog =
@@ -791,7 +771,7 @@ mod tests {
         }
         assert!(server_cfg.contains("\"schema_version\": 3"));
         assert!(catalog_cfg.contains("\"schema_version\": 3"));
-        run(&cfg, false).unwrap(); // second run is a no-op
+        run(&cfg, false).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.join("server.json")).unwrap(),
             server_cfg

@@ -1,5 +1,3 @@
-//! Pinned LiteRT WebGPU ABI; executed only in the isolated GPU worker.
-//! ABI source: the checksum-pinned official v2.3.0 C++ SDK's litert/c headers.
 #[cfg(all(windows, target_arch = "x86_64"))]
 #[allow(non_snake_case)]
 mod windows {
@@ -60,7 +58,6 @@ mod windows {
                 "Missing LiteRT symbol {}",
                 String::from_utf8_lossy(name)
             );
-            // Each use below names the function signature from the pinned C ABI.
             Ok(unsafe { std::mem::transmute_copy(&address) })
         }
     }
@@ -68,7 +65,6 @@ mod windows {
         anyhow::ensure!(status == 0, "LiteRT status {status}");
         Ok(())
     }
-    // Owned native objects are destroyed in reverse order, before unloading the DLL.
     struct Owned {
         handle: Handle,
         destroy: unsafe extern "C" fn(Handle),
@@ -89,8 +85,6 @@ mod windows {
             .encode_wide()
             .chain(Some(0))
             .collect();
-        // Preload the verified DXC sidecars by absolute path. Dawn subsequently
-        // finds these loaded modules without installing DLLs beside Infer.exe.
         let load_sidecar = |name: &str| -> anyhow::Result<Library> {
             let sidecar = std::fs::canonicalize(runtime.parent().unwrap().join(name))?;
             let path: Vec<_> = sidecar.as_os_str().encode_wide().chain(Some(0)).collect();
@@ -104,7 +98,6 @@ mod windows {
         };
         let _dxil = load_sidecar("dxil.dll")?;
         let _dxc = load_sidecar("dxcompiler.dll")?;
-        // Search only this DLL's directory and System32, never CWD or PATH.
         let library = Library(unsafe { LoadLibraryExW(path.as_ptr(), ptr::null_mut(), 0x900) });
         anyhow::ensure!(
             !library.0.is_null(),
@@ -287,7 +280,6 @@ mod windows {
                 destroy: unsafe { library.symbol(b"LiteRtDestroyTensorBuffer\0")? },
             })
         }
-        // The entire ABI boundary runs inside this subprocess, never the gateway.
         #[allow(non_snake_case)]
         unsafe {
             let directory = CString::new(
@@ -308,8 +300,6 @@ mod windows {
                 |out| LiteRtCreateEnvironment(1, env_options.as_mut_ptr().cast(), out),
                 "LiteRtDestroyEnvironment"
             );
-            // Upstream LrtGetOpaqueGpuOptionsData serializes these enum values as
-            // a NUL-terminated TOML string. Keep it alive beyond options/model.
             let payload = CString::new("precision = 2\nbackend = 2\n")?;
             let options = owned!(|out| LiteRtCreateOptions(out), "LiteRtDestroyOptions");
             let opaque = owned!(
@@ -322,9 +312,7 @@ mod windows {
                 "LiteRtDestroyOpaqueOptions"
             );
             check(LiteRtAddOpaqueOptions(options.handle, opaque.handle))?;
-            std::mem::forget(opaque); // Options now owns this object.
-            // CPU must be included for the 24 unsupported shape/index ops.
-            // GPU delegation is checked separately from full-GPU delegation.
+            std::mem::forget(opaque);
             check(LiteRtSetOptionsHardwareAccelerators(options.handle, 3))?;
             let filename = CString::new(
                 std::fs::canonicalize(model_path)?
@@ -349,8 +337,6 @@ mod windows {
                 "webgpu_fp32 non_cpu_fully_accelerated={fully_gpu} compile_seconds={}",
                 started.elapsed().as_secs_f64()
             );
-            // Record partial delegation honestly; GPU-unsupported shape/index
-            // operations may execute on CPU even with GPU selected.
             let mut subgraph = ptr::null_mut();
             check(LiteRtGetModelSubgraph(model.handle, 0, &mut subgraph))?;
             let input = work(

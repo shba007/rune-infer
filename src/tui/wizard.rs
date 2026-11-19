@@ -1,8 +1,3 @@
-//! First-run setup wizard.
-//!
-//! Configure at least one model before saving. Engine downloads may write files
-//! before the final configuration review.
-
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
@@ -103,7 +98,6 @@ struct Wizard<'a> {
     source_cursor: usize,
     source_error: Option<String>,
 
-    // network
     exposure: Exposure,
     port: Input,
     want_key: bool,
@@ -111,7 +105,6 @@ struct Wizard<'a> {
     server_key: Option<String>,
     net_error: Option<String>,
 
-    // cloud
     cloud_phase: CloudPhase,
     cloud_checked: [bool; PROVIDERS.len()],
     cloud_cursor: usize,
@@ -126,7 +119,6 @@ struct Wizard<'a> {
     validation: Validation,
     cloud_done: Vec<CloudChoice>,
 
-    // local
     local_phase: LocalPhase,
     path_input: Input,
     candidates: Vec<LocalCandidate>,
@@ -136,7 +128,6 @@ struct Wizard<'a> {
     chosen: Vec<LocalCandidate>,
     local_error: Option<String>,
 
-    // engine installation and real inference checks
     engine: EnginePhase,
     engine_choices: Vec<Vec<EngineKind>>,
     engine_available: Vec<EngineKind>,
@@ -146,7 +137,6 @@ struct Wizard<'a> {
     engine_status: String,
     engine_download: Option<crate::inference::engines::download::DownloadProgress>,
 
-    // review
     review_error: Option<String>,
 }
 
@@ -339,8 +329,6 @@ impl<'a> Wizard<'a> {
             self.engine = EnginePhase::Done(result);
         }
     }
-
-    // ------------------------------------------------------------------ keys
 
     fn go(&mut self, step: Step) {
         self.step = step;
@@ -685,7 +673,6 @@ impl<'a> Wizard<'a> {
                             ))
                         }
                         Ok(d) => {
-                            // Models that still need companion files start unticked.
                             self.picks = d
                                 .models
                                 .iter()
@@ -962,8 +949,6 @@ impl<'a> Wizard<'a> {
         }
         Flow::Stay
     }
-
-    // --------------------------------------------------------------- drawing
 
     fn draw(&self, f: &mut Frame) {
         let area = centered(f.area(), 100, f.area().height.min(32));
@@ -1888,7 +1873,6 @@ mod tests {
         let ws = temp_ws();
         let model_dir = ws.root.join("models");
         crate::detect::testing::Gguf::llm("llama", "Tiny").write(&model_dir.join("tiny.gguf"));
-        // An image model that still needs companion files, to exercise the warning rendering.
         crate::detect::testing::Gguf::new("lumina2").write(&model_dir.join("img/z-image.gguf"));
 
         let (_tx, rx) = channel();
@@ -1907,14 +1891,12 @@ mod tests {
         assert!(w.step == Step::Local);
         w.on_key(key(KeyCode::Enter));
         assert!(w.step == Step::Local && w.local_error.is_some());
-        // Local: scan a folder, pick everything
         type_str(&mut w, &model_dir.to_string_lossy());
         w.on_key(key(KeyCode::Enter));
         assert!(w.local_phase == LocalPhase::Pick, "{:?}", w.local_error);
         render_all_sizes(&w);
         w.on_key(key(KeyCode::Enter));
         assert_eq!(w.chosen.len(), 1);
-        // Every local selection must pass installation and inference checks.
         w.on_key(key(KeyCode::Enter));
         assert!(w.step == Step::Engine);
         render_all_sizes(&w);
@@ -1934,7 +1916,6 @@ mod tests {
         w.on_key(key(KeyCode::Enter));
         assert!(w.step == Step::Review);
         render_all_sizes(&w);
-        // Save
         assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Finish));
 
         let cfg = ModelRegistryProbe::load(&ws);
@@ -1943,7 +1924,6 @@ mod tests {
         std::fs::remove_dir_all(&ws.root).ok();
     }
 
-    /// `RUNE_PROBE_DIR=D:/Models cargo test dump_pick_screen -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn dump_pick_screen() {
@@ -1980,10 +1960,10 @@ mod tests {
         let ws = temp_ws();
         let (_tx, rx) = channel();
         let mut w = Wizard::new(&ws, rx);
-        w.on_key(key(KeyCode::Char(' '))); // exposure -> Network
+        w.on_key(key(KeyCode::Char(' ')));
         w.on_key(key(KeyCode::Down));
         w.on_key(key(KeyCode::Down));
-        w.on_key(key(KeyCode::Char(' '))); // key off
+        w.on_key(key(KeyCode::Char(' ')));
         w.on_key(key(KeyCode::Enter));
         assert!(w.step == Step::Network && w.net_error.is_some());
 
@@ -2169,7 +2149,6 @@ mod tests {
             text.contains("Engine 1/3") && text.contains("disabled") && text.contains("audio-cpp")
         );
         render_all_sizes(&w);
-        // Disabling one model cannot lead to its engine being installed or smoke-tested.
         let binary = ws.root.join("fixture-engine");
         std::fs::write(&binary, "fixture").unwrap();
         let mut installed = Vec::new();
@@ -2196,7 +2175,6 @@ mod tests {
         assert_eq!(ModelRegistryProbe::load(&ws).0, 1);
         let catalog = std::fs::read_to_string(&ws.catalog_path).unwrap();
         assert!(!catalog.contains("audio.gguf"));
-        // A model with two compatible engines remains enabled through the other one.
         w.engine = EnginePhase::Pick;
         w.step = Step::Engine;
         w.engine_cursor = w
@@ -2215,7 +2193,6 @@ mod tests {
             w.plan().unwrap().local[0].engine(),
             EngineKind::LlamaServerPrism
         );
-        // Re-enabling an engine restores its uniquely supported models.
         w.engine_cursor = w
             .engine_available
             .iter()
@@ -2252,7 +2229,6 @@ mod tests {
         w.step = Step::Review;
         assert!(matches!(w.on_key(key(KeyCode::Enter)), Flow::Stay));
         assert!(!ws.catalog_path.exists());
-        // Cloud-only completion requires no installation or proof for disabled locals.
         w.sources[1] = true;
         w.cloud_done.push(CloudChoice {
             preset: PROVIDERS[0],

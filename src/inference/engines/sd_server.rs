@@ -16,8 +16,6 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-// Native request schema at installed upstream 37bc88b. Compatibility endpoints
-// accept these fields inside the prompt's sd_cpp_extra_args block.
 fn native_sampling_args(steps: u32, cfg_scale: f32, method: Option<&str>) -> serde_json::Value {
     let mut sampling = serde_json::json!({
         "sample_steps": steps,
@@ -29,8 +27,6 @@ fn native_sampling_args(steps: u32, cfg_scale: f32, method: Option<&str>) -> ser
     sampling
 }
 
-// ModelLoader::parse_file in installed upstream 37bc88b supports indexed
-// safetensors directories and full Diffusers directories as well as files.
 pub(crate) fn companion_path_available(path: &Path) -> bool {
     path.is_file()
         || (path.is_dir()
@@ -57,8 +53,6 @@ fn valid_commit(value: &str) -> bool {
     (7..=40).contains(&value.len()) && value.bytes().all(|c| c.is_ascii_hexdigit())
 }
 
-// Some upstream binaries embed "version unknown" but still report their commit.
-// Use that executable evidence rather than a filename or installed folder name.
 pub(crate) fn reported_version(output: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let (version, commit) = line
@@ -128,7 +122,6 @@ fn release_assets<'a>(
             }
             "linux" => {
                 let base = if parts.first() == Some(&"linux") && parts.get(1) == Some(&"ubuntu") {
-                    // Published Ubuntu archives include the distribution version.
                     parts.get(3..)?
                 } else if parts.first() == Some(&"linux") {
                     parts.get(1..)?
@@ -163,7 +156,6 @@ fn release_assets<'a>(
                         .as_str()
                         .is_some_and(|name| name.eq_ignore_ascii_case(&runtime))
                 }) {
-                    // Dependencies first; an interrupted install cannot leave a bare executable.
                     return Ok(vec![companion, binary]);
                 }
             }
@@ -280,8 +272,6 @@ impl SdServerEngine {
         if let Some(ref llm) = model.text_encoder_path {
             if Path::new(llm).exists() {
                 tracing::info!("[SdServerEngine] Attaching text encoder / LLM: {}", llm);
-                // Wan-style video models encode text with UMT5 (--t5xxl); DiT image models and
-                // LTX-2 (Gemma 3 plus connectors) use an LLM.
                 let flag = if model.modality == crate::config::Modality::VideoGeneration
                     && model.embeddings_connectors_path.is_none()
                 {
@@ -369,7 +359,6 @@ impl SdServerEngine {
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
                 for line in reader.lines().map_while(Result::ok) {
-                    // Stream logs so you can see live progress and errors
                     tracing::info!("[sd-server] {}", line);
                     diag.lock()
                         .unwrap_or_else(|p| p.into_inner())
@@ -407,7 +396,7 @@ impl SdServerEngine {
         Self::wait_for_server(port, &guard, &last_stderr_lines)?;
 
         let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(600)) // 10 min timeout for high-res DiT inference
+            .timeout(Duration::from_secs(600))
             .build()?;
 
         tracing::info!("[SdServerEngine] Managed sd-server is ready and healthy.");
@@ -719,7 +708,6 @@ impl InferenceEngine for SdServerEngine {
                 let final_cfg = cfg_scale.unwrap_or(self.default_cfg);
                 let size_str = format!("{}x{}", width, height);
 
-                // Build <sd_cpp_extra_args> snippet for standard stable-diffusion.cpp compatibility
                 let mut extra_map = serde_json::Map::new();
                 extra_map.insert(
                     "sample_params".to_string(),
@@ -947,7 +935,6 @@ mod tests {
                 );
             }
         }
-        // No cross-version/architecture pairing; use a safe fallback or refuse.
         let missing_runtime: Vec<_> = assets
             .iter()
             .filter(|asset| asset["name"] != names[4])

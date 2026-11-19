@@ -111,7 +111,6 @@ thread_local! {
     static PROGRESS: std::cell::RefCell<Option<ProgressCallback>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Scope download reporting to an explicit installation worker.
 pub fn with_progress<T>(
     callback: impl FnMut(DownloadProgress) + 'static,
     work: impl FnOnce() -> T,
@@ -150,7 +149,6 @@ pub fn create_download_client() -> Result<reqwest::blocking::Client, Box<dyn Err
     Ok(builder.build()?)
 }
 
-/// Recognize stable semantic-versioned releases for preference over rolling builds.
 pub fn is_stable_release(release: &serde_json::Value) -> bool {
     if release["draft"].as_bool() != Some(false) || release["prerelease"].as_bool() != Some(false) {
         return false;
@@ -196,7 +194,6 @@ fn github_metadata(
     super::release_cache::github_metadata(client, url)
 }
 
-/// GitHub's latest endpoint finds a stable release even behind hundreds of nightly builds.
 pub(crate) fn fetch_releases(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -446,7 +443,6 @@ pub fn extract_archive(
 
 #[doc(hidden)]
 pub fn validate_archive(archive_file: &Path) -> Result<(), Box<dyn Error>> {
-    // tar is invoked directly, without a shell. No archive Rust dependency exists.
     let names = crate::inference::process::system_command("tar")
         .arg("-tf")
         .arg(archive_file)
@@ -612,8 +608,6 @@ pub fn download_verified(
     download_verified_inner(client, url, dest, prefix, expected, None)
 }
 
-/// Resume a model's managed partial file. The caller serializes installations for
-/// the containing model directory and publishes only after full verification.
 pub(crate) fn download_resumable_model(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -1475,7 +1469,6 @@ mod progress_tests {
         assert!(result.unwrap_err().to_string().contains("cancelled"));
         assert!(!dest.exists());
         assert!(check_cancelled().is_ok());
-        // An already-cancelled operation cannot start a request or publish a file.
         let result = with_cancellation(cancel.clone(), || {
             download_verified(
                 &client,

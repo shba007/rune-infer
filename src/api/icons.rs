@@ -1,4 +1,3 @@
-//! Provider and model-family icons served to local clients.
 use axum::{
     extract::Path,
     http::{StatusCode, header},

@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# Builds the patched audio.cpp engine from an existing checkout.
-#
-#   bash scripts/native/audio-cpp/build.sh --source-tree <dir> [--build-directory <dir>]
-#        [--backend cpu|cuda] [--cuda-architectures <list>] [--prebuilt-backend-directory <dir>]
-#        [--allow-unsupported-cuda-compiler] [--jobs <n>]
-#
-# Requires an existing checkout and CMake/compiler environment. Downloads no models
-# or source, and never installs the result over a managed engine automatically.
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

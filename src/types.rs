@@ -15,14 +15,12 @@ pub struct ChatCompletionRequest {
     pub top_p: Option<f64>,
     #[serde(default, alias = "max_completion_tokens")]
     pub max_tokens: Option<usize>,
-    /// Non-OpenAI extension. Unsloth's -1 sentinel normalizes to disabled (0).
     #[serde(
         default,
         deserialize_with = "deserialize_chat_top_k",
         skip_serializing_if = "Option::is_none"
     )]
     pub top_k: Option<u32>,
-    /// Non-OpenAI extension (llama.cpp / OpenRouter style).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_p: Option<f64>,
     #[serde(default, alias = "functions")]
@@ -31,16 +29,12 @@ pub struct ChatCompletionRequest {
     pub tool_choice: Option<serde_json::Value>,
     #[serde(default)]
     pub response_format: Option<ResponseFormat>,
-    /// Reasoning effort level: "none", "low", "medium", "high"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    /// Anthropic-style thinking configuration or boolean: `{"type": "enabled", "budget_tokens": ...}`, `{"type": "disabled"}`, or `true`/`false`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<serde_json::Value>,
-    /// Chat template kwargs for llama-server / jinja templates (e.g. `{"thinking": false}`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_template_kwargs: Option<serde_json::Value>,
-    /// Options for streaming responses (e.g. `{"include_usage": true}`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<StreamOptions>,
 }
@@ -410,7 +404,6 @@ pub struct VideoGenerationRequest {
     pub size: Option<String>,
     #[serde(default)]
     pub negative_prompt: Option<String>,
-    /// Frame count; Wan-style models need 4n+1 frames (e.g. 17, 33, 81).
     #[serde(default, alias = "video_frames")]
     pub frames: Option<u32>,
     #[serde(default)]
@@ -423,7 +416,6 @@ pub struct VideoGenerationRequest {
     pub seed: Option<i64>,
     #[serde(default)]
     pub sample_method: Option<String>,
-    /// `webm` (default), `webp` (animated) or `avi`.
     #[serde(default)]
     pub output_format: Option<String>,
 }
@@ -1269,8 +1261,6 @@ pub struct NluIntentResponse {
     pub entities: Vec<NluEntity>,
 }
 
-// --- System 1 Decision Model Types (e.g. Liquid AI d1-3B) ---
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionRequest {
     #[serde(default)]
@@ -1334,7 +1324,7 @@ impl DecisionQuestions {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawDecisionQuestion {
-    pub r#type: String, // "noul" | "choice" | "score"
+    pub r#type: String,
     #[serde(alias = "instructions", alias = "prompt", alias = "description")]
     pub instruction: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1423,7 +1413,7 @@ impl DecisionState {
 pub struct DecisionQuestion {
     #[serde(default)]
     pub name: String,
-    pub r#type: String, // "noul" | "choice" | "score"
+    pub r#type: String,
     #[serde(alias = "instructions", alias = "prompt", alias = "description")]
     pub instruction: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1433,7 +1423,7 @@ pub struct DecisionQuestion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionResponse {
     pub id: String,
-    pub object: String, // "decision"
+    pub object: String,
     pub created: u64,
     pub model: String,
     pub answers: HashMap<String, DecisionAnswer>,
@@ -1458,8 +1448,6 @@ pub enum DecisionAnswer {
         probabilities: HashMap<String, f64>,
     },
 }
-
-// --- Additional Postman Schemas ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeechToSpeechRequest {
@@ -1547,7 +1535,6 @@ pub struct PortraitMattingResponse {
     pub inference_height: u32,
     pub max_source_edge: u32,
     pub max_source_pixels: u64,
-    /// Grayscale PNG data URI: 0 is transparent and 255 is opaque.
     pub alpha_matte: String,
 }
 
@@ -1563,26 +1550,18 @@ pub struct ImageSegmentationResponse {
     pub execution_provider: String,
     pub width: u32,
     pub height: u32,
-    /// Base64 PNG data URI, grayscale pixel values are class IDs.
     pub class_map: String,
     pub classes: Vec<SemanticClass>,
 }
 
-/// Bounding box normalized between 0.0 and 1.0 (YOLO format).
-/// NOTE: `x` and `y` represent the CENTRE of the bounding box, not the top-left corner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionBox {
-    /// Normalized center X coordinate [0.0, 1.0]
     pub x: f64,
-    /// Normalized center Y coordinate [0.0, 1.0]
     pub y: f64,
-    /// Normalized box width [0.0, 1.0]
     pub width: f64,
-    /// Normalized box height [0.0, 1.0]
     pub height: f64,
 }
 
-/// Absolute bounding box in image pixel space using corner coordinates [x_min, y_min, x_max, y_max].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionBboxPixels {
     pub x_min: u32,
@@ -1617,9 +1596,7 @@ pub struct DetectionAttributes {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetectionOrientedBox {
-    /// Four image-space pixel corners, ordered around the rectangle. Values may lie outside the image.
     pub corners_pixels: [[f64; 2]; 4],
-    /// Clockwise rotation of the predicted width edge from the positive x-axis, in radians.
     pub angle_radians: f64,
 }
 
@@ -1776,13 +1753,9 @@ pub struct ImageGroundingResponse {
     pub created: u64,
     pub model: String,
     pub query: String,
-    /// Click coordinates in normalized [0, 1000] scale: [x, y]
     pub point: [u32; 2],
-    /// Click coordinates in actual image pixel space: [px_x, px_y]
     pub point_pixels: [u32; 2],
-    /// Bounding box in normalized [0, 1000] scale: [ymin, xmin, ymax, xmax] (Qwen-VL format)
     pub box_2d: [u32; 4],
-    /// Bounding box normalized between 0.0 and 1.0: [ymin, xmin, ymax, xmax]
     pub box_normalized: [f64; 4],
     pub image_width: u32,
     pub image_height: u32,

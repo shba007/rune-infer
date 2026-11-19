@@ -1,4 +1,3 @@
-//! Copy the legacy installation without changing the original or moving weights.
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -10,8 +9,6 @@ use sha2::{Digest, Sha256};
 const MARKER: &str = ".legacy-home-migration.json";
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
-/// Select one legacy source before writing anything. Two configured old homes
-/// require explicit user selection; never silently merge divergent histories.
 pub(super) fn migrate_defaults(user: &Path, destination: &Path) -> io::Result<bool> {
     let mut sources = Vec::new();
     for source in [user.join("rune/infer"), user.join(".rune-infer")] {
@@ -25,8 +22,6 @@ pub(super) fn migrate_defaults(user: &Path, destination: &Path) -> io::Result<bo
             }
         }
     }
-    // A valid earlier receipt in ~/rune/infer proves it was copied from the
-    // older home. Verify both source and destination before choosing that chain.
     if sources.len() == 2 {
         migrate_legacy_home(&sources[1], &sources[0])?;
     }
@@ -50,7 +45,6 @@ fn invalid(message: &str) -> io::Error {
 
 fn plain_metadata(path: &Path) -> io::Result<std::fs::Metadata> {
     let meta = std::fs::symlink_metadata(path)?;
-    // Do not follow links/junctions into unrelated projects or model directories.
     #[cfg(windows)]
     let link = {
         use std::os::windows::fs::MetadataExt;
@@ -117,7 +111,6 @@ fn environment(root: &Path) -> io::Result<Vec<(String, String)>> {
         .map_err(|_| invalid("Cannot read legacy environment file"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| invalid("Invalid legacy environment file"))?;
-    // Match dotenv startup behavior: the existing process environment wins.
     Ok(values
         .into_iter()
         .filter(|(key, _)| std::env::var_os(key).is_none())
@@ -131,7 +124,6 @@ fn validate(root: &Path) -> io::Result<()> {
         &environment(root)?,
     )
     .map(|_| ())
-    // Parsing/validation errors may contain user values; never echo them.
     .map_err(|_| {
         invalid("Migrated configuration failed validation (check schema and environment variables)")
     })
@@ -157,12 +149,7 @@ fn rebase(
                     .map_err(|_| invalid("Cannot resolve a legacy path template"))?;
                     let resolved: String = serde_json::from_str(&expanded)?;
                     if !resolved.is_empty() && Path::new(&resolved).is_relative() {
-                        // Preserve templates and .env bytes; retain references to the old
-                        // root instead of copying weights or arbitrary user files.
                         let root = source.to_string_lossy();
-                        // Win32 verbatim paths disable slash/.. normalization. Templates
-                        // can expand to relative paths containing either, so do not
-                        // persist canonicalize()'s verbatim prefix in model references.
                         #[cfg(windows)]
                         let root = if let Some(unc) = root.strip_prefix(r"\\?\UNC\") {
                             format!(r"\\{unc}")
@@ -191,8 +178,6 @@ fn rebase(
     Ok(())
 }
 
-/// Automatically called only for the implicit default home. Explicit overrides
-/// and development checkouts bypass it. A receipt makes repeat runs non-destructive.
 pub(crate) fn migrate_legacy_home(source: &Path, destination: &Path) -> io::Result<bool> {
     if !source.try_exists()? {
         return Ok(false);

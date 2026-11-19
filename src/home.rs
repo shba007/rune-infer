@@ -1,17 +1,3 @@
-//! Resolution of the Rune Infer home directory (`~/.rune/infer`) and the
-//! config file location.
-//!
-//! Layout inside the home directory (also used verbatim for a dev checkout,
-//! which keeps these paths relative to the current directory):
-//!
-//! ```text
-//! <home>/config/server.json   server settings
-//! <home>/config/catalog.json  model catalog
-//! <home>/.env                 secrets referenced from the config as {{VAR}}
-//! <home>/bin/                 auto-installed engine binaries
-//! <home>/logs/rune-infer.log  audit log
-//! ```
-
 use std::path::{Path, PathBuf};
 
 pub const HOME_ENV: &str = "RUNE_HOME";
@@ -23,7 +9,6 @@ mod migration;
 #[cfg(test)]
 pub(crate) use migration::migrate_legacy_home;
 
-/// `$RUNE_HOME`, else `~/.rune/infer`; never fall back to the current directory.
 pub fn rune_home() -> std::io::Result<PathBuf> {
     if let Some(custom) = std::env::var_os(HOME_ENV).filter(|v| !v.is_empty()) {
         return Ok(absolutize(&std::env::current_dir()?, Path::new(&custom)));
@@ -54,32 +39,20 @@ pub(crate) fn installed_infer_binary() -> std::io::Result<PathBuf> {
     }))
 }
 
-/// Where the process should treat as its working root.
 #[derive(Debug, Clone)]
 pub struct Workspace {
-    /// Directory the process runs in (config/, bin/, logs/ and .env live here).
     pub root: PathBuf,
-    /// Absolute path of server.json (schema 3).
     pub server_path: PathBuf,
-    /// Absolute path of catalog.json (schema 3).
     pub catalog_path: PathBuf,
-    /// Absolute path of legacy models.json (schema 1 & 2).
     pub legacy_config_path: PathBuf,
 }
 
 impl Workspace {
-    /// Pick the workspace.
-    ///
-    /// * `--config <path>` given: honoured as-is; root is inferred.
-    /// * `RUNE_HOME` set: that folder.
-    /// * `./config/server.json` or `./config/models.json` exists in current dir: dev checkout.
-    /// * otherwise `~/.rune/infer`.
     pub fn resolve(explicit_config: Option<&str>) -> std::io::Result<Self> {
         let cwd = std::env::current_dir()?;
         let custom = std::env::var_os(HOME_ENV)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from);
-        // Home lookup is intentionally deferred so explicit paths work without it.
         Self::resolve_at(
             explicit_config,
             &cwd,
@@ -149,7 +122,6 @@ impl Workspace {
             });
         }
 
-        // An explicit RUNE_HOME always wins over implicit ./config detection.
         let home_forced = custom.is_some();
         let local_server = cwd.join(DEFAULT_SERVER_REL);
         let local_catalog = cwd.join(DEFAULT_CATALOG_REL);
@@ -185,8 +157,6 @@ impl Workspace {
         })
     }
 
-    /// Create the root and make it the process working directory so the
-    /// engines' relative `bin/`, `logs/` and `config/` paths resolve here.
     pub fn enter(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.root)?;
         std::env::set_current_dir(&self.root)
@@ -465,8 +435,6 @@ mod tests {
         let hidden = f.0.join(".rune/infer");
         assert!(migration::migrate_defaults(&f.0, &hidden).is_err());
         assert!(!hidden.exists());
-        // Hide the older configuration without deleting it; the visible home
-        // now independently qualifies for migration.
         std::fs::rename(old.join("config"), old.join("saved-config")).unwrap();
         assert!(migration::migrate_defaults(&f.0, &hidden).unwrap());
         assert!(!migration::migrate_defaults(&f.0, &hidden).unwrap());

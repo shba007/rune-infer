@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# Windows GPU (WebGPU on Direct3D12) parity check of a depth model against a fixture.
-#
-#   bash scripts/tools/model-converter/check-gpu.sh --model <file> --runtime-directory <dir>
-#        --shader-directory <dir> --fixture-prefix <prefix> [--conversion-report <report.json>]
-#        [--ir-graph]
-#
-# Run from Git Bash on Windows. Needs cargo, rustc and node (node only reads and writes JSON).
-# Deliberately no downloads, installation, catalog edits or Python dependency.
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,7 +40,6 @@ nhwc=false
 if [ -n "$conversion_report" ]; then
   [ -f "$conversion_report" ] || fail "No conversion report at $conversion_report"
   conversion_report="$(absolute "$conversion_report")"
-  # Prints: <candidate sha256> <true|false for NHWC input>
   proof="$(node -e '
     const proof = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8").replace(/^﻿/, ""))
     const checks = Array.isArray(proof.checks) ? proof.checks : []
@@ -64,7 +55,6 @@ fi
 
 cd "$repository" || exit 1
 mkdir -p target
-# GPU worker verifies pinned runtime, WebGPU and DXC DLLs before loading them.
 directory="$(mktemp -d "$repository/target/litert-gpu-check-XXXXXXXXXXXX")"
 for name in dxcompiler.dll dxil.dll; do
   cp "$shaders/$name" "$directory/" || fail "No $name in $shaders"

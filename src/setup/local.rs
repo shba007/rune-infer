@@ -1,4 +1,3 @@
-//! Local setup installation and sequential, real-model inference checks.
 use super::LocalCandidate;
 use crate::audio_operations::{AudioOperation, AudioOperations, EngineVerification, SupportStatus};
 use crate::config::{EngineKind, Modality, ModelConfig, ServerConfig};
@@ -60,7 +59,6 @@ impl PreparedLocal {
             })
             .collect())
     }
-    /// Refuse stale verification if selections or checked files changed before save.
     pub fn validate(&self, models: &[LocalCandidate], gpu: bool) -> Result<(), String> {
         if self.gpu != gpu || models.iter().any(|m| m.engines.is_empty()) {
             return Err("Local engine settings changed; run the model checks again.".into());
@@ -157,7 +155,6 @@ pub(crate) fn prepare_local_models_with(
         tasks: Vec::new(),
         audio_operations: Vec::new(),
     };
-    // Validate the entire selection before installing anything.
     for model in models {
         if model.engines.is_empty() || model.engines.contains(&EngineKind::Encoder) {
             return Err("Choose at least one real inference engine per model.".into());
@@ -235,7 +232,6 @@ fn smoke_model(model: &LocalCandidate, gpu: bool) -> Result<(), String> {
     default_model.engines = vec![model.engine()];
     let mut config = ModelConfig::try_from(super::local_entry(&default_model, gpu))
         .map_err(|e| e.to_string())?;
-    // Internal check id avoids legacy mock-name behavior without changing the saved id.
     config.id = "rune-setup-check".into();
     let task = if model.engine() == EngineKind::Needle {
         serde_json::from_value(serde_json::json!({"type":"tool_call", "prompt":"Call rune_setup_probe with reply OK.", "schema":[{"type":"function","function":{"name":"rune_setup_probe","description":"Report the setup test reply.","parameters":{"type":"object","properties":{"reply":{"type":"string"}},"required":["reply"]}}}],"tool_choice":"required","images":[],"audios":[],"messages":[],"max_tokens":64,"temperature":0}))
@@ -270,7 +266,6 @@ fn smoke_model(model: &LocalCandidate, gpu: bool) -> Result<(), String> {
             validate_smoke_output(&model.modality, &output.response)?;
         }
     }
-    // Drop the only engine reference, unloading this model before the next check.
     drop(engine);
     Ok(())
 }
@@ -476,7 +471,6 @@ mod tests {
             saved.models[0].audio_operations.speech_translation.status,
             SupportStatus::Unverified
         );
-        // Existing task-only metadata can be backfilled after a successful check.
         saved.models[0].audio_operations = AudioOperations::default();
         std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
         crate::setup::write_verified_setup(&plan, Some(&proof), &server, &path, &env).unwrap();
@@ -527,7 +521,6 @@ mod tests {
             .find(|model| model.path == Path::new(path))
             .unwrap();
         candidate.modality = Modality::VisionText;
-        // Bound the temporary acceptance run to the same 4096-token window as the API probe.
         candidate.context_length = Some(4096);
         candidate.engines = vec![EngineKind::LlamaServer];
         candidate.extra = entry.extra;
@@ -577,7 +570,6 @@ mod tests {
             .join("target")
             .join(format!("litert-setup-{}", crate::setup::generate_api_key()));
         std::fs::create_dir_all(root.join("models")).unwrap();
-        // A different filename must not change identification or model support.
         let artifact = root.join("models/renamed.TFLITE");
         std::fs::hard_link(std::env::var("LITERT_TEST_MODEL").unwrap(), &artifact).unwrap();
         let found = crate::setup::discover_models(&root.join("models")).unwrap();

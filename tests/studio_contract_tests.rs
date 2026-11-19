@@ -93,7 +93,6 @@ fn create_studio_test_app() -> (axum::Router, Arc<AppState>) {
 async fn test_inf8_health_livez_readyz_probes() {
     let (app, _) = create_studio_test_app();
 
-    // 1. GET /livez
     let req = Request::builder()
         .method("GET")
         .uri("/livez")
@@ -105,7 +104,6 @@ async fn test_inf8_health_livez_readyz_probes() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "alive");
 
-    // 2. GET /readyz
     let req = Request::builder()
         .method("GET")
         .uri("/readyz")
@@ -119,7 +117,6 @@ async fn test_inf8_health_livez_readyz_probes() {
     assert_eq!(json["active_requests"], 0);
     assert_eq!(json["busy"], false);
 
-    // 3. GET /health
     let req = Request::builder()
         .method("GET")
         .uri("/health")
@@ -149,7 +146,6 @@ async fn test_inf7_inf15_models_structured_capabilities_and_locality() {
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    // Unknown probe values are omitted, rather than represented by null or zero.
     for field in ["vram_total_bytes", "vram_free_bytes", "vram_used_bytes"] {
         if let Some(value) = json.get(field) {
             assert!(value.as_u64().is_some(), "{field}: {value}");
@@ -186,7 +182,6 @@ async fn test_inf7_inf15_models_structured_capabilities_and_locality() {
     assert_eq!(cloud_model["resident"], false);
     assert_eq!(cloud_model["status"], "remote");
 
-    // Single model retrieval GET /v1/models/qwen3.8-27b
     let req = Request::builder()
         .method("GET")
         .uri("/v1/models/qwen3.8-27b")
@@ -204,8 +199,6 @@ async fn test_inf7_inf15_models_structured_capabilities_and_locality() {
 async fn test_inf4_residency_and_x_no_swap_refusal() {
     let (app, _) = create_studio_test_app();
 
-    // qwen3.8-27b is local and not currently resident in memory.
-    // When client sends x-no-swap: true, rune-infer must refuse with 409 Conflict (swap_refused).
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -227,13 +220,11 @@ async fn test_inf4_residency_and_x_no_swap_refusal() {
 async fn test_inf3_background_work_yields_to_foreground() {
     let (app, state) = create_studio_test_app();
 
-    // Simulate an active foreground task
     state
         .concurrency
         .active_foreground
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-    // Incoming background request
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -254,7 +245,6 @@ async fn test_inf3_background_work_yields_to_foreground() {
     assert_eq!(json["error"]["type"], "server_busy");
     assert_eq!(json["error"]["code"], "busy");
 
-    // Clean up simulated foreground count
     state
         .concurrency
         .active_foreground
@@ -266,27 +256,21 @@ fn test_inf16_aliases_and_roles_resolution() {
     let (_, state) = create_studio_test_app();
     let config = state.config();
 
-    // 1. Exact model ID
     let exact = config.find("qwen3.8-27b").expect("exact match");
     assert_eq!(exact.id, "qwen3.8-27b");
 
-    // 2. Server-level role
     let by_server_role = config.find("default").expect("server role match");
     assert_eq!(by_server_role.id, "qwen3.8-27b");
 
-    // 3. Server-level alias
     let by_server_alias = config.find("qwen-alias").expect("server alias match");
     assert_eq!(by_server_alias.id, "qwen3.8-27b");
 
-    // 4. Model-level role
     let by_model_role = config.find("vision").expect("model role match");
     assert_eq!(by_model_role.id, "qwen3.8-27b");
 
-    // 5. Model-level alias
     let by_model_alias = config.find("default-chat").expect("model alias match");
     assert_eq!(by_model_alias.id, "qwen3.8-27b");
 
-    // 6. Cloud model role & alias
     let cloud_by_role = config.find("fast").expect("cloud role match");
     assert_eq!(cloud_by_role.id, "gemini-flash");
     let cloud_by_alias = config.find("flash").expect("cloud alias match");
@@ -360,7 +344,6 @@ async fn test_if1_background_preemption_when_foreground_arrives() {
     use rune_infer::inference::types::InferenceTaskRequest;
 
     let (_, state) = create_studio_test_app();
-    // This test exercises cancellation with an injected embedding engine.
     state.config.write().unwrap().models[0]
         .tasks
         .push("text-to-embedding".into());
@@ -391,10 +374,8 @@ async fn test_if1_background_preemption_when_foreground_arrives() {
     let bg_join =
         tokio::spawn(async move { bg_gate.execute_task(&state_clone, engine, task).await });
 
-    // Allow background task to start executing
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
-    // Foreground request arrives!
     let mut fg_headers = HeaderMap::new();
     fg_headers.insert("x-rune-priority", "foreground".parse().unwrap());
     let fg_gate = ModelExecutionGate::enter(&state, &fg_headers, "qwen3.8-27b").expect("fg gate");
@@ -406,7 +387,6 @@ async fn test_if1_background_preemption_when_foreground_arrives() {
         1
     );
 
-    // The background task must have yielded immediately with 503
     let result = bg_join.await.unwrap();
     let resp = result.expect_err("background request should yield");
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -428,7 +408,6 @@ async fn test_if1_background_preemption_when_foreground_arrives() {
     assert_eq!(json["error"]["type"], "server_busy");
     assert_eq!(json["error"]["code"], "yielded");
 
-    // Engine was canceled
     assert!(canceled_flag.load(std::sync::atomic::Ordering::SeqCst));
 
     drop(fg_gate);
@@ -489,14 +468,12 @@ async fn test_if2_model_headers_and_no_swap_across_routes() {
 
 #[test]
 fn test_if6_grounding_off_center_target() {
-    // Top-right UI element bounding box: [ymin=100, xmin=800, ymax=200, xmax=950]
     let box_2d = [100u32, 800u32, 200u32, 950u32];
     let center_x = (box_2d[1] + box_2d[3]) / 2;
     let center_y = (box_2d[0] + box_2d[2]) / 2;
 
     assert_eq!(center_x, 875);
     assert_eq!(center_y, 150);
-    // Verified: true center is in the top-right quadrant, not hardcoded [500, 500]!
     assert_ne!([center_x, center_y], [500, 500]);
 }
 
@@ -504,7 +481,6 @@ fn test_if6_grounding_off_center_target() {
 async fn test_safe_blocking_client_drop_in_async_context() {
     use rune_infer::inference::process::SafeBlockingClient;
 
-    // Constructing reqwest::blocking::Client must be done in a blocking context
     let raw_client = tokio::task::spawn_blocking(|| {
         reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_millis(100))
@@ -515,7 +491,6 @@ async fn test_safe_blocking_client_drop_in_async_context() {
     .expect("spawn_blocking client");
 
     let safe_client = SafeBlockingClient::new(raw_client);
-    // Dropping on the async tokio worker task MUST NOT panic!
     drop(safe_client);
 }
 
@@ -565,7 +540,6 @@ async fn test_llama_server_release_slots_tcp_in_tokio_task() {
     let port = listener.local_addr().expect("port").port();
 
     std::thread::spawn(move || {
-        // Accept GET /slots
         if let Ok((mut socket, _)) = listener.accept() {
             let mut buf = [0u8; 512];
             let mut request = Vec::new();
@@ -581,7 +555,6 @@ async fn test_llama_server_release_slots_tcp_in_tokio_task() {
             let _ = socket.write_all(resp.as_bytes());
             let _ = socket.flush();
         }
-        // Accept POST /slots/0?action=release
         if let Ok((mut socket, _)) = listener.accept() {
             let mut buf = [0u8; 512];
             let mut request = Vec::new();
@@ -598,6 +571,5 @@ async fn test_llama_server_release_slots_tcp_in_tokio_task() {
         }
     });
 
-    // Calling release_slots_tcp inside a Tokio worker thread MUST NOT panic
     LlamaServerEngine::release_slots_tcp(port);
 }

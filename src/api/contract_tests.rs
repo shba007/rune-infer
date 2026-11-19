@@ -1,4 +1,3 @@
-//! Transport contracts use injected engines and never require weights or a GPU.
 use super::*;
 use crate::inference::traits::InferenceEngine;
 use crate::inference::types::InferenceOutput;
@@ -36,7 +35,6 @@ async fn local_execution_contract_refuses_proxy_and_unsupported_routes() {
         ..Default::default()
     });
     state.reload_catalog(config.clone());
-    // Simulate a reload after discovery/resolution but before engine acquisition.
     assert!(
         state
             .inference
@@ -139,7 +137,6 @@ async fn local_execution_contract_refuses_proxy_and_unsupported_routes() {
         assert_eq!(body["error"]["code"], code, "{uri}");
         assert_eq!(received.load(Ordering::SeqCst), 0);
     }
-    // Positive control: the same cloud route is reachable without the constraint.
     let control = router
         .oneshot(
             Request::builder()
@@ -209,7 +206,6 @@ async fn local_execution_pins_configuration_and_preserves_residency_policy() {
     changed.models[0].model_path = "different.gguf".into();
     state.reload_catalog(changed.clone());
     assert!(state.inference.get_local_engine(&expected, false).is_err());
-    // A resident engine from an older snapshot is also refused for a new snapshot.
     assert!(
         state
             .inference
@@ -225,7 +221,6 @@ async fn local_execution_pins_configuration_and_preserves_residency_policy() {
     changed.models[0].provider = crate::config::ProviderType::OpenAi;
     state.reload_catalog(changed);
     assert!(state.inference.get_local_engine(&expected, false).is_err());
-    // An acquired local engine remains pinned even after a local-to-cloud reload.
     assert!(Arc::ptr_eq(
         &pinned,
         &state.inference.registry.lock().unwrap().engines["fixture"]
@@ -1260,8 +1255,6 @@ async fn audio_operations_discovery_and_both_routes_fail_closed_before_loading()
         }
         assert!(state.inference.registry.lock().unwrap().engines.is_empty());
     }
-    // Discovery and execution use the actual resident fallback engine, not the
-    // preferred engine whose live check happened to pass.
     let (_, state) = app(None);
     let mut config = state.config().clone();
     config.models[0]
@@ -1320,7 +1313,7 @@ async fn preemption_is_not_lost_before_background_registers_waiter() {
     headers.insert("x-rune-priority", "background".parse().unwrap());
     let background = ModelExecutionGate::enter(&state, &headers, "fixture").unwrap();
     let foreground = ModelExecutionGate::enter(&state, &HeaderMap::new(), "fixture").unwrap();
-    drop(foreground); // Even an already completed foreground arrival must invalidate background work.
+    drop(foreground);
     let response = tokio::time::timeout(
         std::time::Duration::from_millis(250),
         background.execute_task(
@@ -1372,8 +1365,6 @@ impl InferenceEngine for BlockingEngine {
         {
             self.started.notify_one();
         }
-        // Both requests share the occupied slot. Foreground execution cannot
-        // complete until cancel() actually releases the background slot.
         while !*canceled {
             let (next, timeout) = self
                 .released
@@ -1420,7 +1411,7 @@ async fn foreground_http_request_starts_within_250ms_and_background_returns_503(
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(foreground.status(), StatusCode::INTERNAL_SERVER_ERROR); // Mock intentionally returns an error after execution.
+    assert_eq!(foreground.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let background = tokio::time::timeout(std::time::Duration::from_millis(250), background)
         .await
         .unwrap()
@@ -1458,10 +1449,8 @@ async fn client_disconnect_cancels_in_flight_task_engine() {
     tokio::time::timeout(std::time::Duration::from_secs(1), engine.started.notified())
         .await
         .unwrap();
-    // Simulate browser cancel / client drop by aborting the request future
     handle.abort();
     let _ = handle.await;
-    // Allow drop guard to execute
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert!(
         *engine.canceled.lock().unwrap(),

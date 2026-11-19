@@ -1,4 +1,3 @@
-// pub mod anthropic;
 pub mod audio;
 pub mod chat;
 pub mod decisions;
@@ -13,7 +12,6 @@ pub mod nlu;
 pub mod ocr;
 mod task;
 pub mod videos;
-// pub mod responses;
 
 pub use gate::ModelExecutionGate;
 
@@ -46,7 +44,6 @@ pub struct RequestConcurrencyState {
 }
 
 impl RequestConcurrencyState {
-    /// Register before checking the epoch so a foreground arrival cannot be lost.
     pub async fn wait_for_foreground(&self, epoch: u64) {
         let notified = self.yield_notify.notified();
         tokio::pin!(notified);
@@ -114,16 +111,12 @@ pub fn create_router(state: AppState) -> Router {
     let shared_state = Arc::new(state);
 
     let v1_routes = Router::new()
-        // Chat & Responses
         .route("/chat/completions", post(chat::chat_completions_handler))
-        // .route("/messages", post(anthropic::anthropic_messages_handler))
-        // Images
         .route(
             "/images/generations",
             post(images::image_generation_handler),
         )
         .route("/images/edits", post(images::image_edit_handler))
-        // Videos
         .route(
             "/videos/generations",
             post(videos::video_generation_handler),
@@ -151,7 +144,6 @@ pub fn create_router(state: AppState) -> Router {
             post(images::image_style_transfer_handler),
         )
         .route("/images/grounding", post(images::image_grounding_handler))
-        // Audio
         .route(
             "/audio/transcriptions",
             post(audio::audio_transcriptions_handler),
@@ -169,7 +161,6 @@ pub fn create_router(state: AppState) -> Router {
             "/audio/speech-to-speech",
             post(audio::speech_to_speech_handler),
         )
-        // Text & NLU & OCR
         .route("/inference", post(inference_handler))
         .route("/models", get(models_handler))
         .route(
@@ -235,14 +226,6 @@ pub fn create_router(state: AppState) -> Router {
 
     Router::new()
         .nest("/v1", v1_routes)
-        // .route(
-        //     "/anthropic/v1/messages",
-        //     post(anthropic::anthropic_messages_handler),
-        // )
-        // .route(
-        //     "/anthropic/messages",
-        //     post(anthropic::anthropic_messages_handler),
-        // )
         .route("/health", get(health_handler))
         .route("/livez", get(livez_handler))
         .route("/readyz", get(readyz_handler))

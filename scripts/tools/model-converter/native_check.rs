@@ -1,5 +1,3 @@
-//! Standalone Windows CPU parity check. Build with rustc; no gateway dependencies.
-//! Usage: native_check INFER_EXE LITERT_DLL CANDIDATE_TFLITE FIXTURE_PREFIX
 use std::{
     env, fs,
     io::{Read, Write},

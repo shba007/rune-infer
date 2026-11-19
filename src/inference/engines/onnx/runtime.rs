@@ -1,4 +1,3 @@
-//! Reviewed Windows ONNX Runtime and CUDA dependency bundle.
 use super::{PROVIDER_CUDA_SHA, PROVIDER_SHARED_SHA, RUNTIME_SHA, verify_runtime};
 use crate::inference::engines::download;
 use std::{

@@ -1,4 +1,3 @@
-//! Local model discovery and safe staging for the Infer-owned download job.
 use sha2::{Digest, Sha256};
 use std::{
     io::{Read, Write},

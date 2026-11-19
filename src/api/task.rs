@@ -1,4 +1,3 @@
-//! Request task checks shared by chat and primitive inference.
 use crate::config::{EngineKind, ModelConfig};
 use crate::inference::types::InferenceTaskRequest;
 use crate::types::{ApiError, ChatCompletionRequest, ErrorResponse, MediaItem};

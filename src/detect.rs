@@ -1,14 +1,3 @@
-//! Work out what a GGUF file actually is.
-//!
-//! A `.gguf` can hold a chat model, an image diffusion model, a speech model,
-//! a vision projector, an MTP draft head, a LoRA adapter and more. Guessing
-//! from the file name gets this wrong, so the setup wizard reads the header:
-//! the architecture, a few distinctive keys and the tensor names.
-//!
-//! [`discover`] scans a file or folder and returns the models it can set up
-//! (with modality, engine and engine-specific `extra` filled in) plus the
-//! files it deliberately skipped and why.
-
 use std::collections::{BTreeSet, HashMap};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -18,46 +7,28 @@ use serde_json::{Map, Value, json};
 
 use crate::config::{EngineKind, Modality};
 
-// ---------------------------------------------------------------------------
-// GGUF header
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Default, Clone)]
 pub struct GgufInfo {
     pub architecture: String,
-    /// `general.name`
     pub name: Option<String>,
-    /// `general.finetune`
     pub finetune: Option<String>,
-    /// `general.type` (`model`, `mmproj`, `adapter`, ...)
     pub general_type: Option<String>,
     pub context_length: Option<u32>,
-    /// `<arch>.embedding_length`: a vision projector must output exactly this size.
     pub embedding_length: Option<u32>,
-    /// `clip.vision.projection_dim` (projectors only). A value of 0 (MiniCPM's resampler)
-    /// carries no information and is stored as `None`.
     pub projection_dim: Option<u32>,
-    /// `clip.has_vision_encoder` / `clip.has_audio_encoder` (projectors only).
     pub has_vision_encoder: Option<bool>,
     pub has_audio_encoder: Option<bool>,
     pub has_gen_audio_encoder: Option<bool>,
     pub has_tokenizer: bool,
-    /// Any `prism.*` key (Prism ternary quantisation needs the Prism llama.cpp build).
     pub has_prism_keys: bool,
-    /// Any `*.pooling_type` key (embedding models).
     pub has_pooling: bool,
-    /// `audiocpp.model_spec.family`
     pub audiocpp_family: Option<String>,
     pub tensor_count: u64,
-    /// Distinct GGML tensor storage types, read without loading weights.
     pub tensor_types: BTreeSet<u32>,
     pub has_token_embd: bool,
     pub has_first_block: bool,
-    /// Tensor names typical of diffusion transformers / UNets (some GGUFs carry no metadata at all).
     pub diffusion_tensors: bool,
-    /// `audio_tower.*` tensors: a speech-recognition audio encoder.
     pub audio_tower: bool,
-    /// `audio_projector.*` tensors: an audio encoder that feeds a language model.
     pub audio_projector: bool,
 }
 
@@ -122,7 +93,6 @@ fn skip_value(r: &mut impl Read, ty: u32) -> Result<()> {
     }
 }
 
-/// Read the header (key/values and tensor names) from `r`.
 pub fn parse_gguf(r: &mut impl Read) -> Result<GgufInfo> {
     anyhow::ensure!(&rd::<4>(r)? == b"GGUF", "not a GGUF file");
     let version = rd_u32(r)?;
@@ -197,7 +167,6 @@ pub fn parse_gguf(r: &mut impl Read) -> Result<GgufInfo> {
             info.diffusion_tensors = true;
         }
     }
-    // An audio encoder shipped as its own file (MiniCPM-o's `audio/` GGUF is arch `whisper`).
     if info.audio_projector && info.has_audio_encoder.is_none() {
         info.has_audio_encoder = Some(true);
         info.has_vision_encoder.get_or_insert(false);
@@ -209,11 +178,6 @@ pub fn read_gguf(path: &Path) -> Result<GgufInfo> {
     parse_gguf(&mut BufReader::new(std::fs::File::open(path)?))
 }
 
-// ---------------------------------------------------------------------------
-// Classification
-// ---------------------------------------------------------------------------
-
-/// Tensor-name fragments of diffusion models (used when the file has no architecture metadata).
 const DIFFUSION_TENSOR_MARKERS: &[&str] = &[
     "model.diffusion_model.",
     "transformer_blocks.",
@@ -224,7 +188,6 @@ const DIFFUSION_TENSOR_MARKERS: &[&str] = &[
     "down_blocks.",
 ];
 
-/// Diffusion architectures served by stable-diffusion.cpp's `sd-server`.
 const IMAGE_ARCHS: &[&str] = &[
     "qwen_image",
     "lumina2",
@@ -236,7 +199,6 @@ const IMAGE_ARCHS: &[&str] = &[
     "sd3",
     "hidream",
 ];
-/// Language-model architectures that are vision-language models (they need an `mmproj` file).
 const VISION_LM_ARCHS: &[&str] = &[
     "qwen2vl",
     "qwen25vl",
@@ -275,30 +237,22 @@ enum Class {
     Other,
 }
 
-/// What the wizard learned about one model file.
 #[derive(Debug, Clone)]
 pub struct Detected {
     pub modality: Modality,
-    /// Engines that can serve it, preferred first.
     pub engines: Vec<EngineKind>,
-    /// Human label: "chat model", "image generation", "text-to-speech", ...
     pub kind_label: &'static str,
     pub capabilities: Vec<&'static str>,
-    /// `extra` keys the user still has to fill in for the model to run.
     pub needs: Vec<&'static str>,
     pub notes: Vec<String>,
     class: Class,
-    /// The model belongs to an omni family (Gemma-4, MiniCPM-o, ...). Only a hint: what it
-    /// can actually do is decided by the encoder files found next to it.
     omni_family: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Role {
     Model,
-    /// Vision projector (`mmproj`): attached to a vision model, never listed alone.
     Projector,
-    /// MTP draft head: attached to its base model as `extra.mtp_path`.
     Draft,
 }
 
@@ -333,7 +287,6 @@ fn audio_modality(family: &str) -> (Modality, Option<String>) {
     )
 }
 
-/// Lower-case words from the model's name, fine-tune label and file name.
 fn name_tokens(info: &GgufInfo, file_name: &str) -> Vec<String> {
     [
         info.name.as_deref(),
@@ -352,7 +305,6 @@ fn name_tokens(info: &GgufInfo, file_name: &str) -> Vec<String> {
     .collect()
 }
 
-/// Architectures that are omni (image + audio + video in) by construction.
 const OMNI_ARCHS: &[&str] = &[
     "gemma4",
     "gemma_4",
@@ -364,13 +316,6 @@ const OMNI_ARCHS: &[&str] = &[
     "qwen3omni",
 ];
 
-/// Whether this language model belongs to an omni family.
-///
-/// Several omni models are plain language-model architectures structurally —
-/// MiniCPM-o's body is `qwen3` and its `general.name` is just "Llm" — so the
-/// architecture alone cannot tell, and the file name is the only evidence.
-/// Matching is on the squashed file name (`MiniCPM-o-4_5` → `minicpmo45`) or a
-/// whole `omni` word, so `MiniCPM-V` and look-alikes are not caught.
 fn is_omni_family(info: &GgufInfo, arch: &str, file_name: &str) -> bool {
     if OMNI_ARCHS.contains(&arch) {
         return true;
@@ -423,7 +368,6 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
         return Classified::Model(d);
     }
     if arch == "audio8" {
-        // Audio8 models: an `audio_tower` encoder means speech recognition.
         let stt = info.audio_tower;
         let mut d = det(
             if stt {
@@ -518,10 +462,6 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
             vec!["Embedding"],
         ));
     }
-    // A draft head (MTP / "assistant") is not a standalone model. Qwen's has a tokenizer and
-    // embeddings but no first block; Gemma's (`gemma4-assistant`) does have blocks, so its
-    // architecture name is the signal. Check this before the family branches below, or a
-    // drafter is listed as a model of its own.
     if info.has_tokenizer
         && info.has_token_embd
         && (!info.has_first_block || arch.ends_with("-assistant") || arch.contains("mtp"))
@@ -529,9 +469,6 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
         return Classified::Draft;
     }
     if info.has_tokenizer && info.has_token_embd && is_omni_family(info, &arch, file_name) {
-        // What an omni model can do depends on its encoder files, which are separate downloads
-        // (MiniCPM-o's body is a plain `qwen3`). Start as a chat model; pairing the projector
-        // upgrades it to exactly what that projector provides.
         let mut d = det(
             Modality::Text,
             vec![EngineKind::LlamaServer],
@@ -567,8 +504,6 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
     }
 
     if info.has_tokenizer && info.has_token_embd {
-        // A language-model body fine-tuned for speech is a plain LM structurally; only
-        // its name gives it away (e.g. "Qwen3 1.7B Multilingual TTS").
         let words = name_tokens(info, file_name);
         let speech = [
             (
@@ -622,11 +557,6 @@ pub fn classify(info: &GgufInfo, file_name: &str) -> Classified {
     })
 }
 
-// Reviewed 2026-10-25 against the Prism architecture table and multimodal guide:
-// https://github.com/PrismML-Eng/llama.cpp/blob/prism/src/llama-arch.cpp
-// https://github.com/PrismML-Eng/llama.cpp/blob/prism/docs/multimodal.md
-// These are alternatives for stock GGUFs, not an assertion that every installed
-// binary supports every model. Setup tests only the owner's chosen default.
 const PRISM_TEXT_ALTERNATIVES: &[&str] = &[
     "llama",
     "qwen2",
@@ -644,9 +574,6 @@ const PRISM_TEXT_ALTERNATIVES: &[&str] = &[
 const PRISM_VISION_ALTERNATIVES: &[&str] = &["gemma3", "gemma4", "qwen2vl"];
 
 fn reviewed_stock_tensors(info: &GgufInfo) -> bool {
-    // Conservative shared F32/F16, Q4/Q5/Q8, K-quant, IQ and BF16 encodings.
-    // Removed, newer and fork-private ids are deliberately excluded.
-    // https://github.com/PrismML-Eng/llama.cpp/blob/prism/ggml/include/ggml.h
     info.tensor_count > 0
         && info.tensor_count <= 500_000
         && !info.tensor_types.is_empty()
@@ -670,10 +597,6 @@ fn with_reviewed_alternatives(info: &GgufInfo, detected: &Detected) -> Vec<Engin
     engines
 }
 
-// ---------------------------------------------------------------------------
-// Discovery
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone)]
 pub struct LocalCandidate {
     pub path: PathBuf,
@@ -685,9 +608,7 @@ pub struct LocalCandidate {
     pub engines: Vec<EngineKind>,
     pub kind_label: &'static str,
     pub capabilities: Vec<String>,
-    /// Engine-specific settings found next to the model (`mmproj_path`, `mtp_path`).
     pub extra: Map<String, Value>,
-    /// `extra` keys the user still has to provide before it will run.
     pub needs: Vec<&'static str>,
     pub notes: Vec<String>,
     class: Class,
@@ -702,7 +623,6 @@ impl LocalCandidate {
     pub fn is_vision(&self) -> bool {
         self.modality == Modality::VisionText
     }
-    /// For an omni-family model: what is still missing for full omni input, if anything.
     pub fn omni_gap(&self) -> Option<&'static str> {
         if !self.omni_family || self.modality == Modality::Omni {
             return None;
@@ -713,7 +633,6 @@ impl LocalCandidate {
             "Omni family: image, audio and video input need extra.mmproj_path"
         })
     }
-    /// Ready to run without any manual follow-up.
     pub fn is_ready(&self) -> bool {
         self.needs.is_empty()
     }
@@ -731,8 +650,6 @@ pub struct Discovery {
     pub skipped: Vec<Skipped>,
 }
 
-/// Hugging Face caches nest models `hub/models--org--name/snapshots/<hash>/<subfolder>/file.gguf`,
-/// so a models root such as `D:/Models` is 6-7 levels above the files.
 const MAX_DEPTH: usize = 9;
 const MAX_FILES: usize = 2000;
 
@@ -845,14 +762,12 @@ fn file_stem(p: &Path) -> String {
         .into_owned()
 }
 
-/// `general.name` is sometimes junk ("Hf") or a whole sentence; fall back to the file name then.
 fn sensible_name(name: &Option<String>) -> Option<String> {
     name.as_ref()
         .map(|n| n.trim().to_string())
         .filter(|n| (4..=48).contains(&n.chars().count()))
 }
 
-/// Prefer the f16 projector over bf16/quantised ones.
 fn projector_rank(p: &Path) -> (bool, String) {
     let n = p
         .file_name()
@@ -875,7 +790,6 @@ fn common_prefix_len(a: &str, b: &str) -> usize {
     a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count()
 }
 
-/// What a projector file provides. Legacy `mmproj` files predate the flags and are vision-only.
 fn projector_abilities(info: &GgufInfo) -> (bool, bool) {
     (
         info.has_vision_encoder.unwrap_or(true),
@@ -891,19 +805,6 @@ fn projector_label(info: &GgufInfo) -> &'static str {
     }
 }
 
-/// Give each model the projector that belongs to it, and set what it can do from that file.
-///
-/// * A projector belongs to the models in the *nearest enclosing folder that holds a model*,
-///   so `snapshot/vision/x.gguf` pairs with `snapshot/model.gguf`.
-/// * Its output size (`clip.vision.projection_dim`) must equal the model's `embedding_length`
-///   (a size of 0, which some projectors record, says nothing and is ignored). Models of the
-///   same size are told apart by file-name similarity; if that cannot decide, nothing is
-///   attached and the model gets a note.
-/// * `llama-server` loads a single `--mmproj`, so when several projectors match, the most
-///   capable one is attached (vision+audio, then vision, then audio) and the rest are noted.
-/// * Capabilities come from the projector's own `has_vision_encoder` / `has_audio_encoder`
-///   flags: both → omni, vision → vision chat, audio → audio chat. A model family's name never
-///   grants an ability the files do not provide.
 fn pair_projectors(
     candidates: &mut [LocalCandidate],
     projectors: Vec<(PathBuf, GgufInfo)>,
@@ -982,8 +883,6 @@ fn pair_projectors(
 
     for (i, c) in candidates.iter_mut().enumerate() {
         let mut options = std::mem::take(&mut chosen[i]);
-        // Most capable first; on a tie vision beats audio (image input is what llama-server
-        // supports); then the f16-preferring name rank.
         options.sort_by_key(|&pi| {
             let (v, a) = projector_abilities(&projectors[pi].1);
             (
@@ -1035,7 +934,6 @@ fn pair_projectors(
             }
             c.notes
                 .retain(|n| !n.starts_with("vision-language model, but no matching"));
-            // The rest could not be attached: llama-server takes one projector.
             for &pi in options.iter().skip(1) {
                 let (other_path, other_info) = &projectors[pi];
                 let (ov, oa) = projector_abilities(other_info);
@@ -1063,16 +961,12 @@ fn pair_projectors(
     }
 }
 
-/// Shown for an omni-family model whose projector provides vision but not audio.
 pub const OMNI_PARTIAL_NOTE: &str = "omni family, but its projector only provides image input — \
      audio and video need an audio-capable mmproj (llama-server loads a single file)";
 
-/// Shown for an omni model found without its vision/audio encoder file.
 pub const OMNI_NO_ENCODER_NOTE: &str = "omni family, but only the language model was found — \
      add extra.mmproj_path (its vision/audio encoder GGUF) for image, audio and video input";
 
-/// Read the documented Needle 3 container without loading weights. Speech
-/// attachments are excluded: the existing Needle adapter only handles tool calls.
 fn cactus_candidate(path: &Path) -> Result<LocalCandidate> {
     use std::io::{Seek, SeekFrom};
     let mut file = std::fs::File::open(path)?;
@@ -1134,8 +1028,6 @@ fn cactus_candidate(path: &Path) -> Result<LocalCandidate> {
     })
 }
 
-/// Scan `input` (a file, or a folder searched up to 9 levels) and classify
-/// supported GGUF, GGML, Cactus and reviewed TFLite artifacts.
 pub fn discover(input: &Path) -> Result<Discovery> {
     if !input.exists() {
         anyhow::bail!("'{}' does not exist", input.display());
@@ -1262,7 +1154,6 @@ pub fn discover(input: &Path) -> Result<Discovery> {
 
     pair_projectors(&mut candidates, projectors, &mut out.skipped);
 
-    // Attach MTP draft heads to their base model (same folder, same name or architecture).
     for (path, info) in drafts {
         let dir = path.parent();
         let in_dir = |c: &LocalCandidate| c.class == Class::Llm && c.path.parent() == dir;
@@ -1277,7 +1168,6 @@ pub fn discover(input: &Path) -> Result<Discovery> {
         match base {
             Some(i) => {
                 let base = &mut candidates[i];
-                // Draft compatibility is separate from base-model compatibility.
                 if base.engine() == EngineKind::LlamaServer {
                     base.engines
                         .retain(|engine| *engine != EngineKind::LlamaServerPrism);
@@ -1296,7 +1186,6 @@ pub fn discover(input: &Path) -> Result<Discovery> {
             }),
         }
     }
-    // Two files sharing one `general.name` (different quantisations): tell them apart by file name.
     let mut name_count: HashMap<String, usize> = HashMap::new();
     for c in &candidates {
         *name_count.entry(c.display_name.clone()).or_default() += 1;
@@ -1315,15 +1204,10 @@ pub fn discover(input: &Path) -> Result<Discovery> {
     Ok(out)
 }
 
-// ---------------------------------------------------------------------------
-// Test helpers (also used by the wizard tests)
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 pub(crate) mod testing {
     use std::path::Path;
 
-    /// Build a minimal GGUF byte stream with string keys and named tensors.
     #[derive(Default)]
     pub struct Gguf {
         kvs: Vec<(String, u32, Vec<u8>)>,
@@ -1349,7 +1233,6 @@ pub(crate) mod testing {
             self.kvs.push((k.into(), 4, v.to_le_bytes().to_vec()));
             self
         }
-        /// A string-array key such as `tokenizer.ggml.tokens`.
         pub fn bool_kv(mut self, k: &str, v: bool) -> Self {
             self.kvs.push((k.into(), 7, vec![u8::from(v)]));
             self
@@ -1368,11 +1251,9 @@ pub(crate) mod testing {
             self.tensors.push(name.into());
             self
         }
-        /// A language model: tokenizer plus embedding and first-block tensors.
         pub fn llm(arch: &str, name: &str) -> Self {
             Self::llm_with_dim(arch, name, 4096)
         }
-        /// Like [`Gguf::llm`] with a chosen embedding size (projectors must match it).
         pub fn llm_with_dim(arch: &str, name: &str, dim: u32) -> Self {
             Gguf::new(arch)
                 .string("general.name", name)
@@ -1394,10 +1275,10 @@ pub(crate) mod testing {
             }
             for t in &self.tensors {
                 s(&mut b, t);
-                b.extend(1u32.to_le_bytes()); // 1 dim
+                b.extend(1u32.to_le_bytes());
                 b.extend(8u64.to_le_bytes());
-                b.extend(0u32.to_le_bytes()); // type
-                b.extend(0u64.to_le_bytes()); // offset
+                b.extend(0u32.to_le_bytes());
+                b.extend(0u64.to_le_bytes());
             }
             b
         }
@@ -1659,7 +1540,6 @@ mod tests {
 
     #[test]
     fn metadata_less_diffusion_files_are_recognised_by_tensor_names() {
-        // e.g. qwen-image-2.1-Q8_0.gguf: zero key/values, only tensors.
         for tensor in [
             "transformer_blocks.0.attn.norm_k.weight",
             "model.diffusion_model.img_in.weight",
@@ -1681,7 +1561,6 @@ mod tests {
 
     #[test]
     fn language_model_fine_tunes_for_speech_are_found_by_name() {
-        // Real example: arch qwen3, general.finetune "Multilingual-TTS".
         let tts = Gguf::llm("qwen3", "Qwen3 1.7B Multilingual TTS")
             .string("general.finetune", "Multilingual-TTS");
         let d = model(cls(&tts, "qwen3-1.7B-Multilingual-TTS-f16.gguf"));
@@ -1694,7 +1573,6 @@ mod tests {
             )
         );
         assert!(d.notes[0].contains("verify"));
-        // Whole words only: ordinary models with look-alike substrings stay chat models.
         for (name, file) in [
             ("Settings Helper", "settings-8b.gguf"),
             ("OxCoder 9B", "oxcoder.gguf"),
@@ -1761,11 +1639,9 @@ mod tests {
     }
     #[test]
     fn minicpm_o_is_recognised_as_an_omni_family_despite_its_plain_qwen3_body() {
-        // Real file: arch qwen3, general.name "Llm", only the file name says MiniCPM-o.
         let d = model(cls(&Gguf::llm("qwen3", "Llm"), "MiniCPM-o-4_5-Q8_0.gguf"));
         assert!(d.omni_family);
         assert_eq!((d.modality, d.kind_label), (Modality::Text, "chat model"));
-        // A whole "omni" word marks other families too.
         let q = model(cls(
             &Gguf::llm("qwen2", "Qwen2.5-Omni-7B"),
             "Qwen2.5-Omni-7B-Q4_K_M.gguf",
@@ -1774,7 +1650,6 @@ mod tests {
     }
     #[test]
     fn omni_detection_does_not_catch_look_alikes() {
-        // MiniCPM-V is vision-only; "omnibus" merely contains the letters.
         for file in [
             "MiniCPM-V-4_5-Q8_0.gguf",
             "omnibus-7b.gguf",
@@ -1788,7 +1663,6 @@ mod tests {
     }
     #[test]
     fn draft_heads_of_omni_families_are_not_listed_as_models() {
-        // Same shape as `mtp-gemma-4-12b-it.gguf`: tokenizer + embeddings, no first block.
         for (arch, file) in [
             ("gemma4", "mtp-gemma-4-12b-it.gguf"),
             ("qwen3", "MiniCPM-o-4_5-mtp.gguf"),
@@ -1799,13 +1673,11 @@ mod tests {
                 .tensor("blk.40.attn_k.weight");
             assert!(matches!(cls(&drafter, file), Classified::Draft), "{file}");
         }
-        // Gemma's real drafter has blocks (`blk.0.*`) — arch `gemma4-assistant` identifies it.
         let assistant = Gguf::llm("gemma4-assistant", "Gemma 4 12B It Assistant");
         assert!(matches!(
             cls(&assistant, "mtp-gemma-4-12b-it.gguf"),
             Classified::Draft
         ));
-        // The ordinary Gemma model next to it is still an omni chat model.
         let base = model(cls(
             &Gguf::llm("gemma4", "Gemma-4-12B-It"),
             "gemma-4-12b-it-UD-Q6_K_XL.gguf",
@@ -1813,7 +1685,6 @@ mod tests {
         assert!(base.omni_family && base.modality == Modality::Text);
     }
 
-    /// A projector with explicit encoder flags (`dim` None = records no projection size).
     fn projector(dim: Option<u32>, vision: bool, audio: bool) -> Gguf {
         let g = Gguf::new("clip")
             .bool_kv("clip.has_vision_encoder", vision)
@@ -1824,7 +1695,6 @@ mod tests {
         }
     }
 
-    /// MiniCPM-o's separate audio encoder: arch `whisper` with an `audio_projector`.
     fn audio_encoder() -> Gguf {
         Gguf::new("whisper")
             .tensor("encoder.layers.0.fc1.weight")
@@ -1857,8 +1727,6 @@ mod tests {
 
     #[test]
     fn minicpm_o_with_its_real_layout_is_vision_only() {
-        // The real snapshot: model at the root, encoders in vision/ and audio/ subfolders; the
-        // vision file records projection_dim 0 and the audio file is arch whisper.
         let d = tmp("omni-real");
         minicpm(&d);
         projector(None, true, false).write(&d.join("vision/MiniCPM-o-4_5-vision-F16.gguf"));
@@ -1906,7 +1774,6 @@ mod tests {
 
     #[test]
     fn a_projector_with_both_encoders_makes_the_model_omni() {
-        // Gemma-4's single mmproj has vision and audio encoders.
         let d = tmp("omni-both");
         Gguf::llm_with_dim("gemma4", "Gemma-4-12B-It", 3840)
             .write(&d.join("gemma-4-12b-it-UD-Q6_K_XL.gguf"));
@@ -1948,7 +1815,6 @@ mod tests {
 
     #[test]
     fn projectors_belong_to_the_nearest_folder_that_holds_a_model() {
-        // Two models, each with its own vision/ subfolder, plus a model one level above.
         let d = tmp("omni-nearest");
         Gguf::llm_with_dim("qwen3", "Alpha", 4096).write(&d.join("a/alpha.gguf"));
         projector(Some(4096), true, false).write(&d.join("a/vision/alpha-vision.gguf"));
@@ -1997,7 +1863,6 @@ mod tests {
             (Some(true), Some(false))
         );
         assert!(matches!(classify(&i, "audio.gguf"), Classified::Projector));
-        // A real whisper speech model (no audio_projector) is unaffected.
         let w = Gguf::new("whisper").tensor("encoder.layers.0.fc1.weight");
         assert_eq!(model(cls(&w, "w.gguf")).modality, Modality::SpeechToText);
     }
@@ -2137,7 +2002,6 @@ mod tests {
 
     #[test]
     fn a_projector_only_attaches_to_the_model_whose_size_it_matches() {
-        // A flat folder: three unrelated chat models and two projectors.
         let d = tmp("flat");
         Gguf::llm_with_dim("qwen35", "Big 27B", 5120).write(&d.join("big-27b.gguf"));
         Gguf::llm_with_dim("qwen35", "Mid 9B", 4096).write(&d.join("mid-9b.gguf"));
@@ -2182,7 +2046,6 @@ mod tests {
             "file-name affinity decides"
         );
 
-        // A projector whose name matches neither: genuinely ambiguous, so attach nothing.
         clip(4096).write(&d.join("mmproj-mystery.gguf"));
         std::fs::remove_file(d.join("mmproj-alphamodel-7b-F16.gguf")).unwrap();
         let f = discover(&d).unwrap();
@@ -2200,7 +2063,6 @@ mod tests {
     #[test]
     fn finds_models_deep_inside_a_huggingface_cache_from_the_models_root() {
         let d = tmp("deep");
-        // root/huggingface/hub/models--org--name/snapshots/<hash>/Sub-GGUF/file.gguf  (depth 6)
         let deep = d.join("huggingface/hub/models--org--name/snapshots/abc123/Voice-GGUF/v.gguf");
         Gguf::new("audiocpp")
             .string("audiocpp.model_spec.family", "voxcpm2")
@@ -2253,8 +2115,6 @@ mod tests {
         std::fs::remove_dir_all(d).ok();
     }
 
-    /// Compare detection with the hand-written catalog (the best ground truth available).
-    /// `cargo test catalog_agrees_with_detection -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn catalog_agrees_with_detection() {
@@ -2293,7 +2153,6 @@ mod tests {
             let want_engine = m.engine_plan()[0];
             match classify(&info, &p.file_name().unwrap().to_string_lossy()) {
                 Classified::Model(det) => {
-                    // Pairing a projector (a separate file) later upgrades a chat model to vision/omni.
                     let same_modality = det.modality == m.modality
                         || (det.modality == Modality::Text
                             && matches!(m.modality, Modality::VisionText | Modality::Omni));
@@ -2324,7 +2183,6 @@ mod tests {
         assert_eq!(bad, 0);
     }
 
-    /// Run with `RUNE_PROBE_DIR=D:/Models cargo test probe_real_models -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn probe_real_models() {

@@ -1,5 +1,3 @@
-//! Complete API body capture in a separate JSONL file. Bodies are copied as
-//! they pass, without collecting a request or an SSE response in memory.
 use axum::body::HttpBody;
 use axum::{body::Body, extract::Request, middleware::Next, response::Response};
 use base64::Engine;
@@ -74,8 +72,6 @@ impl PayloadLog {
     }
 }
 
-/// Enable complete payload logging for CLI HTTP routers. Embedders opt in by
-/// calling this once; library users otherwise create no payload log files.
 pub fn init(path: impl AsRef<Path>) -> io::Result<()> {
     let log = PayloadLog::open(path.as_ref())?;
     LOG.set(log).map_err(|_| {
@@ -115,7 +111,6 @@ impl Capture {
             while let Some(result) = stream.next().await {
                 match result {
                     Ok(bytes) => {
-                        // Bound each serialization allocation even for a large body frame.
                         for piece in bytes.chunks(64 * 1024) {
                             let (encoding, data) = match std::str::from_utf8(piece) {
                                 Ok(text) => ("utf8", text.to_owned()),
@@ -140,7 +135,6 @@ impl Drop for Capture {
 }
 
 pub(crate) async fn middleware(request: Request, next: Next) -> Response {
-    // Catalog edits can contain secrets even when validation later rejects them.
     if request.uri().path() == "/v1/management/catalog" {
         return next.run(request).await;
     }

@@ -3,7 +3,6 @@ use axum::http::StatusCode;
 
 use crate::types::{ApiError, ErrorResponse, FunctionCall, ToolCall};
 
-/// Validates that tools passed in the request body have valid function names.
 pub fn validate_tools(
     body_val: &serde_json::Value,
 ) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
@@ -34,7 +33,6 @@ pub fn validate_tools(
     Ok(())
 }
 
-/// Builds the system prompt injection for tool calling, structured JSON, or video modes.
 pub fn build_system_prompt(
     is_structured_mode: bool,
     structured_schema: &serde_json::Value,

@@ -1,15 +1,10 @@
-//! Shared engine inventory for the dashboard and authenticated management API.
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// Environment variable naming the directory that holds the managed engines.
 pub const ENGINES_DIR_ENV: &str = "RUNE_ENGINES_DIR";
 
 static ENGINES_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// Keep managed engines in `path` instead of `<home>/bin` (the `--engines-dir`
-/// option). Relative paths are resolved against the current directory. Must be
-/// called before the first engine lookup; later calls are ignored.
 pub fn set_engines_dir(path: &std::path::Path) -> std::io::Result<()> {
     let path = if path.is_absolute() {
         path.to_path_buf()
@@ -22,15 +17,10 @@ pub fn set_engines_dir(path: &std::path::Path) -> std::io::Result<()> {
 
 static DEFAULT_ENGINES_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// Default engine folder: `<workspace>/bin`, next to the `config/` that was
-/// resolved (a development checkout's `./bin`, `RUNE_HOME/bin` or
-/// `~/.rune/infer/bin`). Overridden by `--engines-dir` and `RUNE_ENGINES_DIR`.
 pub fn set_default_engines_dir(workspace_root: &std::path::Path) {
     let _ = DEFAULT_ENGINES_DIR.set(workspace_root.join("bin"));
 }
 
-/// Directory holding managed engine installs: `--engines-dir`, then
-/// `RUNE_ENGINES_DIR` (absolute), then the workspace's `bin/`, then `<root>/bin`.
 pub(crate) fn bin_dir(root: &std::path::Path) -> PathBuf {
     ENGINES_DIR
         .get()

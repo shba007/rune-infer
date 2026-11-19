@@ -1,13 +1,9 @@
-//! Process-wide settings for hosts embedding Infer without changing CWD.
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 static ROOT: OnceLock<PathBuf> = OnceLock::new();
 pub const WORKER_CONTRACT: &str = concat!("rune-infer-worker-v1 ", env!("CARGO_PKG_VERSION"));
 
-/// Configure engine storage for an embedded Windows host before starting Infer.
-/// An embedding host owns the process lifetime and must drain its server on exit.
-/// Only one Infer home can be used by an embedding process.
 pub fn initialize(root: &Path) -> Result<(), &'static str> {
     if !cfg!(windows) {
         return Err("Embedded Infer is currently supported on Windows only");
@@ -152,7 +148,6 @@ impl LocalServer {
         Self::start_with_config(root, config).await
     }
 
-    /// Start the complete configured catalog, including local and remote models.
     pub async fn start_catalog(root: &Path) -> Result<Self, String> {
         let config = load_catalog(root)
             .map_err(|error| format!("Cannot load the Infer catalog: {error:#}"))?;
@@ -266,7 +261,6 @@ fn absolute_local_paths(root: &Path, model: &mut crate::config::ModelConfig) {
     }
 }
 
-/// Load the configured catalog without changing the host's current directory or environment.
 pub fn load_catalog(root: &Path) -> anyhow::Result<crate::config::ModelRegistry> {
     let mut config = read_catalog(root)?;
     for model in &mut config.models {
@@ -275,7 +269,6 @@ pub fn load_catalog(root: &Path) -> anyhow::Result<crate::config::ModelRegistry>
     Ok(config)
 }
 
-/// Prepare a fresh local Infer configuration without replacing existing files.
 pub fn prepare_config(root: &Path) -> anyhow::Result<()> {
     use anyhow::{Context, ensure};
     static SETUP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -322,7 +315,6 @@ pub fn prepare_config(root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Prepare the upstream llama engine using the embedding host's home.
 pub fn install_llama_observed(
     root: &Path,
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -336,9 +328,6 @@ pub fn install_llama_observed(
     })
 }
 
-/// Load one existing local llama model without changing the host's CWD or env.
-/// Relative model paths have the same meaning as in Infer's standalone home.
-/// The returned snapshot is intentionally not hot-reloaded.
 pub fn load_local_model(
     root: &Path,
     model_id: &str,

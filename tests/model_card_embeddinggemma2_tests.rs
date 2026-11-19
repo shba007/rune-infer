@@ -54,12 +54,10 @@ fn test_embeddinggemma2_catalog_configuration() {
 fn test_embeddinggemma2_bidirectional_and_case_insensitive_lookup() {
     let registry = load_test_registry();
 
-    // Exact HF model card slug lookup
     let exact = registry.find("google/embeddinggemma-2");
     assert!(exact.is_some(), "Exact lookup failed");
     assert_eq!(exact.unwrap().id, "google/embeddinggemma-2");
 
-    // Short slug lookup (omitting organization prefix)
     let short = registry.find("embeddinggemma-2");
     assert!(
         short.is_some(),
@@ -67,7 +65,6 @@ fn test_embeddinggemma2_bidirectional_and_case_insensitive_lookup() {
     );
     assert_eq!(short.unwrap().id, "google/embeddinggemma-2");
 
-    // Case-insensitive lookups
     let upper_exact = registry.find("GOOGLE/EMBEDDINGGEMMA-2");
     assert!(upper_exact.is_some(), "Case-insensitive lookup failed");
     assert_eq!(upper_exact.unwrap().id, "google/embeddinggemma-2");
@@ -79,7 +76,6 @@ fn test_embeddinggemma2_bidirectional_and_case_insensitive_lookup() {
     );
     assert_eq!(upper_short.unwrap().id, "google/embeddinggemma-2");
 
-    // Model display name lookup
     let by_name = registry.find("Google EmbeddingGemma 2");
     assert!(by_name.is_some(), "Lookup by display name failed");
     assert_eq!(by_name.unwrap().id, "google/embeddinggemma-2");
@@ -87,7 +83,6 @@ fn test_embeddinggemma2_bidirectional_and_case_insensitive_lookup() {
 
 #[test]
 fn test_detect_classify_embeddinggemma() {
-    // 1. Architecture is explicitly "embeddinggemma"
     let info1 = GgufInfo {
         architecture: "embeddinggemma".to_string(),
         name: Some("embeddinggemma-2".to_string()),
@@ -102,7 +97,6 @@ fn test_detect_classify_embeddinggemma() {
         other => panic!("Expected Classified::Model, got {:?}", other),
     }
 
-    // 2. Architecture is "gemma" and file name contains "embedding"
     let info2 = GgufInfo {
         architecture: "gemma2".to_string(),
         name: Some("google/embeddinggemma-2".to_string()),
@@ -124,7 +118,6 @@ fn test_matryoshka_representation_learning_mrl_truncation() {
     let model = registry.find("google/embeddinggemma-2").unwrap();
     let engine = EncoderEngine::new(model).expect("Encoder engine creation");
 
-    // Default full dimension: 768
     let req_full = InferenceTaskRequest::Embedding {
         model: Some(model.id.clone()),
         input: vec!["Antigravity code intelligence search query".to_string()],
@@ -137,7 +130,6 @@ fn test_matryoshka_representation_learning_mrl_truncation() {
     };
     assert_eq!(emb_full.len(), 768);
 
-    // MRL 512 dimensions
     let req_512 = InferenceTaskRequest::Embedding {
         model: Some(model.id.clone()),
         input: vec!["Antigravity code intelligence search query".to_string()],
@@ -150,7 +142,6 @@ fn test_matryoshka_representation_learning_mrl_truncation() {
     };
     assert_eq!(emb_512.len(), 512);
 
-    // MRL 256 dimensions
     let req_256 = InferenceTaskRequest::Embedding {
         model: Some(model.id.clone()),
         input: vec!["Antigravity code intelligence search query".to_string()],
@@ -163,7 +154,6 @@ fn test_matryoshka_representation_learning_mrl_truncation() {
     };
     assert_eq!(emb_256.len(), 256);
 
-    // MRL 128 dimensions
     let req_128 = InferenceTaskRequest::Embedding {
         model: Some(model.id.clone()),
         input: vec!["Antigravity code intelligence search query".to_string()],
@@ -176,7 +166,6 @@ fn test_matryoshka_representation_learning_mrl_truncation() {
     };
     assert_eq!(emb_128.len(), 128);
 
-    // Verify Matryoshka Representation Learning directional invariance property under L2 normalization
     let norm_sub512: f32 = emb_512[..128].iter().map(|v| v * v).sum::<f32>().sqrt();
     let renorm512: Vec<f32> = emb_512[..128].iter().map(|v| v / norm_sub512).collect();
     for (a, b) in renorm512.iter().zip(emb_128.iter()) {

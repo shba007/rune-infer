@@ -173,8 +173,6 @@ fn execute_edit(
     else {
         return Err("Expected image_edit task".into());
     };
-    // Normalize uploads to the same decoded pixels used by mask preservation.
-    // This also avoids depending on the subprocess's JPEG/WEBP decoder support.
     let references = images
         .iter()
         .map(|bytes| Ok(png(&decode_image(bytes)?)?))
@@ -186,14 +184,10 @@ fn execute_edit(
         if let Some(seed) = seed {
             extra["seed"] = (*seed).into();
         }
-        // The pinned native edit route sets references but no init canvas. Both
-        // are needed for masked denoising; native masks use white for editable.
         if mask.is_some() {
             extra["init_image"] = base64::engine::general_purpose::STANDARD
                 .encode(&references[0])
                 .into();
-            // Qwen instruction edits need the full denoising schedule. The
-            // source canvas is for masked preservation, not low-strength img2img.
             extra["strength"] = 1.0.into();
         }
         format!(
@@ -351,7 +345,7 @@ mod tests {
         assert!(validate_task(&serde_json::from_value(value.clone()).unwrap()).is_ok());
         for (key, bad) in [
             ("mask", json!([1, 2, 3])),
-            ("mask", edit()["images"][0].clone()), // RGB PNG has no alpha.
+            ("mask", edit()["images"][0].clone()),
             ("size", json!("512x512")),
             (
                 "prompt",

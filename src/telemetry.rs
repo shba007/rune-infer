@@ -1,10 +1,3 @@
-//! Structured server events for UIs (the TUI dashboard, or any embedding
-//! application) built on top of `tracing`.
-//!
-//! Producers emit ordinary `tracing` events; [`EventLayer`] converts them into
-//! typed [`UiEvent`]s and forwards them over a channel. Nothing here depends on
-//! a terminal, so library users can install the layer for their own display.
-
 pub mod payload;
 mod request;
 pub(crate) use request::{request_lifecycle, set_request_model, spawn_blocking};
@@ -17,9 +10,7 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 
-/// Target used for model load/evict lifecycle events.
 pub const LIFECYCLE_TARGET: &str = "rune_infer::lifecycle";
-/// Target used for per-request audit events.
 pub const AUDIT_TARGET: &str = "audit";
 
 #[derive(Debug, Clone)]
@@ -46,7 +37,6 @@ impl RequestPhase {
 
 #[derive(Debug, Clone)]
 pub struct RequestRecord {
-    /// Stable identity across lifecycle updates; zero for standalone audit records.
     pub id: u64,
     pub phase: RequestPhase,
     pub ts: String,
@@ -55,13 +45,11 @@ pub struct RequestRecord {
     pub latency_ms: u64,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
-    /// Time spent generating (excludes model load); 0 when unknown.
     pub generation_ms: u64,
     pub error: Option<String>,
 }
 
 impl RequestRecord {
-    /// Generation throughput in tokens/second, when measurable.
     pub fn tokens_per_second(&self) -> Option<f64> {
         (self.generation_ms > 0 && self.completion_tokens > 0)
             .then(|| self.completion_tokens as f64 / (self.generation_ms as f64 / 1000.0))
@@ -96,11 +84,6 @@ fn now_ts() -> String {
     chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
-// ---------------------------------------------------------------------------
-// Producer helpers
-// ---------------------------------------------------------------------------
-
-/// Record a finished (successful) inference request.
 pub fn record_completion(
     model: &str,
     latency_ms: u128,
@@ -129,7 +112,6 @@ pub fn record_completion(
     );
 }
 
-/// Record a failed inference request.
 pub fn record_failure(model: &str, status: u16, latency_ms: u128, error: &str) {
     let request_id = request::failure(model, status, latency_ms, error);
     tracing::warn!(
@@ -179,10 +161,6 @@ pub fn model_failed(model: &str, error: &str) {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Tracing layer
-// ---------------------------------------------------------------------------
-
 #[derive(Default)]
 struct Fields {
     message: String,
@@ -227,7 +205,6 @@ impl Fields {
     }
 }
 
-/// A `tracing` layer that forwards every event as a [`UiEvent`].
 pub struct EventLayer {
     tx: UnboundedSender<UiEvent>,
 }

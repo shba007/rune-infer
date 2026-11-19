@@ -1,4 +1,3 @@
-//! `POST /v1/videos/generations`: text-to-video, returned as a base64 container.
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;

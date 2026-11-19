@@ -1,4 +1,3 @@
-//! Shared engine release lookup for the dashboard and management API.
 use crate::engine_inventory::{EngineRow, install_engine_kind};
 use std::time::Duration;
 
@@ -307,8 +306,6 @@ pub(crate) fn engine_action(engine: &EngineRow) -> EngineAction {
     engine_action_on(engine, std::env::consts::OS, std::env::consts::ARCH)
 }
 
-// Share eligibility between the action hint and dispatch. The installer still
-// selects and verifies a compatible package before replacing engine files.
 pub(crate) fn engine_action_on(engine: &EngineRow, os: &str, arch: &str) -> EngineAction {
     let unavailable = |reason: &str| EngineAction::Unavailable(reason.into());
     if engine.name == "encoder" {

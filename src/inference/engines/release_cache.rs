@@ -1,4 +1,3 @@
-//! Public GitHub release metadata only; credentials and engine packages are never cached here.
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -313,8 +312,6 @@ fn remember(outcome: Outcome) -> Option<Value> {
     outcome.entry.value.filter(|_| outcome.entry.status != 404)
 }
 
-/// Save complete successful resolutions too, so a partial failed refresh cannot
-/// replace a known release with "Check failed" or refetch build-pointer files.
 pub(crate) fn resolved_release(
     key: &str,
     work: impl FnOnce() -> Result<Value, Box<dyn Error>>,

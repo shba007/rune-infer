@@ -1,27 +1,3 @@
-//! The on-disk model catalog format (`schema_version: 2`).
-//!
-//! Every model has the same core keys. Local models carry a `local` block,
-//! cloud models a `remote` block, and anything specific to one engine lives in
-//! the free-form `extra` object, which is validated against the engines the
-//! model supports so typos are caught when the config loads.
-//!
-//! ```json
-//! {
-//!   "id": "qwen3.8-27b", "name": "Qwen3.8 27B", "description": "",
-//!   "modality": "VisionText",
-//!   "capabilities": ["Chat", "Vision"],
-//!   "engine": { "supported": ["llama-server"], "preferred": "llama-server" },
-//!   "max_context_length": 262144,
-//!   "sampling": { "temperature": 0.6 },
-//!   "local": { "path": "D:/Models/q.gguf", "params": null, "bits_per_weight": null,
-//!              "context_length": -1, "gpu_layers": 99, "args": "" },
-//!   "extra": { "mmproj_path": "D:/Models/mmproj.gguf" }
-//! }
-//! ```
-//!
-//! The loader converts these entries into the flat [`ModelConfig`] the rest of
-//! the server uses; `rune-infer migrate` upgrades a v1 file.
-
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -141,7 +117,6 @@ fn write_catalog_value(out: &mut String, value: &Value, path: &mut Vec<String>, 
             let route: Vec<&str> = path.iter().map(String::as_str).collect();
             let order = catalog_key_order(&route);
             let mut keys: Vec<&String> = map.keys().collect();
-            // Listed keys first in their canonical order; the rest stay alphabetical.
             keys.sort_by_key(|key| {
                 order
                     .iter()
@@ -165,7 +140,6 @@ fn write_catalog_value(out: &mut String, value: &Value, path: &mut Vec<String>, 
             out.push_str("[\n");
             for (index, item) in items.iter().enumerate() {
                 pad(out, depth + 1);
-                // Array positions are unnamed in the key-order lookup, except models.
                 path.push(index.to_string());
                 write_catalog_value(out, item, path, depth + 1);
                 path.pop();
@@ -178,12 +152,6 @@ fn write_catalog_value(out: &mut String, value: &Value, path: &mut Vec<String>, 
     }
 }
 
-/// Render a catalog document in the canonical, hand-maintained layout.
-///
-/// `serde_json::Value` objects are key-sorted, so writers that edit the raw JSON
-/// used to emit models with alphabetical keys. This prints the same data with
-/// each model's fields in schema order (`id`, `name`, ..., `tasks`, `engine`,
-/// `local`, `extra`, ...). Values are never altered, only their order.
 pub fn render_catalog(value: &Value) -> Result<String> {
     let mut out = String::new();
     write_catalog_value(&mut out, value, &mut Vec::new(), 0);
@@ -228,7 +196,6 @@ pub struct ModelEntry {
     pub aliases: Vec<String>,
     #[serde(default)]
     pub roles: Vec<String>,
-    /// Required for local models, forbidden for cloud models.
     #[serde(default)]
     pub engine: Option<EngineConfig>,
     #[serde(default)]
@@ -239,10 +206,8 @@ pub struct ModelEntry {
     pub local: Option<LocalBlock>,
     #[serde(default)]
     pub remote: Option<RemoteBlock>,
-    /// Engine-specific settings; see [`allowed_extra_keys`].
     #[serde(default)]
     pub extra: Map<String, Value>,
-    /// Benchmark and evaluation metrics (e.g. Artificial Analysis Intelligence Index).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub benchmarks: Option<BenchmarkMetrics>,
 }
@@ -321,7 +286,6 @@ impl Serialize for ModelEntry {
         }
         map.serialize_entry("max_context_length", &self.max_context_length)?;
         if self.tasks.is_empty() {
-            // Preserve legacy routing facts without inventing verified tasks.
             map.serialize_entry("modality", &self.modality)?;
         } else {
             map.serialize_entry("tasks", &self.tasks)?;
@@ -362,12 +326,10 @@ pub struct LocalBlock {
     pub params: Option<u64>,
     #[serde(default)]
     pub bits_per_weight: Option<f64>,
-    /// Context window in tokens, `-1` = chosen automatically from free VRAM.
     #[serde(default = "default_context_length")]
     pub context_length: i64,
     #[serde(default = "default_gpu_layers")]
     pub gpu_layers: u32,
-    /// Extra command-line arguments passed verbatim to the engine process.
     #[serde(default)]
     pub args: String,
 }
@@ -396,7 +358,6 @@ fn default_gpu_layers() -> u32 {
     99
 }
 
-/// The `extra` keys each engine understands.
 pub fn allowed_extra_keys(kind: EngineKind) -> &'static [&'static str] {
     match kind {
         EngineKind::LlamaServer | EngineKind::LlamaServerPrism => {
@@ -426,7 +387,6 @@ pub fn allowed_extra_keys(kind: EngineKind) -> &'static [&'static str] {
     }
 }
 
-/// Typed view of `extra` (every key optional).
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExtraFields {

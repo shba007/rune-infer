@@ -1,9 +1,3 @@
-//! First-run setup logic: prerequisite detection, local model discovery,
-//! cloud provider presets and safe config/`.env` generation.
-//!
-//! This module is UI-agnostic (no terminal code) so it can be unit tested and
-//! reused by other front-ends; the interactive wizard lives in `tui::wizard`.
-
 mod registry;
 #[cfg(test)]
 pub(crate) use registry::fixture_model;
@@ -28,10 +22,6 @@ use crate::config::{
 };
 use crate::schema::{CatalogFile, LocalBlock, ModelEntry, RemoteBlock, SCHEMA_VERSION, ServerFile};
 
-// ---------------------------------------------------------------------------
-// Prerequisites
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone)]
 pub struct GpuInfo {
     pub name: String,
@@ -48,7 +38,6 @@ pub struct Prerequisites {
     pub llama_server_installed: bool,
 }
 
-/// Probe the host. Spawns `nvidia-smi` / `ffmpeg`, so call off the UI thread.
 pub fn detect_prerequisites(home: &Path) -> Prerequisites {
     Prerequisites {
         os: std::env::consts::OS,
@@ -116,13 +105,10 @@ fn llama_server_installed(home: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Download (or locate) the upstream `llama-server` engine.
 pub fn install_llama_server() -> Result<PathBuf, String> {
     install_engine(EngineKind::LlamaServer)
 }
 
-/// Install or reuse a selected external engine without starting a model process.
-/// Uses the same installation locations and resolvers as request-time loading.
 pub fn install_engine(engine: EngineKind) -> Result<PathBuf, String> {
     use crate::inference::engines::{
         audio::AudioEngine,
@@ -159,7 +145,6 @@ pub fn install_engine(engine: EngineKind) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Keep compatible selections in preference order; the first engine is the default.
 pub fn select_local_engines(
     models: &[LocalCandidate],
     choices: &[Vec<EngineKind>],
@@ -195,18 +180,11 @@ pub fn select_local_engines(
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Secrets
-// ---------------------------------------------------------------------------
-
-/// Generate a `rune-` prefixed random API key (256 bits).
 pub fn generate_api_key() -> String {
     use sha2::{Digest, Sha256};
     use std::hash::{BuildHasher, Hasher};
 
     let mut hasher = Sha256::new();
-    // `RandomState` is seeded from the OS CSPRNG; mix several independent
-    // instances with the clock and pid so keys never repeat.
     for _ in 0..8 {
         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
         h.write_u128(
@@ -221,14 +199,9 @@ pub fn generate_api_key() -> String {
     format!("rune-{}", hex::encode(hasher.finalize()))
 }
 
-// ---------------------------------------------------------------------------
-// Cloud providers
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, Copy)]
 pub struct ProviderPreset {
     pub label: &'static str,
-    /// Value for the config `provider` field.
     pub provider: &'static str,
     pub env_var: &'static str,
     pub base_url: &'static str,
@@ -266,26 +239,15 @@ pub const PROVIDERS: &[ProviderPreset] = &[
     },
 ];
 
-/// Validate credentials using the same authenticated discovery path as setup.
 pub fn validate_provider_key(preset: &ProviderPreset, key: &str) -> Result<(), String> {
     list_provider_models(preset, key).map(|_| ())
 }
 
-// ---------------------------------------------------------------------------
-// Local model discovery lives in `crate::detect`
-// ---------------------------------------------------------------------------
-
 pub use crate::detect::{Discovery, LocalCandidate, Skipped, discover as discover_models};
-
-// ---------------------------------------------------------------------------
-// Config generation
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Exposure {
-    /// 127.0.0.1 — only this computer.
     Local,
-    /// 0.0.0.0 — reachable from the network.
     Network,
 }
 
@@ -309,7 +271,6 @@ pub struct CloudChoice {
 pub struct SetupPlan {
     pub exposure: Exposure,
     pub port: u16,
-    /// Plain-text server API key (stored in `.env`, referenced from config).
     pub server_api_key: Option<String>,
     pub cloud: Vec<CloudChoice>,
     pub local: Vec<LocalCandidate>,
@@ -406,7 +367,6 @@ fn local_entry(c: &LocalCandidate, gpu: bool) -> ModelEntry {
             } else {
                 0
             },
-            // Enable flash attention and quantized KV cache for performance and VRAM safety
             args: if c.engine() == EngineKind::SdServer {
                 "--diffusion-fa".to_string()
             } else if gpu
@@ -460,9 +420,6 @@ fn cloud_entry(c: &CloudChoice) -> ModelEntry {
     }
 }
 
-/// Merge `plan` into `server_path` and `catalog_path` (creating them when absent) and
-/// the secrets into `env_path`. Existing models with the same id are kept
-/// untouched. Returns the number of models added.
 pub fn write_setup(
     plan: &SetupPlan,
     server_path: &Path,
@@ -484,7 +441,6 @@ pub fn write_setup(
     )
 }
 
-/// Save verified local task metadata; cloud entries remain unverified.
 pub fn write_verified_setup(
     plan: &SetupPlan,
     prepared: Option<&PreparedLocal>,
@@ -607,8 +563,6 @@ fn write_setup_inner(
         .into_iter()
         .chain(plan.cloud.iter().map(cloud_entry));
     for mut entry in new_entries {
-        // Re-running setup must not duplicate a model it already added, but two
-        // different files that slug to the same id both need to be kept.
         let same_source = |m: &ModelEntry| {
             m.id == entry.id
                 && match (&m.local, &entry.local) {
@@ -702,7 +656,6 @@ fn write_setup_inner(
 
     merge_env_file(env_path, &secrets)?;
 
-    // Fail now (not at next start-up) if what we wrote doesn't load.
     ModelRegistry::from_files_with_env(server_path, catalog_path, &secrets)
         .context("generated config failed validation")?;
     Ok(added)
@@ -718,8 +671,6 @@ fn env_quote(v: &str) -> String {
     }
 }
 
-/// Upsert `KEY=value` lines, preserving all other content, and restrict file
-/// permissions to the owner on unix.
 pub fn merge_env_file(path: &Path, secrets: &[(String, String)]) -> Result<()> {
     let existing = std::fs::read_to_string(path).unwrap_or_default();
     let mut remaining: BTreeMap<&str, &str> = secrets
@@ -902,7 +853,6 @@ mod tests {
         std::fs::remove_dir_all(dir).ok();
     }
 
-    /// `RUNE_PROBE_DIR=D:/Models RUNE_PROBE_OUT=/tmp/out cargo test write_probe_config -- --ignored`
     #[test]
     #[ignore]
     fn write_probe_config() {

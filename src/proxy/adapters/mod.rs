@@ -14,7 +14,6 @@ pub type BoxEventStream = Pin<
     Box<dyn Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + Send>,
 >;
 
-/// Dispatches a chat completion request to the corresponding cloud provider adapter.
 pub async fn dispatch_chat(
     client: &reqwest::Client,
     config: &ModelConfig,
@@ -33,8 +32,6 @@ pub async fn dispatch_chat(
     }
 }
 
-/// Helper function to parse an incoming reqwest byte stream into individual SSE data lines.
-/// Normalizes CRLF (\r\n) to LF (\n) to universally match any provider's SSE framing.
 pub fn parse_sse_stream(
     mut stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
 ) -> impl Stream<Item = String> + Send {
@@ -47,7 +44,6 @@ pub fn parse_sse_stream(
                 let chunk = String::from_utf8_lossy(&bytes);
                 buffer.push_str(&chunk);
 
-                // Universal newline normalization: converts \r\n and \r into \n
                 buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
 
                 while let Some(pos) = buffer.find("\n\n") {
@@ -75,7 +71,6 @@ pub fn parse_sse_stream(
             }
         }
 
-        // Flush any trailing buffer data
         buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
         let mut event_data = String::new();
         for line in buffer.lines() {
@@ -96,7 +91,6 @@ pub fn parse_sse_stream(
     }
 }
 
-/// Helper function to parse data URI into MIME type and base64 string.
 pub fn parse_data_uri(uri: &str) -> Option<(String, String)> {
     if let Some(rest) = uri.strip_prefix("data:") {
         if let Some((header, b64)) = rest.split_once(',') {

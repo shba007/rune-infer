@@ -67,7 +67,6 @@ pub fn key_hint<'a>(key: &'a str, what: &'a str) -> Vec<Span<'a>> {
     ]
 }
 
-/// Center a box of at most `w`×`h` inside `area`.
 pub fn centered(area: Rect, w: u16, h: u16) -> Rect {
     let [v] = Layout::vertical([Constraint::Max(h)])
         .flex(Flex::Center)
@@ -97,10 +96,7 @@ pub fn human_duration(secs: u64) -> String {
     )
 }
 
-/// Apply terminal compatibility across every widget in a frame.
 pub fn terminal_compatibility(f: &mut ratatui::Frame) {
-    // Apply terminal compatibility to the complete frame, including borders,
-    // locality tags and dots rather than only the sparkline widget.
     let no_color = is_no_color();
     let ascii = std::env::var_os("RUNE_ASCII").is_some();
     if no_color || ascii {

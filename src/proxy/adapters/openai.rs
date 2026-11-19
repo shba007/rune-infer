@@ -35,7 +35,6 @@ pub async fn execute_chat(
             serde_json::Value::String(upstream_model),
         );
 
-        // If reasoning_effort wasn't explicitly set in request, check catalog sampling default
         if !obj.contains_key("reasoning_effort") {
             if let Some(effort) = config
                 .sampling
@@ -49,7 +48,6 @@ pub async fn execute_chat(
             }
         }
 
-        // If client provided thinking: false or disabled, normalize reasoning_effort to "none"
         if request.normalized_thinking() == crate::types::NormalizedThinking::Disabled {
             obj.insert(
                 "reasoning_effort".to_string(),

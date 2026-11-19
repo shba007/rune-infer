@@ -1,5 +1,3 @@
-//! LiteRT 2.3.0 C ABI, used only by the isolated worker subprocess.
-//! ABI source: the checksum-pinned official v2.3.0 C++ SDK's litert/c headers.
 #[cfg(all(windows, target_arch = "x86_64"))]
 #[allow(non_snake_case)]
 mod windows {
@@ -48,7 +46,6 @@ mod windows {
                 "Missing LiteRT symbol {}",
                 String::from_utf8_lossy(name)
             );
-            // Each use below names the function signature from the pinned C ABI.
             Ok(unsafe { std::mem::transmute_copy(&address) })
         }
     }
@@ -56,7 +53,6 @@ mod windows {
         anyhow::ensure!(status == 0, "LiteRT status {status}");
         Ok(())
     }
-    // Owned native objects are destroyed in reverse order, before unloading the DLL.
     struct Owned {
         handle: Handle,
         destroy: unsafe extern "C" fn(Handle),
@@ -77,7 +73,6 @@ mod windows {
             .encode_wide()
             .chain(Some(0))
             .collect();
-        // Search only this DLL's directory and System32, never CWD or PATH.
         let library = Library(unsafe { LoadLibraryExW(path.as_ptr(), ptr::null_mut(), 0x900) });
         anyhow::ensure!(
             !library.0.is_null(),
@@ -220,7 +215,6 @@ mod windows {
                 destroy: unsafe { library.symbol(b"LiteRtDestroyTensorBuffer\0")? },
             })
         }
-        // The entire ABI boundary runs inside this subprocess, never the gateway.
         #[allow(non_snake_case)]
         unsafe {
             let env = owned!(

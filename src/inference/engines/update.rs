@@ -202,8 +202,6 @@ fn stage_engine_install(
     result
 }
 
-// Only a regular, link-free directory without an engine executable is eligible
-// for install recovery. Never turn installation into an implicit update.
 fn incomplete_installation(destination: &Path, kind: EngineKind) -> UpdateResult<bool> {
     let meta = match std::fs::symlink_metadata(destination) {
         Ok(meta) => meta,
@@ -1670,8 +1668,6 @@ fn version_matches(output: &str, tag: &str) -> bool {
     !version.is_empty() && output.split_whitespace().any(|part| part == version)
 }
 
-// Delete only known old audio.cpp runtime binaries and exact duplicate files.
-// Differing extra files stay in the backup instead of being silently discarded.
 fn cleanup_backup(backup: &Path, current: &Path) -> UpdateResult<bool> {
     cleanup_backup_for(backup, current, BackupKind::Audio)
 }
@@ -2037,7 +2033,6 @@ mod tests {
             package.sha256,
             current.display()
         );
-        // Retain the isolated package for review/reuse, not in the active bin directory.
     }
 
     fn root() -> PathBuf {
@@ -2265,7 +2260,6 @@ mod tests {
         );
         assert!(!current.join("old.dll").exists());
         assert!(current.join("whisper-cli.exe").exists());
-        // An empty folder is eligible, but a nested executable is an installed engine.
         let empty = bin.join("empty");
         std::fs::create_dir(&empty).unwrap();
         assert!(incomplete_installation(&empty, EngineKind::WhisperCpp).unwrap());

@@ -1,15 +1,4 @@
 #!/bin/sh
-# Rune Infer installer for Linux and macOS.
-#
-#   curl -fsSL https://raw.githubusercontent.com/shba007/rune-infer/main/install.sh | sh
-#
-# Environment overrides:
-#   RUNE_VERSION      release tag to install (default: latest), e.g. v0.2.0
-#   RUNE_INSTALL_DIR  where to put the binary (default: ~/.rune)
-#   RUNE_REPO         GitHub repo (default: shba007/rune-infer)
-#   RUNE_BASE_URL     download base URL or local directory (mirrors / offline installs)
-#   RUNE_PLATFORM     force a platform name, e.g. linux-x64 (advanced)
-#   RUNE_SKIP_VERIFY  set to 1 to skip the SHA-256 check (not recommended)
 set -eu
 
 REPO="${RUNE_REPO:-shba007/rune-infer}"
@@ -25,7 +14,6 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# ---- platform ---------------------------------------------------------------
 detect_platform() {
   if [ -n "${RUNE_PLATFORM:-}" ]; then printf '%s' "$RUNE_PLATFORM"; return; fi
   os=$(uname -s)
@@ -60,7 +48,6 @@ else
   BASE="https://github.com/$REPO/releases/download/$VERSION"
 fi
 
-# ---- download helpers -------------------------------------------------------
 fetch() { # fetch <name> <dest>
   src="$BASE/$1"
   if [ -d "$BASE" ]; then
@@ -92,7 +79,6 @@ trap 'if [ "$KEEP_TMP" = 0 ]; then rm -rf "$TMP"; else warn "backup retained in 
 say "Installing Rune Infer ($PLATFORM, $VERSION)..."
 fetch "$ARCHIVE" "$TMP/$ARCHIVE"
 
-# ---- integrity --------------------------------------------------------------
 if [ "${RUNE_SKIP_VERIFY:-0}" = "1" ]; then
   warn "skipping checksum verification"
 else
@@ -103,7 +89,6 @@ else
   say "Checksum verified."
 fi
 
-# ---- install ----------------------------------------------------------------
 tar -xzf "$TMP/$ARCHIVE" -C "$TMP" || die "could not unpack $ARCHIVE"
 [ -f "$TMP/$BIN" ] || die "archive did not contain '$BIN'"
 
@@ -120,7 +105,6 @@ if [ -e "$INSTALL_DIR/$BIN" ]; then
   case "$prior" in 'rune-infer '[0-9]*.[0-9]*.[0-9]*) ;; *) die "destination conflict: existing file was not overwritten" ;; esac
   cp -p "$INSTALL_DIR/$BIN" "$TMP/previous" || die "cannot preserve existing executable"
 fi
-# mktemp prevents overwriting an unrelated .new file or the other product.
 STAGED=$(mktemp "$INSTALL_DIR/.rune-infer-install.XXXXXX") || die "cannot stage executable"
 if ! { cp "$TMP/$BIN" "$STAGED" && chmod 755 "$STAGED" && mv -f "$STAGED" "$INSTALL_DIR/$BIN"; }; then
   rm -f "$STAGED"
@@ -141,8 +125,6 @@ fi
 if [ "$upgrade" = 1 ]; then say "Upgraded: $INSTALL_DIR/$BIN"; else say "Installed: $INSTALL_DIR/$BIN"; fi
 say "$installed"
 
-# Persistent PATH entry with a runtime guard; repeated installs and Kit coexistence
-# do not append another copy. Explicit opt-out leaves user profiles untouched.
 if [ "${RUNE_NO_MODIFY_PATH:-0}" != 1 ]; then
   case "${HOME:-}" in /*) ;; *) die "cannot resolve home for PATH update; set RUNE_NO_MODIFY_PATH=1" ;; esac
   case "${SHELL:-}" in */zsh) PROFILE="$HOME/.zprofile" ;; *) PROFILE="$HOME/.profile" ;; esac

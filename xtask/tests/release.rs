@@ -166,8 +166,6 @@ fn publication_is_title_independent_and_distinguishes_noop_from_invalid() {
         generator: None,
         notes_sha256: None,
     };
-    // No commit subject is an input: update-version, arbitrary merge titles and
-    // direct main pushes all receive the same metadata/version validation.
     assert!(pending_release(&v("0.8.0"), &v("0.7.0"), Some(&state)).unwrap());
     assert!(!pending_release(&v("0.8.0"), &v("0.8.0"), Some(&state)).unwrap());
     assert!(!pending_release(&v("0.8.0"), &v("0.8.0"), None).unwrap());

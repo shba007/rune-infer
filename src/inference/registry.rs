@@ -78,9 +78,6 @@ impl ModelRegistry {
         }
     }
 
-    /// Unload engines that have been idle for at least `idle`, returning their
-    /// ids. An engine that is still referenced elsewhere is mid-request: it is
-    /// never evicted and its idle clock restarts.
     pub fn evict_idle(&mut self, idle: Duration) -> Vec<String> {
         let now = Instant::now();
         let mut victims = Vec::new();
@@ -119,7 +116,6 @@ impl ModelRegistry {
         self.config = new_config;
     }
 
-    /// Check if a model is already loaded and ready in memory.
     pub fn get_loaded(&mut self, id: &str) -> Option<Arc<dyn InferenceEngine>> {
         if let Some(engine) = self.engines.get(id).cloned() {
             self.touch_lru(id);
@@ -136,7 +132,6 @@ impl ModelRegistry {
         None
     }
 
-    /// Check if a model is currently in the process of being loaded.
     pub fn get_loading(&self, id: &str) -> Option<Arc<LoadBarrier>> {
         if let Some(barrier) = self.loading.get(id).cloned() {
             return Some(barrier);
@@ -147,9 +142,6 @@ impl ModelRegistry {
         None
     }
 
-    /// Prepare state to load a model: verifies configuration, evicts LRU if capacity
-    /// is reached, registers a LoadBarrier, and returns configurations needed to create
-    /// the engine outside the lock.
     pub fn prepare_load(
         &mut self,
         id: &str,
@@ -187,7 +179,6 @@ impl ModelRegistry {
         ))
     }
 
-    /// Record successful load into the registry and telemetry, clearing the loading entry.
     pub fn finish_load(
         &mut self,
         model: &ModelConfig,
@@ -196,7 +187,6 @@ impl ModelRegistry {
         load_started: Instant,
         vram_before: Option<u64>,
     ) {
-        // The catalog may have reloaded while the engine was starting.
         let canonical_id = model.id.clone();
 
         let vram_detail = match (vram_before, Self::detect_used_gpu_vram()) {
@@ -238,7 +228,6 @@ impl ModelRegistry {
         self.engines.contains_key(id)
     }
 
-    /// Record load failure in telemetry and clear the loading entry.
     pub fn fail_load(&mut self, id: &str, err_msg: &str) {
         let canonical_id = self
             .config
@@ -296,7 +285,6 @@ impl ModelRegistry {
         if self.lru_keys.is_empty() {
             return None;
         }
-        // Prefer evicting an engine that is not currently referenced by an active request
         let victim_idx = self
             .lru_keys
             .iter()
@@ -324,8 +312,6 @@ impl ModelRegistry {
         }
     }
 
-    // --- Delegated Formatting & VRAM Helpers ---
-
     #[inline]
     pub fn format_bytes(bytes: u64) -> String {
         crate::inference::budget::format_bytes(bytes)
@@ -351,8 +337,6 @@ impl ModelRegistry {
         crate::inference::budget::detect_used_gpu_vram()
     }
 
-    /// Start an engine for `model`, trying the configured engines in order
-    /// (preferred first) until one starts. Returns the engine and which kind won.
     pub fn create_engine(
         model: &ModelConfig,
         server: &ServerConfig,
@@ -371,7 +355,6 @@ impl ModelRegistry {
         })
     }
 
-    /// Walk `model.engine_plan()`, returning the first engine `build` can start.
     fn start_first_working(
         model: &ModelConfig,
         mut build: impl FnMut(
@@ -766,7 +749,7 @@ mod tests {
         let mut r = registry_with(&["busy"]);
         r.last_used
             .insert("busy".into(), Instant::now() - Duration::from_secs(600));
-        let in_flight = r.engines.get("busy").cloned().unwrap(); // a handler holds it
+        let in_flight = r.engines.get("busy").cloned().unwrap();
 
         assert!(r.evict_idle(Duration::from_secs(300)).is_empty());
         assert!(r.last_used["busy"].elapsed() < Duration::from_secs(5));

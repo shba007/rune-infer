@@ -74,7 +74,6 @@ pub(crate) fn windows_audio_assets(
         let companion_name = name.replacen("-bin-windows-", "-cudart-windows-", 1);
         let companion = assets.iter().find(|asset| asset["name"].as_str() == Some(&companion_name))
             .ok_or("Selected audio.cpp CUDA build has no matching runtime archive; installation refused.")?;
-        // Install dependencies first, so an interrupted setup cannot leave a bare executable.
         return Ok(vec![companion, binary]);
     }
     assets
@@ -182,7 +181,7 @@ pub(crate) fn validate_task(task: &InferenceTaskRequest) -> Result<(), &'static 
 fn check_ram_budget(id: &str, model_path: &Path, backend: &str) -> Result<(), Box<dyn Error>> {
     let total_system_ram =
         crate::inference::budget::detect_total_system_ram().unwrap_or(32 * 1024 * 1024 * 1024);
-    let ram_limit_bytes = ((total_system_ram as f64) * 0.20) as u64; // 20% limit
+    let ram_limit_bytes = ((total_system_ram as f64) * 0.20) as u64;
     let model_size_bytes = std::fs::metadata(model_path).map(|m| m.len()).unwrap_or(0);
     if backend == "cpu" && model_size_bytes > ram_limit_bytes {
         return Err(format!(
@@ -445,7 +444,6 @@ impl AudioEngine {
         temp_dir: &Path,
         req_id: &str,
     ) -> Result<PathBuf, Box<dyn Error>> {
-        // Check if the audio is already a standard 16 kHz 16-bit mono PCM WAV
         if audio_bytes.len() >= 44
             && &audio_bytes[0..4] == b"RIFF"
             && &audio_bytes[8..12] == b"WAVE"
@@ -493,7 +491,6 @@ impl AudioEngine {
             }
         }
 
-        // For MP3, AAC, OGG, or non-PCM audio, convert to 16 kHz 16-bit mono PCM WAV
         let safe_filename = std::path::Path::new(filename)
             .file_name()
             .and_then(|n| n.to_str())
@@ -661,7 +658,6 @@ impl InferenceEngine for AudioEngine {
                                 format!("Process exited with status {:?}", out.status.code())
                             };
 
-                            // For mock test paths (e.g. CI running with Cargo.toml as dummy weights), provide a fallback
                             if is_mock && self.allow_synthetic_fallback {
                                 transcript = prompt
                                     .clone()

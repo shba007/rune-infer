@@ -337,8 +337,6 @@ impl ModelRegistry {
         Self::from_file_with_env(path, &[])
     }
 
-    /// Load a config, resolving `{{VAR}}` from `overrides` first and the
-    /// process environment second (used to validate before `.env` is loaded).
     pub fn from_file_with_env<P: AsRef<Path>>(
         path: P,
         overrides: &[(String, String)],
@@ -370,7 +368,6 @@ impl ModelRegistry {
         Ok(registry)
     }
 
-    /// Parse a (placeholder-free) config document of the current schema.
     pub fn from_json(json: &str, origin: Option<&str>) -> Result<Self> {
         #[derive(Deserialize)]
         struct Version {
@@ -427,17 +424,11 @@ impl ModelRegistry {
             .unwrap_or(after_slash)
     }
 
-    /// Resolve a requested model name: exact id, then case-insensitive id or
-    /// display name. If nothing matches, generic OpenAI-SDK default names
-    /// ("text-embedding-3-small", "whisper-1", "tts-1", ...) fall back to the
-    /// first configured model of the matching modality. There are no
-    /// model- or provider-specific shortcuts: give each model its own id.
     pub fn find(&self, id: &str) -> Option<&ModelConfig> {
         self.models
             .iter()
             .find(|m| m.id == id)
             .or_else(|| {
-                // Check server-level roles and aliases
                 if let Some(target) = self.roles.get(id).or_else(|| self.aliases.get(id)) {
                     self.models.iter().find(|m| m.id == *target)
                 } else {
@@ -445,7 +436,6 @@ impl ModelRegistry {
                 }
             })
             .or_else(|| {
-                // Check model-level roles and aliases
                 self.models.iter().find(|m| {
                     m.roles.iter().any(|r| r.eq_ignore_ascii_case(id))
                         || m.aliases.iter().any(|a| a.eq_ignore_ascii_case(id))
@@ -511,7 +501,6 @@ pub fn interpolate_env_vars(raw: &str) -> Result<String> {
     interpolate_with(raw, &|name| std::env::var(name).ok())
 }
 
-/// Like [`interpolate_env_vars`] but resolving names through `lookup`.
 pub fn interpolate_with(raw: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<String> {
     let mut result = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
@@ -557,31 +546,19 @@ pub fn interpolate_with(raw: &str, lookup: &dyn Fn(&str) -> Option<String>) -> R
     Ok(result)
 }
 
-/// Inference backends a local model can run on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum EngineKind {
-    /// ONNX Runtime object detection.
     Onnx,
-    /// LiteRT CompiledModel CPU adapter for reviewed .tflite artifacts.
     Litert,
-    /// llama.cpp `llama-server` (upstream build): GGUF text and vision models.
     LlamaServer,
-    /// llama.cpp `llama-server` (Prism build): ternary Bonsai models.
     LlamaServerPrism,
-    /// stable-diffusion.cpp `sd-server`: image generation.
     SdServer,
-    /// audio.cpp: Audio8 speech models.
     AudioCpp,
-    /// NeMo-Speech.cpp: Parakeet / FastConformer speech models.
     NemoSpeech,
-    /// CrispASR: Whisper-family and other speech models.
     Crispasr,
-    /// whisper.cpp server for original Whisper GGML models.
     WhisperCpp,
-    /// Native Rust encoders (embeddings, moderation, NLU, vision encoders).
     Encoder,
-    /// Cactus Needle (`.cact`) tool-calling engine.
     Needle,
 }
 
@@ -609,15 +586,6 @@ impl std::fmt::Display for EngineKind {
     }
 }
 
-/// Which engines may serve a model and which one to try first.
-///
-/// ```json
-/// "engine": { "supported": ["nemo-speech", "crispasr"], "preferred": "nemo-speech" }
-/// ```
-///
-/// The preferred engine is tried first; if it fails to start, the remaining
-/// `supported` engines are tried in the order listed. `preferred` defaults to
-/// the first supported engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineConfig {
     pub supported: Vec<EngineKind>,
@@ -680,7 +648,6 @@ impl EngineConfig {
         Ok(())
     }
 
-    /// Engines in the order they should be tried.
     pub fn plan(&self) -> Vec<EngineKind> {
         let first = self.preferred.unwrap_or(self.supported[0]);
         std::iter::once(first)
@@ -689,9 +656,6 @@ impl EngineConfig {
     }
 }
 
-/// Default sampling parameters for a model. Every field is optional; a value
-/// supplied in the request wins, then this config, then the engine's own
-/// built-in default.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SamplingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -709,7 +673,6 @@ pub struct SamplingConfig {
 }
 
 impl SamplingConfig {
-    /// `self` (per-request values) layered over `defaults` (model config).
     pub fn over(&self, defaults: &SamplingConfig) -> SamplingConfig {
         SamplingConfig {
             temperature: self.temperature.or(defaults.temperature),
@@ -748,17 +711,13 @@ impl SamplingConfig {
     }
 }
 
-/// Engine process settings for a local model (the file's `local` block).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeConfig {
-    /// Context window in tokens; `-1` = automatic.
     pub context_length: i64,
     pub gpu_layers: u32,
     pub extra_args: Option<String>,
 }
 
-/// A LoRA adapter listed under `extra.lora`. Parsed and validated, but not
-/// applied by any engine yet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoraConfig {
@@ -782,8 +741,6 @@ pub struct ImageReferenceVerification {
     pub masked_counts: Vec<u8>,
 }
 
-/// A model as the rest of the server sees it, flattened from the file's
-/// [`ModelEntry`](crate::schema::ModelEntry).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelConfig {
     pub id: String,
@@ -801,9 +758,7 @@ pub struct ModelConfig {
     pub text_encoder_path: Option<String>,
     pub tokenizer_path: Option<String>,
     pub llm_vision_path: Option<String>,
-    /// LTX-2 text embedding connectors (`--embeddings-connectors`).
     pub embeddings_connectors_path: Option<String>,
-    /// LTX-2 audio VAE (`--audio-vae`).
     pub audio_vae_path: Option<String>,
     pub default_steps: Option<u32>,
     pub default_cfg_scale: Option<f32>,
@@ -821,7 +776,6 @@ pub struct ModelConfig {
     pub structured_output_support: Option<crate::audio_operations::OperationSupport>,
     pub image_reference_checks: Vec<ImageReferenceVerification>,
     pub sampling: Option<SamplingConfig>,
-    /// `Some` for local models, `None` for cloud models.
     pub engine: Option<EngineConfig>,
     pub lora: Vec<LoraConfig>,
     pub runtime: Option<RuntimeConfig>,
@@ -1093,8 +1047,6 @@ impl ModelConfig {
         Ok(())
     }
 
-    /// Engines to try, in order: the configured preference first, then the other
-    /// supported engines. Empty for cloud models.
     pub fn engine_plan(&self) -> Vec<EngineKind> {
         self.engine
             .as_ref()
@@ -1102,7 +1054,6 @@ impl ModelConfig {
             .unwrap_or_default()
     }
 
-    /// Whether the model accepts image input.
     pub fn is_vision(&self) -> bool {
         if !self.tasks.is_empty() {
             return self.modalities_in().iter().any(|v| v == "image");
@@ -1117,9 +1068,6 @@ impl ModelConfig {
                     .unwrap_or(false))
     }
 
-    /// A local llama.cpp model can only take image or audio input with an `mmproj`
-    /// file. True when the model is served by llama-server but none is configured
-    /// or the configured file does not exist.
     pub fn missing_projector(&self) -> bool {
         let llama = matches!(
             self.engine_plan().first(),
@@ -1132,7 +1080,6 @@ impl ModelConfig {
                 .is_some_and(|p| !p.trim().is_empty() && Path::new(p).exists())
     }
 
-    /// Whether the model accepts audio input.
     pub fn supports_audio(&self) -> bool {
         if !self.tasks.is_empty() {
             return self.modalities_in().iter().any(|v| v == "audio");
@@ -1158,7 +1105,6 @@ impl ModelConfig {
                 .unwrap_or(false)
     }
 
-    /// Whether the model is an omni multimodal model (text, image, audio, video).
     pub fn is_omni(&self) -> bool {
         if !self.tasks.is_empty() {
             let inputs = self.modalities_in();
@@ -1179,7 +1125,6 @@ impl ModelConfig {
                 .unwrap_or(false)
     }
 
-    /// Whether the model is a fast System 1 decision model.
     pub fn is_decision(&self) -> bool {
         if !self.tasks.is_empty() {
             return self.modalities_out().iter().any(|v| v == "decision");
@@ -1187,7 +1132,6 @@ impl ModelConfig {
         self.modality == Modality::Decision
     }
 
-    /// Per-request sampling values layered over this model's configured defaults.
     pub fn effective_sampling(&self, request: &SamplingConfig) -> SamplingConfig {
         match &self.sampling {
             Some(defaults) => request.over(defaults),
@@ -1474,7 +1418,6 @@ mod tests {
         ModelConfig::try_from(serde_json::from_str::<ModelEntry>(json)?)
     }
 
-    /// A valid local entry; `more` is spliced in as extra top-level keys.
     fn local(more: &str) -> Result<ModelConfig> {
         try_model(&format!(
             r#"{{"id":"m","name":"M","modality":"Text",
@@ -1486,8 +1429,6 @@ mod tests {
     fn err(r: Result<ModelConfig>) -> String {
         format!("{:#}", r.unwrap_err())
     }
-
-    // ---- sampling
 
     #[test]
     fn request_overrides_config_which_overrides_nothing() {
@@ -1529,8 +1470,6 @@ mod tests {
         }
         assert!(local(r#","sampling":{"temperature":0.0,"top_p":1.0}"#).is_ok());
     }
-
-    // ---- engine
 
     #[test]
     fn engine_object_orders_the_fallbacks() {
@@ -1588,8 +1527,6 @@ mod tests {
         assert!(e.contains("'engine' is required"), "{e}");
     }
 
-    // ---- structure
-
     const REMOTE: &str = r#""remote":{"provider":"google","upstream_model":"x","api_key":"k"}"#;
 
     #[test]
@@ -1646,8 +1583,6 @@ mod tests {
         ));
         assert!(block.contains("gpu_layer"), "{block}");
     }
-
-    // ---- extra
 
     #[test]
     fn extra_is_validated_against_the_models_engines() {
@@ -1718,8 +1653,6 @@ mod tests {
         assert!(!local("").unwrap().is_vision());
     }
 
-    // ---- model lookup
-
     fn registry(models: &[(&str, &str, &str)]) -> ModelRegistry {
         let mut r = ModelRegistry::new();
         for (id, name, modality) in models {
@@ -1783,7 +1716,6 @@ mod tests {
         assert!(caps.contains(&"Video".to_string()));
         assert!(caps.contains(&"Omni".to_string()));
 
-        // Slug / repo resolution tests
         assert_eq!(
             r.find("unsloth/gemma-4-12b-it-GGUF").unwrap().id,
             "gemma-4-12b-it"
@@ -1794,8 +1726,6 @@ mod tests {
         );
         assert_eq!(r.find("gemma-4-12b-it-GGUF").unwrap().id, "gemma-4-12b-it");
     }
-
-    // ---- loader
 
     #[test]
     fn rate_limit_blocks_reject_the_removed_seconds_key() {

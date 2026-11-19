@@ -1,4 +1,3 @@
-//! Authenticated catalog management for servers with explicit config paths.
 use super::AppState;
 use axum::{
     Json,

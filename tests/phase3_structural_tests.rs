@@ -56,7 +56,6 @@ fn test_schema3_migration_and_decoupled_loading() {
     }"#;
     std::fs::write(&legacy_models_path, legacy_json).expect("write legacy config");
 
-    // Execute migration
     rune_infer::migrate::run(&legacy_models_path, false).expect("migration runs successfully");
 
     let server_path = config_dir.join("server.json");
@@ -70,21 +69,18 @@ fn test_schema3_migration_and_decoupled_loading() {
         "backup file models.json.v2.bak must be created"
     );
 
-    // Verify ServerFile schema
     let server_file: ServerFile =
         serde_json::from_str(&std::fs::read_to_string(&server_path).unwrap()).unwrap();
     assert_eq!(server_file.schema_version, SCHEMA_VERSION);
     assert_eq!(server_file.server.port, 9090);
     assert_eq!(server_file.server.max_loaded_models, 2);
 
-    // Verify CatalogFile schema
     let catalog_file: CatalogFile =
         serde_json::from_str(&std::fs::read_to_string(&catalog_path).unwrap()).unwrap();
     assert_eq!(catalog_file.schema_version, SCHEMA_VERSION);
     assert_eq!(catalog_file.models.len(), 1);
     assert_eq!(catalog_file.models[0].id, "test-model-1");
 
-    // Verify decoupled loader
     let loaded =
         ModelRegistry::from_files(&server_path, &catalog_path).expect("load from decoupled files");
     assert_eq!(loaded.server.port, 9090);
@@ -152,7 +148,6 @@ async fn test_runtime_catalog_hot_reloading() {
     assert!(state.config().find("initial-model").is_some());
     assert!(state.config().find("hot-reloaded-model").is_none());
 
-    // Prepare updated catalog with a new model
     let mut updated_config = state.config().clone();
     let new_entry = ModelEntry {
         id: "hot-reloaded-model".to_string(),
@@ -189,10 +184,8 @@ async fn test_runtime_catalog_hot_reloading() {
         .models
         .push(ModelConfig::try_from(new_entry).expect("valid model"));
 
-    // Reload catalog in running state
     state.reload_catalog(updated_config);
 
-    // Verify catalog reflects new model immediately without server restart
     assert_eq!(state.config().models.len(), 2);
     assert!(state.config().find("initial-model").is_some());
     let reloaded = state.config().find("hot-reloaded-model").cloned();
@@ -221,13 +214,11 @@ fn test_cancellation_propagation_guard() {
         );
     }
 
-    // When client connection drops (scope ends), guard triggers atomic cancellation
     assert!(
         cancelled.load(Ordering::SeqCst),
         "Flag must be true after guard is dropped"
     );
 
-    // Engine generation token callback checks the flag and aborts loop
     let cancelled_for_closure = cancelled.clone();
     let on_token = move |_: &str| -> bool { !cancelled_for_closure.load(Ordering::Relaxed) };
 

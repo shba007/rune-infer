@@ -93,7 +93,6 @@ impl NemoSpeechEngine {
             .parent()
             .unwrap_or_else(|| Path::new("bin/nemo-speech"));
 
-        // Inspect PE imports and auto-resolve any missing runtime DLLs
         if crate::embedding::root().is_none() {
             Self::repair_dependencies(&bin_path, bin_dir);
         }
@@ -116,7 +115,6 @@ impl NemoSpeechEngine {
         configure_death_signal(&mut cmd);
         cmd.current_dir(bin_dir);
 
-        // Ensure bin_dir and companion DLL directories are visible in PATH
         let mut search_paths = vec![bin_dir.to_path_buf()];
 
         if let Ok(sys_path) = std::env::var("PATH") {
@@ -131,7 +129,6 @@ impl NemoSpeechEngine {
             cmd.env("Path", &path_env);
         }
 
-        // Launch in server mode with loaded ASR model
         cmd.arg("serve")
             .arg("--asr-model")
             .arg(&model.model_path)
@@ -251,7 +248,6 @@ impl NemoSpeechEngine {
             return Err(download::engine_unavailable("nemo-speech").into());
         }
 
-        // If binary is in a nested archive directory, promote it to base_dir
         if !exe_path.exists() {
             if let Some(nested) = download::find_executable_recursive(&base_dir, exe_name) {
                 let _ = std::fs::copy(&nested, &exe_path);
@@ -301,7 +297,6 @@ impl NemoSpeechEngine {
         Self::install_release(&client, &release_val, base_dir)
     }
 
-    // Update staging bypasses environment overrides and existing installations.
     pub(crate) fn install_release(
         client: &reqwest::blocking::Client,
         release: &serde_json::Value,

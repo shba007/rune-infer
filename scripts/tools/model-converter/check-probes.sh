@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Runs each diagnostic probe model through the Windows worker and reports per-operator parity.
-#
-#   bash scripts/tools/model-converter/check-probes.sh --probe-directory <dir> --worker <exe>
-#        --checker <exe> --runtime <libLiteRt.dll> [--ir-graph]
-#
-# Run from Git Bash on Windows. Needs node (it only reads and writes JSON).
 set -uo pipefail
 
 native() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
@@ -36,7 +30,6 @@ checker="$(absolute "$checker")"
 runtime="$(absolute "$runtime")"
 
 # One line per probe: <operator> <model sha256> <reference sha256> <shape, comma separated>
-# preceded by one line holding the shared input sha256.
 manifest="$(node -e '
   const proof = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8").replace(/^﻿/, ""))
   const probes = Array.isArray(proof.probes) ? proof.probes : []
@@ -65,13 +58,11 @@ while IFS=$'\t' read -r operator model_sha reference_sha shape; do
     export RUNE_LITERT_VALIDATION_DIAGNOSTICS=1 RUNE_LITERT_CANDIDATE_SHA256="$model_sha" RUNE_LITERT_PROBE_SHAPE="$shape"
     unset RUNE_LITERT_VALIDATE_NHWC RUNE_LITERT_VALIDATE_IR
     [ "$ir_graph" = true ] && export RUNE_LITERT_VALIDATE_IR=1
-    # </dev/null: the checker must not read the probe list this loop is reading.
     "$checker" "$(native "$worker")" "$(native "$runtime")" "$(native "$prefix.tflite")" "$(native "$prefix")" </dev/null
   ) >"$log" 2>&1
   printf '%s\t%s\t%s\n' "$operator" "$?" "$(native "$log")" >>"$results"
 done < <(printf '%s\n' "$manifest" | tail -n +2)
 
-# Writes report.json, prints one line per probe and exits 1 when any probe failed.
 node -e '
   const fs = require("fs")
   const [manifestFile, resultsFile, out, workerSha, irGraph] = process.argv.slice(1)

@@ -83,9 +83,6 @@ impl ProxyService {
             .map(|(_, controller)| controller.clone())
     }
 
-    /// Asynchronously executes a chat completion request through the cloud provider proxy.
-    /// Handles concurrency limits, sliding-window rate throttling, and automatic in-flight retries
-    /// using parameters configured directly in models.json without dropping the client request.
     pub async fn execute_chat(
         &self,
         config: &ModelConfig,
@@ -118,7 +115,6 @@ impl ProxyService {
             Some(controller.clone())
         };
 
-        // Fill unset sampling parameters from the model's configured defaults.
         let layered = config.effective_sampling(&crate::config::SamplingConfig {
             temperature: request.temperature,
             top_p: request.top_p,
@@ -136,7 +132,6 @@ impl ProxyService {
         filled.reasoning_effort = layered.reasoning_effort;
         let request = &filled;
 
-        // 1. Acquire queue and rate limit permit (asynchronous wait)
         let _permit = if let Some(ref c) = controller {
             match c.acquire_permit().await {
                 Ok(p) => Some(p),
@@ -152,7 +147,6 @@ impl ProxyService {
             None
         };
 
-        // 2. Load retry configuration from models.json (with sensible defaults)
         let max_retries = config
             .rate_limit
             .as_ref()
@@ -244,7 +238,6 @@ impl ProxyService {
                         return (status, Json(ErrorResponse { error: err })).into_response();
                     }
 
-                    // Calculate backoff using base delay from models.json + exponential factor + jitter
                     let factor = 1u64 << (attempt - 1).min(3);
                     let base_delay_ms = base_retry_delay_ms.saturating_mul(factor);
                     let jitter_ms = (std::time::SystemTime::now()

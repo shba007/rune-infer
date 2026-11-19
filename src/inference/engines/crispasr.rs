@@ -113,7 +113,6 @@ impl CrispAsrEngine {
         configure_death_signal(&mut cmd);
         cmd.current_dir(bin_dir);
 
-        // Ensure bin_dir and companion DLL directories are visible in PATH
         let mut search_paths = vec![bin_dir.to_path_buf()];
 
         if let Ok(sys_path) = std::env::var("PATH") {
@@ -128,7 +127,6 @@ impl CrispAsrEngine {
             cmd.env("Path", &path_env);
         }
 
-        // Run in server mode with loaded model
         cmd.arg("--server")
             .arg("-m")
             .arg(&model.model_path)
@@ -622,8 +620,6 @@ mod audio_transport_tests {
                         Err(error) => panic!("Mock request was not received: {error}"),
                     }
                 };
-                // Accepted sockets can inherit the listener's nonblocking mode
-                // on Windows; the fixture reader below uses blocking I/O.
                 socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(5)))

@@ -46,7 +46,6 @@ fn manifest(version: &crate::model_registry::Version) -> String {
         .join("|")
 }
 
-/// Models supported by the managed installer, optionally limited to computer use.
 pub fn managed_candidates(
     computer_use: bool,
     memory: Option<u64>,

@@ -42,7 +42,6 @@ struct InstallReceipt {
     files: Vec<(PathBuf, String)>,
 }
 
-/// Record files from the verified archive before any user extras are merged in.
 pub(crate) fn record_installation(
     base: &std::path::Path,
     package: &PackageIdentity,
@@ -105,7 +104,6 @@ pub(crate) fn record_installation(
     Ok(())
 }
 
-/// Missing, changed or invalid receipts remain unverified; do not guess a backend.
 pub(crate) fn installation_matches(base: &std::path::Path, package: &PackageIdentity) -> bool {
     let check = || -> Result<bool, Box<dyn Error>> {
         let base = std::fs::canonicalize(base)?;
@@ -346,9 +344,6 @@ fn platform_asset_for<'a>(
     let assets = release["assets"].as_array()?;
     if os == "windows" {
         if let Some(host) = host_cuda {
-            // Names and bundled dependencies verified against Whisper v1.9.5's
-            // immutable b5454 build, d1be6fde11ac6e0407606b4e42fe72d34add8037.
-            // https://github.com/ggml-org/whisper.cpp/releases/tag/b5454
             let cuda = assets
                 .iter()
                 .filter_map(|asset| {

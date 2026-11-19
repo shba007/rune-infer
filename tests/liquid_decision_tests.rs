@@ -97,7 +97,6 @@ fn test_liquid_d1_catalog_configuration() {
     assert_eq!(model.engine_plan().first(), Some(&EngineKind::LlamaServer));
     assert_eq!(model.max_context_length, Some(32768));
 
-    // Case-insensitive and short-name lookup tests
     assert_eq!(
         registry.find("LIQUID-D1-3B").map(|m| m.id.as_str()),
         Some("liquid-d1-3b")
@@ -150,10 +149,8 @@ fn test_encoder_engine_decision_execution() {
         InferenceTaskResponse::Decision(resp) => {
             assert_eq!(resp.object, "decision");
             assert_eq!(resp.model, "liquid-d1-3b");
-            // Zero-token output contract check
             assert_eq!(resp.usage.completion_tokens, 0);
 
-            // Choice assertion
             if let Some(DecisionAnswer::Choice {
                 decision,
                 confidence,
@@ -167,7 +164,6 @@ fn test_encoder_engine_decision_execution() {
                 panic!("Expected DecisionAnswer::Choice");
             }
 
-            // Noul assertion
             if let Some(DecisionAnswer::Noul {
                 decision: _,
                 probability,
@@ -178,7 +174,6 @@ fn test_encoder_engine_decision_execution() {
                 panic!("Expected DecisionAnswer::Noul");
             }
 
-            // Score assertion
             if let Some(DecisionAnswer::Score {
                 level,
                 score,
@@ -372,7 +367,6 @@ async fn test_api_v1_decisions_top_level_images_and_screenshot() {
 
     assert_eq!(res.model, "liquid-d1-3b");
     assert!(res.answers.contains_key("dialog_open"));
-    // Verify prompt tokens account for image frames (> 256 tokens)
     assert!(res.usage.prompt_tokens >= 256);
 }
 
@@ -408,7 +402,6 @@ async fn test_api_v1_decisions_state_only_images_no_text() {
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let res: DecisionResponse = serde_json::from_slice(&body).unwrap();
 
-    // Canonical model ID should be liquid-d1-3b
     assert_eq!(res.model, "liquid-d1-3b");
     assert!(res.answers.contains_key("is_alert_visible"));
     assert!(res.usage.prompt_tokens >= 256);
@@ -450,7 +443,6 @@ async fn test_api_v1_decisions_questions_as_map_with_instructions_plural() {
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let res: DecisionResponse = serde_json::from_slice(&body).unwrap();
 
-    // Canonical model ID should resolve from alias "d1-3b-q8-0" to "liquid-d1-3b"
     assert_eq!(res.model, "liquid-d1-3b");
     assert!(res.answers.contains_key("popup_detected"));
     assert!(res.answers.contains_key("suggested_action"));

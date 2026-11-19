@@ -1,4 +1,3 @@
-/// Tool call parsing and extraction utilities for llama-server.
 pub fn parse_xml_tool_call(block: &str) -> Option<serde_json::Value> {
     let fn_start = block.find("<function=")?;
     let after_fn = &block[fn_start + "<function=".len()..];

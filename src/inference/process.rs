@@ -4,7 +4,6 @@ use std::path::Path;
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 
-/// Resolve Windows system utilities outside CWD/engine search paths.
 #[doc(hidden)]
 pub fn system_command(name: &str) -> Command {
     #[cfg(windows)]
@@ -94,7 +93,6 @@ pub fn configure_death_signal(_cmd: &mut Command) {
         use std::os::unix::process::CommandExt;
         unsafe {
             _cmd.pre_exec(|| {
-                // Ensure child process is placed in its own process group
                 libc::setpgid(0, 0);
                 if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                     return Err(std::io::Error::last_os_error());
@@ -109,7 +107,6 @@ pub fn configure_death_signal(_cmd: &mut Command) {
         use std::os::unix::process::CommandExt;
         unsafe {
             _cmd.pre_exec(|| {
-                // Spawns child into its own process group on macOS and BSD
                 libc::setpgid(0, 0);
                 Ok(())
             });
@@ -144,8 +141,6 @@ fn try_attach_to_supervisor(child: &Child) -> std::io::Result<()> {
 }
 
 pub fn register_pid(pid: u32) {
-    // Embedded Windows hosts use the job object and ProcessGuard. Never write
-    // the standalone CLI's CWD-relative registry from the host process.
     if crate::embedding::root().is_some() {
         return;
     }
@@ -296,12 +291,6 @@ impl Drop for ProcessGuard {
     }
 }
 
-/// Wrapper around `reqwest::blocking::Client` that prevents Tokio worker panics on drop.
-///
-/// Dropping `reqwest::blocking::Client` on an active Tokio worker thread panics Tokio's
-/// runtime shutdown guard (`Cannot drop a runtime in a context where blocking is not allowed`).
-/// When dropped inside a Tokio runtime context, `SafeBlockingClient` offloads the inner client's
-/// drop to an independent OS thread.
 pub struct SafeBlockingClient(Option<reqwest::blocking::Client>);
 
 impl SafeBlockingClient {
@@ -332,10 +321,6 @@ impl Drop for SafeBlockingClient {
     }
 }
 
-/// Lightweight TCP health/readiness probe for localhost services without spinning up HTTP clients.
-///
-/// Sends `GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n` and
-/// returns `true` if the status code starts with `2` (e.g. 200 OK).
 pub fn http_probe_success(port: u16, path: &str) -> bool {
     let Ok(addr) = format!("127.0.0.1:{port}").parse::<std::net::SocketAddr>() else {
         return false;
@@ -356,7 +341,6 @@ pub fn http_probe_success(port: u16, path: &str) -> bool {
     let _ = stream.flush();
 
     let mut buf = [0u8; 64];
-    // TCP may deliver the status line in several reads.
     let Ok(()) = stream.read_exact(&mut buf[..12]) else {
         return false;
     };

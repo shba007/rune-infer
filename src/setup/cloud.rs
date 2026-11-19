@@ -1,11 +1,9 @@
-//! Authenticated cloud model discovery. Model ids never imply capabilities.
 use super::ProviderPreset;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::io::Read;
 use std::time::{Duration, Instant};
 
-/// None means the provider did not establish support, not that support exists.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CloudCapabilities {
@@ -61,8 +59,6 @@ impl CloudModel {
     }
 }
 
-/// A successful listing authenticates the key; it does not smoke-test inference
-/// access, quota, or billing. OpenRouter's public catalog needs a separate key check.
 pub fn list_provider_models(preset: &ProviderPreset, key: &str) -> Result<Vec<CloudModel>, String> {
     if key.trim().is_empty() {
         return Err("Enter a provider API key.".into());
@@ -115,7 +111,6 @@ fn get_json(
             code => format!("Provider returned HTTP {code}. Retry."),
         });
     }
-    // Never include provider response bodies or credentials in errors/logs.
     serde_json::from_reader(response.take(8 * 1024 * 1024))
         .map_err(|_| "Provider returned an invalid or oversized model response. Retry.".into())
 }
@@ -238,8 +233,6 @@ fn parse_page(
                 max_output_tokens = entry.get("outputTokenLimit").and_then(Value::as_u64);
             }
             "anthropic" => {
-                // All entries are Claude message models; optional capability data
-                // may be absent with the existing pinned API version.
                 capabilities.chat = Some(true);
                 capabilities.vision = entry
                     .pointer("/capabilities/image_input/supported")
@@ -279,7 +272,7 @@ fn parse_page(
                         .iter()
                         .any(|v| v.as_str() == Some("response_format"))
                     {
-                        None // response_format alone does not establish JSON-schema support
+                        None
                     } else {
                         Some(false)
                     };

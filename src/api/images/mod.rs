@@ -6,8 +6,6 @@ pub use detection::*;
 pub use generation::*;
 pub use processing::*;
 
-// Match the existing image-processing edge bound. Model-specific latent/patch
-// alignment remains the engine's responsibility.
 pub(super) fn parse_generation_dimensions(size: &str) -> Option<(u32, u32)> {
     let parts: Vec<_> = size.split(['x', 'X', '×', '*']).map(str::trim).collect();
     if parts.len() != 2

@@ -1,4 +1,3 @@
-//! Reviewed depth adapters; native CPU/GPU code runs in isolated child processes.
 mod gpu_runtime;
 pub mod native;
 pub mod native_gpu;
@@ -85,7 +84,6 @@ fn checked_profile(runtime: &Path, model: &Path) -> anyhow::Result<&'static Mode
     reviewed_model(model)
 }
 
-/// Identify the reviewed export by content, independently of its filename.
 pub(crate) fn reviewed_model(model: &Path) -> anyhow::Result<&'static ModelProfile> {
     let mut header = [0; 8];
     std::fs::File::open(model)?.read_exact(&mut header)?;
@@ -546,8 +544,6 @@ mod tests {
         let accelerated = engine
             .infer_worker(input.clone(), gpu, true)
             .expect("Real GPU path must succeed before testing fallback");
-        // A missing GPU runtime forces the child to fail before dispatch. The
-        // gateway must then retry the same input through its verified CPU DLL.
         engine.gpu_runtime = Some(gpu.with_file_name("missing-gpu-runtime.dll"));
         let fallback = engine.infer(input).expect("CPU retry must succeed");
         for values in [&accelerated, &fallback] {

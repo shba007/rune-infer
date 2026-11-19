@@ -1,4 +1,3 @@
-//! Decode a fixture with Infer's image crate before cross-runtime JPEG checks.
 use std::{fs::OpenOptions, path::Path};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

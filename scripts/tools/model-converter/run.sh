@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# Converts the depth model in the pinned container and writes a candidate with its
-# validation report under target/.
-#
-#   bash scripts/tools/model-converter/run.sh [--gpu-linear-conv] [--gpu-nhwc-boundaries]
-#                                             [--gpu-fold-layer-scales] <image>...
-#
-# The container installs the pinned environment with uv and executes via uv run.
-# On Windows run this from Git Bash.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,8 +33,6 @@ for image in "${images[@]}"; do
   index=$((index + 1))
 done
 
-# Git Bash rewrites arguments that look like POSIX paths (/work/...) before a native
-# program sees them. These two variables switch that off for the docker calls.
 export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 
 docker build -t rune-infer-depth-converter:local "$(native "$here")" ||

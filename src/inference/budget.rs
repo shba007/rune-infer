@@ -1,32 +1,17 @@
-//! VRAM Budgeting & Context Sizing Engine
-//!
-//! Provides pre-flight GPU VRAM detection, layer offloading calculations,
-//! KV cache memory estimation, and dynamic context sizing to guarantee
-//! zero CUDA out-of-memory crashes.
-
 use crate::config::{ModelConfig, ServerConfig};
 
-/// Comprehensive breakdown of pre-flight VRAM and context allocation for a model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VramBudgetPlan {
-    /// Context window in tokens (clamped to VRAM budget or model capacity).
     pub n_ctx: u32,
-    /// Estimated VRAM required for KV cache at `n_ctx` tokens.
     pub context_vram_bytes: u64,
-    /// Model weight bytes placed on the GPU (accounting for layer offloading).
     pub model_vram_on_gpu_bytes: u64,
-    /// Total model weight file size on disk.
     pub model_vram_total_bytes: u64,
-    /// Vision projector weight bytes (e.g. `mmproj`).
     pub projector_vram_bytes: u64,
-    /// Speculative decoding draft head weight bytes (e.g. `mtp`).
     pub mtp_vram_bytes: u64,
-    /// Total detected physical GPU VRAM on the system.
     pub total_gpu_vram_bytes: u64,
 }
 
 impl VramBudgetPlan {
-    /// Combined estimated VRAM needed on GPU across weights, projector, MTP draft, and KV context.
     pub fn total_estimated_vram_bytes(&self) -> u64 {
         self.model_vram_on_gpu_bytes
             + self.projector_vram_bytes
@@ -35,7 +20,6 @@ impl VramBudgetPlan {
     }
 }
 
-/// Formats a raw byte count into human-readable units (B, KiB, MiB, GiB, TiB).
 pub fn format_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
@@ -56,7 +40,6 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// Formats parameter count into a compact string (e.g. 27B, 300M, 7B).
 pub fn format_params(params: u64) -> String {
     let p = params as f64;
     if p >= 1_000_000_000.0 {
@@ -80,7 +63,6 @@ pub fn format_params(params: u64) -> String {
     }
 }
 
-/// Formats token counts cleanly (e.g. "128K tokens", "8192 tokens", "1.0M tokens").
 pub fn format_tokens(tokens: u32) -> String {
     if tokens >= 1_000_000 {
         format!("{:.1}M tokens", tokens as f64 / 1_000_000.0)
@@ -95,8 +77,6 @@ pub fn format_tokens(tokens: u32) -> String {
 
 static TOTAL_GPU_VRAM: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
 
-/// Detects total GPU VRAM across NVIDIA (via nvidia-smi), macOS unified memory (via sysctl),
-/// or Linux system memory fallback. Cached after initial detection since physical GPU VRAM is constant.
 pub fn detect_total_gpu_vram() -> Option<u64> {
     *TOTAL_GPU_VRAM.get_or_init(query_total_gpu_vram_uncached)
 }
@@ -152,7 +132,6 @@ fn query_total_gpu_vram_uncached() -> Option<u64> {
     None
 }
 
-/// Detects currently used GPU VRAM via nvidia-smi.
 pub fn detect_used_gpu_vram() -> Option<u64> {
     let output = crate::embedding::no_window(
         std::process::Command::new("nvidia-smi")
@@ -170,7 +149,6 @@ pub fn detect_used_gpu_vram() -> Option<u64> {
 
 static TOTAL_SYSTEM_RAM: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
 
-/// Detects total installed physical system RAM across Windows, macOS, and Linux.
 pub fn detect_total_system_ram() -> Option<u64> {
     *TOTAL_SYSTEM_RAM.get_or_init(query_total_system_ram_uncached)
 }
@@ -222,14 +200,12 @@ fn query_total_system_ram_uncached() -> Option<u64> {
     None
 }
 
-/// Calculates the allowed system RAM budget in bytes according to server config.
 pub fn calculate_ram_budget(server: &ServerConfig) -> u64 {
     let total_ram = detect_total_system_ram().unwrap_or(32 * 1024 * 1024 * 1024);
     let ratio = server.ram_budget_ratio.clamp(0.01, 1.0);
     ((total_ram as f64) * ratio) as u64
 }
 
-/// Heuristic parameter estimation from model metadata, id, name, or file size.
 pub fn heuristic_model_params(model: &ModelConfig) -> u64 {
     if let Some(p) = model.total_params {
         if p > 0 {
@@ -270,7 +246,6 @@ pub fn heuristic_model_params(model: &ModelConfig) -> u64 {
     }
 }
 
-/// Heuristic estimate of model layers by parameter count when metadata is not provided.
 pub fn estimate_total_layers(model: &ModelConfig) -> u32 {
     let params = heuristic_model_params(model);
     match params {
@@ -283,7 +258,6 @@ pub fn estimate_total_layers(model: &ModelConfig) -> u32 {
     }
 }
 
-/// Parses CLI flags like `--cache-type-k` or `-ctk` to determine KV cache quantization scaling.
 pub fn parse_cache_type_multiplier(args: &str, flag_long: &str, flag_short: &str) -> f64 {
     let tokens: Vec<&str> = args.split_whitespace().collect();
     for (i, &t) in tokens.iter().enumerate() {
@@ -311,7 +285,6 @@ pub fn parse_cache_type_multiplier(args: &str, flag_long: &str, flag_short: &str
     1.0
 }
 
-/// Estimates bytes required per token of KV cache based on model size and cache quantization flags.
 pub fn estimate_bytes_per_token(model: &ModelConfig) -> u64 {
     let extra_args = model
         .runtime
@@ -338,7 +311,6 @@ pub fn estimate_bytes_per_token(model: &ModelConfig) -> u64 {
     ((base as f64 * quant_mult).max(1024.0)) as u64
 }
 
-/// Calculates pre-flight VRAM budget, offload ratios, and optimal dynamic context length.
 pub fn calculate_budget(model: &ModelConfig, server: &ServerConfig) -> VramBudgetPlan {
     let total_vram = detect_total_gpu_vram().unwrap_or(24 * 1024 * 1024 * 1024);
     let budget_ratio = server.vram_budget_ratio.clamp(0.0, 1.0);
@@ -403,7 +375,6 @@ pub fn calculate_budget(model: &ModelConfig, server: &ServerConfig) -> VramBudge
     };
 
     let n_ctx = if configured_ctx <= 0 {
-        // Automatic dynamic context calculation based on remaining budgeted headroom
         let fixed_overhead =
             model_vram_on_gpu + projector_vram + mtp_vram + overhead_scratch + mtp_headroom;
         let remaining_kv = budget_bytes.saturating_sub(fixed_overhead);
@@ -432,25 +403,16 @@ pub fn calculate_budget(model: &ModelConfig, server: &ServerConfig) -> VramBudge
     }
 }
 
-/// Dynamic sweet-spot verdict tailored to the host machine's hardware.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MachineSweetSpotVerdict {
-    /// The quantization recommended for maximum quality without speed loss on this machine.
     pub recommended_quantization: String,
-    /// Detailed rationale explaining why this quantization is the sweet spot for the machine.
     pub reason: String,
-    /// Whether the model in this quantization fits in physical GPU VRAM.
     pub fits_vram: bool,
-    /// Whether the model fits within the system RAM budget (e.g. 20% limit).
     pub fits_ram: bool,
-    /// Estimated total memory requirement in bytes.
     pub estimated_memory_bytes: u64,
-    /// True if the evaluated quantization is the optimal sweet spot for this machine.
     pub is_sweet_spot: bool,
 }
 
-/// Evaluates whether a given model parameter count and quantization are the sweet spot
-/// for the current machine's detected GPU VRAM, system RAM, and active backend mode.
 pub fn evaluate_machine_sweet_spot(
     params: u64,
     current_quant: &str,

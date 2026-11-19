@@ -1,5 +1,3 @@
-//! Reviewed remote cloud metadata. Add entries to registry/models.json; no id
-//! prefix or family-name guessing is used and setup never edits the registry.
 use super::CloudCapabilities;
 use serde::Deserialize;
 

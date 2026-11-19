@@ -160,7 +160,6 @@ pub async fn execute_chat(
         "stream": request.stream
     });
 
-    // Map Structured Output JSON Schema into Anthropic system prompt
     if let Some(ref rf) = request.response_format {
         if rf.r#type == "json_object" {
             let instruction = "\nYou must output ONLY a valid JSON object without any markdown formatting, backticks, or commentary.";
@@ -197,7 +196,6 @@ pub async fn execute_chat(
         body["tools"] = serde_json::Value::Array(anthropic_tools);
     }
 
-    // Handle thinking mode for Anthropic (e.g. Claude 3.7 Sonnet)
     let normalized_thinking = request.normalized_thinking();
     let effective_thinking = if normalized_thinking != crate::types::NormalizedThinking::Unspecified
     {

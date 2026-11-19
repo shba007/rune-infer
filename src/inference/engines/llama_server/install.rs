@@ -85,8 +85,6 @@ pub(super) fn resolve_binary(
     install_release(&client, &release_data, base_dir)
 }
 
-// Install only the supplied release into an isolated directory. Unlike discovery,
-// updates must never resolve an environment override, PATH, or an existing binary.
 pub(crate) fn install_release(
     client: &reqwest::blocking::Client,
     release_data: &serde_json::Value,

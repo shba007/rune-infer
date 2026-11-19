@@ -12,7 +12,6 @@ use crate::types::{
     RecognizeObjectsRequest,
 };
 
-/// Accept only an image data URI so the exact source raster reaches the model.
 #[axum::debug_handler]
 pub async fn portrait_matting_handler(
     State(state): State<Arc<AppState>>,

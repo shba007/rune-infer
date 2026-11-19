@@ -10,11 +10,6 @@ use crate::types::{
     ApiError, ChatCompletionRequest, ChoiceDelta, FunctionCall, ToolCall, ToolCallChunk, Usage,
 };
 
-/// Recursively sanitizes JSON Schema into a compliant Google Gemini OpenAPI 3.0 Schema protobuf.
-/// - Converts `exclusiveMinimum` / `exclusiveMaximum` -> `minimum` / `maximum`.
-/// - Flattens `allOf` / `anyOf` sub-properties into `properties`.
-/// - Enforces Gemini's rule: every item in `required` MUST be defined in `properties`.
-/// - Strips unsupported keywords (`propertyNames`, `additionalProperties`, `title`, etc.).
 fn sanitize_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(map) => {
@@ -35,7 +30,6 @@ fn sanitize_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
                             exclusive_max = Some(n);
                         }
                     }
-                    // Strip unsupported keywords for Google's Schema protobuf
                     "propertyNames"
                     | "additionalProperties"
                     | "patternProperties"
@@ -56,7 +50,6 @@ fn sanitize_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
                     | "dependentSchemas" => {
                         continue;
                     }
-                    // Convert oneOf and allOf into anyOf for Gemini compatibility
                     "oneOf" | "allOf" => {
                         let sanitized_v = sanitize_gemini_schema(v);
                         cleaned.insert("anyOf".to_string(), sanitized_v);
@@ -78,7 +71,6 @@ fn sanitize_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
                 }
             }
 
-            // Flatten properties from anyOf / allOf into the top-level properties map
             if let Some(serde_json::Value::Array(any_of_items)) = cleaned.get("anyOf").cloned() {
                 let mut merged_props = cleaned
                     .get("properties")
@@ -125,7 +117,6 @@ fn sanitize_gemini_schema(value: &serde_json::Value) -> serde_json::Value {
                             );
                         }
                     } else {
-                        // If there are no properties defined, required cannot be present
                         cleaned.remove("required");
                     }
                 }
@@ -296,7 +287,6 @@ pub async fn execute_chat(
         }
     }
 
-    // Handle thinkingConfig for Gemini (e.g. Gemini 2.0/2.5 Flash Thinking)
     let normalized_thinking = request.normalized_thinking();
     let effective_thinking = if normalized_thinking != crate::types::NormalizedThinking::Unspecified
     {
@@ -392,7 +382,6 @@ pub async fn execute_chat(
 
             let chunk_id = format!("chatcmpl-{created}");
 
-            // Initial assistant role handshake chunk
             let initial_chunk = make_chunk(
                 &chunk_id,
                 created,

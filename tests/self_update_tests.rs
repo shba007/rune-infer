@@ -96,7 +96,6 @@ fn verified_update_replaces_running_executable_and_preserves_neighbors() {
         "rune-infer-{os}-{arch}.{}",
         if cfg!(windows) { "zip" } else { "tar.gz" }
     );
-    // Missing assets and equal-version repeated updates preserve the installed binary.
     assert!(!invoke(&installed, &mirror, &[]).status.success());
     assert_eq!(fs::read(&installed).unwrap(), before);
     fs::copy(&installed, &candidate).unwrap();

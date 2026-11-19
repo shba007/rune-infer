@@ -130,8 +130,6 @@ async fn unsloth_top_k_sentinel_passes_chat_request_parsing() {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(response.into_body(), 16384).await.unwrap();
         let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        // Parsing succeeds and reaches ordinary model validation, without
-        // loading any model or claiming an inference capability.
         assert_eq!(error["error"]["code"], "model_missing", "{error}");
     }
 }
@@ -169,7 +167,6 @@ async fn image_generation_validates_dimensions_before_model_dispatch() {
 async fn test_openai_auth_rejection_and_acceptance() {
     let app = create_test_app(Some("sk-rune-test-secret-key".to_string()));
 
-    // 1. Missing Authorization header -> 401
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -186,7 +183,6 @@ async fn test_openai_auth_rejection_and_acceptance() {
     assert_eq!(json["error"]["type"], "authentication_error");
     assert_eq!(json["error"]["code"], "invalid_api_key");
 
-    // 2. Wrong Bearer token -> 401
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -199,7 +195,6 @@ async fn test_openai_auth_rejection_and_acceptance() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
-    // 3. Valid Bearer token with non-existent model -> Passes auth, returns 404 (model_not_found)
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -221,7 +216,6 @@ async fn test_openai_auth_rejection_and_acceptance() {
 async fn test_openai_chat_validation_errors() {
     let app = create_test_app(None);
 
-    // 1. Invalid JSON body -> 400
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -231,7 +225,6 @@ async fn test_openai_chat_validation_errors() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
-    // 2. Empty messages array -> 400
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -244,7 +237,6 @@ async fn test_openai_chat_validation_errors() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["error"]["code"], "empty_array");
 
-    // 3. Missing model parameter -> 400
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -264,7 +256,6 @@ async fn test_openai_chat_validation_errors() {
 async fn test_openai_models_endpoints() {
     let app = create_test_app(None);
 
-    // 1. GET /v1/models -> 200 list
     let req = Request::builder()
         .method("GET")
         .uri("/v1/models")
@@ -280,7 +271,6 @@ async fn test_openai_models_endpoints() {
     assert_eq!(models.len(), 1);
     assert_eq!(models[0]["id"], "qwen3.8-27b");
 
-    // 2. GET /v1/models/qwen3.8-27b -> 200
     let req = Request::builder()
         .method("GET")
         .uri("/v1/models/qwen3.8-27b")
@@ -292,7 +282,6 @@ async fn test_openai_models_endpoints() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["id"], "qwen3.8-27b");
 
-    // 3. GET /v1/models/non-existent-model -> 404
     let req = Request::builder()
         .method("GET")
         .uri("/v1/models/non-existent-model")
@@ -306,7 +295,6 @@ async fn test_openai_models_endpoints() {
 async fn test_anthropic_routes_are_disabled() {
     let app = create_test_app(None);
 
-    // 1. POST /v1/messages should be 404 (disabled)
     let req = Request::builder()
         .method("POST")
         .uri("/v1/messages")
@@ -318,7 +306,6 @@ async fn test_anthropic_routes_are_disabled() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
-    // 2. POST /messages should be 404 (disabled)
     let req = Request::builder()
         .method("POST")
         .uri("/messages")
@@ -330,7 +317,6 @@ async fn test_anthropic_routes_are_disabled() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
-    // 3. POST /anthropic/v1/messages should be 404 (disabled)
     let req = Request::builder()
         .method("POST")
         .uri("/anthropic/v1/messages")
@@ -513,7 +499,6 @@ fn sample_gemma4_omni_encoder_config() -> ModelConfig {
     ModelConfig::try_from(entry).expect("valid model config")
 }
 
-/// Sees images but declares no audio support (like MiniCPM-o with only its vision encoder).
 fn sample_vision_only_config() -> ModelConfig {
     let raw = r#"{
         "id": "vision-only",
@@ -576,8 +561,6 @@ fn sample_wav_base64() -> String {
 
 #[tokio::test]
 async fn test_vision_only_model_rejects_audio_input_with_a_clear_error() {
-    // A vision model is not an audio model: this used to be forwarded to the engine and
-    // come back as a bare 500 ("audio input is not supported").
     let app = create_multimodal_test_app();
     let payload = serde_json::json!({
         "model": "vision-only",
@@ -770,7 +753,6 @@ async fn test_openai_chat_input_audio_invalid_base64() {
 async fn test_gemma4_omni_model_catalog_resolution() {
     let app = create_multimodal_test_app();
 
-    // 1. Exact model ID via GET /v1/models/{model}
     let req = Request::builder()
         .method("GET")
         .uri("/v1/models/gemma-4-12b-it")
@@ -791,7 +773,6 @@ async fn test_gemma4_omni_model_catalog_resolution() {
     );
     assert_eq!(json["modalities_out"], serde_json::json!(["text"]));
 
-    // 2. Chat completion with full Hugging Face repository/GGUF slug resolves and succeeds
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")
@@ -815,7 +796,6 @@ async fn test_gemma4_omni_model_catalog_resolution() {
     assert_eq!(json["model"], "gemma-4-12b-it");
     assert!(json["choices"][0]["message"]["content"].as_str().is_some());
 
-    // 3. Chat completion with exact ID
     let req = Request::builder()
         .method("POST")
         .uri("/v1/chat/completions")

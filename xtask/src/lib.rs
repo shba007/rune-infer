@@ -24,7 +24,6 @@ fn digest(notes: &str) -> String {
         .map(|b| format!("{b:02x}"))
         .collect()
 }
-/// Parse/classify/bump with the package. Validation never renders fresh release prose.
 fn packaged_release(
     published: &Version,
     commits: Vec<Commit>,
@@ -35,7 +34,6 @@ fn packaged_release(
     };
     Ok(Some((Version::parse(version)?, generated)))
 }
-/// Render only during preparation/examples, never during publication.
 pub fn generated_release(
     published: &Version,
     commits: Vec<Commit>,
@@ -61,7 +59,6 @@ pub struct Plan {
     pub notes: String,
     pub state: State,
 }
-/// Integrate one package-generated section, preserving every published byte.
 pub fn plan(
     published: &Version,
     current: &Version,
@@ -169,8 +166,6 @@ fn sections(changelog: &str) -> Vec<(Version, usize, usize)> {
 }
 
 pub fn release_notes(changelog: &str, version: &Version) -> Result<String> {
-    // Git can check out CRLF on Windows; release prose must compare identically
-    // with the LF body published by the Linux preparation/publication jobs.
     let normalized = changelog.replace("\r\n", "\n");
     let changelog = normalized.as_str();
     let parts = sections(changelog);
@@ -224,7 +219,6 @@ pub fn version(root: &Path) -> Result<Version> {
     )?)
 }
 
-/// Only changes release-owned files. Does not stage, commit, push or invoke Git mutations.
 pub fn apply(root: &Path, plan: &Plan) -> Result<()> {
     let mut cargo = fs::read_to_string(root.join("Cargo.toml"))?.parse::<DocumentMut>()?;
     cargo["package"]["version"] = value(plan.version.to_string());
@@ -368,8 +362,6 @@ pub fn repository_plan(root: &Path) -> Result<Option<Plan>> {
     } else {
         git(root, &["merge-base", "--is-ancestor", &base, "HEAD"])?;
     }
-    // Consumed metadata prevents bookkeeping merge loops; full pending history
-    // still determines the greatest package bump and the complete release prose.
     if packaged_release(&published, source_commits(root, &base)?)?.is_none() {
         return Ok(None);
     }
@@ -381,7 +373,6 @@ pub fn repository_plan(root: &Path) -> Result<Option<Plan>> {
         source_commits(root, &format!("v{published}"))?,
     )
 }
-/// No subject/parent-count gate: every main push gets a validated decision.
 pub fn pending_release(
     current: &Version,
     published: &Version,
@@ -435,7 +426,6 @@ pub fn validate_promotion(root: &Path) -> Result<bool> {
     Ok(true)
 }
 
-/// Verify the immutable prepared-note receipt without regenerating its prose.
 pub fn validate_note_receipt(state: &State, notes: &str) -> Result<()> {
     valid_state(state)?;
     if state
@@ -448,8 +438,6 @@ pub fn validate_note_receipt(state: &State, notes: &str) -> Result<()> {
     Ok(())
 }
 
-/// Release PR merges have already been tested in preparation. Only skip their
-/// generated metadata: dependency/source changes must still receive normal CI.
 pub fn release_metadata_only(
     paths: &[&str],
     before_manifest: &str,

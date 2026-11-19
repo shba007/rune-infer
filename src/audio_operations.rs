@@ -1,4 +1,3 @@
-//! Verified operations are independent of primitive input/output tasks.
 use crate::config::{EngineKind, ModelConfig};
 use serde::{Deserialize, Serialize};
 
@@ -167,7 +166,6 @@ impl AudioOperations {
         Ok(())
     }
 
-    /// Merge successful setup checks without replacing an explicit unsupported policy.
     pub fn merge_verified(&mut self, incoming: &Self) -> Result<bool, String> {
         let mut result = self.clone();
         for operation in AudioOperation::ALL {

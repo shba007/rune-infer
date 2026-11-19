@@ -18,11 +18,9 @@ REVISION = "7581137eff8d4e94f6e796d3baea0e9fa79b22d2"
 SOURCE_SHA256 = "4e01e34ed5549b529b70b92d53226bc370f03041977b390d3dde45d47f516cf9"
 WIDTH, HEIGHT = 686, 518
 
-
 def sha256(path):
     with Path(path).open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
-
 
 def verify_environment():
     lock = Path(__file__).with_name("requirements.lock")
@@ -32,7 +30,6 @@ def verify_environment():
             if importlib.metadata.version(package) != expected:
                 raise ValueError(f"Installed {package} does not match requirements.lock")
     return sha256(lock)
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -55,7 +52,6 @@ def main():
         parser.error("--threads must be between 1 and 32")
     if any(not image.is_file() for image in args.image):
         parser.error("Every --image must name an existing encoded image")
-    # Exclusive creation preserves prior conversions and never overwrites weights.
     args.output_dir.mkdir(parents=True, exist_ok=False)
     report = {
         "source": SOURCE, "revision": REVISION, "license": "cc-by-nc-4.0",
@@ -107,8 +103,6 @@ def main():
 
         wrapped = Depth(model).eval()
         fixtures = []
-        # References always come from the original checkpoint implementation,
-        # before an optional export rewrite can affect it.
         for path in args.image:
             with Image.open(path) as image:
                 pixels = processor(images=image.convert("RGB"),
@@ -192,7 +186,6 @@ def main():
         report["peak_process_rss_mib"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
         (args.output_dir / "conversion-report.json").write_text(
             json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-
 
 if __name__ == "__main__":
     main()

@@ -130,13 +130,7 @@ fn embedded_guard_owns_only_its_child_and_does_not_use_cwd_pid_registry() {
     let mut independent = spawn();
     let owned = ProcessGuard::try_new(spawn(), "embedded-test").unwrap();
     let pid = owned.lock().unwrap().id();
-    let handle = unsafe {
-        windows_sys::Win32::System::Threading::OpenProcess(
-            0x0010_0000, // SYNCHRONIZE
-            0,
-            pid,
-        )
-    };
+    let handle = unsafe { windows_sys::Win32::System::Threading::OpenProcess(0x0010_0000, 0, pid) };
     assert!(!handle.is_null());
     cleanup_orphaned_pids();
     assert!(independent.try_wait().unwrap().is_none());

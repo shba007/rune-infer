@@ -26,7 +26,6 @@ impl AppState {
         self.get_engine_inner(id, None, false)
     }
 
-    /// Load an exact local model without sending an inference prompt.
     pub fn load_model(&self, id: &str) -> Result<(), String> {
         let model = {
             let registry = self.registry.lock().map_err(|err| err.to_string())?;
@@ -42,8 +41,6 @@ impl AppState {
         self.get_local_engine(&model, false).map(drop)
     }
 
-    /// Remove only an idle resident engine. Drop it outside the registry lock
-    /// because stopping its subprocess can take time.
     pub fn unload_model(&self, id: &str) -> Result<bool, String> {
         let engine = {
             let mut registry = self.registry.lock().map_err(|err| err.to_string())?;
@@ -86,8 +83,6 @@ impl AppState {
         Ok(unloaded)
     }
 
-    /// Acquire only a local engine built from the checked model snapshot.
-    /// No proxy or cloud retry is reachable through this loader.
     pub fn get_local_engine(
         &self,
         expected: &crate::config::ModelConfig,
@@ -129,7 +124,6 @@ impl AppState {
                 }
             }
 
-            // 1. Fast path: model is already loaded and in VRAM/RAM
             if let Some(engine) = registry.get_loaded(id) {
                 return Ok(engine);
             }
@@ -137,7 +131,6 @@ impl AppState {
                 return Err("Model is no longer resident".into());
             }
 
-            // Do not start a model while any engine in its fallback plan is being replaced.
             if registry.config.find(id).is_some_and(|model| {
                 model
                     .engine_plan()
@@ -152,9 +145,8 @@ impl AppState {
                 continue;
             }
 
-            // 2. Coalesce callers: if another thread is currently loading this exact model, wait on its barrier
             if let Some(barrier) = registry.get_loading(id) {
-                drop(registry); // Release global registry lock while waiting on load barrier!
+                drop(registry);
                 let mut state = barrier.mutex.lock().unwrap_or_else(|p| p.into_inner());
                 while let registry::LoadState::Loading = *state {
                     state = barrier
@@ -167,14 +159,12 @@ impl AppState {
                         if expected.is_none() || res.is_err() {
                             return res.clone();
                         }
-                        // Recheck provenance after a concurrent load completes.
                         continue;
                     }
                     registry::LoadState::Loading => unreachable!(),
                 }
             }
 
-            // 3. Serialize heavy GPU/VRAM loads: if a different model is currently loading, wait for the slot
             if !registry.loading.is_empty() {
                 registry = self
                     .load_slot_condvar
@@ -183,15 +173,12 @@ impl AppState {
                 continue;
             }
 
-            // 4. We are the loader for this model: prepare load (evict LRU if needed, capture config/VRAM)
             let (model_config, server_config, vram_before, barrier) = registry.prepare_load(id)?;
 
             let canonical_id = model_config.id.clone();
 
-            // Release global registry lock during the heavy engine creation / subprocess spawn / VRAM allocation!
             drop(registry);
 
-            // RAII guard ensures waiting threads and slot condvar are never deadlocked if create_engine panics
             struct LoadGuard<'a> {
                 canonical_id: String,
                 barrier: Arc<registry::LoadBarrier>,
@@ -265,8 +252,6 @@ impl AppState {
         }
     }
 
-    /// Reserve an idle engine for replacement. A live lease includes evicted models
-    /// still referenced by requests, and a load in progress may choose any fallback.
     pub fn try_reserve_engine_update(
         self: &Arc<Self>,
         kind: crate::config::EngineKind,
@@ -291,7 +276,6 @@ impl AppState {
         })
     }
 
-    /// Unload engines idle for at least `idle`; see [`registry::ModelRegistry::evict_idle`].
     pub fn evict_idle(&self, idle: std::time::Duration) -> Vec<String> {
         let mut registry = self
             .registry
@@ -323,7 +307,6 @@ impl AppState {
     }
 }
 
-/// Holds the model-load fence while an engine installation is replaced.
 pub struct EngineUpdateGuard {
     state: Arc<AppState>,
     kind: crate::config::EngineKind,
@@ -571,7 +554,6 @@ mod tests {
     fn test_concurrent_waiting_on_loading_barrier() {
         let state = Arc::new(AppState::new(&crate::config::ModelRegistry::default()));
 
-        // Simulate model "m2" starting to load
         let barrier = Arc::new(registry::LoadBarrier::new());
         {
             let mut reg = state.registry.lock().unwrap();
@@ -585,10 +567,8 @@ mod tests {
             })
             .collect();
 
-        // Give threads time to hit the barrier and wait on condvar
         std::thread::sleep(Duration::from_millis(50));
 
-        // Complete loading
         let loaded_engine: Arc<dyn traits::InferenceEngine> = Arc::new(MockEngine("m2"));
         {
             let mut reg = state.registry.lock().unwrap();
@@ -625,7 +605,6 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(50));
 
-        // Simulate load failure
         {
             let mut reg = state.registry.lock().unwrap();
             reg.loading.remove("m3");
@@ -655,11 +634,9 @@ mod tests {
         reg.engines.insert("e2".to_string(), e2);
         reg.lru_keys.push("e2".to_string());
 
-        // e1 has an in-flight reference held outside the registry (strong_count = 2)
         assert_eq!(Arc::strong_count(&e1), 2);
         assert_eq!(Arc::strong_count(reg.engines.get("e2").unwrap()), 1);
 
-        // Even though e1 is older (index 0 in lru_keys), evict_lru should evict idle e2
         let evicted = reg.evict_lru();
         assert_eq!(evicted, Some("e2".to_string()));
         assert!(reg.engines.contains_key("e1"));

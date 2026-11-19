@@ -1,4 +1,3 @@
-//! Reviewed remote engine distribution metadata.
 use serde::Deserialize;
 use std::{collections::BTreeMap, error::Error, io::Read};
 
@@ -6,15 +5,10 @@ const REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/engines.json";
 const MAX_REGISTRY_BYTES: u64 = 4 * 1024 * 1024;
 
-/// Environment variable naming a local engines.json to use instead of the
-/// published one (the `--engine-registry` option takes precedence).
 pub const ENGINE_REGISTRY_ENV: &str = "RUNE_ENGINE_REGISTRY";
 
 static LOCAL_REGISTRY: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
-/// Read engine metadata from `path` instead of the published registry (the
-/// `--engine-registry` option). Relative paths are resolved against the current
-/// directory. Must be called before the first lookup; later calls are ignored.
 pub fn set_engine_registry(path: &std::path::Path) -> std::io::Result<()> {
     let path = if path.is_absolute() {
         path.to_path_buf()
@@ -1057,8 +1051,6 @@ pub(crate) fn compare_prism_revision(
     Some(installed.cmp(versions.get(selected)?))
 }
 
-/// Compare a verified upstream build using registry order. Unknown builds cannot
-/// be ordered safely, even when their upstream build number happens to be larger.
 pub(crate) fn compare_llama_build(
     versions: &BTreeMap<u64, u64>,
     installed: u64,

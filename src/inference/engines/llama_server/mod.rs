@@ -29,8 +29,6 @@ struct ToolCallAccumulator {
     arguments: String,
 }
 
-/// Read engine token counts without estimating from response text. Tool calls and
-/// reasoning can consume tokens even when the assistant's content is empty.
 fn upstream_usage(value: &serde_json::Value) -> Option<Usage> {
     let usage = value.get("usage")?;
     let prompt = u32::try_from(usage.get("prompt_tokens")?.as_u64()?).ok()?;
@@ -474,8 +472,6 @@ impl InferenceEngine for LlamaServerEngine {
                     "max_tokens": max_tokens.unwrap_or(16384)
                 });
                 if stream_mode {
-                    // Collect usage for telemetry even when the caller does not request
-                    // a usage chunk in Infer's public SSE response.
                     body["stream_options"] = serde_json::json!({ "include_usage": true });
                 }
                 if let Some(k) = top_k {
@@ -485,7 +481,6 @@ impl InferenceEngine for LlamaServerEngine {
                     body["min_p"] = serde_json::json!(p);
                 }
 
-                // Handle thinking / reasoning controls for llama-server
                 let is_disabled = reasoning_effort
                     .as_deref()
                     .is_some_and(|e| e == "none" || e == "disabled" || e == "off")
@@ -569,7 +564,6 @@ impl InferenceEngine for LlamaServerEngine {
                                 }
                                 let delta = &choice["delta"];
 
-                                // 1. Forward reasoning content if emitted by llama-server (e.g. Qwen thinking mode)
                                 if let Some(reasoning) =
                                     delta.get("reasoning_content").and_then(|r| r.as_str())
                                 {
@@ -592,7 +586,6 @@ impl InferenceEngine for LlamaServerEngine {
                                     }
                                 }
 
-                                // 2. Forward regular content
                                 if let Some(content) = delta.get("content").and_then(|c| c.as_str())
                                 {
                                     if in_reasoning {
@@ -612,7 +605,6 @@ impl InferenceEngine for LlamaServerEngine {
                                     }
                                 }
 
-                                // 3. Correctly accumulate native tool-call deltas across streaming chunks
                                 if let Some(tc_array) =
                                     delta.get("tool_calls").and_then(|t| t.as_array())
                                 {
@@ -659,7 +651,6 @@ impl InferenceEngine for LlamaServerEngine {
                         }
                     }
 
-                    // If native tool calls were accumulated across the stream, return them
                     let valid_accumulated: Vec<serde_json::Value> = tool_accumulators
                         .into_iter()
                         .filter(|t| !t.name.trim().is_empty())
@@ -689,8 +680,6 @@ impl InferenceEngine for LlamaServerEngine {
                         ));
                     }
 
-                    // An absent usage chunk is unknown, not a fabricated one-token
-                    // response. Zero counts are displayed as unavailable by the TUI.
                     let mut final_usage = stream_usage.unwrap_or_default();
                     if !images.is_empty() || !audios.is_empty() {
                         final_usage.prompt_tokens_details =
@@ -722,7 +711,6 @@ impl InferenceEngine for LlamaServerEngine {
                         });
                     }
 
-                    // Otherwise, check if full_output contains inline tool calls (e.g. XML format)
                     if let Some((clean_content, parsed_tools)) =
                         tools::extract_tool_calls(&full_output)
                     {
@@ -773,7 +761,6 @@ impl InferenceEngine for LlamaServerEngine {
                         });
                 }
 
-                // Constrained JSON is content, never a candidate for tool-call extraction.
                 if schema.is_object() && !schema.as_object().is_none_or(|o| o.is_empty()) {
                     return Ok(InferenceOutput {
                         response: InferenceTaskResponse::Text(raw_content.to_string()),
@@ -1212,7 +1199,6 @@ impl InferenceEngine for LlamaServerEngine {
                     }
                 }
 
-                // Fallback to /v1/chat/completions
                 let endpoint = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
                 let mut content_parts = Vec::new();
 
@@ -1450,7 +1436,6 @@ fn parse_grounding_coordinates(raw: &str) -> Result<([u32; 4], f64), Box<dyn std
     if bounds.iter().any(|v| *v > 1000) || bounds[0] >= bounds[2] || bounds[1] >= bounds[3] {
         return Err("Grounding box must be ordered, nonempty and within 0..1000".into());
     }
-    // No calibrated confidence is available from generated coordinates.
     Ok((bounds, 0.0))
 }
 

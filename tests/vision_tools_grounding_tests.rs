@@ -49,7 +49,6 @@ fn create_test_app() -> axum::Router {
 }
 
 fn sample_png_base64() -> String {
-    // 1x1 red PNG
     let png_bytes = [
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
         0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
@@ -66,7 +65,6 @@ async fn test_multimodal_vision_chat_with_several_base64_images() {
     let app = create_test_app();
     let img_uri = sample_png_base64();
 
-    // Payload with two screenshots in the user message
     let payload = serde_json::json!({
         "model": "qwen3.8-27b",
         "messages": [
@@ -101,7 +99,6 @@ async fn test_vision_plus_tools_with_tool_choice_required() {
     let app = create_test_app();
     let img_uri = sample_png_base64();
 
-    // Request combining vision screenshot + tools + tool_choice: "required"
     let payload = serde_json::json!({
         "model": "qwen3.8-27b",
         "messages": [

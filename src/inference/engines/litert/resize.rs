@@ -1,6 +1,3 @@
-//! RGB bicubic resize matching the reviewed Pillow 12 reference's rounding.
-//! Horizontal then vertical, with 22-bit coefficients and byte clipping per pass.
-//! Algorithm reference: https://github.com/python-pillow/Pillow/blob/12.0.0/src/libImaging/Resample.c
 use image::RgbImage;
 
 fn coefficients(input: u32, output: u32) -> Vec<(usize, Vec<i32>)> {

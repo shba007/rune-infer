@@ -1,6 +1,5 @@
 use crate::types::{ChatCompletionResponse, Choice, ChoiceDelta, ResponseMessage, ToolCall, Usage};
 
-/// Constructs an SSE chunk for chat completions.
 pub fn make_chunk(
     id: &str,
     created: u64,
@@ -26,9 +25,6 @@ pub fn make_chunk(
     }
 }
 
-/// Constructs a full, non-streaming ChatCompletionResponse.
-/// If the model spent all tokens in reasoning (<think>), it falls back to
-/// providing think_part so desktop clients don't see an empty response.
 pub fn chat_completion_response(
     model: &str,
     raw_content: Option<String>,

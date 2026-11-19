@@ -1,4 +1,3 @@
-//! Text-to-video through sd-server's native asynchronous `/sdcpp/v1/vid_gen` API.
 use super::SdServerEngine;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{Usage, VideoData, VideoGenerationResponse};
@@ -9,7 +8,6 @@ use std::time::{Duration, Instant};
 const DEFAULT_SIZE: (u32, u32) = (832, 480);
 const DEFAULT_FRAMES: u32 = 33;
 const DEFAULT_FPS: u32 = 24;
-/// Upper bound for one clip, including queueing, sampling and encoding.
 const JOB_DEADLINE: Duration = Duration::from_secs(60 * 60);
 
 fn parse_size(size: Option<&str>) -> (u32, u32) {
