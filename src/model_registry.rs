@@ -668,27 +668,42 @@ fn validate_encoder_index(version: &Version, index_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// True when `capabilities` is exactly `primary`, optionally tagged `Audio`
+/// (in either order). Speech models are listed both ways in the registry.
+fn capabilities_are(capabilities: &[String], primary: &str) -> bool {
+    match capabilities {
+        [a] => a == primary,
+        [a, b] => (a == primary && b == "Audio") || (a == "Audio" && b == primary),
+        _ => false,
+    }
+}
+
 fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     let vision = model.capabilities == ["Chat", "Vision"]
         || model.capabilities == ["Chat", "Vision", "Audio", "Video"];
     let image =
         model.capabilities == ["Image Generation"] || model.capabilities == ["Video Generation"];
     let matting = model.capabilities == ["Portrait Matting"];
+    let transcription = capabilities_are(&model.capabilities, "Transcription");
+    let speech = capabilities_are(&model.capabilities, "Speech Generation");
+    let diarization = model.capabilities == ["Audio"];
     ensure!(
         matting
             || vision
             || image
+            || transcription
+            || speech
+            || diarization
             || model.capabilities == ["Chat"]
-            || model.capabilities == ["Decision"]
-            || model.capabilities == ["Transcription"]
-            || model.capabilities == ["Speech Generation"],
+            || model.capabilities == ["Decision"],
         "Unsupported model capabilities"
     );
     if matting
         || image
+        || transcription
+        || speech
+        || diarization
         || model.capabilities == ["Decision"]
-        || model.capabilities == ["Transcription"]
-        || model.capabilities == ["Speech Generation"]
         || model.capabilities == ["Chat", "Vision", "Audio", "Video"]
     {
         ensure!(
@@ -711,15 +726,14 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
         );
     } else if image {
         ensure!(model.engine == "sd-server", "Unsupported image engine");
-    } else if model.capabilities == ["Transcription"] || model.capabilities == ["Speech Generation"]
-    {
+    } else if transcription || speech || diarization {
         ensure!(
             version.files.len() == 1,
             "Speech model requires a single reviewed GGUF"
         );
         ensure!(
-            (model.capabilities == ["Transcription"] && model.engine == "nemo-speech")
-                || (model.capabilities == ["Speech Generation"] && model.engine == "audio-cpp"),
+            (transcription && model.engine == "nemo-speech")
+                || ((speech || diarization) && model.engine == "audio-cpp"),
             "Unsupported speech engine combination"
         );
     } else {
@@ -1195,38 +1209,49 @@ fn install_with(
     let mut entry = serde_json::json!({"id": model.id, "name": model.name, "description": model.description,
         "tasks": tasks, "capabilities": model.capabilities, "engine": [model.engine], "local": {"path": path}});
     if let Some(defaults) = &model.catalog {
-        let allowed = match model.capabilities.as_slice() {
-            [a] if a == "Image Generation" => {
-                defaults.tasks == ["text-to-image"]
-                    || defaults.tasks == ["text-image-to-image", "image-to-image"]
-                    || defaults.tasks == ["text-to-image", "text-image-to-image", "image-to-image"]
-            }
-            [a] if a == "Video Generation" => defaults.tasks == ["text-to-video"],
-            [a] if a == "Decision" => defaults.tasks == ["text-to-decision"],
-            [a] if a == "Transcription" => defaults.tasks == ["audio-to-text"],
-            [a] if a == "Speech Generation" => defaults.tasks == ["text-to-audio"],
-            [a] if a == "Portrait Matting" => {
-                defaults.tasks == ["image-to-matting"]
-                    && defaults.capabilities.as_deref()
-                        == Some(&["Portrait Matting".to_string()][..])
-            }
-            [a, b, c, d] if a == "Chat" && b == "Vision" && c == "Audio" && d == "Video" => {
-                projector.is_some()
-                    && defaults.tasks
-                        == [
-                            "text-to-text",
-                            "text-image-to-text",
-                            "text-audio-to-text",
-                            "text-video-to-text",
-                            "text-to-audio",
-                        ]
-            }
-            _ => {
-                defaults.tasks == ["text-to-text"]
-                    || (projector.is_some()
-                        && (defaults.tasks == ["text-to-text", "text-image-to-text"]
-                            || defaults.tasks
-                                == ["text-to-text", "text-image-to-text", "text-video-to-text"]))
+        let allowed = if capabilities_are(&model.capabilities, "Transcription") {
+            defaults.tasks == ["audio-to-text"]
+        } else if capabilities_are(&model.capabilities, "Speech Generation") {
+            defaults.tasks == ["text-to-audio"]
+        } else if model.capabilities == ["Audio"] {
+            defaults.tasks == ["audio-to-diarization"]
+        } else {
+            match model.capabilities.as_slice() {
+                [a] if a == "Image Generation" => {
+                    defaults.tasks == ["text-to-image"]
+                        || defaults.tasks == ["text-image-to-image", "image-to-image"]
+                        || defaults.tasks
+                            == ["text-to-image", "text-image-to-image", "image-to-image"]
+                }
+                [a] if a == "Video Generation" => defaults.tasks == ["text-to-video"],
+                [a] if a == "Decision" => defaults.tasks == ["text-to-decision"],
+                [a] if a == "Portrait Matting" => {
+                    defaults.tasks == ["image-to-matting"]
+                        && defaults.capabilities.as_deref()
+                            == Some(&["Portrait Matting".to_string()][..])
+                }
+                [a, b, c, d] if a == "Chat" && b == "Vision" && c == "Audio" && d == "Video" => {
+                    projector.is_some()
+                        && defaults.tasks
+                            == [
+                                "text-to-text",
+                                "text-image-to-text",
+                                "text-audio-to-text",
+                                "text-video-to-text",
+                                "text-to-audio",
+                            ]
+                }
+                _ => {
+                    defaults.tasks == ["text-to-text"]
+                        || (projector.is_some()
+                            && (defaults.tasks == ["text-to-text", "text-image-to-text"]
+                                || defaults.tasks
+                                    == [
+                                        "text-to-text",
+                                        "text-image-to-text",
+                                        "text-video-to-text",
+                                    ]))
+                }
             }
         };
         ensure!(

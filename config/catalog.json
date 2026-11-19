@@ -114,6 +114,56 @@
       }
     },
     {
+      "id": "deepseek-r1-distill-qwen-32b",
+      "name": "DeepSeek-R1-Distill-Qwen-32B",
+      "description": "DeepSeek R1 reasoning model distilled onto Qwen 32B dense architecture; 44.0 Intelligence Index (+80% over Gemma 4) with ~22 tok/s generation",
+      "capabilities": [
+        "Reasoning",
+        "Code Generation",
+        "Agentic Tasks",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 131072,
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "max_tokens": 16384
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF/DeepSeek-R1-Distill-Qwen-32B-Q3_K_M.gguf",
+        "params": 32800000000,
+        "bits_per_weight": 3.5,
+        "context_length": 32768,
+        "gpu_layers": 99,
+        "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 44,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 46,
+          "strategy_and_ops": 44,
+          "legal": 42,
+          "healthcare_and_medical": 43,
+          "engineering": 48,
+          "economics": 45
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 5.2,
+        "output_tokens_per_task": 65000
+      }
+    },
+    {
       "id": "huihui-qwen3.8-27b-abliterated",
       "name": "Huihui Qwen3.8 27B Abliterated",
       "description": "Huihui-AI abliterated uncensored Qwen3.8 27B instruction and reasoning model",
@@ -173,159 +223,48 @@
       }
     },
     {
-      "id": "ternary-bonsai-2-27b-pq2-0",
-      "name": "Ternary Bonsai-2 27B",
-      "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
+      "id": "scadcoder-qwen3.5-9b-v11-q5-k-m",
+      "name": "SCADcoder Qwen3.5 9B v11 Q5_K_M",
+      "description": "OpenSCAD fine-tune of Qwen3.5 9B v11; text-only CAD generation",
       "capabilities": [
-        "Chat",
-        "Vision",
-        "Reasoning",
-        "Structured Output",
-        "Tool Call"
+        "Chat"
       ],
       "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-video-to-text"
+        "text-to-text"
       ],
       "engine": [
-        "llama-server-prism"
+        "llama-server"
       ],
-      "max_context_length": 262144,
+      "max_context_length": 131072,
       "sampling": {
-        "max_tokens": 4096,
-        "min_p": 0.05,
-        "temperature": 0.7,
-        "top_k": 50,
-        "top_p": 0.9
+        "temperature": 0.2,
+        "max_tokens": 4096
       },
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PQ2_0.gguf",
-        "params": 27000000000,
-        "bits_per_weight": 2.13,
-        "context_length": -1,
+        "path": "D:/Projects/Public/rune/code-model/mradermacher/scadcoder-qwen3.5-9b-v11-GGUF/scadcoder-qwen3.5-9b-v11.Q5_K_M.gguf",
+        "params": 9000000000,
+        "bits_per_weight": 5.5,
+        "context_length": 8192,
         "gpu_layers": 99,
-        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
-      },
-      "extra": {
-        "max_resolution": "4096×4096 (Dynamic 4K)",
-        "mmproj_path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-mmproj-BF16.gguf"
+        "args": "-fa on"
       },
       "benchmarks": {
         "index_name": "Artificial Analysis Intelligence Index",
-        "score": 18.5,
+        "score": 16.8,
         "unit": "index",
         "mode": "reasoning",
-        "reasoning_effort": "high",
+        "reasoning_effort": "medium",
         "domains": {
-          "finance_and_accounting": 33,
-          "strategy_and_ops": 29,
-          "legal": 28,
-          "healthcare_and_medical": 27,
-          "engineering": 32,
-          "economics": 30
+          "finance_and_accounting": 27,
+          "strategy_and_ops": 26,
+          "legal": 23,
+          "healthcare_and_medical": 21,
+          "engineering": 37,
+          "economics": 25
         },
         "cost_per_task_usd": 0,
-        "time_per_task_minutes": 4.8,
-        "output_tokens_per_task": 62000
-      }
-    },
-    {
-      "id": "dinov2-giant",
-      "name": "DINOv2 Giant",
-      "description": "Self-supervised vision transformer foundation backbone for dense feature representation, depth, and semantics",
-      "capabilities": [
-        "Vision Features",
-        "Semantic Search"
-      ],
-      "tasks": [
-        "image-to-embedding"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/facebook/dinov2-giant/dinov2-giant.gguf",
-        "params": 1100000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "Visual Representation Linear Probe (Top-1 Acc)",
-        "score": 86.5,
-        "unit": "% Top-1",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.08,
-        "output_tokens_per_task": 1536
-      }
-    },
-    {
-      "id": "sam2.1-hiera-large",
-      "name": "SAM 2.1 Hiera Large",
-      "description": "Meta Segment Anything Model 2.1 for visual segmentation and promptable mask extraction in images and video",
-      "capabilities": [
-        "Visual Segmentation",
-        "Object Masking",
-        "Video Tracking"
-      ],
-      "tasks": [
-        "image-to-segmentation"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/facebook/sam2.1-hiera-large/model.safetensors",
-        "params": 224000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "SA-1B / DAVIS Video Segmentation (J&F Index)",
-        "score": 78.4,
-        "unit": "J&F Index",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.12,
-        "output_tokens_per_task": 1
-      }
-    },
-    {
-      "id": "grounding-dino-base",
-      "name": "Grounding DINO Base",
-      "description": "Open-world zero-shot object detection model conditioned on language text queries",
-      "capabilities": [
-        "Zero-Shot Detection",
-        "Grounding",
-        "Bounding Boxes"
-      ],
-      "tasks": [
-        "text-image-to-detection"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/IDEA-Research/grounding-dino-base/model.safetensors",
-        "params": 172000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "MS-COCO val2017 mAP50-95 (Zero-Shot)",
-        "score": 52.5,
-        "unit": "% mAP",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.05,
-        "output_tokens_per_task": 80
+        "time_per_task_minutes": 3.4,
+        "output_tokens_per_task": 46000
       }
     },
     {
@@ -379,45 +318,6 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 3.2,
         "output_tokens_per_task": 48000
-      }
-    },
-    {
-      "id": "qwen3-embedding-4b",
-      "name": "Qwen3 Embedding 4B",
-      "description": "Dense dense text and code embeddings foundation model for semantic retrieval and RAG",
-      "capabilities": [
-        "Semantic Search",
-        "Code Retrieval"
-      ],
-      "tasks": [
-        "text-to-embedding"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "sampling": {
-        "temperature": 0,
-        "top_p": 1,
-        "top_k": 1,
-        "min_p": 0,
-        "max_tokens": 1
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3-Embedding-4B/Qwen3-Embedding-4B-Q4_K_M.gguf",
-        "params": 4000000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
-        "score": 71.2,
-        "unit": "NDCG@10",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.06,
-        "output_tokens_per_task": 8192
       }
     },
     {
@@ -542,52 +442,95 @@
       }
     },
     {
-      "id": "cactus-needle-3",
-      "name": "Cactus Needle 3",
-      "description": "Cactus Needle 3 tool-calling and structured extraction engine",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output"
-      ],
+      "id": "lfm3-omni-2b",
+      "name": "LiquidAI LFM3 Omni 2B",
+      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
+      "capabilities": [],
       "tasks": [
-        "text-to-text"
+        "text-to-text",
+        "text-image-to-text",
+        "text-audio-to-text",
+        "text-video-to-text",
+        "text-to-audio"
       ],
       "engine": [
-        "needle"
+        "llama-server"
       ],
-      "max_context_length": 8192,
+      "max_context_length": 128000,
       "sampling": {
-        "temperature": 0.1,
-        "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.01,
-        "max_tokens": 2048
+        "temperature": 0,
+        "top_k": 1,
+        "max_tokens": 256
       },
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/Cactus-Compute/needle3/needle3.cact",
-        "params": 121000000,
-        "bits_per_weight": 2,
-        "context_length": -1,
-        "gpu_layers": 0,
+        "path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-Omni-2B-GGUF/LFM3-Omni-2B-Q8_0.gguf",
+        "params": 1728801600,
+        "bits_per_weight": 8.54,
+        "context_length": 32768,
+        "gpu_layers": 99,
         "args": ""
+      },
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf"
+      },
+      "audio_operations": {
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "llama-server",
+              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+            }
+          ]
+        },
+        "speech_translation": {
+          "status": "unverified"
+        },
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "llama-server",
+              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+            }
+          ]
+        }
+      },
+      "structured_output_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
+      },
+      "tool_call_support": {
+        "status": "supported",
+        "verified_with": [
+          {
+            "engine": "llama-server",
+            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
+          }
+        ]
       },
       "benchmarks": {
         "index_name": "Artificial Analysis Intelligence Index",
-        "score": 6,
+        "score": 8.5,
         "unit": "index",
         "mode": "non_reasoning",
         "reasoning_effort": "none",
         "domains": {
-          "finance_and_accounting": 11,
-          "strategy_and_ops": 10,
-          "legal": 9,
-          "healthcare_and_medical": 8,
-          "engineering": 12,
-          "economics": 10
+          "finance_and_accounting": 16,
+          "strategy_and_ops": 14,
+          "legal": 13,
+          "healthcare_and_medical": 12,
+          "engineering": 15,
+          "economics": 14
         },
         "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.8,
-        "output_tokens_per_task": 14000
+        "time_per_task_minutes": 1.2,
+        "output_tokens_per_task": 20000
       }
     },
     {
@@ -637,6 +580,115 @@
       }
     },
     {
+      "id": "holo3.1-9b-q4",
+      "name": "Holo3.1 9B",
+      "description": "Computer-use vision model; integration and hardware compatibility require validation.",
+      "capabilities": [
+        "Chat",
+        "Tool Call",
+        "Vision"
+      ],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 32768,
+      "sampling": {
+        "temperature": 0,
+        "max_tokens": 512
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-9B-GGUF/Holo-3.1-9B.Q4_K_M.gguf",
+        "params": 9000000000,
+        "bits_per_weight": 5.6,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "-fa on"
+      },
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-9B-GGUF/Holo-3.1-9B.mmproj-f16.gguf"
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 15.5,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 28,
+          "strategy_and_ops": 25,
+          "legal": 24,
+          "healthcare_and_medical": 23,
+          "engineering": 28,
+          "economics": 26
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 3.2,
+        "output_tokens_per_task": 44000
+      }
+    },
+    {
+      "id": "ternary-bonsai-2-27b-pq2-0",
+      "name": "Ternary Bonsai-2 27B",
+      "description": "PrismML Ternary Bonsai 2 27B (1.58-bit PQ2_0) multimodal vision-language reasoning model based on Qwen3.8-27B architecture.",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Reasoning",
+        "Structured Output",
+        "Tool Call"
+      ],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-video-to-text"
+      ],
+      "engine": [
+        "llama-server-prism"
+      ],
+      "max_context_length": 262144,
+      "sampling": {
+        "max_tokens": 4096,
+        "min_p": 0.05,
+        "temperature": 0.7,
+        "top_k": 50,
+        "top_p": 0.9
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-PQ2_0.gguf",
+        "params": 27000000000,
+        "bits_per_weight": 2.13,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "-fa on --cache-type-k q8_0 --cache-type-v q8_0 --parallel 1"
+      },
+      "extra": {
+        "max_resolution": "4096×4096 (Dynamic 4K)",
+        "mmproj_path": "D:/Projects/Public/rune/code-model/prism-ml/Ternary-Bonsai-2-27B-gguf/Ternary-Bonsai-2-27B-mmproj-BF16.gguf"
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 18.5,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 33,
+          "strategy_and_ops": 29,
+          "legal": 28,
+          "healthcare_and_medical": 27,
+          "engineering": 32,
+          "economics": 30
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 4.8,
+        "output_tokens_per_task": 62000
+      }
+    },
+    {
       "id": "qwen-image-2.1-uncensored",
       "name": "Qwen-Image-2.1 7B Uncensored",
       "description": "Qwen-Image-2.1 7B Uncensored variant with bypassed alignment filtering",
@@ -677,6 +729,49 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.45,
         "output_tokens_per_task": 20
+      }
+    },
+    {
+      "id": "qwen-image-2.1-turbo",
+      "name": "Qwen-Image-2.1 Turbo 7B",
+      "description": "Fast 8-step distilled text-to-image foundation model by Qwen team",
+      "capabilities": [
+        "Photorealism",
+        "Fast Generation"
+      ],
+      "tasks": [
+        "text-to-image"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-Turbo-GGUF/qwen-image-2.1-turbo-Q8_0.gguf",
+        "params": 7000000000,
+        "bits_per_weight": 8,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa"
+      },
+      "extra": {
+        "default_cfg_scale": 1,
+        "default_sample_method": "euler",
+        "default_steps": 8,
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "LMSYS Image Arena ELO",
+        "score": 1100,
+        "unit": "ELO",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.22,
+        "output_tokens_per_task": 8
+      },
+      "sampling": {
+        "default_steps": 8,
+        "default_cfg_scale": 1,
+        "default_sample_method": "euler"
       }
     },
     {
@@ -741,8 +836,8 @@
         "default_cfg_scale": 3,
         "default_sample_method": "euler",
         "default_steps": 50,
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
-        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/mradermacher/scadcoder-qwen3.5-9b-v11-GGUF/scadcoder-qwen3.5-9b-v11.Q5_K_M.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/MOSS-Image-SFT-GGUF/vae/diffusion_pytorch_model.safetensors"
       },
       "benchmarks": {
         "index_name": "LMSYS Image Arena ELO",
@@ -751,6 +846,58 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.4,
         "output_tokens_per_task": 20
+      }
+    },
+    {
+      "id": "h3-image",
+      "name": "MiniMax H3-Image",
+      "description": "MiniMax H3-Image 33.1B DiT with native 4K rendering, 6-step distilled sampling, and support for up to 16 reference images",
+      "capabilities": [
+        "High Resolution (4K)",
+        "Multi-Reference Editing"
+      ],
+      "tasks": [
+        "text-to-image",
+        "text-image-to-image",
+        "image-to-image"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/minimax_h3_image_pruned-Q3_K_M.gguf",
+        "params": 33100000000,
+        "bits_per_weight": 3.5,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --params-backend disk --vae-tiling"
+      },
+      "extra": {
+        "default_cfg_scale": 1,
+        "default_sample_method": "euler",
+        "default_steps": 6,
+        "max_resolution": "4096×4096 (Native DiT)",
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/qwen3vl_32b_minimax_h3-Q2_K_M.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/diffusion_pytorch_model.safetensors"
+      },
+      "image_reference_checks": [
+        {
+          "counts": [
+            4,
+            8
+          ],
+          "engine": "sd-server",
+          "version": "stable-diffusion.cpp PR #2324"
+        }
+      ],
+      "benchmarks": {
+        "index_name": "Artificial Analysis Image Editing Elo",
+        "score": 1137,
+        "unit": "Elo",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.15,
+        "output_tokens_per_task": 6
       }
     },
     {
@@ -789,6 +936,493 @@
         "unit": "score",
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 1.1
+      }
+    },
+    {
+      "id": "ltx-2.3-22b-distilled",
+      "name": "LTX-2.3 22B Distilled",
+      "description": "Lightricks LTX-2.3 22B distilled 1.1 (Q4_K_M): few-step text-to-video up to 720p at 24 fps with a Gemma 3 12B text encoder; runs on 16 GB of VRAM with the encoder and weights offloaded",
+      "capabilities": [
+        "Video Generation"
+      ],
+      "tasks": [
+        "text-to-video"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled-1.1-Q4_K_M.gguf",
+        "params": 22000000000,
+        "bits_per_weight": 5.2,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--diffusion-fa --offload-to-cpu --vae-tiling"
+      },
+      "extra": {
+        "default_cfg_scale": 1,
+        "default_sample_method": "euler",
+        "default_steps": 8,
+        "max_resolution": "1280x720",
+        "text_encoder_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
+        "vae_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_video_vae.safetensors",
+        "embeddings_connectors_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_embeddings_connectors.safetensors",
+        "audio_vae_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_audio_vae.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "Physical AI Bench Generation Overall",
+        "score": 75.8,
+        "unit": "Score",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.45,
+        "output_tokens_per_task": 128
+      }
+    },
+    {
+      "id": "fish-audio-s2-pro",
+      "name": "Fish Audio S2 Pro",
+      "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
+      "capabilities": [],
+      "tasks": [
+        "text-to-audio"
+      ],
+      "engine": [
+        "audio-cpp"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-q8_0.gguf",
+        "params": 4954823665,
+        "bits_per_weight": 8,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "audio_operations": {
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }
+          ]
+        }
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.65,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.12,
+        "output_tokens_per_task": 800
+      }
+    },
+    {
+      "id": "voxcpm2-audiocpp",
+      "name": "VoxCPM2 (audio.cpp)",
+      "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
+      "capabilities": [],
+      "tasks": [
+        "text-to-audio"
+      ],
+      "engine": [
+        "audio-cpp"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/VoxCPM2-GGUF/voxcpm2-q8_0.gguf",
+        "params": 2384218498,
+        "bits_per_weight": 9.9023,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--seed 42"
+      },
+      "audio_operations": {
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }
+          ]
+        }
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.55,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.15,
+        "output_tokens_per_task": 750
+      }
+    },
+    {
+      "id": "qwen3-tts-1.7b-customvoice",
+      "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
+      "description": "Zero-shot voice cloning and custom reference speaker voice synthesis",
+      "capabilities": [
+        "Voice Cloning",
+        "Zero-Shot TTS"
+      ],
+      "tasks": [
+        "text-to-audio"
+      ],
+      "engine": [
+        "encoder"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
+        "params": 1700000000,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.5,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.14,
+        "output_tokens_per_task": 700
+      }
+    },
+    {
+      "id": "omnivoice",
+      "name": "OmniVoice",
+      "description": "K2-FSA zero-shot multilingual voice cloning and speech generation engine",
+      "capabilities": [
+        "Zero-Shot Cloning",
+        "Multilingual"
+      ],
+      "tasks": [
+        "text-to-audio"
+      ],
+      "engine": [
+        "audio-cpp"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/k2-fsa/OmniVoice/omnivoice-base-Q4_K_M.gguf",
+        "params": 1500000000,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "TTS Arena Mean Opinion Score (MOS)",
+        "score": 4.3,
+        "unit": "MOS / 5.0",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.18,
+        "output_tokens_per_task": 550
+      }
+    },
+    {
+      "id": "acestep-v1.5-turbo",
+      "name": "AceStep v1.5 Turbo",
+      "description": "AceStep v1.5 Turbo accelerated diffusion model for sub-second generation",
+      "capabilities": [
+        "Music Generation",
+        "Turbo Generation"
+      ],
+      "tasks": [
+        "text-to-audio"
+      ],
+      "engine": [
+        "sd-server"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace-step-1.5-turbo-q8_0.gguf",
+        "params": 4500000000,
+        "bits_per_weight": 8,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--vae D:/Models/gguf/ace_1.5_vae.safetensors"
+      },
+      "extra": {
+        "default_cfg_scale": 2,
+        "default_sample_method": "euler",
+        "default_steps": 8,
+        "vae_path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace_1.5_vae.safetensors"
+      },
+      "benchmarks": {
+        "index_name": "MusicCaps Audio Quality Index",
+        "score": 82.5,
+        "unit": "Score",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.5,
+        "output_tokens_per_task": 1024
+      }
+    },
+    {
+      "id": "whisper-large-v3",
+      "name": "Whisper Large v3",
+      "description": "OpenAI Whisper Large v3 Turbo multilingual speech-to-text transcription with Silero VAD; speech translation remains unverified",
+      "capabilities": [
+        "Multilingual",
+        "Bengali",
+        "Timestamps"
+      ],
+      "tasks": [
+        "audio-to-text"
+      ],
+      "engine": [
+        "crispasr",
+        "whisper-cpp"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/openai/whisper-large-v3-turbo/ggml-large-v3-turbo.bin",
+        "params": 809000000,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": "--vad"
+      },
+      "audio_operations": {
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "crispasr",
+              "version": "version       : 0.8.49; git sha       : d9426437"
+            }
+          ]
+        }
+      },
+      "benchmarks": {
+        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
+        "score": 98.2,
+        "unit": "Accuracy %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.4,
+        "output_tokens_per_task": 1200
+      }
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3",
+      "name": "NVIDIA Parakeet TDT 0.6B v3",
+      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
+      "capabilities": [
+        "Multilingual",
+        "Timestamps",
+        "Punctuation",
+        "FastConformer-TDT"
+      ],
+      "tasks": [
+        "audio-to-text"
+      ],
+      "engine": [
+        "nemo-speech"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/nvidia/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3.q8_0.gguf",
+        "params": 600000000,
+        "bits_per_weight": 8,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "audio_operations": {
+        "speech_translation": {
+          "reason": "The configured Parakeet ASR model does not translate speech, and no NMT companion is configured.",
+          "status": "unsupported"
+        },
+        "transcription": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "nemo-speech",
+              "version": "nemo-speech 0.3.0"
+            }
+          ]
+        }
+      },
+      "benchmarks": {
+        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
+        "score": 97.8,
+        "unit": "Accuracy %",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.15,
+        "output_tokens_per_task": 1200
+      }
+    },
+    {
+      "id": "nemotron-3-diarization",
+      "name": "NVIDIA Nemotron-3 Diarization",
+      "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",
+      "capabilities": [
+        "Speech-Analysis",
+        "Speaker-Diarization",
+        "Multi-Speaker",
+        "Timestamps"
+      ],
+      "tasks": [
+        "audio-to-diarization"
+      ],
+      "engine": [
+        "audio-cpp"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/nvidia/Nemotron-3-Diarization/nemotron-3-diarization-q8_0.gguf",
+        "params": 100000000,
+        "bits_per_weight": 8,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "AMI Diarization Accuracy Index (100 - DER)",
+        "score": 92.4,
+        "unit": "% DER Acc",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.25,
+        "output_tokens_per_task": 1200
+      }
+    },
+    {
+      "id": "snac-24khz",
+      "name": "SNAC 24kHz Tokenizer",
+      "description": "Multi-scale neural audio codec operating at 24kHz",
+      "capabilities": [
+        "Audio",
+        "Neural Codec"
+      ],
+      "tasks": [
+        "audio-to-audio"
+      ],
+      "engine": [
+        "encoder"
+      ],
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/hubertsiuzdak/snac_24khz/snac_24khz_f16.gguf",
+        "params": 50000000,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Audio Codec ViSQOL Quality Index",
+        "score": 4.65,
+        "unit": "ViSQOL",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.04,
+        "output_tokens_per_task": 512
+      }
+    },
+    {
+      "id": "google/embeddinggemma-2",
+      "name": "Google EmbeddingGemma 2",
+      "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
+      "capabilities": [
+        "Semantic Search",
+        "Code Retrieval",
+        "Matryoshka Representations"
+      ],
+      "tasks": [
+        "text-to-embedding"
+      ],
+      "engine": [
+        "llama-server"
+      ],
+      "max_context_length": 8192,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/embeddinggemma-2-GGUF/embeddinggemma-2-UD-Q6_K_XL.gguf",
+        "params": 740000000,
+        "bits_per_weight": 8,
+        "context_length": 8192,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "extra": {
+        "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/embeddinggemma-2-GGUF/mmproj-F16.gguf"
+      },
+      "benchmarks": {
+        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
+        "score": 64.5,
+        "unit": "NDCG@10",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.05,
+        "output_tokens_per_task": 8192
+      }
+    },
+    {
+      "id": "qwen3-embedding-4b",
+      "name": "Qwen3 Embedding 4B",
+      "description": "Dense dense text and code embeddings foundation model for semantic retrieval and RAG",
+      "capabilities": [
+        "Semantic Search",
+        "Code Retrieval"
+      ],
+      "tasks": [
+        "text-to-embedding"
+      ],
+      "engine": [
+        "encoder"
+      ],
+      "max_context_length": null,
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1,
+        "top_k": 1,
+        "min_p": 0,
+        "max_tokens": 1
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen3-Embedding-4B/Qwen3-Embedding-4B-Q4_K_M.gguf",
+        "params": 4000000000,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
+        "score": 71.2,
+        "unit": "NDCG@10",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.06,
+        "output_tokens_per_task": 8192
+      }
+    },
+    {
+      "id": "dinov2-giant",
+      "name": "DINOv2 Giant",
+      "description": "Self-supervised vision transformer foundation backbone for dense feature representation, depth, and semantics",
+      "capabilities": [
+        "Vision Features",
+        "Semantic Search"
+      ],
+      "tasks": [
+        "image-to-embedding"
+      ],
+      "engine": [
+        "encoder"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/facebook/dinov2-giant/dinov2-giant.gguf",
+        "params": 1100000000,
+        "bits_per_weight": 16,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Visual Representation Linear Probe (Top-1 Acc)",
+        "score": 86.5,
+        "unit": "% Top-1",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.08,
+        "output_tokens_per_task": 1536
       }
     },
     {
@@ -935,691 +1569,69 @@
       }
     },
     {
-      "id": "acestep-v1.5-turbo",
-      "name": "AceStep v1.5 Turbo",
-      "description": "AceStep v1.5 Turbo accelerated diffusion model for sub-second generation",
+      "id": "grounding-dino-base",
+      "name": "Grounding DINO Base",
+      "description": "Open-world zero-shot object detection model conditioned on language text queries",
       "capabilities": [
-        "Music Generation",
-        "Turbo Generation"
+        "Zero-Shot Detection",
+        "Grounding",
+        "Bounding Boxes"
       ],
       "tasks": [
-        "text-to-audio"
+        "text-image-to-detection"
       ],
       "engine": [
-        "sd-server"
+        "encoder"
       ],
       "max_context_length": null,
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace-step-1.5-turbo-q8_0.gguf",
-        "params": 4500000000,
-        "bits_per_weight": 8,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--vae D:/Models/gguf/ace_1.5_vae.safetensors"
-      },
-      "extra": {
-        "default_cfg_scale": 2,
-        "default_sample_method": "euler",
-        "default_steps": 8,
-        "vae_path": "D:/Projects/Public/rune/code-model/ACE-Step/Ace-Step1.5/ace_1.5_vae.safetensors"
-      },
-      "benchmarks": {
-        "index_name": "MusicCaps Audio Quality Index",
-        "score": 82.5,
-        "unit": "Score",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.5,
-        "output_tokens_per_task": 1024
-      }
-    },
-    {
-      "id": "whisper-large-v3",
-      "name": "Whisper Large v3",
-      "description": "OpenAI Whisper Large v3 Turbo multilingual speech-to-text transcription with Silero VAD; speech translation remains unverified",
-      "capabilities": [
-        "Multilingual",
-        "Bengali",
-        "Timestamps"
-      ],
-      "tasks": [
-        "audio-to-text"
-      ],
-      "engine": [
-        "crispasr",
-        "whisper-cpp"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/openai/whisper-large-v3-turbo/ggml-large-v3-turbo.bin",
-        "params": 809000000,
+        "path": "D:/Projects/Public/rune/code-model/IDEA-Research/grounding-dino-base/model.safetensors",
+        "params": 172000000,
         "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--vad"
-      },
-      "audio_operations": {
-        "transcription": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "crispasr",
-              "version": "version       : 0.8.49; git sha       : d9426437"
-            }
-          ]
-        }
+        "args": ""
       },
       "benchmarks": {
-        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
-        "score": 98.2,
-        "unit": "Accuracy %",
+        "index_name": "MS-COCO val2017 mAP50-95 (Zero-Shot)",
+        "score": 52.5,
+        "unit": "% mAP",
         "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.4,
-        "output_tokens_per_task": 1200
+        "time_per_task_minutes": 0.05,
+        "output_tokens_per_task": 80
       }
     },
     {
-      "id": "parakeet-tdt-0.6b-v3",
-      "name": "NVIDIA Parakeet TDT 0.6B v3",
-      "description": "NVIDIA Parakeet TDT 0.6B v3 FastConformer multilingual speech-to-text model supporting 25 European languages with automatic language detection",
+      "id": "sam2.1-hiera-large",
+      "name": "SAM 2.1 Hiera Large",
+      "description": "Meta Segment Anything Model 2.1 for visual segmentation and promptable mask extraction in images and video",
       "capabilities": [
-        "Multilingual",
-        "Timestamps",
-        "Punctuation",
-        "FastConformer-TDT"
+        "Visual Segmentation",
+        "Object Masking",
+        "Video Tracking"
       ],
       "tasks": [
-        "audio-to-text"
+        "image-to-segmentation"
       ],
       "engine": [
-        "nemo-speech"
+        "encoder"
       ],
       "max_context_length": null,
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/nvidia/parakeet-tdt-0.6b-v3/parakeet-tdt-0.6b-v3.q8_0.gguf",
-        "params": 600000000,
-        "bits_per_weight": 8,
+        "path": "D:/Projects/Public/rune/code-model/facebook/sam2.1-hiera-large/model.safetensors",
+        "params": 224000000,
+        "bits_per_weight": 16,
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
       },
-      "audio_operations": {
-        "speech_translation": {
-          "reason": "The configured Parakeet ASR model does not translate speech, and no NMT companion is configured.",
-          "status": "unsupported"
-        },
-        "transcription": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "nemo-speech",
-              "version": "nemo-speech 0.3.0"
-            }
-          ]
-        }
-      },
       "benchmarks": {
-        "index_name": "OpenASR Word Accuracy Index (100 - WER)",
-        "score": 97.8,
-        "unit": "Accuracy %",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.15,
-        "output_tokens_per_task": 1200
-      }
-    },
-    {
-      "id": "fish-audio-s2-pro",
-      "name": "Fish Audio S2 Pro",
-      "description": "Fish S2 Pro native GGUF with live-verified GPU/CPU WAV speech at normal speed using its default voice",
-      "capabilities": [],
-      "tasks": [
-        "text-to-audio"
-      ],
-      "engine": [
-        "audio-cpp"
-      ],
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Fish-Audio-S2-Pro-GGUF/fish-audio-s2-pro-q8_0.gguf",
-        "params": 4954823665,
-        "bits_per_weight": 8,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "audio_operations": {
-        "speech_generation": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "audio-cpp",
-              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
-            }
-          ]
-        }
-      },
-      "benchmarks": {
-        "index_name": "TTS Arena Mean Opinion Score (MOS)",
-        "score": 4.65,
-        "unit": "MOS / 5.0",
+        "index_name": "SA-1B / DAVIS Video Segmentation (J&F Index)",
+        "score": 78.4,
+        "unit": "J&F Index",
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.12,
-        "output_tokens_per_task": 800
-      }
-    },
-    {
-      "id": "voxcpm2-audiocpp",
-      "name": "VoxCPM2 (audio.cpp)",
-      "description": "VoxCPM2 native GGUF with live-verified GPU/CPU 48 kHz WAV speech at normal speed using its default voice",
-      "capabilities": [],
-      "tasks": [
-        "text-to-audio"
-      ],
-      "engine": [
-        "audio-cpp"
-      ],
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/VoxCPM2-GGUF/voxcpm2-q8_0.gguf",
-        "params": 2384218498,
-        "bits_per_weight": 9.9023,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--seed 42"
-      },
-      "audio_operations": {
-        "speech_generation": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "audio-cpp",
-              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
-            }
-          ]
-        }
-      },
-      "benchmarks": {
-        "index_name": "TTS Arena Mean Opinion Score (MOS)",
-        "score": 4.55,
-        "unit": "MOS / 5.0",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.15,
-        "output_tokens_per_task": 750
-      }
-    },
-    {
-      "id": "qwen3-tts-1.7b-customvoice",
-      "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
-      "description": "Zero-shot voice cloning and custom reference speaker voice synthesis",
-      "capabilities": [
-        "Voice Cloning",
-        "Zero-Shot TTS"
-      ],
-      "tasks": [
-        "text-to-audio"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
-        "params": 1700000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "TTS Arena Mean Opinion Score (MOS)",
-        "score": 4.5,
-        "unit": "MOS / 5.0",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.14,
-        "output_tokens_per_task": 700
-      }
-    },
-    {
-      "id": "omnivoice",
-      "name": "OmniVoice",
-      "description": "K2-FSA zero-shot multilingual voice cloning and speech generation engine",
-      "capabilities": [
-        "Zero-Shot Cloning",
-        "Multilingual"
-      ],
-      "tasks": [
-        "text-to-audio"
-      ],
-      "engine": [
-        "audio-cpp"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/k2-fsa/OmniVoice/omnivoice-base-Q4_K_M.gguf",
-        "params": 1500000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "TTS Arena Mean Opinion Score (MOS)",
-        "score": 4.3,
-        "unit": "MOS / 5.0",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.18,
-        "output_tokens_per_task": 550
-      }
-    },
-    {
-      "id": "nemotron-3-diarization",
-      "name": "NVIDIA Nemotron-3 Diarization",
-      "description": "Neural speaker diarization model identifying speaker turns, roster, and activity timelines",
-      "capabilities": [
-        "Speech-Analysis",
-        "Speaker-Diarization",
-        "Multi-Speaker",
-        "Timestamps"
-      ],
-      "tasks": [
-        "audio-to-diarization"
-      ],
-      "engine": [
-        "audio-cpp"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/nvidia/Nemotron-3-Diarization/nemotron-3-diarization-q8_0.gguf",
-        "params": 100000000,
-        "bits_per_weight": 8,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "AMI Diarization Accuracy Index (100 - DER)",
-        "score": 92.4,
-        "unit": "% DER Acc",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.25,
-        "output_tokens_per_task": 1200
-      }
-    },
-    {
-      "id": "google/embeddinggemma-2",
-      "name": "Google EmbeddingGemma 2",
-      "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
-      "capabilities": [
-        "Semantic Search",
-        "Code Retrieval",
-        "Matryoshka Representations"
-      ],
-      "tasks": [
-        "text-to-embedding"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 8192,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/embeddinggemma-2-GGUF/embeddinggemma-2-UD-Q6_K_XL.gguf",
-        "params": 740000000,
-        "bits_per_weight": 8,
-        "context_length": 8192,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/unsloth/embeddinggemma-2-GGUF/mmproj-F16.gguf"
-      },
-      "benchmarks": {
-        "index_name": "MTEB Multilingual Retrieval (NDCG@10)",
-        "score": 64.5,
-        "unit": "NDCG@10",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.05,
-        "output_tokens_per_task": 8192
-      }
-    },
-    {
-      "id": "gliguard-LLMGuardrails-300M",
-      "name": "GLiGuard LLM Guardrails 300M",
-      "description": "Fastino GLiGuard 300M multi-category safety moderation model",
-      "capabilities": [],
-      "tasks": [
-        "text-to-moderation"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/fastino/gliguard-LLMGuardrails-300M/model.safetensors",
-        "params": null,
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "ToxicChat / BeaverTails Guardrail F1",
-        "score": 89.2,
-        "unit": "F1 Score",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.03,
-        "output_tokens_per_task": 2
-      }
-    },
-    {
-      "id": "mmbert32k-intent-classifier-merged",
-      "name": "mmBERT 32K Intent Classifier",
-      "description": "ModernBERT 32K zero-shot intent and entity classifier",
-      "capabilities": [],
-      "modality": "Nlu",
-      "engine": [
-        "encoder"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/vllm-sr/mmbert32k-intent-classifier-merged/mmBERT-Base-Q4_k_m.gguf",
-        "params": null,
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "Banking77 / CLINC150 Intent Classification Accuracy",
-        "score": 93.6,
-        "unit": "% Acc",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.03,
-        "output_tokens_per_task": 128
-      },
-      "tasks": [
-        "text-to-text"
-      ]
-    },
-    {
-      "id": "space-bunny-alpha",
-      "name": "Space Bunny Alpha (Stealth)",
-      "description": "Stealth Space Bunny Alpha anonymous 1M-token multimodal reasoning model",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output",
-        "Structured JSON",
-        "Reasoning"
-      ],
-      "tasks": [
-        "text-to-text"
-      ],
-      "max_context_length": 1000000,
-      "remote": {
-        "provider": "openrouter",
-        "upstream_model": "stealth/space-bunny-alpha",
-        "api_key": "{{OPENROUTER_API_KEY}}",
-        "base_url": "https://openrouter.ai/api/v1",
-        "rate_limit": {
-          "requests_per_minute": 20,
-          "max_concurrent": 2,
-          "retry_delay_ms": 1500,
-          "max_retries": 5,
-          "queue_timeout_seconds": 60,
-          "retry_timeout_seconds": 45
-        }
-      },
-      "benchmarks": {
-        "index_name": "Chatbot Arena Hard",
-        "score": 74,
-        "unit": "Score",
-        "mode": "non_reasoning",
-        "reasoning_effort": "none",
-        "cost_per_task_usd": 0.35,
-        "time_per_task_minutes": 4.5,
-        "output_tokens_per_task": 50000
-      }
-    },
-    {
-      "id": "dots-3-note-preview",
-      "name": "Dots3-Note Preview (Free)",
-      "description": "Dots Studio Dots3-Note Preview 16B/280B MoE multimodal reasoning model with 512K context",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output",
-        "Structured JSON",
-        "Reasoning"
-      ],
-      "tasks": [
-        "text-to-text"
-      ],
-      "max_context_length": 512000,
-      "remote": {
-        "provider": "openrouter",
-        "upstream_model": "dots-studio/dots-3-note-preview:free",
-        "api_key": "{{OPENROUTER_API_KEY}}",
-        "base_url": "https://openrouter.ai/api/v1",
-        "rate_limit": {
-          "requests_per_minute": 20,
-          "max_concurrent": 2,
-          "retry_delay_ms": 1500,
-          "max_retries": 5,
-          "queue_timeout_seconds": 60,
-          "retry_timeout_seconds": 45
-        }
-      },
-      "benchmarks": {
-        "index_name": "Chatbot Arena Hard",
-        "score": 71.5,
-        "unit": "Score",
-        "mode": "non_reasoning",
-        "reasoning_effort": "none",
-        "cost_per_task_usd": 0.25,
-        "time_per_task_minutes": 3.8,
-        "output_tokens_per_task": 45000
-      }
-    },
-    {
-      "id": "gemini-3.8-flash",
-      "name": "Gemini 3.8 Flash (Google AI Cloud)",
-      "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output"
-      ],
-      "tasks": [
-        "text-to-text"
-      ],
-      "max_context_length": null,
-      "remote": {
-        "provider": "google",
-        "upstream_model": "gemini-3.8-flash",
-        "api_key": "{{GEMINI_API_KEY}}",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "rate_limit": {
-          "requests_per_minute": 5,
-          "tokens_per_minute": 250000,
-          "requests_per_day": 20,
-          "max_concurrent": 2,
-          "retry_delay_ms": 2000,
-          "max_retries": 6,
-          "queue_timeout_seconds": 30,
-          "retry_timeout_seconds": 45
-        }
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 31,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "medium",
-        "domains": {
-          "finance_and_accounting": 40,
-          "strategy_and_ops": 36,
-          "legal": 35,
-          "healthcare_and_medical": 34,
-          "engineering": 38,
-          "economics": 37
-        },
-        "cost_per_task_usd": 0.42,
-        "time_per_task_minutes": 14.8,
-        "output_tokens_per_task": 110000
-      }
-    },
-    {
-      "id": "apodex-1.1-mini",
-      "name": "Apodex 1.1 Mini (Free)",
-      "description": "Apodex 1.1 Mini reasoning model hosted on OpenRouter Free Tier",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output",
-        "Structured JSON",
-        "Reasoning"
-      ],
-      "tasks": [
-        "text-to-text"
-      ],
-      "max_context_length": 262144,
-      "remote": {
-        "provider": "openrouter",
-        "upstream_model": "apodex/apodex-1.1-mini:free",
-        "api_key": "{{OPENROUTER_API_KEY}}",
-        "base_url": "https://openrouter.ai/api/v1",
-        "rate_limit": {
-          "requests_per_minute": 20,
-          "max_concurrent": 2,
-          "retry_delay_ms": 1500,
-          "max_retries": 5,
-          "queue_timeout_seconds": 60,
-          "retry_timeout_seconds": 45
-        }
-      },
-      "benchmarks": {
-        "index_name": "Chatbot Arena Hard",
-        "score": 68,
-        "unit": "Score",
-        "mode": "non_reasoning",
-        "reasoning_effort": "none",
-        "cost_per_task_usd": 0.15,
-        "time_per_task_minutes": 2.8,
-        "output_tokens_per_task": 35000
-      }
-    },
-    {
-      "id": "depth-anything-v2-large",
-      "name": "Depth Anything V2 Large FP32",
-      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-large architecture)",
-      "capabilities": [],
-      "tasks": [
-        "image-to-depth"
-      ],
-      "engine": [
-        "litert"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/.misc/litert/depth_anything_v2_large_gpu_fp32.tflite",
-        "params": null,
-        "bits_per_weight": 32,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "NYUv2 Relative Depth Accuracy Index (1 - AbsRel)",
-        "score": 93.5,
-        "unit": "Accuracy %",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.05,
         "output_tokens_per_task": 1
-      }
-    },
-    {
-      "id": "lfm3-omni-2b",
-      "name": "LiquidAI LFM3 Omni 2B",
-      "description": "LiquidAI LFM3 Omni with live-verified multimodal chat, standalone transcription and WAV speech using the local vision/audio projector",
-      "capabilities": [],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-audio-to-text",
-        "text-video-to-text",
-        "text-to-audio"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 128000,
-      "sampling": {
-        "temperature": 0,
-        "top_k": 1,
-        "max_tokens": 256
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-Omni-2B-GGUF/LFM3-Omni-2B-Q8_0.gguf",
-        "params": 1728801600,
-        "bits_per_weight": 8.54,
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/LiquidAI/LFM3-Omni-2B-GGUF/mmproj-LFM3-Omni-2B-F16.gguf"
-      },
-      "audio_operations": {
-        "speech_generation": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "llama-server",
-              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-            }
-          ]
-        },
-        "speech_translation": {
-          "status": "unverified"
-        },
-        "transcription": {
-          "status": "supported",
-          "verified_with": [
-            {
-              "engine": "llama-server",
-              "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-            }
-          ]
-        }
-      },
-      "structured_output_support": {
-        "status": "supported",
-        "verified_with": [
-          {
-            "engine": "llama-server",
-            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-          }
-        ]
-      },
-      "tool_call_support": {
-        "status": "supported",
-        "verified_with": [
-          {
-            "engine": "llama-server",
-            "version": "version: 0.8.0-dev (build 11960, commit 8642541b2)"
-          }
-        ]
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 8.5,
-        "unit": "index",
-        "mode": "non_reasoning",
-        "reasoning_effort": "none",
-        "domains": {
-          "finance_and_accounting": 16,
-          "strategy_and_ops": 14,
-          "legal": 13,
-          "healthcare_and_medical": 12,
-          "engineering": 15,
-          "economics": 14
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 1.2,
-        "output_tokens_per_task": 20000
       }
     },
     {
@@ -1654,471 +1666,32 @@
       }
     },
     {
-      "id": "holo3.1-9b-q4",
-      "name": "Holo3.1 9B",
-      "description": "Computer-use vision model; integration and hardware compatibility require validation.",
-      "capabilities": [
-        "Chat",
-        "Tool Call",
-        "Vision"
-      ],
+      "id": "depth-anything-v2-large",
+      "name": "Depth Anything V2 Large FP32",
+      "description": "Imported by setup wizard (relative depth estimation · depth-anything-v2-large architecture)",
+      "capabilities": [],
       "tasks": [
-        "text-to-text",
-        "text-image-to-text"
+        "image-to-depth"
       ],
       "engine": [
-        "llama-server"
+        "litert"
       ],
-      "max_context_length": 32768,
-      "sampling": {
-        "temperature": 0,
-        "max_tokens": 512
-      },
+      "max_context_length": null,
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-9B-GGUF/Holo-3.1-9B.Q4_K_M.gguf",
-        "params": 9000000000,
-        "bits_per_weight": 5.6,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "-fa on"
-      },
-      "extra": {
-        "mmproj_path": "D:/Projects/Public/rune/code-model/prithivMLmods/Holo-3.1-9B-GGUF/Holo-3.1-9B.mmproj-f16.gguf"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 15.5,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "medium",
-        "domains": {
-          "finance_and_accounting": 28,
-          "strategy_and_ops": 25,
-          "legal": 24,
-          "healthcare_and_medical": 23,
-          "engineering": 28,
-          "economics": 26
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 3.2,
-        "output_tokens_per_task": 44000
-      }
-    },
-    {
-      "id": "snac-24khz",
-      "name": "SNAC 24kHz Tokenizer",
-      "description": "Multi-scale neural audio codec operating at 24kHz",
-      "capabilities": [
-        "Audio",
-        "Neural Codec"
-      ],
-      "tasks": [
-        "audio-to-audio"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/hubertsiuzdak/snac_24khz/snac_24khz_f16.gguf",
-        "params": 50000000,
-        "bits_per_weight": 16,
+        "path": "D:/Projects/Public/rune/code-model/.misc/litert/depth_anything_v2_large_gpu_fp32.tflite",
+        "params": null,
+        "bits_per_weight": 32,
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
       },
       "benchmarks": {
-        "index_name": "Audio Codec ViSQOL Quality Index",
-        "score": 4.65,
-        "unit": "ViSQOL",
+        "index_name": "NYUv2 Relative Depth Accuracy Index (1 - AbsRel)",
+        "score": 93.5,
+        "unit": "Accuracy %",
         "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.04,
-        "output_tokens_per_task": 512
-      }
-    },
-    {
-      "id": "qwen-image-2.1-turbo",
-      "name": "Qwen-Image-2.1 Turbo 7B",
-      "description": "Fast 8-step distilled text-to-image foundation model by Qwen team",
-      "capabilities": [
-        "Photorealism",
-        "Fast Generation"
-      ],
-      "tasks": [
-        "text-to-image"
-      ],
-      "engine": [
-        "sd-server"
-      ],
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-Turbo-GGUF/qwen-image-2.1-turbo-Q8_0.gguf",
-        "params": 7000000000,
-        "bits_per_weight": 8,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa"
-      },
-      "extra": {
-        "default_cfg_scale": 1,
-        "default_sample_method": "euler",
-        "default_steps": 8,
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/text_encoder/qwen3vl_8b_heretic-Q4_K_M.gguf",
-        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/Qwen-Image-2.1-GGUF/vae/diffusion_pytorch_model.safetensors"
-      },
-      "benchmarks": {
-        "index_name": "LMSYS Image Arena ELO",
-        "score": 1100,
-        "unit": "ELO",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.22,
-        "output_tokens_per_task": 8
-      },
-      "sampling": {
-        "default_steps": 8,
-        "default_cfg_scale": 1,
-        "default_sample_method": "euler"
-      }
-    },
-    {
-      "id": "nemotron-3.5-super-vl",
-      "name": "Nemotron 3.5 Super-VL (Free)",
-      "description": "NVIDIA Nemotron 3.5 Super-VL 120B MoE multimodal vision-language model hosted on OpenRouter Free Tier",
-      "capabilities": [
-        "Tool Call",
-        "Structured Output",
-        "Structured JSON",
-        "Reasoning",
-        "Vision"
-      ],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text"
-      ],
-      "max_context_length": 1000000,
-      "remote": {
-        "provider": "openrouter",
-        "upstream_model": "nvidia/nemotron-3.5-super-vl:free",
-        "api_key": "{{OPENROUTER_API_KEY}}",
-        "base_url": "https://openrouter.ai/api/v1",
-        "rate_limit": {
-          "requests_per_minute": 20,
-          "max_concurrent": 2,
-          "retry_delay_ms": 1500,
-          "max_retries": 5,
-          "queue_timeout_seconds": 60,
-          "retry_timeout_seconds": 45
-        }
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 15,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "high",
-        "domains": {
-          "finance_and_accounting": 27,
-          "strategy_and_ops": 25,
-          "legal": 24,
-          "healthcare_and_medical": 23,
-          "engineering": 28,
-          "economics": 25
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 3.8,
-        "output_tokens_per_task": 81000
-      }
-    },
-    {
-      "id": "scadcoder-qwen3.5-9b-v11-q5-k-m",
-      "name": "SCADcoder Qwen3.5 9B v11 Q5_K_M",
-      "description": "OpenSCAD fine-tune of Qwen3.5 9B v11; text-only CAD generation",
-      "capabilities": [
-        "Chat"
-      ],
-      "tasks": [
-        "text-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 131072,
-      "sampling": {
-        "temperature": 0.2,
-        "max_tokens": 4096
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/mradermacher/scadcoder-qwen3.5-9b-v11-GGUF/scadcoder-qwen3.5-9b-v11.Q5_K_M.gguf",
-        "params": 9000000000,
-        "bits_per_weight": 5.5,
-        "context_length": 8192,
-        "gpu_layers": 99,
-        "args": "-fa on"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 16.8,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "medium",
-        "domains": {
-          "finance_and_accounting": 27,
-          "strategy_and_ops": 26,
-          "legal": 23,
-          "healthcare_and_medical": 21,
-          "engineering": 37,
-          "economics": 25
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 3.4,
-        "output_tokens_per_task": 46000
-      }
-    },
-    {
-      "id": "gemini-4-carbon",
-      "name": "Gemini 4 Carbon",
-      "description": "Google Gemini 4 Carbon frontier multimodal reasoning foundation model with extended context and high-effort reasoning",
-      "capabilities": [
-        "Chat",
-        "Vision",
-        "Tool Call",
-        "Structured Output"
-      ],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-video-to-text",
-        "text-audio-to-text"
-      ],
-      "max_context_length": 2097152,
-      "sampling": {
-        "temperature": 0.7,
-        "top_p": 0.95,
-        "max_tokens": 65536
-      },
-      "remote": {
-        "provider": "google",
-        "upstream_model": "gemini-4-carbon",
-        "api_key": "{{GEMINI_API_KEY}}",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "rate_limit": {
-          "requests_per_minute": 1000,
-          "max_concurrent": 10,
-          "retry_delay_ms": 1000
-        }
-      },
-      "extra": {},
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 60,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "high",
-        "domains": {
-          "finance_and_accounting": 63,
-          "strategy_and_ops": 61,
-          "legal": 59,
-          "healthcare_and_medical": 62,
-          "engineering": 64,
-          "economics": 62
-        },
-        "cost_per_task_usd": 1.42,
-        "time_per_task_minutes": 9.8,
-        "output_tokens_per_task": 118000
-      }
-    },
-    {
-      "id": "gemini-4-hydrogen",
-      "name": "Gemini 4 Hydrogen",
-      "description": "Google Gemini 4 Hydrogen multimodal reasoning model with extra-high reasoning effort and deep scientific verification",
-      "capabilities": [
-        "Chat",
-        "Vision",
-        "Tool Call",
-        "Structured Output"
-      ],
-      "tasks": [
-        "text-to-text",
-        "text-image-to-text",
-        "text-video-to-text",
-        "text-audio-to-text"
-      ],
-      "max_context_length": 1048576,
-      "sampling": {
-        "temperature": 0.7,
-        "top_p": 0.95,
-        "max_tokens": 65536
-      },
-      "remote": {
-        "provider": "google",
-        "upstream_model": "gemini-4-hydrogen",
-        "api_key": "{{GEMINI_API_KEY}}",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "rate_limit": {
-          "requests_per_minute": 1500,
-          "max_concurrent": 15,
-          "retry_delay_ms": 800
-        }
-      },
-      "extra": {},
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 54,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "xhigh",
-        "domains": {
-          "finance_and_accounting": 58,
-          "strategy_and_ops": 55,
-          "legal": 53,
-          "healthcare_and_medical": 56,
-          "engineering": 57,
-          "economics": 54
-        },
-        "cost_per_task_usd": 1.15,
-        "time_per_task_minutes": 8.6,
-        "output_tokens_per_task": 138000
-      }
-    },
-    {
-      "id": "deepseek-r1-distill-qwen-32b",
-      "name": "DeepSeek-R1-Distill-Qwen-32B",
-      "description": "DeepSeek R1 reasoning model distilled onto Qwen 32B dense architecture; 44.0 Intelligence Index (+80% over Gemma 4) with ~22 tok/s generation",
-      "capabilities": [
-        "Reasoning",
-        "Code Generation",
-        "Agentic Tasks",
-        "Tool Call",
-        "Structured Output"
-      ],
-      "tasks": [
-        "text-to-text"
-      ],
-      "engine": [
-        "llama-server"
-      ],
-      "max_context_length": 131072,
-      "sampling": {
-        "temperature": 0.6,
-        "top_p": 0.95,
-        "max_tokens": 16384
-      },
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF/DeepSeek-R1-Distill-Qwen-32B-Q3_K_M.gguf",
-        "params": 32800000000,
-        "bits_per_weight": 3.5,
-        "context_length": 32768,
-        "gpu_layers": 99,
-        "args": "-fa on --cache-type-k q4_0 --cache-type-v q4_0 -b 2048 -ub 1024 --cache-reuse 256"
-      },
-      "benchmarks": {
-        "index_name": "Artificial Analysis Intelligence Index",
-        "score": 44,
-        "unit": "index",
-        "mode": "reasoning",
-        "reasoning_effort": "high",
-        "domains": {
-          "finance_and_accounting": 46,
-          "strategy_and_ops": 44,
-          "legal": 42,
-          "healthcare_and_medical": 43,
-          "engineering": 48,
-          "economics": 45
-        },
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 5.2,
-        "output_tokens_per_task": 65000
-      }
-    },
-    {
-      "id": "h3-image",
-      "name": "MiniMax H3-Image",
-      "description": "MiniMax H3-Image 33.1B DiT with native 4K rendering, 6-step distilled sampling, and support for up to 16 reference images",
-      "capabilities": [
-        "High Resolution (4K)",
-        "Multi-Reference Editing"
-      ],
-      "tasks": [
-        "text-to-image",
-        "text-image-to-image",
-        "image-to-image"
-      ],
-      "engine": [
-        "sd-server"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/minimax_h3_image_pruned-Q3_K_M.gguf",
-        "params": 33100000000,
-        "bits_per_weight": 3.5,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk --vae-tiling"
-      },
-      "extra": {
-        "default_cfg_scale": 1,
-        "default_sample_method": "euler",
-        "default_steps": 6,
-        "max_resolution": "4096×4096 (Native DiT)",
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/qwen3vl_32b_minimax_h3-Q2_K_M.gguf",
-        "vae_path": "D:/Projects/Public/rune/code-model/unsloth/MiniMax-H3-Image-GGUF/diffusion_pytorch_model.safetensors"
-      },
-      "image_reference_checks": [
-        {
-          "counts": [
-            4,
-            8
-          ],
-          "engine": "sd-server",
-          "version": "stable-diffusion.cpp PR #2324"
-        }
-      ],
-      "benchmarks": {
-        "index_name": "Artificial Analysis Image Editing Elo",
-        "score": 1137,
-        "unit": "Elo",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.15,
-        "output_tokens_per_task": 6
-      }
-    },
-    {
-      "id": "ltx-2.3-22b-distilled",
-      "name": "LTX-2.3 22B Distilled",
-      "description": "Lightricks LTX-2.3 22B distilled 1.1 (Q4_K_M): few-step text-to-video up to 720p at 24 fps with a Gemma 3 12B text encoder; runs on 16 GB of VRAM with the encoder and weights offloaded",
-      "capabilities": [
-        "Video Generation"
-      ],
-      "tasks": [
-        "text-to-video"
-      ],
-      "engine": [
-        "sd-server"
-      ],
-      "max_context_length": null,
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled-1.1-Q4_K_M.gguf",
-        "params": 22000000000,
-        "bits_per_weight": 5.2,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": "--diffusion-fa --offload-to-cpu --vae-tiling"
-      },
-      "extra": {
-        "default_cfg_scale": 1,
-        "default_sample_method": "euler",
-        "default_steps": 8,
-        "max_resolution": "1280x720",
-        "text_encoder_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
-        "vae_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_video_vae.safetensors",
-        "embeddings_connectors_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_embeddings_connectors.safetensors",
-        "audio_vae_path": "D:/Projects/Public/rune/code-model/lightricks/ltx-2.3-22b-distilled/ltx-2.3-22b-distilled_audio_vae.safetensors"
-      },
-      "benchmarks": {
-        "index_name": "Physical AI Bench Generation Overall",
-        "score": 75.8,
-        "unit": "Score",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.45,
-        "output_tokens_per_task": 128
+        "time_per_task_minutes": 0.05,
+        "output_tokens_per_task": 1
       }
     },
     {
@@ -2306,6 +1879,433 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/aesthetic/aesthetic_score_mlp.onnx"
+      }
+    },
+    {
+      "id": "gliguard-LLMGuardrails-300M",
+      "name": "GLiGuard LLM Guardrails 300M",
+      "description": "Fastino GLiGuard 300M multi-category safety moderation model",
+      "capabilities": [],
+      "tasks": [
+        "text-to-moderation"
+      ],
+      "engine": [
+        "encoder"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/fastino/gliguard-LLMGuardrails-300M/model.safetensors",
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "ToxicChat / BeaverTails Guardrail F1",
+        "score": 89.2,
+        "unit": "F1 Score",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.03,
+        "output_tokens_per_task": 2
+      }
+    },
+    {
+      "id": "mmbert32k-intent-classifier-merged",
+      "name": "mmBERT 32K Intent Classifier",
+      "description": "ModernBERT 32K zero-shot intent and entity classifier",
+      "capabilities": [],
+      "modality": "Nlu",
+      "engine": [
+        "encoder"
+      ],
+      "max_context_length": null,
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/vllm-sr/mmbert32k-intent-classifier-merged/mmBERT-Base-Q4_k_m.gguf",
+        "params": null,
+        "bits_per_weight": null,
+        "context_length": -1,
+        "gpu_layers": 99,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Banking77 / CLINC150 Intent Classification Accuracy",
+        "score": 93.6,
+        "unit": "% Acc",
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.03,
+        "output_tokens_per_task": 128
+      },
+      "tasks": [
+        "text-to-text"
+      ]
+    },
+    {
+      "id": "cactus-needle-3",
+      "name": "Cactus Needle 3",
+      "description": "Cactus Needle 3 tool-calling and structured extraction engine",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "engine": [
+        "needle"
+      ],
+      "max_context_length": 8192,
+      "sampling": {
+        "temperature": 0.1,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.01,
+        "max_tokens": 2048
+      },
+      "local": {
+        "path": "D:/Projects/Public/rune/code-model/Cactus-Compute/needle3/needle3.cact",
+        "params": 121000000,
+        "bits_per_weight": 2,
+        "context_length": -1,
+        "gpu_layers": 0,
+        "args": ""
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 6,
+        "unit": "index",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "domains": {
+          "finance_and_accounting": 11,
+          "strategy_and_ops": 10,
+          "legal": 9,
+          "healthcare_and_medical": 8,
+          "engineering": 12,
+          "economics": 10
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 0.8,
+        "output_tokens_per_task": 14000
+      }
+    },
+    {
+      "id": "gemini-4-hydrogen",
+      "name": "Gemini 4 Hydrogen",
+      "description": "Google Gemini 4 Hydrogen multimodal reasoning model with extra-high reasoning effort and deep scientific verification",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-video-to-text",
+        "text-audio-to-text"
+      ],
+      "max_context_length": 1048576,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "max_tokens": 65536
+      },
+      "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-4-hydrogen",
+        "api_key": "{{GEMINI_API_KEY}}",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "rate_limit": {
+          "requests_per_minute": 1500,
+          "max_concurrent": 15,
+          "retry_delay_ms": 800
+        }
+      },
+      "extra": {},
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 54,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "xhigh",
+        "domains": {
+          "finance_and_accounting": 58,
+          "strategy_and_ops": 55,
+          "legal": 53,
+          "healthcare_and_medical": 56,
+          "engineering": 57,
+          "economics": 54
+        },
+        "cost_per_task_usd": 1.15,
+        "time_per_task_minutes": 8.6,
+        "output_tokens_per_task": 138000
+      }
+    },
+    {
+      "id": "gemini-4-carbon",
+      "name": "Gemini 4 Carbon",
+      "description": "Google Gemini 4 Carbon frontier multimodal reasoning foundation model with extended context and high-effort reasoning",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-video-to-text",
+        "text-audio-to-text"
+      ],
+      "max_context_length": 2097152,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "max_tokens": 65536
+      },
+      "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-4-carbon",
+        "api_key": "{{GEMINI_API_KEY}}",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "rate_limit": {
+          "requests_per_minute": 1000,
+          "max_concurrent": 10,
+          "retry_delay_ms": 1000
+        }
+      },
+      "extra": {},
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 60,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 63,
+          "strategy_and_ops": 61,
+          "legal": 59,
+          "healthcare_and_medical": 62,
+          "engineering": 64,
+          "economics": 62
+        },
+        "cost_per_task_usd": 1.42,
+        "time_per_task_minutes": 9.8,
+        "output_tokens_per_task": 118000
+      }
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "name": "Gemini 3.8 Flash (Google AI Cloud)",
+      "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "max_context_length": null,
+      "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-3.8-flash",
+        "api_key": "{{GEMINI_API_KEY}}",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "rate_limit": {
+          "requests_per_minute": 5,
+          "tokens_per_minute": 250000,
+          "requests_per_day": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 2000,
+          "max_retries": 6,
+          "queue_timeout_seconds": 30,
+          "retry_timeout_seconds": 45
+        }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 31,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "medium",
+        "domains": {
+          "finance_and_accounting": 40,
+          "strategy_and_ops": 36,
+          "legal": 35,
+          "healthcare_and_medical": 34,
+          "engineering": 38,
+          "economics": 37
+        },
+        "cost_per_task_usd": 0.42,
+        "time_per_task_minutes": 14.8,
+        "output_tokens_per_task": 110000
+      }
+    },
+    {
+      "id": "nemotron-3.5-super-vl",
+      "name": "Nemotron 3.5 Super-VL (Free)",
+      "description": "NVIDIA Nemotron 3.5 Super-VL 120B MoE multimodal vision-language model hosted on OpenRouter Free Tier",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning",
+        "Vision"
+      ],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text"
+      ],
+      "max_context_length": 1000000,
+      "remote": {
+        "provider": "openrouter",
+        "upstream_model": "nvidia/nemotron-3.5-super-vl:free",
+        "api_key": "{{OPENROUTER_API_KEY}}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "rate_limit": {
+          "requests_per_minute": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 1500,
+          "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "retry_timeout_seconds": 45
+        }
+      },
+      "benchmarks": {
+        "index_name": "Artificial Analysis Intelligence Index",
+        "score": 15,
+        "unit": "index",
+        "mode": "reasoning",
+        "reasoning_effort": "high",
+        "domains": {
+          "finance_and_accounting": 27,
+          "strategy_and_ops": 25,
+          "legal": 24,
+          "healthcare_and_medical": 23,
+          "engineering": 28,
+          "economics": 25
+        },
+        "cost_per_task_usd": 0,
+        "time_per_task_minutes": 3.8,
+        "output_tokens_per_task": 81000
+      }
+    },
+    {
+      "id": "apodex-1.1-mini",
+      "name": "Apodex 1.1 Mini (Free)",
+      "description": "Apodex 1.1 Mini reasoning model hosted on OpenRouter Free Tier",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "max_context_length": 262144,
+      "remote": {
+        "provider": "openrouter",
+        "upstream_model": "apodex/apodex-1.1-mini:free",
+        "api_key": "{{OPENROUTER_API_KEY}}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "rate_limit": {
+          "requests_per_minute": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 1500,
+          "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "retry_timeout_seconds": 45
+        }
+      },
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 68,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.15,
+        "time_per_task_minutes": 2.8,
+        "output_tokens_per_task": 35000
+      }
+    },
+    {
+      "id": "dots-3-note-preview",
+      "name": "Dots3-Note Preview (Free)",
+      "description": "Dots Studio Dots3-Note Preview 16B/280B MoE multimodal reasoning model with 512K context",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "max_context_length": 512000,
+      "remote": {
+        "provider": "openrouter",
+        "upstream_model": "dots-studio/dots-3-note-preview:free",
+        "api_key": "{{OPENROUTER_API_KEY}}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "rate_limit": {
+          "requests_per_minute": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 1500,
+          "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "retry_timeout_seconds": 45
+        }
+      },
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 71.5,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.25,
+        "time_per_task_minutes": 3.8,
+        "output_tokens_per_task": 45000
+      }
+    },
+    {
+      "id": "space-bunny-alpha",
+      "name": "Space Bunny Alpha (Stealth)",
+      "description": "Stealth Space Bunny Alpha anonymous 1M-token multimodal reasoning model",
+      "capabilities": [
+        "Tool Call",
+        "Structured Output",
+        "Structured JSON",
+        "Reasoning"
+      ],
+      "tasks": [
+        "text-to-text"
+      ],
+      "max_context_length": 1000000,
+      "remote": {
+        "provider": "openrouter",
+        "upstream_model": "stealth/space-bunny-alpha",
+        "api_key": "{{OPENROUTER_API_KEY}}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "rate_limit": {
+          "requests_per_minute": 20,
+          "max_concurrent": 2,
+          "retry_delay_ms": 1500,
+          "max_retries": 5,
+          "queue_timeout_seconds": 60,
+          "retry_timeout_seconds": 45
+        }
+      },
+      "benchmarks": {
+        "index_name": "Chatbot Arena Hard",
+        "score": 74,
+        "unit": "Score",
+        "mode": "non_reasoning",
+        "reasoning_effort": "none",
+        "cost_per_task_usd": 0.35,
+        "time_per_task_minutes": 4.5,
+        "output_tokens_per_task": 50000
       }
     }
   ],
