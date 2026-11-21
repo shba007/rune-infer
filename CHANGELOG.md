@@ -3,6 +3,14 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.22.0](https://github.com/shba007/rune-infer/compare/v0.21.0..v0.22.0) - 2026-11-21
+
+#### 🚀 Features
+- Introduce ONNX metadata and runtime management - ([df4a58e](https://github.com/shba007/rune-infer/commit/df4a58e2586f7185405d8c0ec0ad0982fcc811a0)) - Shirsendu Bairagi
+- add gemini 4 neon model with multimodal capabilities to catalog and registry - ([293a13b](https://github.com/shba007/rune-infer/commit/293a13bb24d4a81b4997ded5fbf4e32306d1600e)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.21.0](https://github.com/shba007/rune-infer/compare/v0.20.0..v0.21.0) - 2026-11-21
 
 #### 🚀 Features
