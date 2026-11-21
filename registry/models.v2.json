@@ -99,6 +99,36 @@
     },
     {
       "provider": "google",
+      "id": "gemini-4-neon",
+      "name": "Gemini 4 Neon",
+      "status": "active",
+      "capabilities": {
+        "chat": true,
+        "vision": true,
+        "tools": true,
+        "structured": true
+      },
+      "modalities_in": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "modalities_out": [
+        "text"
+      ],
+      "context_tokens": 1048576,
+      "max_output_tokens": 65536,
+      "tool_choice_modes": [],
+      "notes": "Multimodal reasoning model; context and output limits taken from third-party reports, not yet confirmed against Google's docs",
+      "verified_on": "2026-11-21",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models/gemini-4-neon"
+      ]
+    },
+    {
+      "provider": "google",
       "id": "gemini-3.8-flash",
       "name": "Gemini 3.8 Flash",
       "status": "active",

@@ -2311,6 +2311,41 @@
       }
     },
     {
+      "id": "gemini-4-neon",
+      "name": "Gemini 4 Neon",
+      "description": "Google Gemini 4 Neon multimodal reasoning model",
+      "capabilities": [
+        "Chat",
+        "Vision",
+        "Tool Call",
+        "Structured Output"
+      ],
+      "tasks": [
+        "text-to-text",
+        "text-image-to-text",
+        "text-video-to-text",
+        "text-audio-to-text"
+      ],
+      "max_context_length": 1048576,
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "max_tokens": 65536
+      },
+      "remote": {
+        "provider": "google",
+        "upstream_model": "gemini-4-neon",
+        "api_key": "{{GEMINI_API_KEY}}",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "rate_limit": {
+          "requests_per_minute": 1000,
+          "max_concurrent": 10,
+          "retry_delay_ms": 1000
+        }
+      },
+      "extra": {}
+    },
+    {
       "id": "gemini-3.8-flash",
       "name": "Gemini 3.8 Flash (Google AI Cloud)",
       "description": "Google Gemini 3.8 Flash high-efficiency multimodal model with tool use and extended reasoning",

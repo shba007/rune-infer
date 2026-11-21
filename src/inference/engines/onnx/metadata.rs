@@ -43,7 +43,9 @@ pub(super) fn data() -> &'static ModelMetadata<'static> {
 
 pub(super) struct ReviewedModels {
     pub(super) profiles_by_hash: HashMap<String, Profile>,
+    #[cfg(any(windows, test))]
     pub(super) nlu_tokenizer_sha: String,
+    #[cfg(any(windows, test))]
     pub(super) nlu_max_input_tokens: usize,
 }
 
@@ -58,6 +60,7 @@ fn load_reviewed() -> Result<ReviewedModels> {
     let listing = crate::model_registry::bundled_listing()?;
     let metadata = data();
     let mut profiles_by_hash = HashMap::new();
+    #[cfg(any(windows, test))]
     let mut nlu = None;
     for (&id, &profile) in &metadata.profiles {
         let model = listing
@@ -92,6 +95,7 @@ fn load_reviewed() -> Result<ReviewedModels> {
                 && profiles_by_hash.insert(hash("model")?, profile).is_none(),
             "duplicate or invalid ONNX profile for {id}"
         );
+        #[cfg(any(windows, test))]
         if profile == Profile::Nlu {
             let limit = model
                 .catalog
@@ -104,10 +108,13 @@ fn load_reviewed() -> Result<ReviewedModels> {
             );
         }
     }
+    #[cfg(any(windows, test))]
     let (nlu_tokenizer_sha, nlu_max_input_tokens) = nlu.context("missing reviewed NLU profile")?;
     Ok(ReviewedModels {
         profiles_by_hash,
+        #[cfg(any(windows, test))]
         nlu_tokenizer_sha,
+        #[cfg(any(windows, test))]
         nlu_max_input_tokens,
     })
 }
@@ -138,5 +145,7 @@ mod tests {
         assert_eq!(metadata.dota_labels.len(), 15);
         assert_eq!(metadata.ade20k_labels.len(), 150);
         assert_eq!(metadata.nlu_labels.len(), 14);
+        assert_eq!(reviewed().nlu_tokenizer_sha.len(), 64);
+        assert!(reviewed().nlu_max_input_tokens > 0);
     }
 }
