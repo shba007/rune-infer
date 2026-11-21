@@ -3,6 +3,38 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## [v0.21.0](https://github.com/shba007/rune-infer/compare/v0.20.0..v0.21.0) - 2026-11-21
+
+#### 🚀 Features
+- (**model-converter**) add GPU worker and validation tools - ([6e06cb1](https://github.com/shba007/rune-infer/commit/6e06cb1c3c76e9d52594db84c0ce856397e53bbc)) - Shirsendu Bairagi
+- update model registry and add benchmark metrics - ([178a754](https://github.com/shba007/rune-infer/commit/178a754d4f4d7069ed435a69eb4200277defa081)) - Shirsendu Bairagi
+- add engine release check endpoint and related functionality - ([64a2e41](https://github.com/shba007/rune-infer/commit/64a2e4122475d1d57a0040963fec13668f0b65e0)) - Shirsendu Bairagi
+- add engine installation management and related endpoints - ([c0f382a](https://github.com/shba007/rune-infer/commit/c0f382a967374d6497fb2f62167102e458923851)) - Shirsendu Bairagi
+- add cactus runtime to engine registry with multi-platform support - ([7db4743](https://github.com/shba007/rune-infer/commit/7db47435c307623c84e3936a6c2851fbe9efb829)) - Shirsendu Bairagi
+- enhance local model deserialization to support array and object formats - ([07e1fea](https://github.com/shba007/rune-infer/commit/07e1fea92efbeecb49cbcd92018375be06fa101d)) - Shirsendu Bairagi
+- add model candidates endpoint and related functionality for management - ([c1c8abe](https://github.com/shba007/rune-infer/commit/c1c8abea3a04160d0769c7bcfc79169556449e6b)) - Shirsendu Bairagi
+- add model download and scan endpoints with management functionality - ([5522c5e](https://github.com/shba007/rune-infer/commit/5522c5efee54d8f7a74af9b8d1f36cac7f7cff2a)) - Shirsendu Bairagi
+- implement model installation lock to prevent concurrent installations - ([35953b8](https://github.com/shba007/rune-infer/commit/35953b8d2c5998ee23abe48a1bfe702483235ffe)) - Shirsendu Bairagi
+- add cancellation functionality for engine installation and update operations - ([040c01d](https://github.com/shba007/rune-infer/commit/040c01df948b0f2c5e2442095db67297cd0ff595)) - Shirsendu Bairagi
+- add video generation functionality - ([7af40ed](https://github.com/shba007/rune-infer/commit/7af40edea6e4769d7de97980093cbbbc5075e3ee)) - Shirsendu Bairagi
+- add support for LTX-2 model paths and update model registry - ([445eea5](https://github.com/shba007/rune-infer/commit/445eea5061b91b2dd3c725e73dfbea3def73e697)) - Shirsendu Bairagi
+- Introduce GPU and native model conversion checks - ([bfab7e9](https://github.com/shba007/rune-infer/commit/bfab7e944ba1b8af5efc40cce1b1289f48e8a4a9)) - Shirsendu Bairagi
+- enhance RAM management and model configuration - ([7571f33](https://github.com/shba007/rune-infer/commit/7571f33d490d16221bad86faa0bee1cec7ce01b3)) - Shirsendu Bairagi
+- add client disconnect handling and enhance model management features - ([0db3e16](https://github.com/shba007/rune-infer/commit/0db3e16fe6826da2b59db0c09dea40171b581f4b)) - Shirsendu Bairagi
+- enhance sd-server process management and video job handling - ([5e7c41e](https://github.com/shba007/rune-infer/commit/5e7c41eeecd04d78371f51dd65343a3b74d2fae2)) - Shirsendu Bairagi
+- enhance model capability validation and task allowance - ([caa5965](https://github.com/shba007/rune-infer/commit/caa59658a19ffa85e0cdd952dfeaa37aa737859f)) - Shirsendu Bairagi
+- add image classification task and related structures - ([6ba578d](https://github.com/shba007/rune-infer/commit/6ba578d1caeb9a4d6e56265c5cabe0c21c223ef2)) - Shirsendu Bairagi
+
+#### 🚜 Refactoring
+- remove Cocogitto release policy documentation from the repository - ([c370be7](https://github.com/shba007/rune-infer/commit/c370be78cf617ac5667f73ced49f545ba86935e0)) - Shirsendu Bairagi
+- remove 'modality' field from multiple model entries in catalog.json - ([679f6cd](https://github.com/shba007/rune-infer/commit/679f6cd4bf3312e34ec361fbb84dca798f56ad51)) - Shirsendu Bairagi
+- remove conditional compilation for installed_revision function - ([4fa488b](https://github.com/shba007/rune-infer/commit/4fa488b6dec91ca0935b149450a2264f78a80e0f)) - Shirsendu Bairagi
+- engine release handling and update logic - ([2723f5c](https://github.com/shba007/rune-infer/commit/2723f5cc7f723efeee5c0392d38989034c8008e4)) - Shirsendu Bairagi
+- tests to remove redundant comments and improve clarity - ([b48deea](https://github.com/shba007/rune-infer/commit/b48deea30c3f3f7f4fb12db7c124bc9a129ae8e4)) - Shirsendu Bairagi
+- remove unused functions and clean up code across multiple modules - ([c8459c9](https://github.com/shba007/rune-infer/commit/c8459c9bb9253659f109e8ffc34dcbc50dc740ef)) - Shirsendu Bairagi
+
+- - -
+
 ## [v0.20.0](https://github.com/shba007/rune-infer/compare/v0.19.0..v0.20.0) - 2026-11-10
 
 #### 🚀 Features
