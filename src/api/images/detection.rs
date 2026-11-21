@@ -146,6 +146,66 @@ pub async fn image_segmentation_handler(
 }
 
 #[axum::debug_handler]
+pub async fn image_classification_handler(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<crate::types::ImageClassificationRequest>,
+) -> Response {
+    let model_id = request.model.trim().to_string();
+    let image_uri = request.image.trim().to_string();
+    if model_id.is_empty() || image_uri.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new("'model' and 'image' must be non-empty strings.")
+                    .with_type("invalid_request_error"),
+            }),
+        )
+            .into_response();
+    }
+    if request.top_k.is_some_and(|k| k == 0 || k > 100) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: ApiError::new("'top_k' must be between 1 and 100.")
+                    .with_type("invalid_request_error")
+                    .with_param("top_k"),
+            }),
+        )
+            .into_response();
+    }
+    let decoded = tokio::task::spawn_blocking(move || decode_media(&image_uri, (2048, 2048))).await;
+    let (image_bytes, _, _) = match decoded {
+        Ok(Ok(frames)) if !frames.is_empty() => frames.into_iter().next().unwrap(),
+        _ => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let task = InferenceTaskRequest::ImageClassification {
+        model: Some(model_id.clone()),
+        image_bytes,
+        top_k: request.top_k,
+    };
+    let gate = match crate::api::ModelExecutionGate::enter(&state, &headers, &model_id) {
+        Ok(gate) => gate,
+        Err(resp) => return resp,
+    };
+    let engine = match gate.load_task_engine(&state, &task).await {
+        Ok(engine) => engine,
+        Err(resp) => return resp,
+    };
+    let output = match gate.execute_task(&state, engine, task).await {
+        Ok(output) => output,
+        Err(resp) => return resp,
+    };
+    gate.attach_headers(
+        &state,
+        match output.response {
+            InferenceTaskResponse::Classification(result) => Json(result).into_response(),
+            _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        },
+    )
+}
+
+#[axum::debug_handler]
 pub async fn detect_objects_handler(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,

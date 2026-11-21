@@ -129,6 +129,10 @@ pub fn create_router(state: AppState) -> Router {
             post(images::image_segmentation_handler),
         )
         .route(
+            "/images/classifications",
+            post(images::image_classification_handler),
+        )
+        .route(
             "/images/portrait-mattings",
             post(images::portrait_matting_handler),
         )

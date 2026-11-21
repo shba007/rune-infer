@@ -1,0 +1,36 @@
+$kind: http-request
+name: Classify Image
+description: |-
+  Classify an image with a catalog-declared ONNX model (for example
+  enet-b2-emotion, fairface-demographics or minifasnet-v2-liveness). Each model
+  output is one head with its top labels and softmax scores; id-only outputs
+  such as FairFace return the chosen label with score 1. The model expects the
+  crop it was trained on (a face crop for these examples); Infer does not detect
+  or crop. Declare the model with extra.onnx_recipe in catalog.json.
+url: '{{base_url}}/v1/images/classifications'
+method: POST
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Authorization
+    value: 'Bearer {{api_key}}'
+body:
+  type: json
+  content: |-
+    {
+      "model": "enet-b2-emotion",
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "top_k": 3
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Classification succeeds", () => pm.response.to.have.status(200));
+      if (pm.response.code === 200) {
+        const result = pm.response.json();
+        pm.test("Returns scored heads", () => {
+          pm.expect(result.heads).to.be.an("array").that.is.not.empty;
+          pm.expect(result.heads[0].scores[0]).to.have.keys("index", "label", "score");
+        });
+      }
+order: 3306

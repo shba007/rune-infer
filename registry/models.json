@@ -2095,6 +2095,137 @@
       }
     },
     {
+      "family": "EmbeddingGemma",
+      "id": "google/embeddinggemma-2",
+      "name": "Google EmbeddingGemma 2",
+      "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
+      "license": "Apache-2.0",
+      "source_url": "https://huggingface.co/unsloth/embeddinggemma-2-GGUF",
+      "param_count": "740M",
+      "engine": "llama-server",
+      "format": "gguf",
+      "capabilities": [
+        "Embedding"
+      ],
+      "hardware_mode": "any",
+      "quantizations": [
+        {
+          "name": "Q6_K_XL",
+          "recommended": true,
+          "bits_per_weight": 8,
+          "size_bytes": 248812032,
+          "note": "Unsloth dynamic quant (balanced quality & speed)"
+        }
+      ],
+      "variants": [
+        {
+          "param_count": "740M",
+          "id": "google/embeddinggemma-2",
+          "name": "Google EmbeddingGemma 2",
+          "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
+          "params": 740000000,
+          "default_context": 8192,
+          "install_dir": "unsloth/embeddinggemma-2-GGUF",
+          "quantizations": [
+            {
+              "name": "Q6_K_XL",
+              "recommended": true,
+              "bits_per_weight": 8,
+              "size_bytes": 248812032,
+              "note": "Unsloth dynamic quant (balanced quality & speed)"
+            }
+          ],
+          "latest": "031f0d4b35536f69ab3509d4893c923264fcf253",
+          "versions": {
+            "031f0d4b35536f69ab3509d4893c923264fcf253": {
+              "release_number": 1,
+              "files": [
+                {
+                  "id": "model",
+                  "filename": "embeddinggemma-2-UD-Q6_K_XL.gguf",
+                  "size_bytes": 248812032,
+                  "sha256": "dc84f042bc3ffbe6122b3b38b2fb299d66f5f37b276c9d458db85d4a4f1e6ba3",
+                  "url": "https://huggingface.co/unsloth/embeddinggemma-2-GGUF/resolve/031f0d4b35536f69ab3509d4893c923264fcf253/embeddinggemma-2-UD-Q6_K_XL.gguf"
+                },
+                {
+                  "id": "projector",
+                  "filename": "mmproj-F16.gguf",
+                  "size_bytes": 980895232,
+                  "sha256": "74bf65c860d292a1eebafd7ca85b44532a2528f03017f9204fe1695916d2c66f",
+                  "url": "https://huggingface.co/unsloth/embeddinggemma-2-GGUF/resolve/031f0d4b35536f69ab3509d4893c923264fcf253/mmproj-F16.gguf"
+                }
+              ]
+            }
+          },
+          "catalog": {
+            "tasks": [
+              "text-to-embedding"
+            ],
+            "capabilities": [
+              "Semantic Search",
+              "Code Retrieval",
+              "Matryoshka Representations"
+            ],
+            "max_context_length": 8192,
+            "local": {
+              "params": 740000000,
+              "bits_per_weight": 8,
+              "context_length": 8192,
+              "gpu_layers": 99,
+              "args": ""
+            },
+            "engines": [
+              "llama-server"
+            ]
+          }
+        }
+      ],
+      "install_dir": "unsloth/embeddinggemma-2-GGUF",
+      "latest": "031f0d4b35536f69ab3509d4893c923264fcf253",
+      "versions": {
+        "031f0d4b35536f69ab3509d4893c923264fcf253": {
+          "release_number": 1,
+          "files": [
+            {
+              "id": "model",
+              "filename": "embeddinggemma-2-UD-Q6_K_XL.gguf",
+              "size_bytes": 248812032,
+              "sha256": "dc84f042bc3ffbe6122b3b38b2fb299d66f5f37b276c9d458db85d4a4f1e6ba3",
+              "url": "https://huggingface.co/unsloth/embeddinggemma-2-GGUF/resolve/031f0d4b35536f69ab3509d4893c923264fcf253/embeddinggemma-2-UD-Q6_K_XL.gguf"
+            },
+            {
+              "id": "projector",
+              "filename": "mmproj-F16.gguf",
+              "size_bytes": 980895232,
+              "sha256": "74bf65c860d292a1eebafd7ca85b44532a2528f03017f9204fe1695916d2c66f",
+              "url": "https://huggingface.co/unsloth/embeddinggemma-2-GGUF/resolve/031f0d4b35536f69ab3509d4893c923264fcf253/mmproj-F16.gguf"
+            }
+          ]
+        }
+      },
+      "catalog": {
+        "tasks": [
+          "text-to-embedding"
+        ],
+        "capabilities": [
+          "Semantic Search",
+          "Code Retrieval",
+          "Matryoshka Representations"
+        ],
+        "max_context_length": 8192,
+        "local": {
+          "params": 740000000,
+          "bits_per_weight": 8,
+          "context_length": 8192,
+          "gpu_layers": 99,
+          "args": ""
+        },
+        "engines": [
+          "llama-server"
+        ]
+      }
+    },
+    {
       "family": "Gemma 4",
       "id": "gemma-4-12b-it",
       "name": "Gemma 4 12B IT",
@@ -2299,8 +2430,7 @@
               "args": "-fa on"
             },
             "engines": [
-              "llama-server",
-              "encoder"
+              "llama-server"
             ]
           }
         }
@@ -2355,8 +2485,7 @@
           "args": "-fa on"
         },
         "engines": [
-          "llama-server",
-          "encoder"
+          "llama-server"
         ]
       }
     },
@@ -3368,8 +3497,7 @@
               "args": ""
             },
             "engines": [
-              "llama-server",
-              "encoder"
+              "llama-server"
             ],
             "extra": {}
           }
@@ -3415,8 +3543,7 @@
           "args": ""
         },
         "engines": [
-          "llama-server",
-          "encoder"
+          "llama-server"
         ],
         "extra": {}
       }
@@ -5781,7 +5908,7 @@
               "bits_per_weight": 3.5,
               "context_length": -1,
               "gpu_layers": 99,
-              "args": "--diffusion-fa --params-backend disk"
+              "args": "--sigmas minimax-h3-image --diffusion-fa --params-backend disk --vae-tiling"
             },
             "extra": {
               "default_steps": 6,
@@ -5848,7 +5975,7 @@
           "bits_per_weight": 3.5,
           "context_length": -1,
           "gpu_layers": 99,
-          "args": "--diffusion-fa --params-backend disk --vae-tiling"
+          "args": "--sigmas minimax-h3-image --diffusion-fa --params-backend disk --vae-tiling"
         },
         "extra": {
           "default_steps": 6,
@@ -7815,67 +7942,27 @@
       "family": "Qwen3 TTS",
       "id": "qwen3-tts-1.7b-customvoice",
       "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
-      "description": "Custom voice generative text-to-speech model",
       "license": "Apache-2.0",
-      "source_url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+      "source_url": "https://huggingface.co/audio-cpp/audio.cpp-gguf",
       "score_range": {
         "min": 53.5,
         "max": 86
       },
       "param_count": "1.7B",
-      "engine": "transformers",
+      "description": "Qwen3-TTS 1.7B CustomVoice native audio.cpp GGUF with preset speakers; live-verified WAV speech at normal speed",
+      "engine": "audio-cpp",
       "format": "gguf",
       "capabilities": [
-        "Speech Generation",
-        "Audio"
+        "Speech Generation"
       ],
       "hardware_mode": "any",
       "quantizations": [
         {
-          "name": "Q4_K_M",
-          "recommended": true,
-          "bits_per_weight": 4.5,
-          "size_bytes": 731232128,
-          "note": "Balanced sweet spot (optimum quality & speed)",
-          "supported_thinking": [
-            {
-              "effort": "standard",
-              "score": 79.5,
-              "index_name": "Artificial Analysis Audio Quality Index",
-              "tokens_per_second": 48,
-              "budget_tokens": 1
-            },
-            {
-              "effort": "high",
-              "score": 84.5,
-              "index_name": "Artificial Analysis Audio Quality Index",
-              "tokens_per_second": 24,
-              "budget_tokens": 2
-            }
-          ]
-        },
-        {
           "name": "Q8_0",
-          "recommended": false,
+          "recommended": true,
           "bits_per_weight": 8.5,
-          "size_bytes": 1263037312,
-          "note": "Near-lossless precision (requires more VRAM)",
-          "supported_thinking": [
-            {
-              "effort": "standard",
-              "score": 81,
-              "index_name": "Artificial Analysis Audio Quality Index",
-              "tokens_per_second": 48,
-              "budget_tokens": 1
-            },
-            {
-              "effort": "high",
-              "score": 86,
-              "index_name": "Artificial Analysis Audio Quality Index",
-              "tokens_per_second": 24,
-              "budget_tokens": 2
-            }
-          ]
+          "size_bytes": 2817055200,
+          "note": "Native audio.cpp GGUF (live-verified with the default speaker)"
         }
       ],
       "variants": [
@@ -7883,142 +7970,33 @@
           "param_count": "1.7B",
           "id": "qwen3-tts-1.7b-customvoice",
           "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
-          "description": "Custom voice generative text-to-speech model",
+          "description": "Qwen3-TTS 1.7B CustomVoice native audio.cpp GGUF with preset speakers; live-verified WAV speech at normal speed",
           "score_range": {
             "min": 79.5,
             "max": 86
           },
           "params": 1700000000,
-          "install_dir": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+          "install_dir": "audio-cpp/audio.cpp-gguf/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF",
           "quantizations": [
             {
-              "name": "Q4_K_M",
-              "recommended": true,
-              "bits_per_weight": 4.5,
-              "size_bytes": 731232128,
-              "note": "Balanced sweet spot (optimum quality & speed)",
-              "supported_thinking": [
-                {
-                  "effort": "standard",
-                  "score": 79.5,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 48,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "high",
-                  "score": 84.5,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 24,
-                  "budget_tokens": 2
-                }
-              ]
-            },
-            {
               "name": "Q8_0",
-              "recommended": false,
+              "recommended": true,
               "bits_per_weight": 8.5,
-              "size_bytes": 1263037312,
-              "note": "Near-lossless precision (requires more VRAM)",
-              "supported_thinking": [
-                {
-                  "effort": "standard",
-                  "score": 81,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 48,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "high",
-                  "score": 86,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 24,
-                  "budget_tokens": 2
-                }
-              ]
+              "size_bytes": 2817055200,
+              "note": "Native audio.cpp GGUF (live-verified with the default speaker)"
             }
           ],
-          "latest": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
+          "latest": "b7b9aa1f16c819c3b2d69a602b51786bdfb361a3",
           "versions": {
-            "0c0e3051f131929182e2c023b9537f8b1c68adfe": {
+            "b7b9aa1f16c819c3b2d69a602b51786bdfb361a3": {
               "release_number": 1,
               "files": [
                 {
                   "id": "model",
-                  "filename": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
-                  "size_bytes": 1329512960,
-                  "sha256": "",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf"
-                },
-                {
-                  "id": "speech_tokenizer",
-                  "filename": "speech_tokenizer/model.safetensors",
-                  "size_bytes": 682293092,
-                  "sha256": "",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/model.safetensors"
-                },
-                {
-                  "id": "config",
-                  "filename": "config.json",
-                  "size_bytes": 4908,
-                  "sha256": "17a07f527a1c25ea30b4e023a184482a23d3e279d697b1dc81b1bde498d29cf9",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/config.json"
-                },
-                {
-                  "id": "generation_config",
-                  "filename": "generation_config.json",
-                  "size_bytes": 245,
-                  "sha256": "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/generation_config.json"
-                },
-                {
-                  "id": "merges",
-                  "filename": "merges.txt",
-                  "size_bytes": 1671839,
-                  "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/merges.txt"
-                },
-                {
-                  "id": "preprocessor_config",
-                  "filename": "preprocessor_config.json",
-                  "size_bytes": 127,
-                  "sha256": "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/preprocessor_config.json"
-                },
-                {
-                  "id": "config",
-                  "filename": "speech_tokenizer/config.json",
-                  "size_bytes": 2336,
-                  "sha256": "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/config.json"
-                },
-                {
-                  "id": "configuration",
-                  "filename": "speech_tokenizer/configuration.json",
-                  "size_bytes": 76,
-                  "sha256": "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/configuration.json"
-                },
-                {
-                  "id": "preprocessor_config",
-                  "filename": "speech_tokenizer/preprocessor_config.json",
-                  "size_bytes": 234,
-                  "sha256": "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/preprocessor_config.json"
-                },
-                {
-                  "id": "tokenizer_config",
-                  "filename": "tokenizer_config.json",
-                  "size_bytes": 7344,
-                  "sha256": "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/tokenizer_config.json"
-                },
-                {
-                  "id": "vocab",
-                  "filename": "vocab.json",
-                  "size_bytes": 2776833,
-                  "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/vocab.json"
+                  "filename": "qwen3-tts-12hz-1.7b-customvoice-q8_0.gguf",
+                  "size_bytes": 2817055200,
+                  "sha256": "c8ac3f94b6e73f137c0e7ecc9270bc8faec7a476ff799b87e48844d1d0987ac3",
+                  "url": "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/b7b9aa1f16c819c3b2d69a602b51786bdfb361a3/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF/qwen3-tts-12hz-1.7b-customvoice-q8_0.gguf"
                 }
               ]
             }
@@ -8034,450 +8012,40 @@
             "max_context_length": null,
             "local": {
               "params": 1700000000,
-              "bits_per_weight": 16,
+              "bits_per_weight": 8,
               "context_length": -1,
               "gpu_layers": 99,
-              "args": ""
+              "args": "--voice-id ryan"
             },
-            "engines": [
-              "encoder"
-            ]
-          }
-        },
-        {
-          "param_count": "1.7B",
-          "id": "qwen3-1.7b-multilingual-tts-gguf",
-          "name": "Qwen3 1.7B Multilingual TTS GGUF",
-          "description": "Multilingual text-to-speech model quant in GGUF format",
-          "score_range": {
-            "min": 53.5,
-            "max": 64
-          },
-          "install_dir": "mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF",
-          "quantizations": [
-            {
-              "name": "Q4_K_M",
-              "recommended": true,
-              "bits_per_weight": 4.5,
-              "size_bytes": 2043906779,
-              "note": "Balanced sweet spot (optimum quality & speed)",
-              "supported_thinking": [
-                {
-                  "effort": "low",
-                  "score": 53.5,
-                  "index_name": "Artificial Analysis Intelligence Index",
-                  "tokens_per_second": 59.4,
-                  "budget_tokens": 1024
-                },
-                {
-                  "effort": "medium",
-                  "score": 58,
-                  "index_name": "Artificial Analysis Intelligence Index",
-                  "tokens_per_second": 44,
-                  "budget_tokens": 4096
-                },
-                {
-                  "effort": "high",
-                  "score": 62.5,
-                  "index_name": "Artificial Analysis Intelligence Index",
-                  "tokens_per_second": 24.2,
-                  "budget_tokens": 16384
-                }
-              ]
-            },
-            {
-              "name": "Q8_0",
-              "recommended": false,
-              "bits_per_weight": 8.5,
-              "size_bytes": 3530384437,
-              "note": "Near-lossless precision (requires more VRAM)",
-              "supported_thinking": [
-                {
-                  "effort": "low",
-                  "score": 55,
-                  "index_name": "Artificial Analysis Intelligence Index",
-                  "tokens_per_second": 59.4,
-                  "budget_tokens": 1024
-                },
-                {
-                  "effort": "medium",
-                  "score": 59.5,
-                  "index_name": "Artificial Analysis Intelligence Index",
-                  "tokens_per_second": 44,
-                  "budget_tokens": 4096
-                },
-                {
-                  "effort": "high",
-                  "score": 64,
-                  "index_name": "Artificial Analysis Intelligence Index",
-                  "tokens_per_second": 24.2,
-                  "budget_tokens": 16384
-                }
-              ]
-            }
-          ],
-          "latest": "641485c512d871331953872ed624fc47c099f9cc",
-          "versions": {
-            "641485c512d871331953872ed624fc47c099f9cc": {
-              "release_number": 1,
-              "files": [
-                {
-                  "id": "model",
-                  "filename": "qwen3-1.7B-Multilingual-TTS-f16.gguf",
-                  "size_bytes": 3716194144,
-                  "sha256": "dfeaa7b15f05314f02acd5677597dbb3c85960cfd1ab6ad9bf3e4b02941005e7",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/qwen3-1.7B-Multilingual-TTS-f16.gguf"
-                },
-                {
-                  "id": "speech_tokenizer",
-                  "filename": "speech_tokenizer/model.safetensors",
-                  "size_bytes": 682293092,
-                  "sha256": "",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/speech_tokenizer/model.safetensors"
-                },
-                {
-                  "id": "config",
-                  "filename": "config.json",
-                  "size_bytes": 4494,
-                  "sha256": "b4f01752d15a488abde3e1ab44723ae4f4b9e68a4037257b098b3737893cc1f9",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/config.json"
-                },
-                {
-                  "id": "generation_config",
-                  "filename": "generation_config.json",
-                  "size_bytes": 245,
-                  "sha256": "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/generation_config.json"
-                },
-                {
-                  "id": "merges",
-                  "filename": "merges.txt",
-                  "size_bytes": 1671839,
-                  "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/merges.txt"
-                },
-                {
-                  "id": "preprocessor_config",
-                  "filename": "preprocessor_config.json",
-                  "size_bytes": 127,
-                  "sha256": "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/preprocessor_config.json"
-                },
-                {
-                  "id": "config",
-                  "filename": "speech_tokenizer/config.json",
-                  "size_bytes": 2336,
-                  "sha256": "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/speech_tokenizer/config.json"
-                },
-                {
-                  "id": "configuration",
-                  "filename": "speech_tokenizer/configuration.json",
-                  "size_bytes": 76,
-                  "sha256": "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/speech_tokenizer/configuration.json"
-                },
-                {
-                  "id": "preprocessor_config",
-                  "filename": "speech_tokenizer/preprocessor_config.json",
-                  "size_bytes": 234,
-                  "sha256": "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/speech_tokenizer/preprocessor_config.json"
-                },
-                {
-                  "id": "tokenizer_config",
-                  "filename": "tokenizer_config.json",
-                  "size_bytes": 7344,
-                  "sha256": "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/tokenizer_config.json"
-                },
-                {
-                  "id": "vocab",
-                  "filename": "vocab.json",
-                  "size_bytes": 2776833,
-                  "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-                  "url": "https://huggingface.co/mradermacher/Qwen3-1.7B-Multilingual-TTS-GGUF/resolve/641485c512d871331953872ed624fc47c099f9cc/vocab.json"
-                }
-              ]
-            }
-          },
-          "catalog": {
-            "tasks": [
-              "text-to-audio"
-            ],
-            "max_context_length": null,
-            "local": {
-              "params": null,
-              "bits_per_weight": null,
-              "context_length": -1,
-              "gpu_layers": 99,
-              "args": ""
-            }
-          }
-        },
-        {
-          "param_count": "1.7B",
-          "id": "qwen3-tts-12hz-1.7b-customvoice",
-          "name": "Qwen3 TTS 12Hz 1.7B CustomVoice",
-          "description": "Custom voice generative text-to-speech model",
-          "score_range": {
-            "min": 79.5,
-            "max": 86
-          },
-          "install_dir": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
-          "quantizations": [
-            {
-              "name": "Q4_K_M",
-              "recommended": true,
-              "bits_per_weight": 4.5,
-              "size_bytes": 731232128,
-              "note": "Balanced sweet spot (optimum quality & speed)",
-              "supported_thinking": [
-                {
-                  "effort": "standard",
-                  "score": 79.5,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 48,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "high",
-                  "score": 84.5,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 24,
-                  "budget_tokens": 2
-                }
-              ]
-            },
-            {
-              "name": "Q8_0",
-              "recommended": false,
-              "bits_per_weight": 8.5,
-              "size_bytes": 1263037312,
-              "note": "Near-lossless precision (requires more VRAM)",
-              "supported_thinking": [
-                {
-                  "effort": "standard",
-                  "score": 81,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 48,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "high",
-                  "score": 86,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 24,
-                  "budget_tokens": 2
-                }
-              ]
-            }
-          ],
-          "latest": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
-          "versions": {
-            "0c0e3051f131929182e2c023b9537f8b1c68adfe": {
-              "release_number": 1,
-              "files": [
-                {
-                  "id": "model",
-                  "filename": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
-                  "size_bytes": 1329512960,
-                  "sha256": "",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf"
-                },
-                {
-                  "id": "speech_tokenizer",
-                  "filename": "speech_tokenizer/model.safetensors",
-                  "size_bytes": 682293092,
-                  "sha256": "",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/model.safetensors"
-                },
-                {
-                  "id": "config",
-                  "filename": "config.json",
-                  "size_bytes": 4908,
-                  "sha256": "17a07f527a1c25ea30b4e023a184482a23d3e279d697b1dc81b1bde498d29cf9",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/config.json"
-                },
-                {
-                  "id": "generation_config",
-                  "filename": "generation_config.json",
-                  "size_bytes": 245,
-                  "sha256": "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/generation_config.json"
-                },
-                {
-                  "id": "merges",
-                  "filename": "merges.txt",
-                  "size_bytes": 1671839,
-                  "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/merges.txt"
-                },
-                {
-                  "id": "preprocessor_config",
-                  "filename": "preprocessor_config.json",
-                  "size_bytes": 127,
-                  "sha256": "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/preprocessor_config.json"
-                },
-                {
-                  "id": "config",
-                  "filename": "speech_tokenizer/config.json",
-                  "size_bytes": 2336,
-                  "sha256": "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/config.json"
-                },
-                {
-                  "id": "configuration",
-                  "filename": "speech_tokenizer/configuration.json",
-                  "size_bytes": 76,
-                  "sha256": "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/configuration.json"
-                },
-                {
-                  "id": "preprocessor_config",
-                  "filename": "speech_tokenizer/preprocessor_config.json",
-                  "size_bytes": 234,
-                  "sha256": "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/preprocessor_config.json"
-                },
-                {
-                  "id": "tokenizer_config",
-                  "filename": "tokenizer_config.json",
-                  "size_bytes": 7344,
-                  "sha256": "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/tokenizer_config.json"
-                },
-                {
-                  "id": "vocab",
-                  "filename": "vocab.json",
-                  "size_bytes": 2776833,
-                  "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-                  "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/vocab.json"
-                }
-              ]
-            }
-          },
-          "catalog": {
-            "tasks": [
-              "text-to-audio"
-            ],
-            "max_context_length": null,
-            "local": {
-              "params": null,
-              "bits_per_weight": null,
-              "context_length": -1,
-              "gpu_layers": 99,
-              "args": ""
+            "audio_operations": {
+              "speech_generation": {
+                "status": "supported",
+                "verified_with": [
+                  {
+                    "engine": "audio-cpp",
+                    "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+                  }
+                ]
+              }
             }
           }
         }
       ],
-      "install_dir": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
-      "latest": "0c0e3051f131929182e2c023b9537f8b1c68adfe",
+      "install_dir": "audio-cpp/audio.cpp-gguf/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF",
+      "latest": "b7b9aa1f16c819c3b2d69a602b51786bdfb361a3",
       "versions": {
-        "0c0e3051f131929182e2c023b9537f8b1c68adfe": {
+        "b7b9aa1f16c819c3b2d69a602b51786bdfb361a3": {
           "release_number": 1,
           "files": [
             {
               "id": "model",
-              "filename": "Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
-              "size_bytes": 1329512960,
-              "sha256": "",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf"
-            },
-            {
-              "id": "speech_tokenizer",
-              "filename": "speech_tokenizer/model.safetensors",
-              "size_bytes": 682293092,
-              "sha256": "",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/model.safetensors"
-            },
-            {
-              "id": "config",
-              "filename": "config.json",
-              "size_bytes": 4908,
-              "sha256": "17a07f527a1c25ea30b4e023a184482a23d3e279d697b1dc81b1bde498d29cf9",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/config.json"
-            },
-            {
-              "id": "generation_config",
-              "filename": "generation_config.json",
-              "size_bytes": 245,
-              "sha256": "f1b90b4513f3b34c62851049e2492d7b4c5940daf1276f89c82b8ef04127f3aa",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/generation_config.json"
-            },
-            {
-              "id": "merges",
-              "filename": "merges.txt",
-              "size_bytes": 1671839,
-              "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/merges.txt"
-            },
-            {
-              "id": "preprocessor_config",
-              "filename": "preprocessor_config.json",
-              "size_bytes": 127,
-              "sha256": "efdde1022ea9d76928bf7a9cd53139138f5ba2e466e837f08f6105ab1af1c119",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/preprocessor_config.json"
-            },
-            {
-              "id": "config",
-              "filename": "speech_tokenizer/config.json",
-              "size_bytes": 2336,
-              "sha256": "ee65bb901c876664ab8707c487157aa1a6ee57c65969b28fb5ec9dc211e68167",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/config.json"
-            },
-            {
-              "id": "configuration",
-              "filename": "speech_tokenizer/configuration.json",
-              "size_bytes": 76,
-              "sha256": "6bc26d64eb5024b4d1dab5a52371958b429256d6c9d59787f1f5294a54e0cebd",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/configuration.json"
-            },
-            {
-              "id": "preprocessor_config",
-              "filename": "speech_tokenizer/preprocessor_config.json",
-              "size_bytes": 234,
-              "sha256": "fcb3805e597e786d4067706e602f6688524640f8d3396790e2e09b5942fcbdfb",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/speech_tokenizer/preprocessor_config.json"
-            },
-            {
-              "id": "tokenizer_config",
-              "filename": "tokenizer_config.json",
-              "size_bytes": 7344,
-              "sha256": "dc3c31c3bdaedd5016382bb3cbe07323026775ad51f5a4fb564505992ae4a670",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/tokenizer_config.json"
-            },
-            {
-              "id": "vocab",
-              "filename": "vocab.json",
-              "size_bytes": 2776833,
-              "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-              "url": "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/resolve/0c0e3051f131929182e2c023b9537f8b1c68adfe/vocab.json"
+              "filename": "qwen3-tts-12hz-1.7b-customvoice-q8_0.gguf",
+              "size_bytes": 2817055200,
+              "sha256": "c8ac3f94b6e73f137c0e7ecc9270bc8faec7a476ff799b87e48844d1d0987ac3",
+              "url": "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/b7b9aa1f16c819c3b2d69a602b51786bdfb361a3/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF/qwen3-tts-12hz-1.7b-customvoice-q8_0.gguf"
             }
           ]
         }
-      },
-      "catalog": {
-        "tasks": [
-          "text-to-audio"
-        ],
-        "capabilities": [
-          "Voice Cloning",
-          "Zero-Shot TTS"
-        ],
-        "max_context_length": null,
-        "local": {
-          "params": 1700000000,
-          "bits_per_weight": 16,
-          "context_length": -1,
-          "gpu_layers": 99,
-          "args": ""
-        },
-        "engines": [
-          "encoder"
-        ]
       }
     },
     {
@@ -8870,189 +8438,61 @@
       "family": "OmniVoice",
       "id": "omnivoice",
       "name": "OmniVoice",
-      "description": "Multilingual neural speech synthesis model",
       "license": "Apache-2.0",
-      "source_url": "https://huggingface.co/k2-fsa/OmniVoice",
-      "score_range": {
-        "min": 79.5,
-        "max": 86
-      },
       "param_count": "Base",
-      "engine": "transformers",
+      "description": "OmniVoice native audio.cpp GGUF; live-verified WAV speech at normal speed using its default voice",
+      "source_url": "https://huggingface.co/audio-cpp/audio.cpp-gguf",
+      "engine": "audio-cpp",
       "format": "gguf",
       "capabilities": [
-        "Audio",
         "Speech Generation"
       ],
       "hardware_mode": "any",
       "quantizations": [
         {
-          "name": "Q4_K_M",
-          "recommended": true,
-          "bits_per_weight": 4.5,
-          "size_bytes": 443116095,
-          "note": "Balanced sweet spot (optimum quality & speed)",
-          "supported_thinking": [
-            {
-              "effort": "standard",
-              "score": 79.5,
-              "index_name": "Artificial Analysis Audio Quality Index",
-              "tokens_per_second": 48,
-              "budget_tokens": 1
-            },
-            {
-              "effort": "high",
-              "score": 84.5,
-              "index_name": "Artificial Analysis Audio Quality Index",
-              "tokens_per_second": 24,
-              "budget_tokens": 2
-            }
-          ]
-        },
-        {
           "name": "Q8_0",
-          "recommended": false,
+          "recommended": true,
           "bits_per_weight": 8.5,
-          "size_bytes": 765382347,
-          "note": "Near-lossless precision (requires more VRAM)",
-          "supported_thinking": [
-            {
-              "effort": "standard",
-              "score": 81,
-              "index_name": "Artificial Analysis Audio Quality Index",
-              "tokens_per_second": 48,
-              "budget_tokens": 1
-            },
-            {
-              "effort": "high",
-              "score": 86,
-              "index_name": "Artificial Analysis Audio Quality Index",
-              "tokens_per_second": 24,
-              "budget_tokens": 2
-            }
-          ]
+          "size_bytes": 1350296096,
+          "note": "Native audio.cpp GGUF (live-verified)"
         }
       ],
+      "score_range": {
+        "min": 79.5,
+        "max": 86
+      },
       "variants": [
         {
           "param_count": "Base",
           "id": "omnivoice",
           "name": "OmniVoice",
-          "description": "Multilingual neural speech synthesis model",
+          "description": "OmniVoice native audio.cpp GGUF; live-verified WAV speech at normal speed using its default voice",
           "score_range": {
             "min": 79.5,
             "max": 86
           },
           "params": 1500000000,
-          "install_dir": "k2-fsa/OmniVoice",
+          "install_dir": "audio-cpp/audio.cpp-gguf/OmniVoice-GGUF",
           "quantizations": [
             {
-              "name": "Q4_K_M",
-              "recommended": true,
-              "bits_per_weight": 4.5,
-              "size_bytes": 443116095,
-              "note": "Balanced sweet spot (optimum quality & speed)",
-              "supported_thinking": [
-                {
-                  "effort": "standard",
-                  "score": 79.5,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 48,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "high",
-                  "score": 84.5,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 24,
-                  "budget_tokens": 2
-                }
-              ]
-            },
-            {
               "name": "Q8_0",
-              "recommended": false,
+              "recommended": true,
               "bits_per_weight": 8.5,
-              "size_bytes": 765382347,
-              "note": "Near-lossless precision (requires more VRAM)",
-              "supported_thinking": [
-                {
-                  "effort": "standard",
-                  "score": 81,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 48,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "high",
-                  "score": 86,
-                  "index_name": "Artificial Analysis Audio Quality Index",
-                  "tokens_per_second": 24,
-                  "budget_tokens": 2
-                }
-              ]
+              "size_bytes": 1350296096,
+              "note": "Native audio.cpp GGUF (live-verified)"
             }
           ],
-          "latest": "c5fdb5ccb189668d56333f77ba2629f4cd7535f4",
+          "latest": "b7b9aa1f16c819c3b2d69a602b51786bdfb361a3",
           "versions": {
-            "c5fdb5ccb189668d56333f77ba2629f4cd7535f4": {
+            "b7b9aa1f16c819c3b2d69a602b51786bdfb361a3": {
               "release_number": 1,
               "files": [
                 {
-                  "id": "audio_tokenizer",
-                  "filename": "audio_tokenizer/model.safetensors",
-                  "size_bytes": 805665628,
-                  "sha256": "",
-                  "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/audio_tokenizer/model.safetensors"
-                },
-                {
                   "id": "model",
-                  "filename": "omnivoice-base-Q4_K_M.gguf",
-                  "size_bytes": 407485216,
-                  "sha256": "",
-                  "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/omnivoice-base-Q4_K_M.gguf"
-                },
-                {
-                  "id": "config",
-                  "filename": "audio_tokenizer/config.json",
-                  "size_bytes": 2531,
-                  "sha256": "eefb20806f7104e77c9a5277c9df0f9bb8826b08eb1d4e8ab2b9829b6ef9fac1",
-                  "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/audio_tokenizer/config.json"
-                },
-                {
-                  "id": "preprocessor_config",
-                  "filename": "audio_tokenizer/preprocessor_config.json",
-                  "size_bytes": 206,
-                  "sha256": "ae61eea88558608ee2fa86d2aec9fce8d99a5ff75d09cb7651ccce21ae1d9084",
-                  "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/audio_tokenizer/preprocessor_config.json"
-                },
-                {
-                  "id": "chat_template",
-                  "filename": "chat_template.jinja",
-                  "size_bytes": 4168,
-                  "sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
-                  "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/chat_template.jinja"
-                },
-                {
-                  "id": "config",
-                  "filename": "config.json",
-                  "size_bytes": 2238,
-                  "sha256": "5e359117e13b420c5e0c925d4aba650d624767131f1d1746928f8b850d5dc372",
-                  "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/config.json"
-                },
-                {
-                  "id": "tokenizer_config",
-                  "filename": "tokenizer_config.json",
-                  "size_bytes": 533,
-                  "sha256": "49f78845596a82bf15c83673794bdf9f76f812b11f60ab6a2239d9be65b00676",
-                  "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/tokenizer_config.json"
-                },
-                {
-                  "id": "tokenizer",
-                  "filename": "tokenizer.json",
-                  "size_bytes": 11423986,
-                  "sha256": "408f669b7e2b045fdf54201d815bd364e6667dbd845115da81239c40bc6dcfd1",
-                  "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/tokenizer.json"
+                  "filename": "omnivoice-q8_0.gguf",
+                  "size_bytes": 1350296096,
+                  "sha256": "0e5a721edd1b08d9067ef66f40ded609a6b14f5a8445c703f9869736cabd350a",
+                  "url": "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/b7b9aa1f16c819c3b2d69a602b51786bdfb361a3/OmniVoice-GGUF/omnivoice-q8_0.gguf"
                 }
               ]
             }
@@ -9068,78 +8508,37 @@
             "max_context_length": null,
             "local": {
               "params": 1500000000,
-              "bits_per_weight": 16,
+              "bits_per_weight": 8,
               "context_length": -1,
               "gpu_layers": 99,
               "args": ""
             },
-            "engines": [
-              "encoder"
-            ]
+            "audio_operations": {
+              "speech_generation": {
+                "status": "supported",
+                "verified_with": [
+                  {
+                    "engine": "audio-cpp",
+                    "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+                  }
+                ]
+              }
+            }
           }
         }
       ],
-      "install_dir": "k2-fsa/OmniVoice",
-      "latest": "c5fdb5ccb189668d56333f77ba2629f4cd7535f4",
+      "install_dir": "audio-cpp/audio.cpp-gguf/OmniVoice-GGUF",
+      "latest": "b7b9aa1f16c819c3b2d69a602b51786bdfb361a3",
       "versions": {
-        "c5fdb5ccb189668d56333f77ba2629f4cd7535f4": {
+        "b7b9aa1f16c819c3b2d69a602b51786bdfb361a3": {
           "release_number": 1,
           "files": [
             {
-              "id": "audio_tokenizer",
-              "filename": "audio_tokenizer/model.safetensors",
-              "size_bytes": 805665628,
-              "sha256": "",
-              "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/audio_tokenizer/model.safetensors"
-            },
-            {
               "id": "model",
-              "filename": "omnivoice-base-Q4_K_M.gguf",
-              "size_bytes": 407485216,
-              "sha256": "",
-              "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/omnivoice-base-Q4_K_M.gguf"
-            },
-            {
-              "id": "config",
-              "filename": "audio_tokenizer/config.json",
-              "size_bytes": 2531,
-              "sha256": "eefb20806f7104e77c9a5277c9df0f9bb8826b08eb1d4e8ab2b9829b6ef9fac1",
-              "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/audio_tokenizer/config.json"
-            },
-            {
-              "id": "preprocessor_config",
-              "filename": "audio_tokenizer/preprocessor_config.json",
-              "size_bytes": 206,
-              "sha256": "ae61eea88558608ee2fa86d2aec9fce8d99a5ff75d09cb7651ccce21ae1d9084",
-              "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/audio_tokenizer/preprocessor_config.json"
-            },
-            {
-              "id": "chat_template",
-              "filename": "chat_template.jinja",
-              "size_bytes": 4168,
-              "sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
-              "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/chat_template.jinja"
-            },
-            {
-              "id": "config",
-              "filename": "config.json",
-              "size_bytes": 2238,
-              "sha256": "5e359117e13b420c5e0c925d4aba650d624767131f1d1746928f8b850d5dc372",
-              "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/config.json"
-            },
-            {
-              "id": "tokenizer_config",
-              "filename": "tokenizer_config.json",
-              "size_bytes": 533,
-              "sha256": "49f78845596a82bf15c83673794bdf9f76f812b11f60ab6a2239d9be65b00676",
-              "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/tokenizer_config.json"
-            },
-            {
-              "id": "tokenizer",
-              "filename": "tokenizer.json",
-              "size_bytes": 11423986,
-              "sha256": "408f669b7e2b045fdf54201d815bd364e6667dbd845115da81239c40bc6dcfd1",
-              "url": "https://huggingface.co/k2-fsa/OmniVoice/resolve/c5fdb5ccb189668d56333f77ba2629f4cd7535f4/tokenizer.json"
+              "filename": "omnivoice-q8_0.gguf",
+              "size_bytes": 1350296096,
+              "sha256": "0e5a721edd1b08d9067ef66f40ded609a6b14f5a8445c703f9869736cabd350a",
+              "url": "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/b7b9aa1f16c819c3b2d69a602b51786bdfb361a3/OmniVoice-GGUF/omnivoice-q8_0.gguf"
             }
           ]
         }
@@ -9155,14 +8554,22 @@
         "max_context_length": null,
         "local": {
           "params": 1500000000,
-          "bits_per_weight": 16,
+          "bits_per_weight": 8,
           "context_length": -1,
           "gpu_layers": 99,
           "args": ""
         },
-        "engines": [
-          "encoder"
-        ]
+        "audio_operations": {
+          "speech_generation": {
+            "status": "supported",
+            "verified_with": [
+              {
+                "engine": "audio-cpp",
+                "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+              }
+            ]
+          }
+        }
       }
     },
     {
@@ -11792,7 +11199,7 @@
               "args": ""
             },
             "engines": [
-              "encoder"
+              "llama-server"
             ]
           }
         }
@@ -11907,7 +11314,7 @@
           "args": ""
         },
         "engines": [
-          "encoder"
+          "llama-server"
         ]
       }
     },
@@ -15477,167 +14884,36 @@
     {
       "family": "mmBERT",
       "id": "mmbert32k-intent-classifier-merged",
-      "name": "mmBERT-32K Intent Classifier",
-      "description": "Long-context multilingual BERT intent classification model",
+      "name": "mmBERT 32K Intent Classifier",
+      "description": "ModernBERT sequence classifier for 14 fixed categories. Rune Infer caps ONNX input at 512 tokens.",
       "license": "Apache-2.0",
       "source_url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged",
-      "score_range": {
-        "min": 75.5,
-        "max": 83.5
-      },
-      "param_count": "110M",
-      "engine": "transformers",
-      "format": "gguf",
+      "param_count": "307M",
+      "engine": "onnx",
+      "format": "onnx",
       "capabilities": [
-        "Decision"
+        "Nlu"
       ],
-      "hardware_mode": "any",
-      "quantizations": [
-        {
-          "name": "Q4_K_M",
-          "recommended": true,
-          "bits_per_weight": 4.5,
-          "size_bytes": 132062762,
-          "note": "Balanced sweet spot (optimum quality & speed)",
-          "supported_thinking": [
-            {
-              "effort": "realtime",
-              "score": 75.5,
-              "index_name": "Artificial Analysis Accuracy Index",
-              "tokens_per_second": 85,
-              "budget_tokens": 1
-            },
-            {
-              "effort": "accurate",
-              "score": 82,
-              "index_name": "Artificial Analysis Accuracy Index",
-              "tokens_per_second": 38,
-              "budget_tokens": 1
-            }
-          ]
-        },
-        {
-          "name": "Q8_0",
-          "recommended": false,
-          "bits_per_weight": 8.5,
-          "size_bytes": 228108406,
-          "note": "Near-lossless precision (requires more VRAM)",
-          "supported_thinking": [
-            {
-              "effort": "realtime",
-              "score": 77,
-              "index_name": "Artificial Analysis Accuracy Index",
-              "tokens_per_second": 85,
-              "budget_tokens": 1
-            },
-            {
-              "effort": "accurate",
-              "score": 83.5,
-              "index_name": "Artificial Analysis Accuracy Index",
-              "tokens_per_second": 38,
-              "budget_tokens": 1
-            }
-          ]
-        }
-      ],
+      "hardware_mode": "cpu",
       "variants": [
         {
-          "param_count": "110M",
+          "param_count": "307M",
           "id": "mmbert32k-intent-classifier-merged",
-          "name": "mmBERT-32K Intent Classifier",
-          "description": "Long-context multilingual BERT intent classification model",
-          "score_range": {
-            "min": 75.5,
-            "max": 83.5
-          },
+          "name": "mmBERT 32K Intent Classifier",
+          "description": "ModernBERT sequence classifier for 14 fixed categories. Rune Infer caps ONNX input at 512 tokens.",
+          "params": 307000000,
           "install_dir": "vllm-sr/mmbert32k-intent-classifier-merged",
-          "quantizations": [
-            {
-              "name": "Q4_K_M",
-              "recommended": true,
-              "bits_per_weight": 4.5,
-              "size_bytes": 132062762,
-              "note": "Balanced sweet spot (optimum quality & speed)",
-              "supported_thinking": [
-                {
-                  "effort": "realtime",
-                  "score": 75.5,
-                  "index_name": "Artificial Analysis Accuracy Index",
-                  "tokens_per_second": 85,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "accurate",
-                  "score": 82,
-                  "index_name": "Artificial Analysis Accuracy Index",
-                  "tokens_per_second": 38,
-                  "budget_tokens": 1
-                }
-              ]
-            },
-            {
-              "name": "Q8_0",
-              "recommended": false,
-              "bits_per_weight": 8.5,
-              "size_bytes": 228108406,
-              "note": "Near-lossless precision (requires more VRAM)",
-              "supported_thinking": [
-                {
-                  "effort": "realtime",
-                  "score": 77,
-                  "index_name": "Artificial Analysis Accuracy Index",
-                  "tokens_per_second": 85,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "accurate",
-                  "score": 83.5,
-                  "index_name": "Artificial Analysis Accuracy Index",
-                  "tokens_per_second": 38,
-                  "budget_tokens": 1
-                }
-              ]
-            }
-          ],
-          "latest": "e283f64afd21b34ca12cb078f148d1aa49d6d7b8",
+          "latest": "d507a97cb4f570cc64f6e4abad9eb24995bddb24",
           "versions": {
-            "e283f64afd21b34ca12cb078f148d1aa49d6d7b8": {
+            "d507a97cb4f570cc64f6e4abad9eb24995bddb24": {
               "release_number": 1,
               "files": [
                 {
                   "id": "model",
-                  "filename": "mmBERT-Base-Q4_k_m.gguf",
-                  "size_bytes": 240114112,
-                  "sha256": "",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/mmBERT-Base-Q4_k_m.gguf"
-                },
-                {
-                  "id": "category_mapping",
-                  "filename": "category_mapping.json",
-                  "size_bytes": 624,
-                  "sha256": "eab2718d86701e41f2916fb4ef69455d53819611a587853d793cfc882d181865",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/category_mapping.json"
-                },
-                {
-                  "id": "config",
-                  "filename": "config.json",
-                  "size_bytes": 1836,
-                  "sha256": "7c65f5ecdf5113464e04331c28d3e5b60dbbe798bec981295e9c15678c4a93b0",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/config.json"
-                },
-                {
-                  "id": "special_tokens_map",
-                  "filename": "special_tokens_map.json",
-                  "size_bytes": 1051,
-                  "sha256": "6e3204c5a4004719c185007a745d1940471a6fb02521cfa0a00306dbb6bc5903",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/special_tokens_map.json"
-                },
-                {
-                  "id": "tokenizer_config",
-                  "filename": "tokenizer_config.json",
-                  "size_bytes": 46634,
-                  "sha256": "cfd674edc60659156ae92d20c0b827bb743e64a1546b6210b120b13adb2b595b",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/tokenizer_config.json"
+                  "filename": "model.onnx",
+                  "size_bytes": 1230733273,
+                  "sha256": "a23bed3f8507c03c5efa47b80edfc7d5d90fd8a44fccefdee66753f3d2e5a359",
+                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/d507a97cb4f570cc64f6e4abad9eb24995bddb24/onnx/model.onnx"
                 },
                 {
                   "id": "tokenizer",
@@ -15651,172 +14927,33 @@
           },
           "catalog": {
             "tasks": [
-              "text-to-text"
+              "text-to-intent"
             ],
-            "capabilities": [],
-            "max_context_length": null,
+            "capabilities": [
+              "Nlu"
+            ],
+            "max_context_length": 512,
             "local": {
-              "params": null,
-              "bits_per_weight": null,
-              "context_length": -1,
-              "gpu_layers": 99,
+              "params": 307000000,
+              "context_length": 512,
+              "gpu_layers": 0,
               "args": ""
-            },
-            "engines": [
-              "encoder"
-            ]
-          }
-        },
-        {
-          "param_count": "Base",
-          "id": "mmbert32k-intent-classifier",
-          "name": "mmBERT-32K Intent Classifier",
-          "description": "Long-context multilingual BERT intent classification model",
-          "score_range": {
-            "min": 75.5,
-            "max": 83.5
-          },
-          "install_dir": "vllm-sr/mmbert32k-intent-classifier-merged",
-          "quantizations": [
-            {
-              "name": "Q4_K_M",
-              "recommended": true,
-              "bits_per_weight": 4.5,
-              "size_bytes": 132062762,
-              "note": "Balanced sweet spot (optimum quality & speed)",
-              "supported_thinking": [
-                {
-                  "effort": "realtime",
-                  "score": 75.5,
-                  "index_name": "Artificial Analysis Accuracy Index",
-                  "tokens_per_second": 85,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "accurate",
-                  "score": 82,
-                  "index_name": "Artificial Analysis Accuracy Index",
-                  "tokens_per_second": 38,
-                  "budget_tokens": 1
-                }
-              ]
-            },
-            {
-              "name": "Q8_0",
-              "recommended": false,
-              "bits_per_weight": 8.5,
-              "size_bytes": 228108406,
-              "note": "Near-lossless precision (requires more VRAM)",
-              "supported_thinking": [
-                {
-                  "effort": "realtime",
-                  "score": 77,
-                  "index_name": "Artificial Analysis Accuracy Index",
-                  "tokens_per_second": 85,
-                  "budget_tokens": 1
-                },
-                {
-                  "effort": "accurate",
-                  "score": 83.5,
-                  "index_name": "Artificial Analysis Accuracy Index",
-                  "tokens_per_second": 38,
-                  "budget_tokens": 1
-                }
-              ]
-            }
-          ],
-          "latest": "e283f64afd21b34ca12cb078f148d1aa49d6d7b8",
-          "versions": {
-            "e283f64afd21b34ca12cb078f148d1aa49d6d7b8": {
-              "release_number": 1,
-              "files": [
-                {
-                  "id": "model",
-                  "filename": "mmBERT-Base-Q4_k_m.gguf",
-                  "size_bytes": 240114112,
-                  "sha256": "",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/mmBERT-Base-Q4_k_m.gguf"
-                },
-                {
-                  "id": "category_mapping",
-                  "filename": "category_mapping.json",
-                  "size_bytes": 624,
-                  "sha256": "eab2718d86701e41f2916fb4ef69455d53819611a587853d793cfc882d181865",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/category_mapping.json"
-                },
-                {
-                  "id": "config",
-                  "filename": "config.json",
-                  "size_bytes": 1836,
-                  "sha256": "7c65f5ecdf5113464e04331c28d3e5b60dbbe798bec981295e9c15678c4a93b0",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/config.json"
-                },
-                {
-                  "id": "special_tokens_map",
-                  "filename": "special_tokens_map.json",
-                  "size_bytes": 1051,
-                  "sha256": "6e3204c5a4004719c185007a745d1940471a6fb02521cfa0a00306dbb6bc5903",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/special_tokens_map.json"
-                },
-                {
-                  "id": "tokenizer_config",
-                  "filename": "tokenizer_config.json",
-                  "size_bytes": 46634,
-                  "sha256": "cfd674edc60659156ae92d20c0b827bb743e64a1546b6210b120b13adb2b595b",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/tokenizer_config.json"
-                },
-                {
-                  "id": "tokenizer",
-                  "filename": "tokenizer.json",
-                  "size_bytes": 34363441,
-                  "sha256": "17f7d8b9518c403d7429ad9eeeabb6eed49c8d3311de8ef4ed5ad811381a2ced",
-                  "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/tokenizer.json"
-                }
-              ]
             }
           }
         }
       ],
       "install_dir": "vllm-sr/mmbert32k-intent-classifier-merged",
-      "latest": "e283f64afd21b34ca12cb078f148d1aa49d6d7b8",
+      "latest": "d507a97cb4f570cc64f6e4abad9eb24995bddb24",
       "versions": {
-        "e283f64afd21b34ca12cb078f148d1aa49d6d7b8": {
+        "d507a97cb4f570cc64f6e4abad9eb24995bddb24": {
           "release_number": 1,
           "files": [
             {
               "id": "model",
-              "filename": "mmBERT-Base-Q4_k_m.gguf",
-              "size_bytes": 240114112,
-              "sha256": "",
-              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/mmBERT-Base-Q4_k_m.gguf"
-            },
-            {
-              "id": "category_mapping",
-              "filename": "category_mapping.json",
-              "size_bytes": 624,
-              "sha256": "eab2718d86701e41f2916fb4ef69455d53819611a587853d793cfc882d181865",
-              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/category_mapping.json"
-            },
-            {
-              "id": "config",
-              "filename": "config.json",
-              "size_bytes": 1836,
-              "sha256": "7c65f5ecdf5113464e04331c28d3e5b60dbbe798bec981295e9c15678c4a93b0",
-              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/config.json"
-            },
-            {
-              "id": "special_tokens_map",
-              "filename": "special_tokens_map.json",
-              "size_bytes": 1051,
-              "sha256": "6e3204c5a4004719c185007a745d1940471a6fb02521cfa0a00306dbb6bc5903",
-              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/special_tokens_map.json"
-            },
-            {
-              "id": "tokenizer_config",
-              "filename": "tokenizer_config.json",
-              "size_bytes": 46634,
-              "sha256": "cfd674edc60659156ae92d20c0b827bb743e64a1546b6210b120b13adb2b595b",
-              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/e283f64afd21b34ca12cb078f148d1aa49d6d7b8/tokenizer_config.json"
+              "filename": "model.onnx",
+              "size_bytes": 1230733273,
+              "sha256": "a23bed3f8507c03c5efa47b80edfc7d5d90fd8a44fccefdee66753f3d2e5a359",
+              "url": "https://huggingface.co/vllm-sr/mmbert32k-intent-classifier-merged/resolve/d507a97cb4f570cc64f6e4abad9eb24995bddb24/onnx/model.onnx"
             },
             {
               "id": "tokenizer",
@@ -15830,20 +14967,18 @@
       },
       "catalog": {
         "tasks": [
-          "text-to-text"
+          "text-to-intent"
         ],
-        "capabilities": [],
-        "max_context_length": null,
+        "capabilities": [
+          "Nlu"
+        ],
+        "max_context_length": 512,
         "local": {
-          "params": null,
-          "bits_per_weight": null,
-          "context_length": -1,
-          "gpu_layers": 99,
+          "params": 307000000,
+          "context_length": 512,
+          "gpu_layers": 0,
           "args": ""
-        },
-        "engines": [
-          "encoder"
-        ]
+        }
       }
     },
     {

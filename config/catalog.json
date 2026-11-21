@@ -17,8 +17,7 @@
         "text-video-to-text"
       ],
       "engine": [
-        "llama-server",
-        "encoder"
+        "llama-server"
       ],
       "max_context_length": 262144,
       "sampling": {
@@ -545,8 +544,7 @@
         "text-to-decision"
       ],
       "engine": [
-        "llama-server",
-        "encoder"
+        "llama-server"
       ],
       "max_context_length": 32768,
       "local": {
@@ -871,7 +869,7 @@
         "bits_per_weight": 3.5,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": "--diffusion-fa --params-backend disk --vae-tiling"
+        "args": "--sigmas minimax-h3-image --diffusion-fa --params-backend disk --vae-tiling"
       },
       "extra": {
         "default_cfg_scale": 1,
@@ -1069,16 +1067,16 @@
         "text-to-audio"
       ],
       "engine": [
-        "encoder"
+        "audio-cpp"
       ],
       "max_context_length": null,
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice/Qwen3-TTS-12Hz-1.7B-CustomVoice-Q4_K.gguf",
+        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF/qwen3-tts-12hz-1.7b-customvoice-q8_0.gguf",
         "params": 1700000000,
-        "bits_per_weight": 16,
+        "bits_per_weight": 8,
         "context_length": -1,
         "gpu_layers": 99,
-        "args": ""
+        "args": "--voice-id ryan"
       },
       "benchmarks": {
         "index_name": "TTS Arena Mean Opinion Score (MOS)",
@@ -1087,6 +1085,17 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.14,
         "output_tokens_per_task": 700
+      },
+      "audio_operations": {
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }
+          ]
+        }
       }
     },
     {
@@ -1105,9 +1114,9 @@
       ],
       "max_context_length": null,
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/k2-fsa/OmniVoice/omnivoice-base-Q4_K_M.gguf",
+        "path": "D:/Projects/Public/rune/code-model/audio-cpp/audio.cpp-gguf/OmniVoice-GGUF/omnivoice-q8_0.gguf",
         "params": 1500000000,
-        "bits_per_weight": 16,
+        "bits_per_weight": 8,
         "context_length": -1,
         "gpu_layers": 99,
         "args": ""
@@ -1119,6 +1128,17 @@
         "cost_per_task_usd": 0,
         "time_per_task_minutes": 0.18,
         "output_tokens_per_task": 550
+      },
+      "audio_operations": {
+        "speech_generation": {
+          "status": "supported",
+          "verified_with": [
+            {
+              "engine": "audio-cpp",
+              "version": "audio.cpp 0.9.3 (rune-gguf1); git: 41c1f8f 2026-10-26"
+            }
+          ]
+        }
       }
     },
     {
@@ -1288,37 +1308,6 @@
       }
     },
     {
-      "id": "snac-24khz",
-      "name": "SNAC 24kHz Tokenizer",
-      "description": "Multi-scale neural audio codec operating at 24kHz",
-      "capabilities": [
-        "Audio",
-        "Neural Codec"
-      ],
-      "tasks": [
-        "audio-to-audio"
-      ],
-      "engine": [
-        "encoder"
-      ],
-      "local": {
-        "path": "D:/Projects/Public/rune/code-model/hubertsiuzdak/snac_24khz/snac_24khz_f16.gguf",
-        "params": 50000000,
-        "bits_per_weight": 16,
-        "context_length": -1,
-        "gpu_layers": 99,
-        "args": ""
-      },
-      "benchmarks": {
-        "index_name": "Audio Codec ViSQOL Quality Index",
-        "score": 4.65,
-        "unit": "ViSQOL",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.04,
-        "output_tokens_per_task": 512
-      }
-    },
-    {
       "id": "google/embeddinggemma-2",
       "name": "Google EmbeddingGemma 2",
       "description": "Google DeepMind EmbeddingGemma 2 740M multimodal embedding foundation model with Matryoshka Representation Learning (MRL)",
@@ -1366,7 +1355,7 @@
         "text-to-embedding"
       ],
       "engine": [
-        "encoder"
+        "llama-server"
       ],
       "max_context_length": null,
       "sampling": {
@@ -1699,7 +1688,8 @@
       "name": "SCRFD 34G Face Detector & Keypoints",
       "description": "High-accuracy Sample and Computation Redistribution Face Detector (34GF) with 5-point facial landmarks",
       "capabilities": [
-        "Vision"
+        "Vision",
+        "Pose Estimation"
       ],
       "tasks": [
         "image-to-detection"
@@ -1709,6 +1699,26 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/detection/scrfd_34g_gnkps.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "face-detection",
+          "input_size": [
+            640,
+            640
+          ],
+          "fit": "letterbox",
+          "mean": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "std": [
+            0.501961,
+            0.501961,
+            0.501961
+          ]
+        }
       }
     },
     {
@@ -1726,6 +1736,25 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/recognition/glintr100.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "embedding",
+          "input_size": [
+            112,
+            112
+          ],
+          "mean": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "std": [
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
       }
     },
     {
@@ -1743,6 +1772,25 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/recognition/w600k_r50.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "embedding",
+          "input_size": [
+            112,
+            112
+          ],
+          "mean": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "std": [
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
       }
     },
     {
@@ -1770,13 +1818,58 @@
         "Vision"
       ],
       "tasks": [
-        "image-to-detection"
+        "image-to-classification"
       ],
       "engine": [
         "onnx"
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/demographics/fairface.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "classification",
+          "input_size": [
+            224,
+            224
+          ],
+          "mean": [
+            0.485,
+            0.456,
+            0.406
+          ],
+          "std": [
+            0.229,
+            0.224,
+            0.225
+          ],
+          "heads": [
+            [
+              "White",
+              "Black",
+              "Latino Hispanic",
+              "East Asian",
+              "Southeast Asian",
+              "Indian",
+              "Middle Eastern"
+            ],
+            [
+              "Male",
+              "Female"
+            ],
+            [
+              "0-2",
+              "3-9",
+              "10-19",
+              "20-29",
+              "30-39",
+              "40-49",
+              "50-59",
+              "60-69",
+              "70+"
+            ]
+          ]
+        }
       }
     },
     {
@@ -1787,13 +1880,32 @@
         "Vision"
       ],
       "tasks": [
-        "image-to-detection"
+        "image-to-classification"
       ],
       "engine": [
         "onnx"
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/pose/head_pose/sixdrepnet.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "head-pose",
+          "input_size": [
+            224,
+            224
+          ],
+          "mean": [
+            0.485,
+            0.456,
+            0.406
+          ],
+          "std": [
+            0.229,
+            0.224,
+            0.225
+          ]
+        }
       }
     },
     {
@@ -1804,13 +1916,44 @@
         "Vision"
       ],
       "tasks": [
-        "image-to-detection"
+        "image-to-classification"
       ],
       "engine": [
         "onnx"
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/emotion/enet_b2_8.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "classification",
+          "input_size": [
+            260,
+            260
+          ],
+          "mean": [
+            0.485,
+            0.456,
+            0.406
+          ],
+          "std": [
+            0.229,
+            0.224,
+            0.225
+          ],
+          "heads": [
+            [
+              "Anger",
+              "Contempt",
+              "Disgust",
+              "Fear",
+              "Happiness",
+              "Neutral",
+              "Sadness",
+              "Surprise"
+            ]
+          ]
+        }
       }
     },
     {
@@ -1828,6 +1971,46 @@
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/segmentation/segformer_face_parsing.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "semantic-segmentation",
+          "input_size": [
+            512,
+            512
+          ],
+          "mean": [
+            0.485,
+            0.456,
+            0.406
+          ],
+          "std": [
+            0.229,
+            0.224,
+            0.225
+          ],
+          "labels": [
+            "Background",
+            "Skin",
+            "Nose",
+            "Eyeglasses",
+            "Right eye",
+            "Left eye",
+            "Right eyebrow",
+            "Left eyebrow",
+            "Right ear",
+            "Left ear",
+            "Mouth",
+            "Upper lip",
+            "Lower lip",
+            "Hair",
+            "Hat",
+            "Earring",
+            "Necklace",
+            "Neck",
+            "Cloth"
+          ]
+        }
       }
     },
     {
@@ -1838,13 +2021,32 @@
         "Vision"
       ],
       "tasks": [
-        "image-to-detection"
+        "image-to-classification"
       ],
       "engine": [
         "onnx"
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/gaze/resnet50_gaze.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "gaze",
+          "input_size": [
+            448,
+            448
+          ],
+          "mean": [
+            0.485,
+            0.456,
+            0.406
+          ],
+          "std": [
+            0.229,
+            0.224,
+            0.225
+          ]
+        }
       }
     },
     {
@@ -1855,13 +2057,31 @@
         "Vision"
       ],
       "tasks": [
-        "image-to-detection"
+        "image-to-classification"
       ],
       "engine": [
         "onnx"
       ],
       "local": {
         "path": "D:/Projects/Public/rune/code-model/.misc/person-identifier/models/liveness/minifasnet_v2.onnx"
+      },
+      "extra": {
+        "onnx_recipe": {
+          "kind": "classification",
+          "input_size": [
+            80,
+            80
+          ],
+          "pixel_scale": 1.0,
+          "channel_order": "bgr",
+          "heads": [
+            [
+              "spoof",
+              "real",
+              "spoof"
+            ]
+          ]
+        }
       }
     },
     {
@@ -1913,32 +2133,27 @@
     {
       "id": "mmbert32k-intent-classifier-merged",
       "name": "mmBERT 32K Intent Classifier",
-      "description": "ModernBERT 32K zero-shot intent and entity classifier",
-      "capabilities": [],
-      "modality": "Nlu",
-      "engine": [
-        "encoder"
+      "description": "ModernBERT sequence classifier for 14 fixed categories. Rune Infer caps ONNX input at 512 tokens.",
+      "capabilities": [
+        "Nlu"
       ],
-      "max_context_length": null,
+      "tasks": [
+        "text-to-intent"
+      ],
+      "engine": [
+        "onnx"
+      ],
+      "max_context_length": 512,
       "local": {
-        "path": "D:/Projects/Public/rune/code-model/vllm-sr/mmbert32k-intent-classifier-merged/mmBERT-Base-Q4_k_m.gguf",
-        "params": null,
-        "bits_per_weight": null,
-        "context_length": -1,
-        "gpu_layers": 99,
+        "path": "D:/Projects/Public/rune/code-infer/target/model-downloads/mmbert32k-intent-classifier-merged/model.onnx",
+        "params": 307000000,
+        "context_length": 512,
+        "gpu_layers": 0,
         "args": ""
       },
-      "benchmarks": {
-        "index_name": "Banking77 / CLINC150 Intent Classification Accuracy",
-        "score": 93.6,
-        "unit": "% Acc",
-        "cost_per_task_usd": 0,
-        "time_per_task_minutes": 0.03,
-        "output_tokens_per_task": 128
-      },
-      "tasks": [
-        "text-to-text"
-      ]
+      "extra": {
+        "tokenizer_path": "D:/Projects/Public/rune/code-model/vllm-sr/mmbert32k-intent-classifier-merged/tokenizer.json"
+      }
     },
     {
       "id": "cactus-needle-3",

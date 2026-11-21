@@ -300,7 +300,10 @@ restart needed (runtime hot-reload detects changes every 2s).
   `text_encoder_path`, `llm_vision_path`, `default_steps`, `default_cfg_scale`,
   `default_sample_method`, `max_resolution`, `lora` (a list of
   `{name, path, scale}` — parsed and validated but **not yet applied** by any
-  engine); other engines take none yet. To support a new engine setting, add
+  engine); `onnx`: `onnx_recipe` — declares a non-YOLO image model
+  (`kind` `embedding` | `classification` | `semantic-segmentation`, `input_size` `[w,h]`,
+  `mean`/`std`/`pixel_scale`/`channel_order`, per-output `heads` labels or segmentation
+  `labels`); other engines take none yet. To support a new engine setting, add
   the key to `allowed_extra_keys` in `schema.rs`.
 - **Strict parsing:** unknown keys anywhere in a model are errors, so a typo
   can no longer be silently ignored.
@@ -344,8 +347,8 @@ OpenAI canonical: chat completions (stream + non-stream, vision, video, tools,
 models, health. (Note: `/v1/responses` and Anthropic Messages at `/v1/messages`
 and `/anthropic/v1/messages` are implemented but currently disabled in schema 2
 routing pending full protocol alignment). Rune-specific: `/v1/videos/generations` (text-to-video via `sd-server`'s async `vid_gen`; returns a base64 webm/webp/avi, task `text-to-video`, modality `VideoGeneration`), `/v1/inference`,
-`/v1/nlu/intents`, `/v1/ocr`, `/v1/images/{captions,detections,embeddings,
-recognize,upscales,restorations,style-transfers}`, `/v1/audio/speech-to-speech`.
+`/v1/nlu/intents`, `/v1/ocr`, `/v1/images/{captions,classifications,detections,embeddings,
+recognize,segmentations,upscales,restorations,style-transfers}`, `/v1/audio/speech-to-speech`.
 
 Errors mirror OpenAI's `{"error": {...}}` shape. Postman collection in
 `postman/` documents the surface.

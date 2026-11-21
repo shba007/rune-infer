@@ -376,8 +376,8 @@ pub fn allowed_extra_keys(kind: EngineKind) -> &'static [&'static str] {
             "max_resolution",
             "lora",
         ],
-        EngineKind::Onnx
-        | EngineKind::AudioCpp
+        EngineKind::Onnx => &["onnx_recipe", "tokenizer_path"],
+        EngineKind::AudioCpp
         | EngineKind::NemoSpeech
         | EngineKind::Crispasr
         | EngineKind::WhisperCpp
@@ -399,6 +399,7 @@ struct ExtraFields {
     llm_vision_path: Option<String>,
     embeddings_connectors_path: Option<String>,
     audio_vae_path: Option<String>,
+    onnx_recipe: Option<serde_json::Value>,
     default_steps: Option<u32>,
     default_cfg_scale: Option<f32>,
     default_sample_method: Option<String>,
@@ -454,6 +455,8 @@ pub(crate) fn valid_task(task: &str) -> bool {
                     | "moderation"
                     | "depth"
                     | "segmentation"
+                    | "classification"
+                    | "intent"
                     | "matting"
             ) && seen.insert(kind)
         })
@@ -493,6 +496,8 @@ fn derived_modality(tasks: &[String]) -> Modality {
         Modality::ObjectDetection
     } else if outputs("moderation") {
         Modality::Moderation
+    } else if outputs("intent") {
+        Modality::Nlu
     } else if outputs("video") {
         Modality::VideoGeneration
     } else if outputs("image") {
@@ -626,6 +631,7 @@ impl TryFrom<ModelEntry> for ModelConfig {
             llm_vision_path: extra.llm_vision_path,
             embeddings_connectors_path: extra.embeddings_connectors_path,
             audio_vae_path: extra.audio_vae_path,
+            onnx_recipe: extra.onnx_recipe,
             default_steps: extra.default_steps,
             default_cfg_scale: extra.default_cfg_scale,
             default_sample_method: extra.default_sample_method,

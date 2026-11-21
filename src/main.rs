@@ -75,6 +75,9 @@ enum Command {
         model: std::path::PathBuf,
         #[arg(long)]
         cpu: bool,
+        /// `WIDTHxHEIGHT` of a catalog-declared model (recipe worker).
+        #[arg(long)]
+        recipe_size: Option<String>,
     },
     #[command(hide = true)]
     LitertWorker {
@@ -127,9 +130,21 @@ async fn main() -> Result<()> {
         runtime,
         model,
         cpu,
+        recipe_size,
     }) = &args.command
     {
-        return rune_infer::inference::engines::onnx::worker(runtime, model, *cpu);
+        return match recipe_size {
+            Some(size) => {
+                let (width, height) = size
+                    .split_once('x')
+                    .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+                    .context("--recipe-size must look like 112x112")?;
+                rune_infer::inference::engines::onnx::recipe_worker(
+                    runtime, model, *cpu, width, height,
+                )
+            }
+            None => rune_infer::inference::engines::onnx::worker(runtime, model, *cpu),
+        };
     }
     if let Some(Command::LitertWorker { runtime, model }) = &args.command {
         return rune_infer::inference::engines::litert::native::run(runtime, model);

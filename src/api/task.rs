@@ -105,6 +105,7 @@ impl Requirements {
         let mut requirements = match task {
             ImageDepth { .. } => Self::new(&["image"], "depth", "depth"),
             ImageSegmentation { .. } => Self::new(&["image"], "segmentation", "segmentation"),
+            ImageClassification { .. } => Self::new(&["image"], "classification", "classification"),
             PortraitMatting { .. } => Self::new(&["image"], "matting", "matting"),
             ToolCall {
                 prompt,
@@ -136,7 +137,7 @@ impl Requirements {
             AudioDiarization { .. } => Self::new(&["audio"], "diarization", "diarization"),
             Embedding { .. } => Self::new(&["text"], "embedding", "embedding"),
             Moderation { .. } => Self::new(&["text"], "moderation", "moderation"),
-            NluIntent { .. } => Self::new(&["text"], "text", "nlu"),
+            NluIntent { .. } => Self::new(&["text"], "intent", "nlu"),
             DocumentOcr { .. } => Self::new(&["image"], "text", "ocr"),
             ImageCaption { .. } => Self::new(&["image"], "text", "caption"),
             DetectObjects {
@@ -306,8 +307,15 @@ impl Requirements {
                 }
                 Encoder => false,
                 Onnx => {
-                    matches!(self.operation, "detection" | "segmentation" | "matting")
-                        && self.inputs == ["image"]
+                    self.operation == "nlu"
+                        || matches!(
+                            self.operation,
+                            "detection"
+                                | "segmentation"
+                                | "matting"
+                                | "classification"
+                                | "image-embedding"
+                        ) && self.inputs == ["image"]
                 }
                 Litert => self.operation == "depth",
             };

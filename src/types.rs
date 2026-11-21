@@ -467,6 +467,8 @@ pub struct PromptTokensDetails {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Usage {
     pub prompt_tokens: u32,
+    /// Embedding replies (OpenAI, llama-server) omit it.
+    #[serde(default)]
     pub completion_tokens: u32,
     pub total_tokens: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1490,6 +1492,49 @@ pub struct DetectObjectsRequest {
 pub struct ImageSegmentationRequest {
     pub model: String,
     pub image: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageClassificationRequest {
+    pub model: String,
+    pub image: String,
+    /// Labels returned per head, highest score first (default 5).
+    #[serde(default)]
+    pub top_k: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClassificationScore {
+    pub index: usize,
+    pub label: String,
+    pub score: f32,
+}
+
+/// One model output (a classifier may have several, e.g. race, gender, age).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClassificationHead {
+    pub index: usize,
+    pub scores: Vec<ClassificationScore>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageClassificationResponse {
+    pub model: String,
+    pub execution_provider: String,
+    pub width: u32,
+    pub height: u32,
+    #[serde(default)]
+    pub heads: Vec<ClassificationHead>,
+    /// Numeric readings for models that estimate quantities (head pose, gaze).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub measurements: Vec<Measurement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Measurement {
+    pub name: String,
+    pub value: f64,
+    pub unit: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

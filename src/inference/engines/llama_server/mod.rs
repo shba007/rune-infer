@@ -519,7 +519,8 @@ impl InferenceEngine for LlamaServerEngine {
                     }
                 }
 
-                if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
+                let has_tools = schema.as_array().is_some_and(|tools| !tools.is_empty());
+                if has_tools {
                     body["tools"] = schema.clone();
                     if let Some(tc) = tool_choice {
                         body["tool_choice"] = tc.clone();
@@ -671,7 +672,7 @@ impl InferenceEngine for LlamaServerEngine {
                         })
                         .collect();
 
-                    if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
+                    if has_tools {
                         record_tool_diagnostic(&tool_diagnostic_fields(
                             finish_reason.as_deref(),
                             valid_accumulated.len(),
@@ -711,8 +712,9 @@ impl InferenceEngine for LlamaServerEngine {
                         });
                     }
 
-                    if let Some((clean_content, parsed_tools)) =
-                        tools::extract_tool_calls(&full_output)
+                    if has_tools
+                        && let Some((clean_content, parsed_tools)) =
+                            tools::extract_tool_calls(&full_output)
                     {
                         return Ok(InferenceOutput {
                             response: InferenceTaskResponse::ToolCall {
@@ -730,7 +732,7 @@ impl InferenceEngine for LlamaServerEngine {
                 }
 
                 let result: serde_json::Value = resp.json()?;
-                if schema.is_array() && !schema.as_array().is_none_or(|a| a.is_empty()) {
+                if has_tools {
                     record_tool_diagnostic(&tool_diagnostic(&result));
                 }
                 let choice = &result["choices"][0];
@@ -782,8 +784,9 @@ impl InferenceEngine for LlamaServerEngine {
                     });
                 }
 
-                if let Some((clean_content, parsed_tools)) =
-                    tools::extract_tool_calls(&combined_content)
+                if has_tools
+                    && let Some((clean_content, parsed_tools)) =
+                        tools::extract_tool_calls(&combined_content)
                 {
                     return Ok(InferenceOutput {
                         response: InferenceTaskResponse::ToolCall {
@@ -876,7 +879,14 @@ impl InferenceEngine for LlamaServerEngine {
                     let err_text = resp.text().unwrap_or_default();
                     return Err(format!("llama-server embedding request failed: {err_text}").into());
                 }
-                let mut result: crate::types::EmbeddingResponse = resp.json()?;
+                let text = resp.text()?;
+                let mut result: crate::types::EmbeddingResponse = serde_json::from_str(&text)
+                    .map_err(|err| {
+                        let head: String = text.chars().take(200).collect();
+                        format!(
+                            "llama-server returned an unreadable embedding reply ({err}): {head}"
+                        )
+                    })?;
                 if let Some(dim) = dimensions {
                     for item in &mut result.data {
                         if item.embedding.len() > *dim {
@@ -1632,13 +1642,22 @@ mod structured_transport_tests {
     }
 
     #[test]
-    fn sends_full_schema_and_preserves_json_content_in_both_backend_modes() {
-        for streaming in [false, true] {
+    fn preserves_plain_and_structured_json_in_both_backend_modes() {
+        for (structured, streaming) in [(false, false), (false, true), (true, false), (true, true)]
+        {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
-            let content = r#"{"answer":"ok","findings":[{"box":null}]}"#;
-            let schema = json!({"type":"object","required":["answer","findings"],"additionalProperties":false,
-                "properties":{"answer":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"box":{"type":["array","null"]}}}}}});
+            let content = if structured {
+                r#"{"answer":"ok","findings":[{"box":null}]}"#
+            } else {
+                r#"{"title":"Ceiling fan","design_notes":["Three evenly spaced blades"]}"#
+            };
+            let schema = if structured {
+                json!({"type":"object","required":["answer","findings"],"additionalProperties":false,
+                    "properties":{"answer":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"box":{"type":["array","null"]}}}}}})
+            } else {
+                json!({})
+            };
             let expected = schema.clone();
             let server = std::thread::spawn(move || {
                 let (mut socket, _) = listener.accept().unwrap();
@@ -1660,10 +1679,15 @@ mod structured_transport_tests {
                 let mut bytes = vec![0; length];
                 reader.read_exact(&mut bytes).unwrap();
                 let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-                assert_eq!(
-                    request["response_format"],
-                    json!({"type":"json_schema","json_schema":{"schema":expected}})
-                );
+                assert!(request.get("tools").is_none());
+                if structured {
+                    assert_eq!(
+                        request["response_format"],
+                        json!({"type":"json_schema","json_schema":{"schema":expected}})
+                    );
+                } else {
+                    assert!(request.get("response_format").is_none());
+                }
                 let body = if streaming {
                     format!(
                         "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
@@ -1703,7 +1727,9 @@ mod structured_transport_tests {
                 .execute(&task, if streaming { Some(&mut callback) } else { None })
                 .unwrap();
             let InferenceTaskResponse::Text(text) = output.response else {
-                panic!("JSON was converted into tool calls")
+                panic!(
+                    "JSON was converted into tool calls (structured={structured}, streaming={streaming})"
+                )
             };
             assert_eq!(text, content);
             assert_eq!(output.usage.completion_tokens, 12);

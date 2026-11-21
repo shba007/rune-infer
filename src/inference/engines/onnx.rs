@@ -1,4 +1,7 @@
 mod ade20k;
+#[cfg(windows)]
+mod nlu;
+mod recipe;
 pub(crate) mod runtime;
 use crate::{
     config::ModelConfig,
@@ -26,6 +29,8 @@ const SEG_MODEL_SHA: &str = "c815dd6377a436a3c453c435a8da6b88c5136135148304750aa
 const OBB_MODEL_SHA: &str = "565c3c7f1611027b509d6df2b81a8abbb2d3f3b004f84c17607545394458bfec";
 const SEM_MODEL_SHA: &str = "3740e49cd9150fac97a6b6fdb610b66e6d522b816c37c3fbb1a7642fe51efef0";
 const MATTING_MODEL_SHA: &str = "6065d27c615ea27308f5b88598dd8db116eb07436c7a323ca40d13b2866c309e";
+const NLU_MODEL_SHA: &str = "a23bed3f8507c03c5efa47b80edfc7d5d90fd8a44fccefdee66753f3d2e5a359";
+const NLU_LABEL_COUNT: usize = 14;
 pub(crate) const MATTING_SIDE: u32 = 1024;
 pub(crate) const MATTING_MAX_EDGE: u32 = 8192;
 pub(crate) const MATTING_MAX_PIXELS: u64 = 40_000_000;
@@ -84,6 +89,9 @@ enum Profile {
     Oriented,
     Semantic,
     Matting,
+    Nlu,
+    /// Catalog-declared model (`extra.onnx_recipe`), not a reviewed export.
+    Recipe,
 }
 impl Profile {
     fn from_model(path: &Path) -> Result<Self, Box<dyn Error>> {
@@ -94,6 +102,7 @@ impl Profile {
             OBB_MODEL_SHA => Ok(Self::Oriented),
             SEM_MODEL_SHA => Ok(Self::Semantic),
             MATTING_MODEL_SHA => Ok(Self::Matting),
+            NLU_MODEL_SHA => Ok(Self::Nlu),
             _ => Err(
                 "ONNX model is not a reviewed YOLO26x detection, pose, segmentation or oriented-box export"
                     .into(),
@@ -101,7 +110,9 @@ impl Profile {
         }
     }
     fn height(self) -> u32 {
-        if self == Self::Matting {
+        if self == Self::Recipe {
+            0
+        } else if self == Self::Matting {
             MATTING_SIDE
         } else if matches!(self, Self::Pose | Self::Segmentation | Self::Oriented) {
             POSE_HEIGHT
@@ -117,6 +128,8 @@ impl Profile {
             Self::Oriented => 20 * POSE_ANCHORS,
             Self::Semantic => (SIDE * SIDE) as usize,
             Self::Matting => (MATTING_SIDE * MATTING_SIDE) as usize,
+            Self::Nlu => NLU_LABEL_COUNT,
+            Self::Recipe => 0,
         }
     }
 }
@@ -239,6 +252,9 @@ pub struct OnnxEngine {
     id: String,
     model: PathBuf,
     profile: Profile,
+    recipe: Option<recipe::Recipe>,
+    #[cfg(windows)]
+    nlu_tokenizer: Option<tokenizers::Tokenizer>,
     runtime: PathBuf,
     helper: PathBuf,
     cpu_only: bool,
@@ -260,30 +276,44 @@ impl OnnxEngine {
             return Err("ONNX detection currently supports Windows x64 only".into());
         }
         let model_path = std::fs::canonicalize(&model.model_path)?;
-        let profile = Profile::from_model(&model_path)?;
-        if (profile == Profile::Matting) != declares_matting(model) {
-            return Err(
-                "ONNX model profile conflicts with its declared portrait matting capability".into(),
-            );
-        }
-        if (profile == Profile::Pose) != declares_pose(model) {
-            return Err("ONNX model profile conflicts with its declared pose capability".into());
-        }
-        if (profile == Profile::Segmentation) != declares_segmentation(model) {
-            return Err(
-                "ONNX model profile conflicts with its declared segmentation capability".into(),
-            );
-        }
-        if (profile == Profile::Oriented) != declares_oriented(model) {
-            return Err(
-                "ONNX model profile conflicts with its declared oriented-box capability".into(),
-            );
-        }
-        if (profile == Profile::Semantic) != declares_semantic(model) {
-            return Err(
-                "ONNX model profile conflicts with its declared semantic segmentation capability"
-                    .into(),
-            );
+        let recipe = model
+            .onnx_recipe
+            .as_ref()
+            .map(recipe::Recipe::parse)
+            .transpose()?;
+        let profile = if recipe.is_some() {
+            Profile::Recipe
+        } else {
+            Profile::from_model(&model_path)?
+        };
+        if profile != Profile::Recipe {
+            if (profile == Profile::Matting) != declares_matting(model) {
+                return Err(
+                    "ONNX model profile conflicts with its declared portrait matting capability"
+                        .into(),
+                );
+            }
+            if (profile == Profile::Pose) != declares_pose(model) {
+                return Err(
+                    "ONNX model profile conflicts with its declared pose capability".into(),
+                );
+            }
+            if (profile == Profile::Segmentation) != declares_segmentation(model) {
+                return Err(
+                    "ONNX model profile conflicts with its declared segmentation capability".into(),
+                );
+            }
+            if (profile == Profile::Oriented) != declares_oriented(model) {
+                return Err(
+                    "ONNX model profile conflicts with its declared oriented-box capability".into(),
+                );
+            }
+            if (profile == Profile::Semantic) != declares_semantic(model) {
+                return Err(
+                    "ONNX model profile conflicts with its declared semantic segmentation capability"
+                        .into(),
+                );
+            }
         }
         let runtime = match std::env::var_os("ONNX_RUNTIME_LIBRARY_PATH") {
             Some(path) => PathBuf::from(path),
@@ -294,6 +324,10 @@ impl OnnxEngine {
         }
         let runtime = std::fs::canonicalize(runtime).map_err(|_| "ONNX Runtime is missing; set ONNX_RUNTIME_LIBRARY_PATH to the verified runtime DLL")?;
         verify_runtime(&runtime, false)?;
+        #[cfg(windows)]
+        let nlu_tokenizer = (profile == Profile::Nlu)
+            .then(|| nlu::load_tokenizer(model))
+            .transpose()?;
         let (cuda_directory, cuda_bundle_invalid) = match runtime::managed_gpu_directory(&runtime) {
             Ok(directory) => (directory, false),
             Err(error) => {
@@ -315,6 +349,9 @@ impl OnnxEngine {
             id: model.id.clone(),
             model: model_path,
             profile,
+            recipe,
+            #[cfg(windows)]
+            nlu_tokenizer,
             runtime,
             helper,
             cpu_only: model.runtime.as_ref().is_some_and(|v| v.gpu_layers == 0),
@@ -332,6 +369,10 @@ impl OnnxEngine {
             .arg(&self.runtime)
             .arg("--model")
             .arg(&self.model);
+        if let Some(recipe) = &self.recipe {
+            cmd.arg("--recipe-size")
+                .arg(format!("{}x{}", recipe.input_size[0], recipe.input_size[1]));
+        }
         if cpu {
             cmd.arg("--cpu");
         } else if let Some(directory) = &self.cuda_directory {
@@ -362,16 +403,22 @@ impl OnnxEngine {
         let guard =
             super::super::process::ProcessGuard::try_new(child, format!("onnx-{}", self.id))?;
         let output_bytes = self.profile.output_len() * 4;
+        let framed = self.profile == Profile::Recipe;
         let (request, requests) = mpsc::channel::<Vec<u8>>();
         let (responses, response) = mpsc::channel();
         std::thread::spawn(move || {
             let mut stdout = stdout;
             while let Ok(payload) = requests.recv() {
-                let mut bytes = vec![0; output_bytes];
                 let result = stdin
                     .write_all(&payload)
-                    .and_then(|()| stdout.read_exact(&mut bytes))
-                    .map(|()| bytes)
+                    .and_then(|()| {
+                        if framed {
+                            read_framed(&mut stdout)
+                        } else {
+                            let mut bytes = vec![0; output_bytes];
+                            stdout.read_exact(&mut bytes).map(|()| bytes)
+                        }
+                    })
                     .map_err(|e| e.to_string());
                 let failed = result.is_err();
                 if responses.send(result).is_err() || failed {
@@ -412,6 +459,34 @@ impl OnnxEngine {
         input: &[u8],
         cpu: bool,
     ) -> Result<Vec<f32>, Box<dyn Error>> {
+        let bytes = self.run_worker_bytes(worker, input, cpu)?;
+        let values: Vec<f32> = bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|x| f32::from_le_bytes([x[0], x[1], x[2], x[3]]))
+            .collect();
+        if !values.iter().all(|x| x.is_finite()) {
+            *worker = None;
+            return Err("ONNX returned non-finite values".into());
+        }
+        tracing::info!(
+            "ONNX inference completed using {}",
+            if cpu {
+                "CPU"
+            } else {
+                "CUDA with CPU operator fallback"
+            }
+        );
+        Ok(values)
+    }
+
+    fn run_worker_bytes(
+        &self,
+        worker: &mut Option<ResidentWorker>,
+        input: &[u8],
+        cpu: bool,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
         if worker.as_ref().is_some_and(|w| w.cpu != cpu) {
             *worker = None;
         }
@@ -446,25 +521,171 @@ impl OnnxEngine {
                 return Err(format!("ONNX worker failed: {error} {diagnostics}").into());
             }
         };
-        let values: Vec<f32> = bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|x| f32::from_le_bytes([x[0], x[1], x[2], x[3]]))
-            .collect();
-        if !values.iter().all(|x| x.is_finite()) {
-            *worker = None;
-            return Err("ONNX returned non-finite values".into());
+        Ok(bytes)
+    }
+
+    /// Run a catalog-declared model: CUDA first, then CPU, like the reviewed models.
+    fn infer_recipe(
+        &self,
+        input: &[u8],
+    ) -> Result<(Vec<recipe::Tensor>, &'static str), Box<dyn Error>> {
+        let mut worker = self
+            .worker
+            .lock()
+            .map_err(|_| "ONNX inference lock poisoned")?;
+        let use_cpu = self.cpu_only
+            || self.cuda_bundle_invalid
+            || self.cuda_directory.is_none()
+            || worker.as_ref().is_some_and(|w| w.cpu);
+        if use_cpu {
+            let bytes = self.run_worker_bytes(&mut worker, input, true)?;
+            return Ok((recipe::parse_tensors(&bytes)?, "cpu"));
         }
-        tracing::info!(
-            "ONNX inference completed using {}",
-            if cpu {
-                "CPU"
-            } else {
-                "CUDA with CPU operator fallback"
+        match self.run_worker_bytes(&mut worker, input, false) {
+            Ok(bytes) => Ok((
+                recipe::parse_tensors(&bytes)?,
+                "cuda_registered_cpu_fallback",
+            )),
+            Err(error) => {
+                tracing::warn!("ONNX CUDA failed; retrying on CPU: {error}");
+                let bytes = self.run_worker_bytes(&mut worker, input, true)?;
+                Ok((recipe::parse_tensors(&bytes)?, "cpu"))
             }
-        );
-        Ok(values)
+        }
+    }
+
+    fn execute_recipe(
+        &self,
+        task: &InferenceTaskRequest,
+    ) -> Result<InferenceOutput, Box<dyn Error>> {
+        use recipe::Kind;
+        let recipe = self.recipe.as_ref().ok_or("ONNX recipe missing")?;
+        let (image_bytes, allowed): (_, &[Kind]) = match task {
+            InferenceTaskRequest::ImageEmbedding {
+                image_bytes,
+                regions,
+                ..
+            } => {
+                if regions.as_ref().is_some_and(|r| !r.is_empty()) {
+                    return Err("This ONNX embedding model does not support regions; crop the image instead".into());
+                }
+                (image_bytes, &[Kind::Embedding])
+            }
+            InferenceTaskRequest::ImageClassification { image_bytes, .. } => (
+                image_bytes,
+                &[Kind::Classification, Kind::HeadPose, Kind::Gaze],
+            ),
+            InferenceTaskRequest::ImageSegmentation { image_bytes, .. } => {
+                (image_bytes, &[Kind::SemanticSegmentation])
+            }
+            InferenceTaskRequest::DetectObjects { image_bytes, .. } => {
+                (image_bytes, &[Kind::FaceDetection])
+            }
+            _ => {
+                return Err(
+                    "ONNX recipe models support image embedding, classification, segmentation and face detection"
+                        .into(),
+                );
+            }
+        };
+        if !allowed.contains(&recipe.kind) {
+            return Err(format!(
+                "This ONNX model is declared as {:?}, not for this request",
+                recipe.kind
+            )
+            .into());
+        }
+        let prepared = recipe::preprocess(image_bytes, recipe)?;
+        let (width, height) = (prepared.width, prepared.height);
+        let (tensors, provider) = self.infer_recipe(&prepared.bytes)?;
+        let response = match task {
+            InferenceTaskRequest::ImageEmbedding { .. } => {
+                InferenceTaskResponse::ImageEmbedding(crate::types::ImageEmbeddingsResponse {
+                    object: "list".into(),
+                    data: vec![crate::types::ImageRegionEmbeddingObject {
+                        object: "embedding".into(),
+                        index: 0,
+                        label: None,
+                        embedding: recipe::decode_embedding(&tensors)?,
+                    }],
+                    model: self.id.clone(),
+                    usage: crate::types::ImageEmbeddingsUsage { total_regions: 1 },
+                })
+            }
+            InferenceTaskRequest::ImageClassification { top_k, .. } => {
+                let (heads, measurements) = match recipe.kind {
+                    Kind::HeadPose => (Vec::new(), recipe::decode_head_pose(&tensors)?),
+                    Kind::Gaze => (Vec::new(), recipe::decode_gaze(&tensors, recipe)?),
+                    _ => (
+                        recipe::decode_classification(&tensors, recipe, top_k.unwrap_or(5))?,
+                        Vec::new(),
+                    ),
+                };
+                InferenceTaskResponse::Classification(crate::types::ImageClassificationResponse {
+                    model: self.id.clone(),
+                    execution_provider: provider.into(),
+                    width,
+                    height,
+                    heads,
+                    measurements,
+                })
+            }
+            InferenceTaskRequest::DetectObjects {
+                confidence_threshold,
+                iou_threshold,
+                features,
+                ..
+            } => {
+                let threshold = confidence_threshold.unwrap_or(0.5);
+                let iou = iou_threshold.unwrap_or(0.4);
+                if !(0.0..=1.0).contains(&threshold) || !(0.0..=1.0).contains(&iou) {
+                    return Err(
+                        "confidence_threshold and iou_threshold must be between 0 and 1".into(),
+                    );
+                }
+                let data = recipe::decode_faces(
+                    &tensors,
+                    recipe,
+                    (width, height, prepared.scale),
+                    threshold,
+                    iou,
+                    features.is_empty() || features.iter().any(|v| v == "keypoints"),
+                )?;
+                let created = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_secs();
+                let count = data.len();
+                InferenceTaskResponse::Detection(DetectObjectsResponse {
+                    id: format!("det_{created}"),
+                    object: "list".into(),
+                    created,
+                    model: self.id.clone(),
+                    execution_provider: Some(provider.into()),
+                    data,
+                    usage: DetectObjectsUsage {
+                        image_width: width,
+                        image_height: height,
+                        total_objects: count,
+                    },
+                })
+            }
+            _ => {
+                let (class_map, classes) =
+                    recipe::decode_segmentation(&tensors, recipe, width, height)?;
+                InferenceTaskResponse::Segmentation(crate::types::ImageSegmentationResponse {
+                    model: self.id.clone(),
+                    execution_provider: provider.into(),
+                    width,
+                    height,
+                    class_map,
+                    classes,
+                })
+            }
+        };
+        Ok(InferenceOutput {
+            response,
+            usage: Usage::new(0, 0),
+        })
     }
 
     fn infer_preprocessed(&self, input: &[u8]) -> Result<(Vec<f32>, &'static str), Box<dyn Error>> {
@@ -1288,6 +1509,16 @@ impl InferenceEngine for OnnxEngine {
         task: &InferenceTaskRequest,
         _on_token: Option<&mut dyn FnMut(&str) -> bool>,
     ) -> Result<InferenceOutput, Box<dyn Error>> {
+        #[cfg(windows)]
+        if let Some(tokenizer) = &self.nlu_tokenizer {
+            return nlu::execute(self, tokenizer, task);
+        }
+        if self.profile == Profile::Recipe {
+            return self.execute_recipe(task);
+        }
+        if let InferenceTaskRequest::ImageClassification { .. } = task {
+            return Err("ONNX model does not support image classification".into());
+        }
         if let InferenceTaskRequest::PortraitMatting { image_bytes, .. } = task {
             if self.profile != Profile::Matting {
                 return Err("ONNX model does not support portrait matting".into());
@@ -1388,7 +1619,7 @@ impl InferenceEngine for OnnxEngine {
             Profile::Semantic => {
                 return Err("Semantic segmentation model requires a segmentation request".into());
             }
-            Profile::Matting => unreachable!(),
+            Profile::Matting | Profile::Recipe | Profile::Nlu => unreachable!(),
         };
         let created = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -1411,6 +1642,50 @@ impl InferenceEngine for OnnxEngine {
             usage: Usage::new(0, 0),
         })
     }
+}
+
+/// Worker entry for catalog-declared models (`--recipe-size`).
+pub fn recipe_worker(
+    runtime: &Path,
+    model: &Path,
+    cpu: bool,
+    width: u32,
+    height: u32,
+) -> anyhow::Result<()> {
+    recipe::worker(runtime, model, cpu, width, height)
+}
+
+/// Read one framed worker reply (see `recipe::parse_tensors`) as raw bytes.
+fn read_framed(stdout: &mut impl Read) -> std::io::Result<Vec<u8>> {
+    fn word(stdout: &mut impl Read, out: &mut Vec<u8>) -> std::io::Result<u32> {
+        let mut buf = [0u8; 4];
+        stdout.read_exact(&mut buf)?;
+        out.extend_from_slice(&buf);
+        Ok(u32::from_le_bytes(buf))
+    }
+    let invalid = |m: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, m.to_string());
+    let mut out = Vec::new();
+    let outputs = word(stdout, &mut out)?;
+    if outputs > 16 {
+        return Err(invalid("too many ONNX outputs"));
+    }
+    for _ in 0..outputs {
+        let rank = word(stdout, &mut out)?;
+        if rank > 8 {
+            return Err(invalid("invalid ONNX output rank"));
+        }
+        for _ in 0..rank {
+            word(stdout, &mut out)?;
+        }
+        let count = word(stdout, &mut out)? as usize;
+        if count > 64 * 1024 * 1024 {
+            return Err(invalid("ONNX output too large"));
+        }
+        let start = out.len();
+        out.resize(start + count * 4, 0);
+        stdout.read_exact(&mut out[start..])?;
+    }
+    Ok(out)
 }
 
 #[cfg(windows)]
@@ -1436,6 +1711,9 @@ pub fn worker(runtime: &Path, model: &Path, cpu: bool) -> anyhow::Result<()> {
     let mut session = builder.commit_from_file(model)?;
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
+    if profile == Profile::Nlu {
+        return nlu::worker(&mut session, &mut stdin, &mut stdout);
+    }
     loop {
         let width = if profile == Profile::Matting {
             MATTING_SIDE
@@ -1482,7 +1760,7 @@ pub fn worker(runtime: &Path, model: &Path, cpu: bool) -> anyhow::Result<()> {
             Profile::Pose => &[1, POSE_CHANNELS as i64, POSE_ANCHORS as i64],
             Profile::Segmentation => &[1, 116, 6300],
             Profile::Oriented => &[1, 20, 6300],
-            Profile::Semantic => unreachable!(),
+            Profile::Semantic | Profile::Recipe | Profile::Nlu => unreachable!(),
             Profile::Matting => &[1, 1, 1024, 1024],
         };
         anyhow::ensure!(

@@ -19,6 +19,12 @@ pub enum InferenceTaskRequest {
         model: Option<String>,
         image_bytes: Vec<u8>,
     },
+    ImageClassification {
+        model: Option<String>,
+        image_bytes: Vec<u8>,
+        #[serde(default)]
+        top_k: Option<usize>,
+    },
     ImageDepth {
         model: Option<String>,
         image_bytes: Vec<u8>,
@@ -211,6 +217,7 @@ pub enum InferenceTaskRequest {
 pub enum InferenceTaskResponse {
     PortraitMatting(crate::types::PortraitMattingResponse),
     Segmentation(crate::types::ImageSegmentationResponse),
+    Classification(crate::types::ImageClassificationResponse),
     Depth(crate::types::ImageDepthResponse),
     ToolCall {
         content: Option<String>,

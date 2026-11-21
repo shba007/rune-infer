@@ -756,6 +756,8 @@ pub struct ModelConfig {
     pub llm_vision_path: Option<String>,
     pub embeddings_connectors_path: Option<String>,
     pub audio_vae_path: Option<String>,
+    /// ONNX: how to preprocess and read a catalog-declared model (`extra.onnx_recipe`).
+    pub onnx_recipe: Option<serde_json::Value>,
     pub default_steps: Option<u32>,
     pub default_cfg_scale: Option<f32>,
     pub default_sample_method: Option<String>,

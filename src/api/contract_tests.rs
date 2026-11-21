@@ -908,6 +908,7 @@ fn task_metadata_requires_explicit_unique_input_output_types() {
         "text-image-audio-video-to-text",
         "audio-to-embedding",
         "text-image-to-decision",
+        "text-to-intent",
     ] {
         assert!(crate::schema::valid_task(task), "{task}");
     }
@@ -984,7 +985,7 @@ fn app(engine: Option<Arc<dyn InferenceEngine>>) -> (Router, Arc<AppState>) {
         },
         "tasks": ["text-image-to-text", "text-to-image", "text-image-to-image", "image-to-image", "audio-to-text",
             "text-to-audio", "audio-to-audio", "audio-to-diarization", "text-to-embedding",
-            "image-to-embedding", "text-to-moderation", "text-image-to-detection", "text-image-to-decision"],
+            "image-to-embedding", "text-to-moderation", "text-image-to-detection", "text-image-to-decision", "text-to-intent"],
         "local": {"path": "Cargo.toml"}, "extra": {}
     }))
     .unwrap();

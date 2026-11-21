@@ -460,7 +460,7 @@ fn validate_model(model: &LocalModel) -> Result<()> {
         ) && model.format == "gguf"
             || (model.engine == "onnx"
                 && model.format == "onnx"
-                && model.capabilities == ["Portrait Matting"]),
+                && (model.capabilities == ["Portrait Matting"] || model.capabilities == ["Nlu"])),
         "Unsupported model format or engine"
     );
     let latest = model
@@ -646,11 +646,13 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     let image =
         model.capabilities == ["Image Generation"] || model.capabilities == ["Video Generation"];
     let matting = model.capabilities == ["Portrait Matting"];
+    let nlu = model.capabilities == ["Nlu"];
     let transcription = capabilities_are(&model.capabilities, "Transcription");
     let speech = capabilities_are(&model.capabilities, "Speech Generation");
     let diarization = model.capabilities == ["Audio"];
     ensure!(
         matting
+            || nlu
             || vision
             || image
             || transcription
@@ -661,6 +663,7 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
         "Unsupported model capabilities"
     );
     if matting
+        || nlu
         || image
         || transcription
         || speech
@@ -685,6 +688,11 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
         ensure!(
             model.engine == "onnx" && model.format == "onnx" && version.files.len() == 1,
             "Unsupported portrait matting bundle"
+        );
+    } else if nlu {
+        ensure!(
+            model.engine == "onnx" && model.format == "onnx" && version.files.len() == 2,
+            "Intent classifier requires an ONNX model and its tokenizer"
         );
     } else if image {
         ensure!(model.engine == "sd-server", "Unsupported image engine");
@@ -718,6 +726,8 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
                         | "embeddings_connectors"
                         | "audio_vae"
                 ) || encoder_directory_file(file)
+            } else if nlu {
+                matches!(file.id.as_str(), "model" | "tokenizer")
             } else {
                 matches!(file.id.as_str(), "model" | "projector")
             }) && roles.insert(&file.id),
@@ -736,7 +746,7 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
                         file.filename.ends_with(".safetensors"),
                     "text_encoder" =>
                         file.filename.ends_with(".safetensors") || file.filename.ends_with(".gguf"),
-                    _ if matting => file.filename.ends_with(".onnx"),
+                    _ if matting || nlu => file.filename.ends_with(".onnx"),
                     _ => file.filename.ends_with(".gguf"),
                 })
                 && file
@@ -749,6 +759,7 @@ fn validate_bundle(model: &LocalModel, version: &Version) -> Result<()> {
     }
     ensure!(
         roles.contains(&"model".to_string())
+            && (!nlu || roles.contains(&"tokenizer".to_string()))
             && (!vision || roles.contains(&"projector".to_string()))
             && (!image
                 || (roles.contains(&"vae".to_string())
@@ -983,7 +994,7 @@ fn install_with(
         ) && model.format == "gguf"
             || (model.engine == "onnx"
                 && model.format == "onnx"
-                && model.capabilities == ["Portrait Matting"]),
+                && (model.capabilities == ["Portrait Matting"] || model.capabilities == ["Nlu"])),
         "Unsupported model entry"
     );
     validate_bundle(model, version)?;
@@ -1180,6 +1191,7 @@ fn install_with(
                 }
                 [a] if a == "Video Generation" => defaults.tasks == ["text-to-video"],
                 [a] if a == "Decision" => defaults.tasks == ["text-to-decision"],
+                [a] if a == "Nlu" => defaults.tasks == ["text-to-intent"],
                 [a] if a == "Portrait Matting" => {
                     defaults.tasks == ["image-to-matting"]
                         && defaults.capabilities.as_deref()
@@ -2571,7 +2583,13 @@ mod tests {
 
     #[test]
     fn every_installable_registry_model_installs_from_its_verified_files() {
-        for mut model in parse(include_bytes!("../registry/models.json")).unwrap() {
+        let models = parse(include_bytes!("../registry/models.json")).unwrap();
+        assert!(
+            models
+                .iter()
+                .any(|model| model.id == "mmbert32k-intent-classifier-merged")
+        );
+        for mut model in models {
             let (root, _, _) = fixture();
             for file in &mut model.versions.get_mut(&model.latest).unwrap().files {
                 let contents = fixture_bytes(file);
