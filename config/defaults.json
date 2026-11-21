@@ -1,0 +1,37 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "api_key": null,
+    "max_loaded_models": 1,
+    "idle_unload_seconds": 300,
+    "vram_budget_ratio": 0.90,
+    "ram_budget_ratio": 0.20,
+    "engine_backend": null
+  },
+  "proxy_rate_limits": {
+    "requests_per_minute": 60,
+    "tokens_per_minute": null,
+    "requests_per_day": null,
+    "max_concurrent": 5,
+    "queue_timeout_seconds": 60,
+    "max_retries": 5,
+    "retry_delay_ms": 1000,
+    "retry_timeout_seconds": 30
+  },
+  "registry": {
+    "models_url": "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/models.v2.json",
+    "engines_url": "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/engines.v2.json",
+    "legacy_models_url": "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/models.json",
+    "legacy_engines_url": "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/engines.json",
+    "max_bytes": 4194304,
+    "connect_timeout_seconds": 5,
+    "request_timeout_seconds": 15
+  },
+  "downloads": {
+    "connect_timeout_seconds": 15,
+    "request_timeout_seconds": 300
+  },
+  "event_stream_keep_alive_seconds": 15,
+  "config_poll_seconds": 2
+}

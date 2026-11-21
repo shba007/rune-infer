@@ -1,4 +1,4 @@
-mod ade20k;
+mod metadata;
 #[cfg(windows)]
 mod nlu;
 mod recipe;
@@ -23,14 +23,6 @@ use std::{
     time::Duration,
 };
 
-const MODEL_SHA: &str = "5267bf1883b43df3aca8791721909679ee83de8a7d5546a7ecdd75b99877bce4";
-const POSE_MODEL_SHA: &str = "f9fa35b3181b72328414649cad937bf752c15ad0bf5131d91dea12f1bf4090e7";
-const SEG_MODEL_SHA: &str = "c815dd6377a436a3c453c435a8da6b88c5136135148304750aa9d8c2300eb25d";
-const OBB_MODEL_SHA: &str = "565c3c7f1611027b509d6df2b81a8abbb2d3f3b004f84c17607545394458bfec";
-const SEM_MODEL_SHA: &str = "3740e49cd9150fac97a6b6fdb610b66e6d522b816c37c3fbb1a7642fe51efef0";
-const MATTING_MODEL_SHA: &str = "6065d27c615ea27308f5b88598dd8db116eb07436c7a323ca40d13b2866c309e";
-const NLU_MODEL_SHA: &str = "a23bed3f8507c03c5efa47b80edfc7d5d90fd8a44fccefdee66753f3d2e5a359";
-const NLU_LABEL_COUNT: usize = 14;
 pub(crate) const MATTING_SIDE: u32 = 1024;
 pub(crate) const MATTING_MAX_EDGE: u32 = 8192;
 pub(crate) const MATTING_MAX_PIXELS: u64 = 40_000_000;
@@ -53,35 +45,12 @@ fn available_system_memory() -> Option<u64> {
 fn available_system_memory() -> Option<u64> {
     None
 }
-const RUNTIME_SHA: &str = "51c002601f22ecb7089931565b8908cd7c155d7bf8f8cffe21336835da861d07";
-const PROVIDER_SHARED_SHA: &str =
-    "05c836c1f75858ffa034823cf227335014f02a7297fd273dbd5d487f5262c87b";
-const PROVIDER_CUDA_SHA: &str = "8629b290bc1a2c8877f0ae794baef861c0f7b964a982cdfd5e90ee1bc01a33ee";
 const SIDE: u32 = 640;
 const POSE_HEIGHT: u32 = 480;
 const POSE_ANCHORS: usize = 6300;
 const POSE_CHANNELS: usize = 56;
-const KEYPOINTS: [&str; 17] = [
-    "nose",
-    "left_eye",
-    "right_eye",
-    "left_ear",
-    "right_ear",
-    "left_shoulder",
-    "right_shoulder",
-    "left_elbow",
-    "right_elbow",
-    "left_wrist",
-    "right_wrist",
-    "left_hip",
-    "right_hip",
-    "left_knee",
-    "right_knee",
-    "left_ankle",
-    "right_ankle",
-];
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 enum Profile {
     Detection,
     Pose,
@@ -95,19 +64,11 @@ enum Profile {
 }
 impl Profile {
     fn from_model(path: &Path) -> Result<Self, Box<dyn Error>> {
-        match super::download::file_sha256(path)?.as_str() {
-            MODEL_SHA => Ok(Self::Detection),
-            POSE_MODEL_SHA => Ok(Self::Pose),
-            SEG_MODEL_SHA => Ok(Self::Segmentation),
-            OBB_MODEL_SHA => Ok(Self::Oriented),
-            SEM_MODEL_SHA => Ok(Self::Semantic),
-            MATTING_MODEL_SHA => Ok(Self::Matting),
-            NLU_MODEL_SHA => Ok(Self::Nlu),
-            _ => Err(
-                "ONNX model is not a reviewed YOLO26x detection, pose, segmentation or oriented-box export"
-                    .into(),
-            ),
-        }
+        metadata::reviewed()
+            .profiles_by_hash
+            .get(&super::download::file_sha256(path)?)
+            .copied()
+            .ok_or_else(|| "ONNX model does not match a reviewed model profile".into())
     }
     fn height(self) -> u32 {
         if self == Self::Recipe {
@@ -128,7 +89,7 @@ impl Profile {
             Self::Oriented => 20 * POSE_ANCHORS,
             Self::Semantic => (SIDE * SIDE) as usize,
             Self::Matting => (MATTING_SIDE * MATTING_SIDE) as usize,
-            Self::Nlu => NLU_LABEL_COUNT,
+            Self::Nlu => metadata::data().nlu_labels.len(),
             Self::Recipe => 0,
         }
     }
@@ -165,89 +126,6 @@ fn declares_semantic(model: &ModelConfig) -> bool {
             .any(|c| c.eq_ignore_ascii_case("Semantic Segmentation"))
     })
 }
-const LABELS: [&str; 80] = [
-    "person",
-    "bicycle",
-    "car",
-    "motorcycle",
-    "airplane",
-    "bus",
-    "train",
-    "truck",
-    "boat",
-    "traffic light",
-    "fire hydrant",
-    "stop sign",
-    "parking meter",
-    "bench",
-    "bird",
-    "cat",
-    "dog",
-    "horse",
-    "sheep",
-    "cow",
-    "elephant",
-    "bear",
-    "zebra",
-    "giraffe",
-    "backpack",
-    "umbrella",
-    "handbag",
-    "tie",
-    "suitcase",
-    "frisbee",
-    "skis",
-    "snowboard",
-    "sports ball",
-    "kite",
-    "baseball bat",
-    "baseball glove",
-    "skateboard",
-    "surfboard",
-    "tennis racket",
-    "bottle",
-    "wine glass",
-    "cup",
-    "fork",
-    "knife",
-    "spoon",
-    "bowl",
-    "banana",
-    "apple",
-    "sandwich",
-    "orange",
-    "broccoli",
-    "carrot",
-    "hot dog",
-    "pizza",
-    "donut",
-    "cake",
-    "chair",
-    "couch",
-    "potted plant",
-    "bed",
-    "dining table",
-    "toilet",
-    "tv",
-    "laptop",
-    "mouse",
-    "remote",
-    "keyboard",
-    "cell phone",
-    "microwave",
-    "oven",
-    "toaster",
-    "sink",
-    "refrigerator",
-    "book",
-    "clock",
-    "vase",
-    "scissors",
-    "teddy bear",
-    "hair drier",
-    "toothbrush",
-];
-
 pub struct OnnxEngine {
     id: String,
     model: PathBuf,
@@ -317,7 +195,9 @@ impl OnnxEngine {
         }
         let runtime = match std::env::var_os("ONNX_RUNTIME_LIBRARY_PATH") {
             Some(path) => PathBuf::from(path),
-            None => super::download::engine_bin()?.join("onnxruntime/onnxruntime.dll"),
+            None => super::download::engine_bin()?
+                .join("onnxruntime")
+                .join(runtime::manifest().runtime_library.0),
         };
         if crate::embedding::root().is_some() && !runtime.is_absolute() {
             return Err("ONNX_RUNTIME_LIBRARY_PATH must be absolute when Infer is embedded".into());
@@ -743,19 +623,19 @@ impl OnnxEngine {
 }
 
 fn verify_runtime(runtime: &Path, cuda: bool) -> Result<(), Box<dyn Error>> {
-    if super::download::file_sha256(runtime)? != RUNTIME_SHA {
-        return Err(
-            "ONNX Runtime DLL does not match the reviewed Windows x64 1.31.1 CUDA 12 bundle".into(),
-        );
+    let manifest = runtime::manifest();
+    if super::download::file_sha256(runtime)? != manifest.runtime_library.1 {
+        let version = &super::registry::bundled_onnx().version;
+        return Err(format!(
+            "ONNX Runtime DLL does not match the reviewed Windows x64 {version} CUDA 12 bundle"
+        )
+        .into());
     }
     if cuda {
         let directory = runtime
             .parent()
             .ok_or("ONNX Runtime has no parent directory")?;
-        for (name, expected) in [
-            ("onnxruntime_providers_shared.dll", PROVIDER_SHARED_SHA),
-            ("onnxruntime_providers_cuda.dll", PROVIDER_CUDA_SHA),
-        ] {
+        for &(name, expected) in &manifest.providers {
             if super::download::file_sha256(&directory.join(name))? != expected {
                 return Err(format!("ONNX Runtime CUDA provider checksum mismatch: {name}").into());
             }
@@ -988,7 +868,7 @@ fn decode_detections(
             continue;
         }
         let cls = row[5] as usize;
-        if row[5] < 0.0 || row[5].fract() != 0.0 || cls >= LABELS.len() {
+        if row[5] < 0.0 || row[5].fract() != 0.0 || cls >= metadata::data().coco_labels.len() {
             return Err("ONNX returned an invalid class index".into());
         }
         let x1 = ((row[0] - left as f32) / scale).clamp(0.0, w as f32);
@@ -1001,7 +881,7 @@ fn decode_detections(
         data.push(DetectionItem {
             object: "detection".into(),
             index: data.len(),
-            label: LABELS[cls].into(),
+            label: metadata::data().coco_labels[cls].into(),
             confidence: score as f64,
             box_: DetectionBox {
                 x: ((x1 + x2) / 2.0 / w as f32) as f64,
@@ -1084,8 +964,8 @@ fn decode_pose(
             continue;
         }
         let pose = if include_keypoints {
-            let mut points = Vec::with_capacity(KEYPOINTS.len());
-            for (index, name) in KEYPOINTS.iter().enumerate() {
+            let mut points = Vec::with_capacity(metadata::data().coco_keypoints.len());
+            for (index, name) in metadata::data().coco_keypoints.iter().enumerate() {
                 let confidence = at(5 + index * 3 + 2, anchor);
                 if !(0.0..=1.0).contains(&confidence) {
                     return Err("ONNX returned an invalid keypoint confidence".into());
@@ -1238,7 +1118,7 @@ fn decode_segmentation(
         data.push(DetectionItem {
             object: "detection".into(),
             index: data.len(),
-            label: LABELS[class].into(),
+            label: metadata::data().coco_labels[class].into(),
             confidence: score as f64,
             box_: DetectionBox {
                 x: ((x1 + x2) / 2.0 / w as f32) as f64,
@@ -1261,23 +1141,6 @@ fn decode_segmentation(
     Ok(data)
 }
 
-const DOTA_LABELS: [&str; 15] = [
-    "plane",
-    "ship",
-    "storage tank",
-    "baseball diamond",
-    "tennis court",
-    "basketball court",
-    "ground track field",
-    "harbor",
-    "bridge",
-    "large vehicle",
-    "small vehicle",
-    "helicopter",
-    "roundabout",
-    "soccer ball field",
-    "swimming pool",
-];
 type OrientedCandidate = (usize, usize, f32, f32, [[f64; 2]; 4]);
 
 fn oriented_corners(cx: f64, cy: f64, w: f64, h: f64, angle: f64) -> [[f64; 2]; 4] {
@@ -1430,7 +1293,7 @@ fn decode_oriented(
         data.push(DetectionItem {
             object: "detection".into(),
             index: data.len(),
-            label: DOTA_LABELS[class].into(),
+            label: metadata::data().dota_labels[class].into(),
             confidence: score as f64,
             box_: DetectionBox {
                 x: (x1 + x2) / 2.0 / w as f64,
@@ -1486,7 +1349,7 @@ fn decode_semantic(
         .filter(|(_, present)| **present)
         .map(|(id, _)| crate::types::SemanticClass {
             id: id as u8,
-            label: ade20k::LABELS[id].into(),
+            label: metadata::data().ade20k_labels[id].into(),
         })
         .collect();
     let mut encoded = std::io::Cursor::new(Vec::new());

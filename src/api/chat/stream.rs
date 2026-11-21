@@ -506,7 +506,13 @@ pub fn handle_chat_stream(
         is_done,
     };
     let mut resp = Sse::new(cancel_guarded)
-        .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+        .keep_alive(
+            KeepAlive::new().interval(std::time::Duration::from_secs(
+                crate::config::defaults()
+                    .event_stream_keep_alive_seconds
+                    .get(),
+            )),
+        )
         .into_response();
 
     if let Ok(val) = axum::http::HeaderValue::from_str(&model_config.id) {

@@ -1,76 +1,64 @@
-use super::{PROVIDER_CUDA_SHA, PROVIDER_SHARED_SHA, RUNTIME_SHA, verify_runtime};
+use super::verify_runtime;
 use crate::inference::engines::download;
 use std::{
     error::Error,
     path::{Path, PathBuf},
 };
 
-const ORT_ARCHIVE_SHA: &str = "5cbf65edc93dc7bb3296249b1b6e1b2228e575902af64d6163d0da2103cef9d5";
-const CUDNN_ARCHIVE_SHA: &str = "06e9b0026f3bad97d2b58666330fabec04fe1672f776661ecb0ce0029c27f142";
-const CUBLAS_ARCHIVE_SHA: &str = "623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661";
-const CUDART_ARCHIVE_SHA: &str = "8e018af8fa02363876860388bd10ccb89eb9ab8fb0aa749aaf58430a9f7c4891";
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RuntimeManifest<'a> {
+    #[serde(borrow)]
+    pub(super) runtime_library: (&'a str, &'a str),
+    #[serde(borrow)]
+    pub(super) providers: Vec<(&'a str, &'a str)>,
+    ort_archive_dir: &'a str,
+    cuda_directory: &'a str,
+    #[serde(borrow)]
+    dependencies: Vec<Dependency<'a>>,
+}
 
-const ORT_FILES: [(&str, &str); 3] = [
-    ("onnxruntime.dll", RUNTIME_SHA),
-    ("onnxruntime_providers_shared.dll", PROVIDER_SHARED_SHA),
-    ("onnxruntime_providers_cuda.dll", PROVIDER_CUDA_SHA),
-];
-const CUBLAS_FILES: [(&str, &str); 2] = [
-    (
-        "cublas64_12.dll",
-        "52ce5ba0ec5327d39be6021f0f9362d2ed4d64d7206f9b5afc06398d827b8e82",
-    ),
-    (
-        "cublasLt64_12.dll",
-        "71705a7cf0923f4ab034d0d2620bbfc989ff669ac3d79f868b7a7c597ca559c5",
-    ),
-];
-const CUDART_FILES: [(&str, &str); 1] = [(
-    "cudart64_12.dll",
-    "760c38928bbe5759f7b31ed6692599eb7ec83cedd5702e84c2b72028a89837e1",
-)];
-const CUDNN_FILES: [(&str, &str); 10] = [
-    (
-        "cudnn_adv64_9.dll",
-        "712ace96559e60b5be81a1097acb7609f601ff4cd0cdef848b013d671753b4b4",
-    ),
-    (
-        "cudnn_cnn64_9.dll",
-        "dff4c446c855b3ab2d486aebf4c11388cf74da14d7bd0bfafb61c3a75481313d",
-    ),
-    (
-        "cudnn_engines_precompiled64_9.dll",
-        "6b603ac45fc018a96f014d0c6cdbc8f480dce2dbe33b8ca38228a4e4c531f3fe",
-    ),
-    (
-        "cudnn_engines_runtime_compiled64_9.dll",
-        "f92f4776261e4409aa9f84357c40bc3626700292a1d22025746388bea43ae11b",
-    ),
-    (
-        "cudnn_engines_tensor_ir64_9.dll",
-        "d7380a7c4ad90590968e97b4d8b43a616e7e0070bfdeeee04c4d0be85ad52394",
-    ),
-    (
-        "cudnn_ext64_9.dll",
-        "f20888488b701e429830e19cf59022e90a0c5dd398723162ea9f320b3ca06636",
-    ),
-    (
-        "cudnn_graph64_9.dll",
-        "445e8c3e44a6a6035749380009ae35ae8c2bc246428229b79545a25238bb56e2",
-    ),
-    (
-        "cudnn_heuristic64_9.dll",
-        "0634af738266cd36c912e99cd3807ee452450e963bf885be204fdcfb322cfc70",
-    ),
-    (
-        "cudnn_ops64_9.dll",
-        "390bfe103a244c714fca5a1320950ba51a3173a7fbd6664ed535ce7367891ccd",
-    ),
-    (
-        "cudnn64_9.dll",
-        "7268ef53e32c2c574372326dfc9d94a26095f4ed9c89dba87cfb3ab1e40a6470",
-    ),
-];
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Dependency<'a> {
+    id: &'a str,
+    bin_dir: &'a str,
+    license_path: &'a str,
+    license_name: &'a str,
+    #[serde(borrow)]
+    files: Vec<(&'a str, &'a str)>,
+}
+
+#[derive(serde::Deserialize)]
+struct BundledRegistry<'a> {
+    #[serde(borrow)]
+    extensions: Extensions<'a>,
+}
+
+#[derive(serde::Deserialize)]
+struct Extensions<'a> {
+    #[serde(borrow)]
+    onnx: RuntimeManifest<'a>,
+}
+
+pub(super) fn manifest() -> &'static RuntimeManifest<'static> {
+    static MANIFEST: std::sync::LazyLock<RuntimeManifest<'static>> =
+        std::sync::LazyLock::new(|| {
+            let registry: BundledRegistry<'_> =
+                serde_json::from_str(crate::registry_document::ENGINES)
+                    .expect("invalid bundled ONNX runtime metadata");
+            registry.extensions.onnx
+        });
+    &MANIFEST
+}
+
+fn archive_checksum(id: &str) -> Result<&'static str, Box<dyn Error>> {
+    super::super::registry::bundled_onnx()
+        .files
+        .get(id)
+        .map(|file| file.sha256.as_str())
+        .ok_or_else(|| format!("missing bundled ONNX component {id}").into())
+}
 
 fn checked_directory(path: &Path) -> Result<(), Box<dyn Error>> {
     let metadata = std::fs::symlink_metadata(path)?;
@@ -103,21 +91,22 @@ pub(super) fn managed_gpu_directory(runtime: &Path) -> Result<Option<PathBuf>, B
     let directory = runtime
         .parent()
         .ok_or("ONNX Runtime has no parent directory")?
-        .join("cuda-12");
+        .join(manifest().cuda_directory);
     if !directory.exists() {
         return Ok(None);
     }
-    check_files(&directory, &CUDNN_FILES)?;
-    check_files(&directory, &CUBLAS_FILES)?;
-    check_files(&directory, &CUDART_FILES)?;
+    for dependency in &manifest().dependencies {
+        check_files(&directory, &dependency.files)?;
+    }
     Ok(Some(std::fs::canonicalize(directory)?))
 }
 
 pub(crate) fn runtime_version(runtime: &Path) -> Option<String> {
     verify_runtime(runtime, true).ok()?;
+    let version = &super::super::registry::bundled_onnx().version;
     match managed_gpu_directory(runtime) {
-        Ok(Some(_)) => Some("ONNX Runtime 1.31.1 CPU + CUDA".into()),
-        Ok(None) => Some("ONNX Runtime 1.31.1 CPU".into()),
+        Ok(Some(_)) => Some(format!("ONNX Runtime {version} CPU + CUDA")),
+        Ok(None) => Some(format!("ONNX Runtime {version} CPU")),
         Err(_) => None,
     }
 }
@@ -154,39 +143,22 @@ fn assemble_cuda(
     stage: &Path,
     mut obtain: impl FnMut(&Path, &str, &str) -> Result<PathBuf, Box<dyn Error>>,
 ) -> Result<PathBuf, Box<dyn Error>> {
-    let dependencies = stage.join("cuda-12");
+    let dependencies = stage.join(manifest().cuda_directory);
     std::fs::create_dir(&dependencies)?;
     let licenses = dependencies.join("licenses");
     std::fs::create_dir(&licenses)?;
-    let cudnn = obtain(stage, "cudnn", CUDNN_ARCHIVE_SHA)?;
-    copy_checked(&cudnn.join("nvidia/cudnn/bin"), &dependencies, &CUDNN_FILES)?;
-    std::fs::copy(
-        cudnn.join("nvidia_cudnn_cu12-9.27.0.42.dist-info/licenses/License.txt"),
-        licenses.join("cudnn.txt"),
-    )?;
-    let cublas = obtain(stage, "cublas", CUBLAS_ARCHIVE_SHA)?;
-    copy_checked(
-        &cublas.join("nvidia/cublas/bin"),
-        &dependencies,
-        &CUBLAS_FILES,
-    )?;
-    std::fs::copy(
-        cublas.join("nvidia_cublas_cu12-12.9.2.10.dist-info/licenses/License.txt"),
-        licenses.join("cublas.txt"),
-    )?;
-    let cudart = obtain(stage, "cudart", CUDART_ARCHIVE_SHA)?;
-    copy_checked(
-        &cudart.join("nvidia/cuda_runtime/bin"),
-        &dependencies,
-        &CUDART_FILES,
-    )?;
-    std::fs::copy(
-        cudart.join("nvidia_cuda_runtime_cu12-12.9.79.dist-info/licenses/License.txt"),
-        licenses.join("cuda-runtime.txt"),
-    )?;
-    check_files(&dependencies, &CUDNN_FILES)?;
-    check_files(&dependencies, &CUBLAS_FILES)?;
-    check_files(&dependencies, &CUDART_FILES)?;
+    for dependency in &manifest().dependencies {
+        let unpacked = obtain(stage, dependency.id, archive_checksum(dependency.id)?)?;
+        copy_checked(
+            &unpacked.join(dependency.bin_dir),
+            &dependencies,
+            &dependency.files,
+        )?;
+        std::fs::copy(
+            unpacked.join(dependency.license_path),
+            licenses.join(dependency.license_name),
+        )?;
+    }
     Ok(dependencies)
 }
 
@@ -226,11 +198,11 @@ fn install_at(
     if root.exists() {
         checked_directory(&root)?;
     }
-    let existing = root.join("onnxruntime.dll");
+    let existing = root.join(manifest().runtime_library.0);
     if existing.exists() {
         verify_runtime(&existing, true)?;
     }
-    let gpu = root.join("cuda-12");
+    let gpu = root.join(manifest().cuda_directory);
     if existing.is_file() && gpu.exists() {
         managed_gpu_directory(&existing)?;
         return Ok(std::fs::canonicalize(existing)?);
@@ -245,21 +217,19 @@ fn install_at(
             if root.exists() {
                 return Err("Existing ONNX Runtime directory is incomplete; preserve it before installation".into());
             }
-            let unpacked = obtain(&stage, "ort", ORT_ARCHIVE_SHA)?;
+            let unpacked = obtain(&stage, "ort", archive_checksum("ort")?)?;
             let core = stage.join("onnxruntime");
             std::fs::create_dir(&core)?;
+            let archive_root = unpacked.join(manifest().ort_archive_dir);
+            let libraries = archive_root.join("lib");
             copy_checked(
-                &unpacked.join("onnxruntime-win-x64-gpu_cuda12-1.31.1/lib"),
+                &libraries,
                 &core,
-                &ORT_FILES,
+                std::slice::from_ref(&manifest().runtime_library),
             )?;
+            copy_checked(&libraries, &core, &manifest().providers)?;
             for name in ["LICENSE", "ThirdPartyNotices.txt"] {
-                std::fs::copy(
-                    unpacked
-                        .join("onnxruntime-win-x64-gpu_cuda12-1.31.1")
-                        .join(name),
-                    core.join(name),
-                )?;
+                std::fs::copy(archive_root.join(name), core.join(name))?;
             }
             std::fs::rename(&core, &root)?;
         }
@@ -297,7 +267,7 @@ mod tests {
         let runtime = root.join("onnxruntime.dll");
         std::fs::write(&runtime, b"existing runtime").unwrap();
         assert!(managed_gpu_directory(&runtime).unwrap().is_none());
-        let cuda = root.join("cuda-12");
+        let cuda = root.join(manifest().cuda_directory);
         std::fs::create_dir(&cuda).unwrap();
         let marker = cuda.join("cudnn64_9.dll");
         std::fs::write(&marker, b"unverified").unwrap();

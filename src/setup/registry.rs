@@ -60,11 +60,13 @@ struct Registry {
     models: Vec<ModelMetadata>,
     #[serde(default)]
     local_models: Vec<serde_json::Value>,
+    #[serde(default, rename = "extensions")]
+    _extensions: Option<serde::de::IgnoredAny>,
 }
 fn parse_registry(raw: &str) -> Result<Vec<ModelMetadata>, String> {
     let registry: Registry =
         serde_json::from_str(raw).map_err(|e| format!("Invalid model registry: {e}"))?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported model registry schema.".into());
     }
     let _ = &registry.local_models;
@@ -114,6 +116,14 @@ fn parse_registry(raw: &str) -> Result<Vec<ModelMetadata>, String> {
         }
     }
     Ok(registry.models)
+}
+
+#[cfg(test)]
+#[test]
+fn both_schema_versions_expose_the_same_cloud_models() {
+    let legacy = parse_registry(include_str!("../../registry/models.json")).unwrap();
+    let current = parse_registry(crate::registry_document::MODELS).unwrap();
+    assert_eq!(legacy, current);
 }
 
 pub(crate) struct CloudRegistry(Vec<ModelMetadata>);

@@ -383,7 +383,13 @@ pub async fn anthropic_messages_handler(
 
         let stream = UnboundedReceiverStream::new(rx);
         return Sse::new(stream.map(Ok::<_, Infallible>))
-            .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+            .keep_alive(
+                KeepAlive::new().interval(std::time::Duration::from_secs(
+                    crate::config::defaults()
+                        .event_stream_keep_alive_seconds
+                        .get(),
+                )),
+            )
             .into_response();
     }
 

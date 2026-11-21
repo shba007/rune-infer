@@ -453,7 +453,13 @@ pub async fn execute_chat(
         });
 
         Ok(Sse::new(sse_stream)
-            .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+            .keep_alive(
+                KeepAlive::new().interval(std::time::Duration::from_secs(
+                    crate::config::defaults()
+                        .event_stream_keep_alive_seconds
+                        .get(),
+                )),
+            )
             .into_response())
     } else {
         let val: serde_json::Value = resp.json().await.map_err(|e| {

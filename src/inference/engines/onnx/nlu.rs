@@ -1,4 +1,4 @@
-use super::{NLU_LABEL_COUNT, OnnxEngine};
+use super::{OnnxEngine, metadata};
 use crate::config::ModelConfig;
 use crate::inference::types::{InferenceOutput, InferenceTaskRequest, InferenceTaskResponse};
 use crate::types::{NluIntent, NluIntentResponse, Usage};
@@ -11,26 +11,6 @@ use std::{
 };
 use tokenizers::Tokenizer;
 
-const TOKENIZER_SHA: &str = "17f7d8b9518c403d7429ad9eeeabb6eed49c8d3311de8ef4ed5ad811381a2ced";
-const MAX_INPUT_TOKENS: usize = 512;
-// Label order from the verified export's category_mapping.json.
-const LABELS: [&str; NLU_LABEL_COUNT] = [
-    "biology",
-    "business",
-    "chemistry",
-    "computer science",
-    "economics",
-    "engineering",
-    "health",
-    "history",
-    "law",
-    "math",
-    "other",
-    "philosophy",
-    "physics",
-    "psychology",
-];
-
 pub(super) fn load_tokenizer(model: &ModelConfig) -> Result<Tokenizer, Box<dyn Error>> {
     let path = Path::new(
         model
@@ -38,7 +18,9 @@ pub(super) fn load_tokenizer(model: &ModelConfig) -> Result<Tokenizer, Box<dyn E
             .as_deref()
             .ok_or("NLU model requires a tokenizer")?,
     );
-    if crate::inference::engines::download::file_sha256(path)? != TOKENIZER_SHA {
+    if crate::inference::engines::download::file_sha256(path)?
+        != metadata::reviewed().nlu_tokenizer_sha
+    {
         return Err("NLU tokenizer SHA-256 does not match the reviewed tokenizer".into());
     }
     let mut tokenizer = Tokenizer::from_file(path).map_err(|error| error.to_string())?;
@@ -66,9 +48,10 @@ pub(super) fn execute(
         .encode(text.as_str(), true)
         .map_err(|error| error.to_string())?;
     let ids = encoded.get_ids();
-    if ids.is_empty() || ids.len() > MAX_INPUT_TOKENS {
+    let max_input_tokens = metadata::reviewed().nlu_max_input_tokens;
+    if ids.is_empty() || ids.len() > max_input_tokens {
         return Err(
-            format!("NLU input must contain between 1 and {MAX_INPUT_TOKENS} tokens").into(),
+            format!("NLU input must contain between 1 and {max_input_tokens} tokens").into(),
         );
     }
     let length = ids.len() as u32;
@@ -88,8 +71,10 @@ pub(super) fn execute(
         .map(|&logit| (f64::from(logit) - max).exp())
         .collect();
     let sum: f64 = probabilities.iter().sum();
-    let intent = LABELS
-        .into_iter()
+    let intent = metadata::data()
+        .nlu_labels
+        .iter()
+        .copied()
         .zip(probabilities)
         .filter(|(label, _)| {
             candidate_intents.as_ref().is_none_or(|candidates| {
@@ -126,7 +111,7 @@ pub(super) fn worker(
         stdin.read_exact(&mut count[1..])?;
         let count = u32::from_le_bytes(count) as usize;
         anyhow::ensure!(
-            (1..=MAX_INPUT_TOKENS).contains(&count),
+            (1..=metadata::reviewed().nlu_max_input_tokens).contains(&count),
             "Invalid NLU input length"
         );
         let mut bytes = vec![0; count * 4];
@@ -143,7 +128,7 @@ pub(super) fn worker(
         ])?;
         let (shape, logits) = outputs["logits"].try_extract_tensor::<f32>()?;
         anyhow::ensure!(
-            shape.as_ref() == [1, NLU_LABEL_COUNT as i64],
+            shape.as_ref() == [1, metadata::data().nlu_labels.len() as i64],
             "Invalid NLU output shape: {shape:?}"
         );
         for logit in logits {

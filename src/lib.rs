@@ -17,6 +17,7 @@ pub mod migrate;
 pub mod model_management;
 pub mod model_registry;
 pub mod proxy;
+mod registry_document;
 pub mod schema;
 pub mod server;
 pub mod setup;

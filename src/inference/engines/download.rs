@@ -136,11 +136,12 @@ fn report(progress: DownloadProgress) {
 }
 
 pub fn create_download_client() -> Result<reqwest::blocking::Client, Box<dyn Error>> {
+    let settings = &crate::config::defaults().downloads;
     let mut builder = reqwest::blocking::Client::builder()
         .https_only(true)
         .user_agent(concat!("rune-infer/", env!("CARGO_PKG_VERSION")))
-        .timeout(Duration::from_secs(300))
-        .connect_timeout(Duration::from_secs(15));
+        .timeout(Duration::from_secs(settings.request_timeout_seconds))
+        .connect_timeout(Duration::from_secs(settings.connect_timeout_seconds));
 
     if let Ok(v4) = "0.0.0.0".parse::<std::net::IpAddr>() {
         builder = builder.local_address(v4);

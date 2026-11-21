@@ -1,10 +1,6 @@
 use serde::Deserialize;
 use std::{collections::BTreeMap, error::Error, io::Read};
 
-const REGISTRY_URL: &str =
-    "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/engines.json";
-const MAX_REGISTRY_BYTES: u64 = 4 * 1024 * 1024;
-
 pub const ENGINE_REGISTRY_ENV: &str = "RUNE_ENGINE_REGISTRY";
 
 static LOCAL_REGISTRY: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
@@ -24,6 +20,8 @@ pub fn set_engine_registry(path: &std::path::Path) -> std::io::Result<()> {
 struct Registry {
     schema_version: u32,
     engines: Vec<Engine>,
+    #[serde(default, rename = "extensions")]
+    _extensions: Option<serde::de::IgnoredAny>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -76,7 +74,7 @@ pub(crate) struct NeedleRuntime {
 
 pub(crate) fn needle_runtime() -> Result<NeedleRuntime, Box<dyn Error>> {
     parse_needle(
-        include_bytes!("../../../registry/engines.json"),
+        crate::registry_document::ENGINES.as_bytes(),
         std::env::consts::OS,
         std::env::consts::ARCH,
     )
@@ -84,7 +82,7 @@ pub(crate) fn needle_runtime() -> Result<NeedleRuntime, Box<dyn Error>> {
 
 fn parse_needle(body: &[u8], os: &str, arch: &str) -> Result<NeedleRuntime, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported engine registry schema".into());
     }
     let mut entries = registry
@@ -185,7 +183,7 @@ fn llama_release_for_host(
 }
 
 fn bundled_llama_release() -> Result<serde_json::Value, Box<dyn Error>> {
-    parse_llama(include_bytes!("../../../registry/engines.json"))
+    parse_llama(crate::registry_document::ENGINES.as_bytes())
 }
 
 pub(crate) fn prism_release(
@@ -195,6 +193,7 @@ pub(crate) fn prism_release(
 }
 
 fn fetch_document(client: &reqwest::blocking::Client) -> Result<Vec<u8>, Box<dyn Error>> {
+    let registry = &crate::config::defaults().registry;
     let local = LOCAL_REGISTRY
         .get()
         .cloned()
@@ -203,24 +202,19 @@ fn fetch_document(client: &reqwest::blocking::Client) -> Result<Vec<u8>, Box<dyn
         let mut body = Vec::new();
         std::fs::File::open(&path)
             .map_err(|e| format!("Cannot open engine registry {}: {e}", path.display()))?
-            .take(MAX_REGISTRY_BYTES + 1)
+            .take(registry.max_bytes + 1)
             .read_to_end(&mut body)?;
-        if body.len() as u64 > MAX_REGISTRY_BYTES {
+        if body.len() as u64 > registry.max_bytes {
             return Err("Engine registry exceeds size limit".into());
         }
         return Ok(body);
     }
-    let mut body = Vec::new();
-    client
-        .get(REGISTRY_URL)
-        .send()?
-        .error_for_status()?
-        .take(MAX_REGISTRY_BYTES + 1)
-        .read_to_end(&mut body)?;
-    if body.len() as u64 > MAX_REGISTRY_BYTES {
-        return Err("Engine registry exceeds size limit".into());
-    }
-    Ok(body)
+    Ok(crate::registry_document::fetch(
+        client,
+        &registry.engines_url,
+        &registry.legacy_engines_url,
+        registry.max_bytes,
+    )?)
 }
 
 pub(crate) fn litert_files(
@@ -255,7 +249,7 @@ pub(crate) fn sd_release(
 
 pub(crate) fn parse_sd(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported engine registry schema".into());
     }
     let mut entries = registry
@@ -392,7 +386,7 @@ pub(crate) fn compare_sd_registry(
 
 pub(crate) fn parse_crispasr(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported engine registry schema".into());
     }
     let mut entries = registry.engines.iter().filter(|e| e.id == "crispasr");
@@ -492,7 +486,7 @@ pub(crate) fn audio_identity(output: &str) -> Option<(&str, bool)> {
 
 fn parse_audio(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported engine registry schema".into());
     }
     let mut entries = registry
@@ -606,7 +600,7 @@ fn parse_audio(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error>> {
 
 pub(crate) fn parse_nemo(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported engine registry schema".into());
     }
     let mut entries = registry
@@ -720,7 +714,7 @@ pub(crate) fn compare_nemo_revision(
 
 fn parse_litert(body: &[u8]) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported engine registry schema".into());
     }
     let mut engines = registry
@@ -802,9 +796,38 @@ pub(crate) fn onnx_files(
     parse_onnx(&fetch_document(client)?)
 }
 
+pub(crate) struct OnnxRelease {
+    pub(crate) version: String,
+    pub(crate) files: BTreeMap<String, File>,
+}
+
+pub(crate) fn bundled_onnx() -> &'static OnnxRelease {
+    static RELEASE: std::sync::LazyLock<OnnxRelease> = std::sync::LazyLock::new(|| {
+        read_onnx(crate::registry_document::ENGINES.as_bytes())
+            .expect("invalid bundled ONNX Runtime release")
+    });
+    &RELEASE
+}
+
 fn parse_onnx(body: &[u8]) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
+    let candidate = read_onnx(body)?;
+    let reviewed = bundled_onnx();
+    if candidate.version != reviewed.version
+        || candidate.files.iter().any(|(id, file)| {
+            reviewed
+                .files
+                .get(id)
+                .is_none_or(|expected| file.sha256 != expected.sha256)
+        })
+    {
+        return Err("Invalid or unreviewed ONNX component".into());
+    }
+    Ok(candidate.files)
+}
+
+fn read_onnx(body: &[u8]) -> Result<OnnxRelease, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported engine registry schema".into());
     }
     let mut engines = registry.engines.iter().filter(|engine| engine.id == "onnx");
@@ -812,7 +835,7 @@ fn parse_onnx(body: &[u8]) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
     if engines.next().is_some()
         || engine.kind != "managed"
         || engine.name.trim().is_empty()
-        || engine.latest != "1.31.1"
+        || engine.latest.is_empty()
     {
         return Err("Unsupported ONNX registry entry".into());
     }
@@ -843,23 +866,9 @@ fn parse_onnx(body: &[u8]) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
     }
     let mut files = BTreeMap::new();
     for file in &artifact.files {
-        let (hash, format) = match file.id.as_str() {
-            "ort" => (
-                "5cbf65edc93dc7bb3296249b1b6e1b2228e575902af64d6163d0da2103cef9d5",
-                "zip",
-            ),
-            "cudnn" => (
-                "06e9b0026f3bad97d2b58666330fabec04fe1672f776661ecb0ce0029c27f142",
-                "whl",
-            ),
-            "cublas" => (
-                "623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661",
-                "whl",
-            ),
-            "cudart" => (
-                "8e018af8fa02363876860388bd10ccb89eb9ab8fb0aa749aaf58430a9f7c4891",
-                "whl",
-            ),
+        let format = match file.id.as_str() {
+            "ort" => "zip",
+            "cudnn" | "cublas" | "cudart" => "whl",
             _ => return Err("Unknown ONNX component".into()),
         };
         let url = reqwest::Url::parse(&file.url)?;
@@ -868,7 +877,8 @@ fn parse_onnx(body: &[u8]) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
             || url.password().is_some()
             || url.fragment().is_some()
             || url.query().is_some()
-            || file.sha256 != hash
+            || file.sha256.len() != 64
+            || !file.sha256.bytes().all(|b| b.is_ascii_hexdigit())
             || file.size_bytes == 0
             || file.format != format
             || files.insert(file.id.clone(), file.clone()).is_some()
@@ -876,7 +886,10 @@ fn parse_onnx(body: &[u8]) -> Result<BTreeMap<String, File>, Box<dyn Error>> {
             return Err("Invalid or unreviewed ONNX component".into());
         }
     }
-    Ok(files)
+    Ok(OnnxRelease {
+        version: engine.latest.clone(),
+        files,
+    })
 }
 
 fn parse_llama(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error>> {
@@ -885,7 +898,7 @@ fn parse_llama(body: &[u8]) -> Result<serde_json::Value, Box<dyn Error>> {
 
 fn parse_llama_engine(body: &[u8], engine_id: &str) -> Result<serde_json::Value, Box<dyn Error>> {
     let registry: Registry = serde_json::from_slice(body)?;
-    if registry.schema_version != 1 {
+    if !crate::registry_document::supports_version(registry.schema_version) {
         return Err("Unsupported engine registry schema".into());
     }
     let mut ids = std::collections::HashSet::new();
@@ -1296,6 +1309,13 @@ mod tests {
         let files = parse_onnx(SEED).unwrap();
         assert_eq!(files.len(), 4);
         assert_eq!(files["ort"].size_bytes, 392924457);
+        let current = crate::registry_document::ENGINES.as_bytes();
+        let v2_files = parse_onnx(current).unwrap();
+        assert_eq!(v2_files.len(), files.len());
+        for (id, file) in &files {
+            assert_eq!(v2_files[id].sha256, file.sha256);
+        }
+        assert_eq!(parse_llama(SEED).unwrap(), parse_llama(current).unwrap());
         let mut value: serde_json::Value = serde_json::from_slice(SEED).unwrap();
         let engine = value["engines"]
             .as_array_mut()

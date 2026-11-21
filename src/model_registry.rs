@@ -8,10 +8,6 @@ use std::{
 
 pub use crate::inference::budget::{MachineSweetSpotVerdict, evaluate_machine_sweet_spot};
 
-const REGISTRY_URL: &str =
-    "https://raw.githubusercontent.com/shba007/rune-infer/main/registry/models.json";
-const LIMIT: u64 = 4 * 1024 * 1024;
-
 #[derive(Deserialize)]
 struct RawRegistry {
     schema_version: u32,
@@ -316,7 +312,11 @@ pub fn load_listing_from_path(path: &Path) -> Result<Vec<LocalModel>> {
 }
 
 pub fn bundled() -> Result<Vec<LocalModel>> {
-    parse(include_bytes!("../registry/models.json")).context("Invalid bundled model registry")
+    parse(crate::registry_document::MODELS.as_bytes()).context("Invalid bundled model registry")
+}
+
+pub(crate) fn bundled_listing() -> Result<Vec<LocalModel>> {
+    parse_listing(crate::registry_document::MODELS.as_bytes())
 }
 
 pub fn load_from_path(path: &Path) -> Result<Vec<LocalModel>> {
@@ -325,38 +325,38 @@ pub fn load_from_path(path: &Path) -> Result<Vec<LocalModel>> {
 }
 
 fn read_registry_file(path: &Path) -> Result<Vec<u8>> {
+    let limit = crate::config::defaults().registry.max_bytes;
     let file = std::fs::File::open(path)
         .with_context(|| format!("Cannot open model registry {}", path.display()))?;
     let mut body = Vec::new();
-    file.take(LIMIT + 1)
+    file.take(limit + 1)
         .read_to_end(&mut body)
         .with_context(|| format!("Cannot read model registry {}", path.display()))?;
     ensure!(
-        body.len() as u64 <= LIMIT,
+        body.len() as u64 <= limit,
         "Model registry exceeds size limit"
     );
     Ok(body)
 }
 
 pub(crate) fn fetch_document() -> Result<Vec<u8>> {
+    let registry = &crate::config::defaults().registry;
     let client = reqwest::blocking::Client::builder()
         .https_only(true)
         .user_agent(concat!("rune-infer/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(std::time::Duration::from_secs(5))
-        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(
+            registry.connect_timeout_seconds,
+        ))
+        .timeout(std::time::Duration::from_secs(
+            registry.request_timeout_seconds,
+        ))
         .build()?;
-    let mut body = Vec::new();
-    client
-        .get(REGISTRY_URL)
-        .send()?
-        .error_for_status()?
-        .take(LIMIT + 1)
-        .read_to_end(&mut body)?;
-    ensure!(
-        body.len() as u64 <= LIMIT,
-        "Model registry exceeds size limit"
-    );
-    Ok(body)
+    crate::registry_document::fetch(
+        &client,
+        &registry.models_url,
+        &registry.legacy_models_url,
+        registry.max_bytes,
+    )
 }
 
 struct Parsed {
@@ -368,7 +368,7 @@ struct Parsed {
 fn parse_entries(bytes: &[u8]) -> Result<Parsed> {
     let registry: RawRegistry = serde_json::from_slice(bytes).context("Invalid model registry")?;
     ensure!(
-        registry.schema_version == 1,
+        crate::registry_document::supports_version(registry.schema_version),
         "Unsupported model registry schema"
     );
     let mut ids = HashSet::new();
@@ -1610,7 +1610,8 @@ mod tests {
         );
         std::fs::write(&path, b"not JSON").unwrap();
         assert!(load_from_path(&path).is_err());
-        std::fs::write(&path, vec![b' '; LIMIT as usize + 1]).unwrap();
+        let limit = crate::config::defaults().registry.max_bytes as usize;
+        std::fs::write(&path, vec![b' '; limit + 1]).unwrap();
         assert!(
             load_from_path(&path)
                 .unwrap_err()

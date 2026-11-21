@@ -3,6 +3,58 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Defaults {
+    server: ServerConfig,
+    proxy_rate_limits: RateLimitConfig,
+    pub(crate) registry: RegistryDefaults,
+    pub(crate) downloads: DownloadDefaults,
+    pub(crate) event_stream_keep_alive_seconds: std::num::NonZeroU64,
+    pub(crate) config_poll_seconds: std::num::NonZeroU64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RegistryDefaults {
+    pub(crate) models_url: String,
+    pub(crate) engines_url: String,
+    pub(crate) legacy_models_url: String,
+    pub(crate) legacy_engines_url: String,
+    pub(crate) max_bytes: u64,
+    pub(crate) connect_timeout_seconds: u64,
+    pub(crate) request_timeout_seconds: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DownloadDefaults {
+    pub(crate) connect_timeout_seconds: u64,
+    pub(crate) request_timeout_seconds: u64,
+}
+
+pub(crate) fn defaults() -> &'static Defaults {
+    static DEFAULTS: std::sync::LazyLock<Defaults> = std::sync::LazyLock::new(|| {
+        Defaults::deserialize(raw_defaults())
+            .expect("bundled defaults must match the configuration schema")
+    });
+    &DEFAULTS
+}
+
+// Serde field defaults read the source directly to avoid reentering the typed initializer.
+fn raw_defaults() -> &'static serde_json::Value {
+    static JSON: std::sync::LazyLock<serde_json::Value> = std::sync::LazyLock::new(|| {
+        serde_json::from_str(include_str!("../config/defaults.json"))
+            .expect("bundled defaults must be valid JSON")
+    });
+    &JSON
+}
+
+fn bundled_field<T: serde::de::DeserializeOwned>(section: &str, name: &str) -> T {
+    T::deserialize(&raw_defaults()[section][name])
+        .unwrap_or_else(|error| panic!("invalid bundled default {section}.{name}: {error}"))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderType {
@@ -72,27 +124,27 @@ pub struct RateLimitConfig {
 }
 
 fn default_rpm() -> u32 {
-    60
+    bundled_field("proxy_rate_limits", "requests_per_minute")
 }
 
 fn default_max_concurrent() -> usize {
-    5
+    bundled_field("proxy_rate_limits", "max_concurrent")
 }
 
 fn default_queue_timeout() -> u64 {
-    60
+    bundled_field("proxy_rate_limits", "queue_timeout_seconds")
 }
 
 fn default_max_retries() -> u32 {
-    5
+    bundled_field("proxy_rate_limits", "max_retries")
 }
 
 fn default_retry_delay_ms() -> u64 {
-    1000
+    bundled_field("proxy_rate_limits", "retry_delay_ms")
 }
 
 fn default_retry_timeout() -> u64 {
-    30
+    bundled_field("proxy_rate_limits", "retry_timeout_seconds")
 }
 
 impl RateLimitConfig {
@@ -103,16 +155,7 @@ impl RateLimitConfig {
 
 impl Default for RateLimitConfig {
     fn default() -> Self {
-        Self {
-            requests_per_minute: default_rpm(),
-            tokens_per_minute: None,
-            requests_per_day: None,
-            max_concurrent: default_max_concurrent(),
-            queue_timeout_seconds: default_queue_timeout(),
-            max_retries: default_max_retries(),
-            retry_delay_ms: default_retry_delay_ms(),
-            retry_timeout_seconds: default_retry_timeout(),
-        }
+        defaults().proxy_rate_limits.clone()
     }
 }
 
@@ -215,25 +258,16 @@ pub struct ServerConfig {
 
 impl Default for ServerConfig {
     fn default() -> Self {
-        Self {
-            host: "0.0.0.0".to_string(),
-            port: 8080,
-            api_key: None,
-            max_loaded_models: 1,
-            idle_unload_seconds: 300,
-            vram_budget_ratio: 0.90,
-            ram_budget_ratio: 0.20,
-            engine_backend: None,
-        }
+        defaults().server.clone()
     }
 }
 
 fn default_vram_budget_ratio() -> f64 {
-    0.90
+    bundled_field("server", "vram_budget_ratio")
 }
 
 fn default_ram_budget_ratio() -> f64 {
-    0.20
+    bundled_field("server", "ram_budget_ratio")
 }
 
 #[derive(Debug, Clone)]

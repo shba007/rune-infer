@@ -1,0 +1,2489 @@
+{
+  "schema_version": 2,
+  "engines": [
+    {
+      "id": "needle",
+      "name": "Cactus runtime",
+      "kind": "managed",
+      "latest": "4.0.0",
+      "versions": {
+        "4.0.0": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/windows-x86_64/cactus.exe",
+                  "sha256": "3727bc70f4ad4f5dcf3719b90ec01a3a5cbf7a79da9db8424b8ea64c7c4db1b2",
+                  "size_bytes": 1618944,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/windows-arm64/cactus.exe",
+                  "sha256": "94c36bd1f33ffa4cc523a4a5dfef29a766eba46ab208fa2622112e08edb80629",
+                  "size_bytes": 1394688,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus.exe"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/linux-x86_64/cactus",
+                  "sha256": "1233a27b65f2557ade0c965f17ba9de70a47e9f10c139539daca78814f946045",
+                  "size_bytes": 1602448,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/linux-arm64/cactus",
+                  "sha256": "d1646246dca058cf240607d0f5344a910c7fa9de5e3d092ebf6a20e9d2810a45",
+                  "size_bytes": 1482848,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "riscv64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/linux-riscv64/cactus",
+                  "sha256": "5cd9f9577b33170d60b27dc9705ab2b280c41e3060cd70ba7c4db0b9223ffa9e",
+                  "size_bytes": 1230616,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "android",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/android-arm64/cactus",
+                  "sha256": "4bd788304d9344663d95dec70f076a1ddef8a12f7bd968ce95dcb3ad9850204c",
+                  "size_bytes": 1551712,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "android",
+                "arch": "riscv64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/android-riscv64/cactus",
+                  "sha256": "5f1fe96976a1a8433d6e725ea533502c59eeeca53b5166fdef1e067dbc058d12",
+                  "size_bytes": 1668224,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://huggingface.co/Cactus-Compute/cactus/resolve/1a028f5a3972b67dd8d8752f882113d475e7ec4c/releases/4.0.0/macos-arm64/cactus",
+                  "sha256": "39bd925a3759ad3dd18056918feffc82be43a92d4eb2ef5f8baf73a707ee3f3b",
+                  "size_bytes": 1139720,
+                  "format": "binary"
+                }
+              ],
+              "executable": "cactus"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "llama-server",
+      "name": "llama-server",
+      "kind": "managed",
+      "latest": "b12027",
+      "versions": {
+        "b11960": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-macos-arm64.tar.gz",
+                  "sha256": "58e5a5e1d7c2bf66cedd9c29e0323f3e570660a70a1e2156d32eed08f4cc1e3c",
+                  "size_bytes": 16465074,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-macos-x64.tar.gz",
+                  "sha256": "d1e6c9ddcaed9a3b1bb8f3d946bdb3481c7b919357a4029dcb747762397f1da5",
+                  "size_bytes": 12205764,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-ubuntu-arm64.tar.gz",
+                  "sha256": "0065ecfbffe8a790bb0d28059a3320cdc8f723b7f3f248cdc8bfc04790927715",
+                  "size_bytes": 18411465,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-ubuntu-x64.tar.gz",
+                  "sha256": "31cc3a6bc638ac6c48dc4b1b74888f1eaadf3d14227c1e5f67daf9a49541d97a",
+                  "size_bytes": 22686210,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cpu-arm64.zip",
+                  "sha256": "77349357c38da235bb0eed37bcc5ecf3efef21bb5dc42c2269589c0e71cfa00f",
+                  "size_bytes": 13018162,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cpu-x64.zip",
+                  "sha256": "73f962f82850d244db47eaacb9d913637027b82399124324298576d58c5f4287",
+                  "size_bytes": 24407745,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-vulkan-arm64.zip",
+                  "sha256": "cd375e330452496aadf8a872cde6d48c92e51d598088e5575a32a0d43bc0c9f0",
+                  "size_bytes": 25547008,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-vulkan-x64.zip",
+                  "sha256": "bac6914b5e83523eb008c6789eaa12669f93fbc196c3b9e8237b6672323b33e9",
+                  "size_bytes": 37345851,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "8d9d819261de10cc2f03921b8b79c779c5c458e21edb60c170ee30a7d462d684",
+                  "size_bytes": 279763224,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/cudart-llama-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+                  "size_bytes": 391443627,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cuda-13.4-x64.zip",
+                  "sha256": "31c75ea62b80f0816c855ea783ef68757bc2d48028edaa57d904e4982bddea4a",
+                  "size_bytes": 164986387,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/cudart-llama-bin-win-cuda-13.4-x64.zip",
+                  "sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
+                  "size_bytes": 423535356,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "3bde5e443757db131bf6b6e26079bd22ce01e2e6170439997634d7ac7c000119",
+                  "size_bytes": 152745165,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/cudart-llama-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "642dcde8805b3e3165ca710a5443b3b4044b27d96bd3ee3132473988c9bcb774",
+                  "size_bytes": 153262407,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            }
+          ]
+        },
+        "b12027": {
+          "release_number": 2,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-macos-arm64.tar.gz",
+                  "sha256": "3d002860110d2110c886308419441481198472471433cf0580a07e421f412725",
+                  "size_bytes": 16513757,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-macos-x64.tar.gz",
+                  "sha256": "2c45d14df2c5d02edc42f0a9f1a49f93a6ad949123c7bfeba578939da736ef08",
+                  "size_bytes": 12258893,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-ubuntu-arm64.tar.gz",
+                  "sha256": "b5e52731d009e930ec5d769ac07822ab8df6dd2ba1ed3a87280f807bcf006e17",
+                  "size_bytes": 18591618,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-ubuntu-x64.tar.gz",
+                  "sha256": "b94376c7f3d2dd590b929f8bd21f8848b10a3d87156c3b15122d3d5a2d7e5c39",
+                  "size_bytes": 22886185,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cpu-arm64.zip",
+                  "sha256": "d38d062ef5d97dec8c25e820fc2ea310406e5e2ba5be77fea08dc0d9be0ded04",
+                  "size_bytes": 13075721,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cpu-x64.zip",
+                  "sha256": "041f4f252ae8fd36c52be2561a7ad78d3f9775efb99191a81a9cd0e95e4d5dc6",
+                  "size_bytes": 24581968,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-vulkan-arm64.zip",
+                  "sha256": "398997ce5a7b586c80c541a61917b0dcdc67e1db29f2dbe26e6da6e5dda97888",
+                  "size_bytes": 25602548,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-vulkan-x64.zip",
+                  "sha256": "f774dc62ebb5431a001d524de72ed0c4a15abeff408ec996a3e2a6bb91e644e5",
+                  "size_bytes": 37523179,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "005c9d8eba13a68ce76c7c9e55f041f43af3a0d8ef6cd387614ea041f1b1f771",
+                  "size_bytes": 279952295,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/cudart-llama-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+                  "size_bytes": 391443627,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cuda-13.4-x64.zip",
+                  "sha256": "a9b0e635d5aedb209c0344a1c8067ceeee389ec8df1d87605ed55d51371ecaaf",
+                  "size_bytes": 165164220,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/cudart-llama-bin-win-cuda-13.4-x64.zip",
+                  "sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
+                  "size_bytes": 423535356,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/llama-b12027-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "2e5f2c7ce324769dd5748ed1d342906e95baf90bfd66acc6dbce3bba0bc0530a",
+                  "size_bytes": 152787353,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12027/cudart-llama-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "642dcde8805b3e3165ca710a5443b3b4044b27d96bd3ee3132473988c9bcb774",
+                  "size_bytes": 153262407,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "litert",
+      "name": "LiteRT",
+      "kind": "managed",
+      "latest": "2.3.0",
+      "versions": {
+        "2.3.0": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {"os": "windows", "arch": "x86_64", "accelerator": "cpu"},
+              "executable": "libLiteRt.dll",
+              "files": [
+                {"id": "cpu", "url": "https://storage.googleapis.com/litert/binaries/2.3.0/windows_x86_64/libLiteRt.dll", "sha256": "6fe42cfa518879dd7bae4500244cf371d949bf0c8559cb60be207d81112da16d", "size_bytes": 12173824, "format": "dll"},
+                {"id": "gpu", "url": "https://storage.googleapis.com/litert/binaries/2.3.0/windows_x86_64/libLiteRtWebGpuAccelerator.dll", "sha256": "ade56eff38715f3e7b3ada0cfb736db4cccb6bed4668a891a37ebcf4eee38548", "size_bytes": 30891008, "format": "dll"},
+                {"id": "dxc", "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.8.2505.1/dxc_2025_07_14.zip", "sha256": "9ad895a6b039e3a8f8c22a1009f866800b840a74b50db9218d13319e215ea8a4", "size_bytes": 26505604, "format": "zip"}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "onnx",
+      "name": "ONNX Runtime",
+      "kind": "managed",
+      "latest": "1.31.1",
+      "versions": {
+        "1.31.1": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {"os": "windows", "arch": "x86_64", "accelerator": "cuda", "cuda_version": "12"},
+              "executable": "onnxruntime.dll",
+              "files": [
+                {"id": "ort", "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-win-x64-gpu_cuda12-1.31.1.zip", "sha256": "5cbf65edc93dc7bb3296249b1b6e1b2228e575902af64d6163d0da2103cef9d5", "size_bytes": 392924457, "format": "zip"},
+                {"id": "cudnn", "url": "https://files.pythonhosted.org/packages/aa/38/f856579877f7c1c5066e61182e7de7bc27bf35a78c8d1b0fa592e6985bc4/nvidia_cudnn_cu12-9.27.0.42-py3-none-win_amd64.whl", "sha256": "06e9b0026f3bad97d2b58666330fabec04fe1672f776661ecb0ce0029c27f142", "size_bytes": 743068852, "format": "whl"},
+                {"id": "cublas", "url": "https://files.pythonhosted.org/packages/20/e2/fc9a0e985249d873150276d5afb02e39a66817fedbf1a385724393e505ed/nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl", "sha256": "623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661", "size_bytes": 553162896, "format": "whl"},
+                {"id": "cudart", "url": "https://files.pythonhosted.org/packages/59/df/e7c3a360be4f7b93cee39271b792669baeb3846c58a4df6dfcf187a7ffab/nvidia_cuda_runtime_cu12-12.9.79-py3-none-win_amd64.whl", "sha256": "8e018af8fa02363876860388bd10ccb89eb9ab8fb0aa749aaf58430a9f7c4891", "size_bytes": 3591604, "format": "whl"}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nemo-speech",
+      "name": "NeMo Speech",
+      "kind": "managed",
+      "latest": "v0.3.0",
+      "versions": {
+        "v0.3.0": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-aarch64-cpu.tar.gz",
+                  "sha256": "56858eaf50d19b05902c043f65d0057352bdc107ae380c41053bfbddfc204bf1",
+                  "size_bytes": 9064856,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "12"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-aarch64-cuda12.tar.gz",
+                  "sha256": "8bc2b18589f6493373af1163ecd937cc6eba91b0305c585c6b898cd3b8a47028",
+                  "size_bytes": 641899633,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "13"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-aarch64-cuda13.tar.gz",
+                  "sha256": "5d8e55d5d14902a5845fb5129478446db5578fd470a80e3b621da001d7f0a971",
+                  "size_bytes": 612369189,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "vulkan"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-aarch64-vulkan.tar.gz",
+                  "sha256": "0de233655dd579117f8f0cfd6c9dc77fe53bf11673cc44b5c42017a1fb2b8140",
+                  "size_bytes": 18935014,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-x86_64-cpu.tar.gz",
+                  "sha256": "255f12b722ab15b2a38a51cf125d56e3fa97058b528f7e895b39d6a473deb06e",
+                  "size_bytes": 9605101,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cuda"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-x86_64-cuda.tar.gz",
+                  "sha256": "eca00a1f67d3ca200ddba11dd71c4f3d67e044cc0939d17d073978e40b995917",
+                  "size_bytes": 703984313,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-linux-x86_64-vulkan.tar.gz",
+                  "sha256": "2a8b2ca4610b6ea5d659ba10794526f6e5a77fb1623d52c35272a9fd1f74abac",
+                  "size_bytes": 19482397,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-macos-aarch64-cpu.tar.gz",
+                  "sha256": "2c3a7a719b778daeb14f147e011891f16e4b2ac62388d8b8d8b365cc2eebdf15",
+                  "size_bytes": 6895976,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-macos-aarch64-metal.tar.gz",
+                  "sha256": "2b972ed8b5dba07492212acf8cb75cbf34ecb141198ffa1997febe84b7c4d9ed",
+                  "size_bytes": 7239335,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-macos-x86_64-cpu.tar.gz",
+                  "sha256": "97e98aa5eb82dffa4f513f26336b5301d792c9fb43f720ac8f9520a0e92ffe3f",
+                  "size_bytes": 7742012,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cuda"
+              },
+              "executable": "nemo-speech.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-aarch64-cuda.zip",
+                  "sha256": "69df7a29636ebf8fdaa20e7a2a6bd03c2838c69dc751fd00af62f0d7f041282a",
+                  "size_bytes": 184407279,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "nemo-speech.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-cpu.zip",
+                  "sha256": "4ed9740e361e4653f56c3dce7d1e81883a1c8b831c1bd7d01567fff1130b5b05",
+                  "size_bytes": 8694509,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda"
+              },
+              "executable": "nemo-speech.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-cuda.zip",
+                  "sha256": "d0d32ae1bf6ee0534767a47b2aa0e9e2ff6fe39643465c0baae9301d04f6ed42",
+                  "size_bytes": 508625181,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "nemo-speech.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-vulkan.zip",
+                  "sha256": "72b3b8b41bfe2be0320eff4e9d310594e4f99deefcde4a157799a039656963ce",
+                  "size_bytes": 22417032,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "audio-cpp",
+      "name": "audio.cpp",
+      "kind": "managed",
+      "latest": "v0.9.3",
+      "versions": {
+        "v0.9.3": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "audiocpp_cli",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.3/audio-v0.9.3-bin-macos-arm64-metal.tar.gz",
+                  "sha256": "70a84c2b61ce5ef99547a12affab9b0d40daf08666baf7da4f940d5c7b722819",
+                  "size_bytes": 34847832,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "metal"
+              },
+              "executable": "audiocpp_cli",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.3/audio-v0.9.3-bin-macos-x64-metal.tar.gz",
+                  "sha256": "81238e3957bbf840d15094c34262fa93609caa0233c3dccc1e0f64fb47f5e51b",
+                  "size_bytes": 36812821,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "audiocpp_cli",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.3/audio-v0.9.3-bin-ubuntu-x64-cpu-portable.tar.gz",
+                  "sha256": "02156f7a7bd9924902cec26be35087d3806c7e348be344b1ec28cac0c1af3929",
+                  "size_bytes": 63289061,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "audiocpp_cli.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.3/audio-v0.9.3-bin-windows-x64-cpu-portable.zip",
+                  "sha256": "f5fa4662b7ec323dbe31d37e224e46159b064836a9005da384551a5248771eeb",
+                  "size_bytes": 30409504,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "executable": "audiocpp_cli.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.3/audio-v0.9.3-bin-windows-x64-cuda12.4.zip",
+                  "sha256": "976b1fe4329407be45b272fc656d91006f081d22706f453f8879bc69dbb4a9b3",
+                  "size_bytes": 465913709,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.3/audio-v0.9.3-cudart-windows-x64-cuda12.4.zip",
+                  "sha256": "866a2bc12c4d887eb3b1b62f82f7a8fdd93391cb77ea02b63b0f360cfb3bb4d8",
+                  "size_bytes": 607273675,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.3"
+              },
+              "executable": "audiocpp_cli.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.3/audio-v0.9.3-bin-windows-x64-cuda13.3.zip",
+                  "sha256": "0bd3988be10c31ec078c40df2bd0d4266e660804f6d5083aeb05d1309d091e43",
+                  "size_bytes": 277336614,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.3/audio-v0.9.3-cudart-windows-x64-cuda13.3.zip",
+                  "sha256": "839eb20f684a8aab64895b1e466b32ce9b29dfc19dc1ce15b2ef35218512ac0a",
+                  "size_bytes": 575457454,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "crispasr",
+      "name": "CrispASR",
+      "kind": "managed",
+      "latest": "v0.8.49",
+      "versions": {
+        "v0.8.48": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-linux-arm64.tar.gz",
+                  "sha256": "07f7e43d17f5db9c27d4e8fe6e9d15c8d56583a30fe8117f56301fde4a2ca10a",
+                  "size_bytes": 36090138,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-linux-x86_64.tar.gz",
+                  "sha256": "92138ebc0fa9a7911b4a3f78a9d691d650364cbf6990e22810a9db439acacf3a",
+                  "size_bytes": 43124428,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu-legacy"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-linux-x86_64-cpu-legacy.tar.gz",
+                  "sha256": "efe5f8984aa6fe5689f3c44f4bab6d33faed7277d26741ef62707fd662136450",
+                  "size_bytes": 42799727,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-macos-arm64.tar.gz",
+                  "sha256": "16237db5ac1f9641a8e754f50b90fdcda8dc090c8022b6bf78ec88217aa6ea19",
+                  "size_bytes": 18128826,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-macos-x86_64.tar.gz",
+                  "sha256": "b254cb88082d2f3dfba38de988e50d92f2f53df1123bdc399f537281be9b81ff",
+                  "size_bytes": 18625919,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu-legacy"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-macos-x86_64-cpu-legacy.tar.gz",
+                  "sha256": "74dfc5e44a34e66e688605bdb911c795c27f22f89575399f2d69cb99fceb0b57",
+                  "size_bytes": 18414097,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-windows-x86_64-cpu.zip",
+                  "sha256": "f7e7a50328477f77ff87962b4e41505266fffb5aa4bf72b9e7f1f5c8f06fa1ab",
+                  "size_bytes": 9200426,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu-legacy"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-windows-x86_64-cpu-legacy.zip",
+                  "sha256": "163eea99dba236e8a8f7925b205e51448e19226d0402cda82cfa4b482b5b5a17",
+                  "size_bytes": 8623205,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.8"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-windows-x86_64-cuda.zip",
+                  "sha256": "79560b267696c40eadfc6084736b416a2b1cb33b15ffde47fdb38ab5f17e3ef2",
+                  "size_bytes": 786734580,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.6"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-windows-x86_64-cuda126.zip",
+                  "sha256": "a035cbbedb776fc49ae4c29bfe9644bf4c4156b9207b6488c2fbc7c3e71b41f4",
+                  "size_bytes": 713524258,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.0"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-windows-x86_64-cuda13.zip",
+                  "sha256": "4bb8bc7aa85b4264fca3af9fcf2586fd95800e17b795bfa0be907b659e5524b4",
+                  "size_bytes": 568938915,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.48/crispasr-windows-x86_64-vulkan.zip",
+                  "sha256": "3a88ea0e6f97d12986c181706ee5e5547ffb4669b549012a44e3d9bd83c6b217",
+                  "size_bytes": 36403840,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        },
+        "v0.8.49": {
+          "release_number": 2,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-linux-arm64.tar.gz",
+                  "sha256": "757f5d23fc2e14ad304f9f124a7b72b7d91e672fc7fe6c7d9ad3d66b1847e8a4",
+                  "size_bytes": 36168571,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-linux-x86_64.tar.gz",
+                  "sha256": "368aa065fa5355116476a038c20f2a6dcd915f069b65e634de428ef9ed4242cf",
+                  "size_bytes": 43209894,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu-legacy"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-linux-x86_64-cpu-legacy.tar.gz",
+                  "sha256": "d259ee6bc9024778a3f171d2c6b4d99ad462a63b124fcd1f6765118bfbd593ac",
+                  "size_bytes": 42885078,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-macos-arm64.tar.gz",
+                  "sha256": "53fa0b1addeacaafd05f8b0cd10cad6e8f44cbe302be3bd07fdf7fce2eff27ec",
+                  "size_bytes": 18165415,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-macos-x86_64.tar.gz",
+                  "sha256": "06511a96c1d292dadb5b3cfb2b331f8155fd14c7da21a7f5935c940d941d8ea4",
+                  "size_bytes": 18668950,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu-legacy"
+              },
+              "executable": "crispasr",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-macos-x86_64-cpu-legacy.tar.gz",
+                  "sha256": "989ab9a01e6694ecd46a7bc5e92d60f19f8297da2099d44cc2648880692bb576",
+                  "size_bytes": 18455872,
+                  "format": "tar.gz"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-windows-x86_64-cpu.zip",
+                  "sha256": "c84e5cb1a9f2910d12c67821ae6f5a3acca6e3addf275ad6ccf8c90d3d6a4ba1",
+                  "size_bytes": 9228386,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu-legacy"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-windows-x86_64-cpu-legacy.zip",
+                  "sha256": "36841c5e45f6cc0cb05bb0933380dad619490ed9d2a4e924ea220f05b0405818",
+                  "size_bytes": 8654081,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.8"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-windows-x86_64-cuda.zip",
+                  "sha256": "c627c46b51e2b2f21a55c55a71f19fab954fc40089e8ded852005fc1a196637c",
+                  "size_bytes": 786801567,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.6"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-windows-x86_64-cuda126.zip",
+                  "sha256": "4cf707d170ef2b6b85d3a589ff349028c82deac00ef8d92dd090798befce6548",
+                  "size_bytes": 713609081,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.0"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-windows-x86_64-cuda13.zip",
+                  "sha256": "b4f48eb8e86a0cf97b70b862ca9e47b19234e534d3f298293183020065fcd9ad",
+                  "size_bytes": 569033716,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "crispasr.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.49/crispasr-windows-x86_64-vulkan.zip",
+                  "sha256": "91a3a01240dafb32848e548fec0a82967eadbe2559dfd872930c092bdc522ab5",
+                  "size_bytes": 36481781,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sd-server",
+      "name": "stable-diffusion.cpp",
+      "kind": "managed",
+      "comparison_url": "https://api.github.com/repos/leejet/stable-diffusion.cpp/compare",
+      "latest": "master-1106-532d2c1",
+      "versions": {
+        "master-1031-c6dfa9d": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1031-c6dfa9d/sd-master-c6dfa9d-bin-win-cpu-x64.zip",
+                  "sha256": "82f2fa57e325895d2d1d649a9ed48e35cda7a415a255f9fc3c9d682381960f08",
+                  "size_bytes": 18094519,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1031-c6dfa9d/sd-master-c6dfa9d-bin-win-vulkan-x64.zip",
+                  "sha256": "31a26c404fab36ba8fe527116c4f039e70fe3f440cd6b75b28ff06305532208c",
+                  "size_bytes": 29827028,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.0"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1031-c6dfa9d/sd-master-c6dfa9d-bin-win-cuda12-x64.zip",
+                  "sha256": "b1754e73934f4e1c1cc61d6228ebff44624c8a528a9ab850ad07d5179a3dbbac",
+                  "size_bytes": 354188849,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1031-c6dfa9d/cudart-sd-bin-win-cu12-x64.zip",
+                  "sha256": "fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d",
+                  "size_bytes": 563452046,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1031-c6dfa9d/sd-master-c6dfa9d-bin-Linux-Ubuntu-24.04-x86_64.zip",
+                  "sha256": "05020fdf7fd5c710c2b55bf3bd43a3b60439bdd6b57eee7fca5d14c2084b421a",
+                  "size_bytes": 27338281,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1031-c6dfa9d/sd-master-c6dfa9d-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+                  "sha256": "8c7a4b9364ac8ff75635cd6ddbc858bea4e0224a746b0ba0dc7d2e32e4929a41",
+                  "size_bytes": 37698801,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1031-c6dfa9d/sd-master-c6dfa9d-bin-Darwin-macOS-26.6.2-arm64.zip",
+                  "sha256": "33282a6708809185d9c66d073bfb2feed7b302a4eb40c5e1829c13dab1a80f5d",
+                  "size_bytes": 37603978,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        },
+        "master-1043-3be2378": {
+          "release_number": 2,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-win-cpu-x64.zip",
+                  "sha256": "10ef877a334c97d014e3e23b4bf6c9077f6b78ff9da3bb157664d2103cb1ae0f",
+                  "size_bytes": 18067084,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-win-vulkan-x64.zip",
+                  "sha256": "a5e1fa679561a3bb99b114a8f4a41e67239da29173ff725391ecfa5772e869ee",
+                  "size_bytes": 29796631,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.0"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-win-cuda12-x64.zip",
+                  "sha256": "76da083337834ff9c383c5f80a49c8cf7485f8fa28d1fac1ef5ce057bbcb3e51",
+                  "size_bytes": 361571138,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/cudart-sd-bin-win-cu12-x64.zip",
+                  "sha256": "fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d",
+                  "size_bytes": 563452046,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-Linux-Ubuntu-24.04-x86_64.zip",
+                  "sha256": "01e1c773c1bc2a6276952f6dbd13294e58b7255c659b4a770086934c4e8fad3a",
+                  "size_bytes": 27322680,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+                  "sha256": "7608901016fb4a348bc5b75c46fc971085dadadf44e6f30daa97301844b1ce2e",
+                  "size_bytes": 37675781,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-Darwin-macOS-26.6.2-arm64.zip",
+                  "sha256": "ec40c7b84d86333ea89a9a52745fce25c3081122f6207a4370f35b504df99252",
+                  "size_bytes": 37650853,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        },
+        "master-1106-532d2c1": {
+          "release_number": 3,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-win-cpu-x64.zip",
+                  "sha256": "abef332cfca7861cc567910e79bedb70bfb2920bb4eedac97fcbb6db477f1596",
+                  "size_bytes": 18358541,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-win-vulkan-x64.zip",
+                  "sha256": "3e66222c87ca27074e1fd8ce79706eef17a8aaf39949906aa1bee7e060f22ecc",
+                  "size_bytes": 30312081,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.0"
+              },
+              "executable": "sd-server.exe",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-win-cuda12-x64.zip",
+                  "sha256": "b087219145a382cc1b1e826318289e1f672b9bb6965977734ef0deb85fe2d03a",
+                  "size_bytes": 412365497,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/cudart-sd-bin-win-cu12-x64.zip",
+                  "sha256": "fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d",
+                  "size_bytes": 563452046,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-Linux-Ubuntu-26.04-x86_64.zip",
+                  "sha256": "0a02f7f51feb0691128f60cf6ff1c686ec23089561cfe7c3b72645f446646e13",
+                  "size_bytes": 29124086,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-Linux-Ubuntu-26.04-x86_64-vulkan.zip",
+                  "sha256": "ca30fe17f1735cdfb4c8561b75799070c25cc86a9e5438f4c0e1b163baae4e12",
+                  "size_bytes": 42212329,
+                  "format": "zip"
+                }
+              ]
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "metal"
+              },
+              "executable": "sd-server",
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1106-532d2c1/sd-master-532d2c1-bin-Darwin-macOS-26.7.2-arm64.zip",
+                  "sha256": "8146d6ffc75f8ff8f64b62a80fffee8fb714ab65e368e202084135fa07cc6f36",
+                  "size_bytes": 38331254,
+                  "format": "zip"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "llama-server-prism",
+      "name": "llama-server-prism",
+      "kind": "managed",
+      "latest": "prism-b12128-d7b2896",
+      "versions": {
+        "prism-b10831-9d9efea": {
+          "release_number": 1,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-linux-cuda-12.4-x64.tar.gz",
+                  "sha256": "eefaacc68a03b01071265685c79fbc1c826a655d4c4d3ba0172df210fe36b1b9",
+                  "size_bytes": 339290066,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.8"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-linux-cuda-12.8-x64.tar.gz",
+                  "sha256": "c55d8224477d725e2d6d35e4fe33ecb1e1e51b7bbe0e3e8204ece6a1568a122d",
+                  "size_bytes": 214381960,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.3"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-linux-cuda-13.3-x64.tar.gz",
+                  "sha256": "bd7b03b01b6b26ac3c021debfeb02735d2123681fdb0bc6808a46470e0db2d3a",
+                  "size_bytes": 188674207,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-macos-arm64.tar.gz",
+                  "sha256": "8f4345dfb03be1b43520822195cc1d17b3df9d35773e537db318f1620c909c83",
+                  "size_bytes": 11586521,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-macos-x64.tar.gz",
+                  "sha256": "3deee67a99d512b430341ea547e29a8ed1cc0157be0ca6a4ef4fc06def1b4073",
+                  "size_bytes": 11624525,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-ubuntu-arm64.tar.gz",
+                  "sha256": "9ea2f4206258700cad28a99495ac692644ca969b21fd0070f0c9290b261a9601",
+                  "size_bytes": 13904764,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-ubuntu-x64.tar.gz",
+                  "sha256": "ee439a2e13d45834a1e76ee81699be08da99bac4c200c27e0f48d35a465ae15a",
+                  "size_bytes": 17911360,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-ubuntu-vulkan-arm64.tar.gz",
+                  "sha256": "d53435af19649eea67067d48d28928bb7f00dfbcca3fff268db9110709d75842",
+                  "size_bytes": 28394072,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-ubuntu-vulkan-x64.tar.gz",
+                  "sha256": "59e2d41ab6afbbaeeea644cbca7aedec3fdf0cea1c510dc4cfd2a1b07c17c7c8",
+                  "size_bytes": 35967956,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-win-cpu-arm64.zip",
+                  "sha256": "2a76d6e82374c980f9137c88263fd6a75219038002eed2f6bf9d2141d002be9a",
+                  "size_bytes": 12417933,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-win-cpu-x64.zip",
+                  "sha256": "c8d362c774e21eee4c712fdd48877656715fa4fef091a6e845ff8a2793ca35b8",
+                  "size_bytes": 19560280,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-win-vulkan-x64.zip",
+                  "sha256": "0efc1c1d2a92e7aa9a50c10317b620ee04cea3e5c7177bad994ca0111c7e79a6",
+                  "size_bytes": 31320216,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "c7b9014b8e8e2d4a959cdb3c4e48f122ce311d0b05db7adff5dceb4208761acf",
+                  "size_bytes": 326070057,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/cudart-llama-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+                  "size_bytes": 391443627,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.3"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-win-cuda-13.3-x64.zip",
+                  "sha256": "b39669a8337ba75697672241c34a82ecadd00d13883e404b184b5f344c4d896d",
+                  "size_bytes": 183714226,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/cudart-llama-bin-win-cuda-13.3-x64.zip",
+                  "sha256": "1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e",
+                  "size_bytes": 390970417,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/llama-prism-b10831-9d9efea-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "3b9da7d9f3eaaa275ca3a389c8949b6b8785b249d450d97fb69bc85786d93c05",
+                  "size_bytes": 169025036,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10831-9d9efea/cudart-llama-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "5a40dc7c5fa3d0a80ceeba4f16f9e8d25d87bcf1399c9233588953c43436c33c",
+                  "size_bytes": 153318797,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            }
+          ]
+        },
+        "prism-b12128-d7b2896": {
+          "release_number": 2,
+          "artifacts": [
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-linux-cuda-12.4-x64.tar.gz",
+                  "sha256": "0d31cc673f400004533ff407a133d957f7fc322e67457958693f752c6d87d342",
+                  "size_bytes": 369464173,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.8"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-linux-cuda-12.8-x64.tar.gz",
+                  "sha256": "d800a807295e73742d4dff7d3aa3a3438d6147882c9b609ef8bacba333bead01",
+                  "size_bytes": 228535760,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.3"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-linux-cuda-13.3-x64.tar.gz",
+                  "sha256": "9f3a8d2de2b69936b8ec7c994579ad419cb2918785483d80091b6b2776b880bd",
+                  "size_bytes": 204301954,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-macos-arm64.tar.gz",
+                  "sha256": "7072bcece7b2ae5cc97db85b65f4a57d96a4f1b926555bc97cf48d6357b3e532",
+                  "size_bytes": 13172028,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "macos",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-macos-x64.tar.gz",
+                  "sha256": "50aa0c304908a12a6ddea723c111bd6abb91fbd6a8ccbb573874f47fb801d14f",
+                  "size_bytes": 12620946,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-ubuntu-arm64.tar.gz",
+                  "sha256": "2f292d018686ad5cbba5743dbbcaaf8999fa8acb20a8b376090d91c5e7e8c35c",
+                  "size_bytes": 15023939,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-ubuntu-x64.tar.gz",
+                  "sha256": "67bdd24e458715fd2fbb128297c44f480b3b4bbea254adf5e571feb3e82c5f53",
+                  "size_bytes": 19765994,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "aarch64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-ubuntu-vulkan-arm64.tar.gz",
+                  "sha256": "ae8ecf507d7544d489191d121887832f84387d966a37d42bc30106277dec60a4",
+                  "size_bytes": 25969068,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-ubuntu-vulkan-x64.tar.gz",
+                  "sha256": "a73a76f26b161e2fff3815cc3ae6f1daeee5991e1269982561aa620e8e07cca4",
+                  "size_bytes": 33757914,
+                  "format": "tar.gz"
+                }
+              ],
+              "executable": "llama-server"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-win-cpu-arm64.zip",
+                  "sha256": "e958470735549873af6f660424c20e8d227b1f9842600f91671185396e0f2ef6",
+                  "size_bytes": 13417568,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cpu"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-win-cpu-x64.zip",
+                  "sha256": "a6e41db401ce93a28f4a2ed20fb7809455302231dd37037c9f1b4505d33fe00b",
+                  "size_bytes": 21387846,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "vulkan"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-win-vulkan-x64.zip",
+                  "sha256": "ec1479514a34272c815b3d194046d27003867aa9c95069d9cd3031b5c31e01ff",
+                  "size_bytes": 28692091,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "12.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "14969ae6831abfc836295e8f4b8e09e686a063b559a8c974412001d9f5ce4f7f",
+                  "size_bytes": 355011546,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/cudart-llama-bin-win-cuda-12.4-x64.zip",
+                  "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+                  "size_bytes": 391443627,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "x86_64",
+                "accelerator": "cuda",
+                "cuda_version": "13.3"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-win-cuda-13.3-x64.zip",
+                  "sha256": "86c6546685ffe2f0954bac062d0bdb347694a2b5eee6f5ddeb1bbfe82d2be1b6",
+                  "size_bytes": 198836745,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/cudart-llama-bin-win-cuda-13.3-x64.zip",
+                  "sha256": "1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e",
+                  "size_bytes": 390970417,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            },
+            {
+              "platform": {
+                "os": "windows",
+                "arch": "aarch64",
+                "accelerator": "cuda",
+                "cuda_version": "13.4"
+              },
+              "files": [
+                {
+                  "id": "engine",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/llama-prism-b12128-d7b2896-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "7cd2f402329cd426bd4ad3a28b7a8e15b62d2760eddfabb7da916fa0592185dd",
+                  "size_bytes": 182290342,
+                  "format": "zip"
+                },
+                {
+                  "id": "runtime",
+                  "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12128-d7b2896/cudart-llama-bin-win-cuda-13.4-arm64.zip",
+                  "sha256": "642dcde8805b3e3165ca710a5443b3b4044b27d96bd3ee3132473988c9bcb774",
+                  "size_bytes": 153262407,
+                  "format": "zip"
+                }
+              ],
+              "executable": "llama-server.exe"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "extensions": {
+    "onnx": {
+      "runtime_library": [
+        "onnxruntime.dll",
+        "51c002601f22ecb7089931565b8908cd7c155d7bf8f8cffe21336835da861d07"
+      ],
+      "providers": [
+        [
+          "onnxruntime_providers_shared.dll",
+          "05c836c1f75858ffa034823cf227335014f02a7297fd273dbd5d487f5262c87b"
+        ],
+        [
+          "onnxruntime_providers_cuda.dll",
+          "8629b290bc1a2c8877f0ae794baef861c0f7b964a982cdfd5e90ee1bc01a33ee"
+        ]
+      ],
+      "cuda_directory": "cuda-12",
+      "dependencies": [
+        {
+          "id": "cudnn",
+          "bin_dir": "nvidia/cudnn/bin",
+          "license_path": "nvidia_cudnn_cu12-9.27.0.42.dist-info/licenses/License.txt",
+          "license_name": "cudnn.txt",
+          "files": [
+            [
+              "cudnn_adv64_9.dll",
+              "712ace96559e60b5be81a1097acb7609f601ff4cd0cdef848b013d671753b4b4"
+            ],
+            [
+              "cudnn_cnn64_9.dll",
+              "dff4c446c855b3ab2d486aebf4c11388cf74da14d7bd0bfafb61c3a75481313d"
+            ],
+            [
+              "cudnn_engines_precompiled64_9.dll",
+              "6b603ac45fc018a96f014d0c6cdbc8f480dce2dbe33b8ca38228a4e4c531f3fe"
+            ],
+            [
+              "cudnn_engines_runtime_compiled64_9.dll",
+              "f92f4776261e4409aa9f84357c40bc3626700292a1d22025746388bea43ae11b"
+            ],
+            [
+              "cudnn_engines_tensor_ir64_9.dll",
+              "d7380a7c4ad90590968e97b4d8b43a616e7e0070bfdeeee04c4d0be85ad52394"
+            ],
+            [
+              "cudnn_ext64_9.dll",
+              "f20888488b701e429830e19cf59022e90a0c5dd398723162ea9f320b3ca06636"
+            ],
+            [
+              "cudnn_graph64_9.dll",
+              "445e8c3e44a6a6035749380009ae35ae8c2bc246428229b79545a25238bb56e2"
+            ],
+            [
+              "cudnn_heuristic64_9.dll",
+              "0634af738266cd36c912e99cd3807ee452450e963bf885be204fdcfb322cfc70"
+            ],
+            [
+              "cudnn_ops64_9.dll",
+              "390bfe103a244c714fca5a1320950ba51a3173a7fbd6664ed535ce7367891ccd"
+            ],
+            [
+              "cudnn64_9.dll",
+              "7268ef53e32c2c574372326dfc9d94a26095f4ed9c89dba87cfb3ab1e40a6470"
+            ]
+          ]
+        },
+        {
+          "id": "cublas",
+          "bin_dir": "nvidia/cublas/bin",
+          "license_path": "nvidia_cublas_cu12-12.9.2.10.dist-info/licenses/License.txt",
+          "license_name": "cublas.txt",
+          "files": [
+            [
+              "cublas64_12.dll",
+              "52ce5ba0ec5327d39be6021f0f9362d2ed4d64d7206f9b5afc06398d827b8e82"
+            ],
+            [
+              "cublasLt64_12.dll",
+              "71705a7cf0923f4ab034d0d2620bbfc989ff669ac3d79f868b7a7c597ca559c5"
+            ]
+          ]
+        },
+        {
+          "id": "cudart",
+          "bin_dir": "nvidia/cuda_runtime/bin",
+          "license_path": "nvidia_cuda_runtime_cu12-12.9.79.dist-info/licenses/License.txt",
+          "license_name": "cuda-runtime.txt",
+          "files": [
+            [
+              "cudart64_12.dll",
+              "760c38928bbe5759f7b31ed6692599eb7ec83cedd5702e84c2b72028a89837e1"
+            ]
+          ]
+        }
+      ],
+      "ort_archive_dir": "onnxruntime-win-x64-gpu_cuda12-1.31.1"
+    }
+  }
+}
